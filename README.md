@@ -5,7 +5,7 @@ De keuzes kunnen ook dienen voor (mogelijke) prioriteiten in onderzoek en monito
 Het bevat tevens de up-to-date keuzes zelf.
 
 In het huidige stadium blijft de keuze-oefening intern INBO-ANB / Vlaamse Overheid. Dit komt omdat de meetnetten
-nog in ontwerp zijn, omdat het een overwegend wetenschappelijke oefening en een wettelijk vastgelegde overheidstaak betreft en omdat maatschappelijk debat in dit stadium tot onnodige vertraging en commotie kan leiden.
+nog in ontwerp zijn en omdat maatschappelijk debat in dit stadium tot onnodige vertraging en commotie kan leiden.
 De onderstaande informatie zal in de vorm van een eenvoudige website ter beschikking worden gesteld.
 
 ## Inhoud
