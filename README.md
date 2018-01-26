@@ -8,6 +8,7 @@ In het huidige stadium blijft de keuze-oefening intern INBO-ANB / Vlaamse Overhe
 nog in ontwerp zijn.
 
 De informatie zal op termijn in de vorm van een eenvoudige website ter beschikking worden gesteld, in eerste instantie voor interne deling.
+Pas in een later stadium wordt bekeken hoe we dit publiek gaan openstellen.
 Enkele aparte documenten gaan in meer detail in op bepaalde deelaspecten.
 
 
