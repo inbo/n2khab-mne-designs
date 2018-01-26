@@ -8,6 +8,7 @@ In het huidige stadium blijft de keuze-oefening intern INBO-ANB / Vlaamse Overhe
 nog in ontwerp zijn.
 
 De informatie zal op termijn in de vorm van een eenvoudige website ter beschikking worden gesteld, in eerste instantie voor interne deling.
+Pas in een later stadium wordt bekeken hoe we dit publiek gaan openstellen.
 Enkele aparte documenten gaan in meer detail in op bepaalde deelaspecten.
 
 
@@ -21,7 +22,7 @@ Enkele aparte documenten gaan in meer detail in op bepaalde deelaspecten.
 - Onder de map `background` is 'hulp'-materiaal te vinden dat kan dienen als input voor concrete Rmd-bestanden.
 - Wie de Rmd bestanden op zijn PC compileert naar een uitvoerformaat (html, pdf), zal deze bestanden zien verschijnen onder een map `docs`. Deze map is niet opgenomen onder versiebeheer (is uitgesloten door .gitignore). Het ontsluiten van de webpagina's gebeurt in een later stadium.
     - de 'Build' knop in RStudio compileert de **site** onder **`docs/site`**.
-    - de manueel uitvoerbare `bookdown::render_book` functies in de R chunk *functies_om_te_compileren* van de **detaildocumenten**, compileren een uitvoer onder **`docs/detailed`**. Deze kunnen dan bv. als pdf worden aangeroepen vanaf de website. Onder `docs/detailed` kunnen ook andere downloadbare bestanden worden gezet (of met R-code daar weggeschreven), zoals csv-bestanden.
+    - de manueel uitvoerbare `bookdown::render_book` functies in de R chunk *functies_om_te_compileren* van de **detaildocumenten** compileren een outputbestand (bv. pdf) onder **`docs/site/files`**. Deze kunnen dan worden aangeroepen (gedownload) vanaf de website. Onder `docs/site/files` kunnen ook andere downloadbare bestanden worden gezet (of met R-code daar weggeschreven), zoals csv-bestanden.
 
 
 ### Inhoudelijke onderdelen
