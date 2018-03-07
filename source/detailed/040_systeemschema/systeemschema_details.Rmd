@@ -38,6 +38,7 @@ output:
 ```{r setup, message=FALSE, echo=FALSE, warning=FALSE}
 options(stringsAsFactors = FALSE)
 library(knitr)
+library(ggplot2)
 uitvoer <- knitr::opts_knit$get("rmarkdown.pandoc.to")
 opts_chunk$set(
   echo = ifelse(is.null(uitvoer), TRUE,
@@ -80,7 +81,7 @@ bookdown::render_book(input = ditbestand,
 
 # Chapter title
 
-## R Markdown
+## R Markdown and Bookdown
 
 This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
@@ -90,14 +91,65 @@ When you click the **Knit** button a document will be generated that includes bo
 summary(cars)
 ```
 
-## Including Plots
+The most important difference between plain RMarkdown and Bookdown is that Bookdown allows to split the book over multiple Rmd files. You can e.g. make a separate Rmd file for each chapter. This makes the Rmd files smaller and easier to maintain.
+Bookdown extends on plain RMarkdown, and also provides:
 
-You can also embed plots, for example:
+- consistency between different output formats, in numbering and cross-referencing of figures, tables, sections and equations;
+- the possibility to insert parts and appendices.
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+The complete book on Bookdown is available at https://bookdown.org/yihui/bookdown.
+
+
+## Cross references in Bookdown {#S:crossref}
+
+To create a cross reference to a location you need to add a label. Add `{#your_label}` at the end of a chapter or section title to create this label. Then you can reference this label by using `\@ref(your_label)`. The correct number will be inserted automatically during rendering, for example: section \@ref(S:crossref). How to add labels for figures and tables is discussed in sections \@ref(S:figures) and \@ref(S:tables)
+(when they are generated from R chunks) -- for figures and tables that are directly inserted in the Rmd files, see chapter \@ref(S:more-stuff).
+
+The cross references act as hyperlinks. When you click them you go to the location of the corresponding label. Therefore labels must be unique within the book. You will get an error message when they aren't unique.
+
+
+
+## Adding figures in Bookdown {#S:figures}
+
+Adding R figures is easy (figure \@ref(fig:pressure)). The `echo = FALSE` argument was added to the chunk options. This hides the R code that generates the figure. The `fig.cap` option adds a caption to the figure. The default label is a `fig:` prefix followed by the name of the chunk.
+
+```{r pressure, echo = FALSE, fig.cap = "The caption"}
+ggplot(pressure, aes(x = temperature, y = pressure)) + 
+  geom_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  geom_point() +
+  scale_x_continuous("Temperature (deg C)") +
+  scale_y_log10("Pressure (mm of Hg)") +
+  ggtitle("pressure data: Vapor Pressure of Mercury")
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+_External_ figures can also be inserted from within an R code chunk -- though it is not necessary to do so. For more information, see section \@ref(S:external-figures).
 
+
+
+## Inserting and cross-referencing external figures in Bookdown {#S:external-figures}
+
+_External_ figures can be inserted from within an R code chunk, using the `include_graphics()` function (figure \@ref(fig:externalfig)). The same chunk options apply as in section \@ref(S:figures), including `fig.cap`.
+
+```{r externalfig, fig.cap = "Including an external figure with a caption is easy from an R chunk.", out.width = "70%", fig.align = "center"}
+path_to_figure <- system.file("local_tex/tex/latex/inboimage_2015","labo.jpg", package = "INBOmd")
+include_graphics(path_to_figure)
+```
+
+But external figures can also be inserted and referenced outside R chunks, using pandoc's markdown with a bookdown-styled label: use `![(\#fig:your_unique_figurename)Your caption.](path-to-figure)` to insert a figure with its caption -- see figure \@ref(fig:externalfig2).
+
+![(\#fig:externalfig2)This figure was inserted outside of an R chunk.](`r system.file("local_tex/tex/latex/inboimage_2015","labo.jpg", package = "INBOmd")`){ width=70% }
+
+
+
+## Adding tables in Bookdown {#S:tables}
+
+`kable()` is a handy function to display dataframes as a table (table \@ref(tab:kabletable)). The table will get a default label which is the prefix `tab:` plus the chunk name. Hence you can display only one table per chunk. Note that we need the argument `results='asis'`.
+
+```{r kabletable, results='asis'}
+kable(
+  pressure,
+  booktabs = TRUE,
+  caption = "The caption of a Markdown table"
+)
+```
 
