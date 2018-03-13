@@ -12,12 +12,12 @@ De meetnetten geven het niveau weer waarop data-analysen en uitspraken zullen ge
 - **overstromingsmeetnet** (compartiment *inundatiewater*), met het hoofdmeetnet voor **eutrofiëring via het oppervlaktewater (3.4)**;
 - **atmosferisch meetnet**, met de hoofdmeetnetten voor **eutrofiëring via de lucht (3.1)** en **verzuring via de lucht (4.1)**.
 
-In Figuur \@ref(fig:types-compartmeetnet) is te zien hoe de basisdoelpopulaties en milieudrukken verdeeld zijn over de compartimentmeetnetten. Er is een grote overlap in doelpopulatie tussen hoofd- en secundaire meetnetten in elk compartimentmeetnet. Dit ondersteunt de keuze om de secundaire meetnetten maximaal met de hoofdmeetnetten te aligneren.
+In Figuur \@ref(fig:types-compartmeetnet1) en volgende is te zien hoe de basisdoelpopulaties en milieudrukken verdeeld zijn over de compartimentmeetnetten. Er is een grote overlap in doelpopulatie tussen hoofd- en secundaire meetnetten in elk compartimentmeetnet. Dit ondersteunt de keuze om de secundaire meetnetten maximaal met de hoofdmeetnetten te aligneren.
 
 _Voor meer achtergrond bij de afbakening van meetnetten en compartimentmeetnetten verwijzen we naar een [technisch achtergronddocument](https://drive.google.com/uc?export=download&id=15wsQSDtMKl4UOPgIDSQDpmL5nJ5keKG7)._
 
 
-```{r types-compartmeetnet, message=FALSE, warning=FALSE, fig.width=5, fig.height=9, out.width="50%", echo=FALSE, fig.cap="_De basisdoelpopulaties van meetnetten, weergegeven per compartimentmeetnet. De types zijn binnen elk compartimentmeetnet geordend volgens de meetnetten waarin ze zijn opgenomen. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)._"}
+```{r message=FALSE, warning=FALSE, echo=FALSE}
 basispop_compart_types <-
     basispop_pproxy_S2 %>% 
     distinct(Waterhuishouding,
@@ -53,95 +53,25 @@ mylist <-
 
 typeklasseschaal <- RColorBrewer::brewer.pal(10, "Paired")
 names(typeklasseschaal) <- levels(milieudruk_rangschikking$Typeklasse)
-
-for (i in mylist){
-    basispop_compart_types_drukprofiel <- 
-        i %>% 
-        spread(key = Druk, value = dummy, fill = "0") %>% 
-        # drukprofiel per type, binnen een compartimentmeetnet:
-        unite(Drukprofiel, contains("Druk"), sep = "") %>% 
-        # telling per drukprofiel:
-        group_by(Drukprofiel) %>% 
-        mutate(AantalVeg = Vegcode %>% unique %>% length) %>% 
-        ungroup %>% 
-        # drukdata terug inbrengen (koppeling volgens compartiment, whh, vegcode):
-        inner_join(basispop_compart_types) %>% 
-        # abstractie maken van whh-klasse en milieuklasse:
-        select(-WhhGroep, 
-               -Waterhuishouding, 
-               -Waterhuishouding_afk, 
-               -Milieudrukkengroep, # deze is whh-specifiek!
-               -Milieuklasse) %>% # deze clustert whh-klassen
-        distinct() %>% 
-        inner_join(types_whh2) %>% 
-        mutate(Vegcode = factor(Vegcode, levels = 
-                                    arrange(., AantalVeg, Drukprofiel, desc(Typeklasse), desc(Vegcode)) %>% 
-                                    .$Vegcode %>% 
-                                    unique),
-               Druk = factor(Druk, levels =
-                                 count(., Druk) %>% 
-                                 arrange(-n) %>% 
-                                 .$Druk)
-               ) %>% 
-        select(-AantalVeg, -Drukprofiel) %>% # want deze verschilden tussen whh-klassen
-        distinct
-    
-    aantaldruk <- length(unique(basispop_compart_types_drukprofiel$Druk))
-    aantalvegcode <- length(unique(basispop_compart_types_drukprofiel$Vegcode))
-
-    vegcodegroepering <-
-        basispop_compart_types_drukprofiel %>% 
-            distinct(Typeklasse, Vegcode, Waterhuishoudingsklasse_2) %>% 
-            arrange(desc(Vegcode))
-
-    (basispop_compart_types_drukprofiel %>% 
-        ggplot(aes(x = Druk, y = Vegcode)) + 
-            geom_tile(aes(fill = MaxMilieudrukkengroep), colour = "grey30") +
-            geom_text(aes(label = Categorie), size = 2.5, colour = "purple2") +
-        
-            scale_fill_manual(values = olympic_colours,
-                              labels = olympic_labels,
-                              guide = guide_legend(title = "Rang milieudruk\nin beschouwd\ncompartimentmeetnet")) + 
-        
-            scale_x_discrete(position = "top") +
-    
-            geom_tile(data = expand.grid(X = 1:aantaldruk, Y = 1:aantalvegcode),
-                      aes(x = X, y = Y),
-                      colour = "grey60",alpha = 0) +
-            
-            annotate(    # truukje om ruimte aan zijkant te maken
-                geom = "point",
-                x = -2, y = aantalvegcode, alpha = 0
-            ) +
-    
-            geom_point(data = vegcodegroepering,
-                aes(x = -1.5, y = Vegcode, alpha = Waterhuishoudingsklasse_2),
-                size = 2,
-                colour = "black"
-            ) + 
-            
-            geom_point(data = vegcodegroepering,
-                aes(x = -0.5, y = Vegcode, colour = Typeklasse),
-                size = 2
-            ) + 
-                
-            scale_colour_manual(values = typeklasseschaal) +
-            
-            scale_alpha_manual(values = whh2schaal,
-                                labels = whh2labels) +
-                
-            theme(
-                  axis.text.x = element_text(angle = 90, hjust = 0),
-                  axis.ticks.y = element_blank(),
-                  panel.background = element_blank()
-                ) +
-        
-            labs(title = str_c(i$Comp_meetnet[1] %>% toupper,
-                               "\nNIVEAU GEWENSTE UITSPRAKEN (vragen)",
-                               "\n(doelpopulatie x milieudruk)"),
-                 y = "Type")
-    ) %>% print
+```
 
 
-}
+```{r types-compartmeetnet1, message=FALSE, warning=FALSE, fig.width=5, fig.height=11, out.width="50%", echo=FALSE, fig.cap="De basisdoelpopulaties van meetnetten, weergegeven voor het vermelde compartimentmeetnet. De types zijn binnen het compartimentmeetnet geordend volgens de meetnetten waarin ze zijn opgenomen. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)."}
+types_compartmeetnet(mylist[[1]])
+```
+
+```{r types-compartmeetnet2, message=FALSE, warning=FALSE, fig.width=5, fig.height=11, out.width="50%", echo=FALSE, fig.cap="De basisdoelpopulaties van meetnetten, weergegeven voor het vermelde compartimentmeetnet. De types zijn binnen het compartimentmeetnet geordend volgens de meetnetten waarin ze zijn opgenomen. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)."}
+types_compartmeetnet(mylist[[2]])
+```
+
+```{r types-compartmeetnet3, message=FALSE, warning=FALSE, fig.width=5, fig.height=11, out.width="50%", echo=FALSE, fig.cap="De basisdoelpopulaties van meetnetten, weergegeven voor het vermelde compartimentmeetnet. De types zijn binnen het compartimentmeetnet geordend volgens de meetnetten waarin ze zijn opgenomen. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)."}
+types_compartmeetnet(mylist[[3]])
+```
+
+```{r types-compartmeetnet4, message=FALSE, warning=FALSE, fig.width=5, fig.height=6, out.width="50%", echo=FALSE, fig.cap="De basisdoelpopulaties van meetnetten, weergegeven voor het vermelde compartimentmeetnet. De types zijn binnen het compartimentmeetnet geordend volgens de meetnetten waarin ze zijn opgenomen. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)."}
+types_compartmeetnet(mylist[[4]])
+```
+
+```{r types-compartmeetnet5, message=FALSE, warning=FALSE, fig.width=5, fig.height=11, out.width="50%", echo=FALSE, fig.cap="De basisdoelpopulaties van meetnetten, weergegeven voor het vermelde compartimentmeetnet. De types zijn binnen het compartimentmeetnet geordend volgens de meetnetten waarin ze zijn opgenomen. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)."}
+types_compartmeetnet(mylist[[5]])
 ```
