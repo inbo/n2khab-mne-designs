@@ -5,7 +5,44 @@ Deze koppeling volgt rechtstreeks uit de volgende twee aspecten:
 - een **standplaatsfactor** hangt vast aan een waterhuishoudingsklasse en een compartiment, en heeft een bepaalde relatie tot elke milieudruk (zie *conceptueel systeemschema*). Een *selectie* van standplaatsfactoren **leverde de primaire standplaatsfactoren per milieudruk en compartiment** -- zie paragraaf \@ref(stplf-mild);
 - een **type** hangt vast aan een waterhuishoudingsklasse, en heeft een bepaalde relatie tot elke milieudruk (zie *afwegingskader milieudrukken*). Een *selectie* hierin **leverde de basisdoelpopulatie per milieudruk** -- zie paragraaf \@ref(doelpop).
 
-In Figuur \@ref() is de koppeling zichtbaar voor alle types en primaire standplaatsfactoren in de MNM, waarbij abstractie is gemaakt van de koppeling met de milieudrukken. Het getal in de vakjes geeft weer voor hoeveel milieudrukken de standplaatsfactor een rol speelt als primaire standplaatsfactor, voor het type in kwestie.
+In Figuur \@ref(fig:totaaloverzicht) is de koppeling zichtbaar voor alle types en primaire standplaatsfactoren in de MNM, waarbij abstractie is gemaakt van de koppeling met de milieudrukken. Het getal in de vakjes geeft weer voor hoeveel milieudrukken de standplaatsfactor een rol speelt als primaire standplaatsfactor, voor het type in kwestie.
 
-**Figuur XXXXXXXXXXXXxx totaaloverzicht**
+
+```{r totaaloverzicht, message=FALSE, warning=FALSE, fig.width=12, fig.height=14, echo=FALSE, fig.cap="_De weerhouden primaire standplaatsfactoren per type. Het getal in de cellen geeft het aantal milieudrukken weer waarvoor de opvolging van een standplaatsfactor dient. Voor de verklaring van typecodes, zie paragraaf \\@ref(reflijsten)._"}
+types_comp_stplf <-
+    basispop_pproxy_S2 %>% 
+    inner_join(basisdoelpop %>% inner_join(types_whh)) %>% 
+    group_by(Compartiment, Standplaatsfactor, Vegcode) %>% 
+    mutate(MaxMaxMilieudrukkengroep = 
+               MaxMilieudrukkengroep %>% sort %>% first) %>% 
+    ungroup %>% 
+    # abstractie maken waterhuishoudingsklasse en verwijderen van 
+    # overbodige drukattributen:
+    select(-Waterhuishouding,
+           -Milieudrukkengroep,
+           -Pnabijheid,
+           -WhhGroep,
+           -Vertegenwoordiger,
+           -Waterhuishouding_afk,
+           -MaxMilieudrukkengroep,
+           -Milieudruk,
+           -Categorie) %>% 
+    distinct %>% 
+    group_by(Compartiment, Standplaatsfactor, Vegcode) %>% 
+    mutate(AantalDrukken = n()) %>% 
+    ungroup %>% 
+    select(-Druk) %>% 
+    distinct %>%
+    inner_join(types_whh2) %>% 
+    mutate(Vegcode = factor(Vegcode, levels = 
+                                distinct(., Waterhuishoudingsklasse_2, Typeklasse, Vegcode) %>% 
+                                arrange(desc(Waterhuishoudingsklasse_2), desc(Typeklasse), desc(Vegcode)) %>%
+                                .$Vegcode
+                            ))
+types_comp_stplf %>% 
+    stpl_plot_types +
+            labs(title = str_c("MNM: vooruitblik van meest belangrijk meetwerk",
+                         "\n(doelpopulatie x primaire standplaatsfactor)"))
+```
+
 
