@@ -329,4 +329,101 @@ stpl_plot_types <- function(df) {
 }
 
 
+#########################
+## compartimentmeetnetfiguur
+#########################
+
+
+
+types_compartmeetnet <- function(df) {
+    basispop_compart_types_drukprofiel <-
+        df %>%
+        spread(key = Druk, value = dummy, fill = "0") %>%
+        # drukprofiel per type, binnen een compartimentmeetnet:
+        unite(Drukprofiel, contains("Druk"), sep = "") %>%
+        # telling per drukprofiel:
+        group_by(Drukprofiel) %>%
+        mutate(AantalVeg = Vegcode %>% unique %>% length) %>%
+        ungroup %>%
+        # drukdata terug inbrengen (koppeling volgens compartiment, whh, vegcode):
+        inner_join(basispop_compart_types) %>%
+        # abstractie maken van whh-klasse en milieuklasse:
+        select(-WhhGroep,
+               -Waterhuishouding,
+               -Waterhuishouding_afk,
+               -Milieudrukkengroep, # deze is whh-specifiek!
+               -Milieuklasse) %>% # deze clustert whh-klassen
+        distinct() %>%
+        inner_join(types_whh2) %>%
+        mutate(Vegcode = factor(Vegcode, levels =
+                                    arrange(., AantalVeg, Drukprofiel, desc(Typeklasse), desc(Vegcode)) %>%
+                                    .$Vegcode %>%
+                                    unique),
+               Druk = factor(Druk, levels =
+                                 count(., Druk) %>%
+                                 arrange(-n) %>%
+                                 .$Druk)
+        ) %>%
+        select(-AantalVeg, -Drukprofiel) %>% # want deze verschilden tussen whh-klassen
+        distinct
+
+    aantaldruk <- length(unique(basispop_compart_types_drukprofiel$Druk))
+    aantalvegcode <- length(unique(basispop_compart_types_drukprofiel$Vegcode))
+
+    vegcodegroepering <-
+        basispop_compart_types_drukprofiel %>%
+        distinct(Typeklasse, Vegcode, Waterhuishoudingsklasse_2) %>%
+        arrange(desc(Vegcode))
+
+    myplot <-
+        basispop_compart_types_drukprofiel %>%
+        ggplot(aes(x = Druk, y = Vegcode)) +
+        geom_tile(aes(fill = MaxMilieudrukkengroep), colour = "grey30") +
+        geom_text(aes(label = Categorie), size = 2.5, colour = "purple2") +
+
+        scale_fill_manual(values = olympic_colours,
+                          labels = olympic_labels,
+                          guide = guide_legend(title = "Rang milieudruk\nin beschouwd\ncompartimentmeetnet")) +
+
+        scale_x_discrete(position = "top") +
+
+        geom_tile(data = expand.grid(X = 1:aantaldruk, Y = 1:aantalvegcode),
+                  aes(x = X, y = Y),
+                  colour = "grey60",alpha = 0) +
+
+        annotate(    # truukje om ruimte aan zijkant te maken
+            geom = "point",
+            x = -2, y = aantalvegcode, alpha = 0
+        ) +
+
+        geom_point(data = vegcodegroepering,
+                   aes(x = -1.5, y = Vegcode, alpha = Waterhuishoudingsklasse_2),
+                   size = 2,
+                   colour = "black"
+        ) +
+
+        geom_point(data = vegcodegroepering,
+                   aes(x = -0.5, y = Vegcode, colour = Typeklasse),
+                   size = 2
+        ) +
+
+        scale_colour_manual(values = typeklasseschaal) +
+
+        scale_alpha_manual(values = whh2schaal,
+                           labels = whh2labels) +
+
+        theme(
+            axis.text.x = element_text(angle = 90, hjust = 0),
+            axis.ticks.y = element_blank(),
+            panel.background = element_blank()
+        ) +
+
+        labs(title = str_c(df$Comp_meetnet[1] %>% toupper,
+                           "\nNIVEAU GEWENSTE UITSPRAKEN (vragen)",
+                           "\n(doelpopulatie x milieudruk)"),
+             y = "Type")
+
+    return(myplot)
+}
+
 
