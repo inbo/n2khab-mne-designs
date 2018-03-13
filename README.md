@@ -16,13 +16,16 @@ Enkele aparte documenten gaan in meer detail in op bepaalde deelaspecten.
 
 ### Indeling repository
 
-- Onder de map `source` gebeurt het schrijfwerk. Er zijn twee subfolders:
+- Onder de map `source` gebeurt het schrijfwerk. Er zijn drie subfolders:
     - `site`: bevat de setup om een kleine, bookdown-gebaseerde website te maken met R Markdown. **Belangrijk is dat dit per topic _zeer kort_ is en licht verteerbaar**. Dus ingaan op de essenties en de principes.
     - `detailed`: bevat de R Markdown documenten die meer detail geven over specifieke topics. De bestanden zijn te organiseren in subfolders volgens topic.
+    - `scripts`: bevat R-scripts, die bv. gebruikt kunnen worden door R-code in R Markdown bestanden.
+- Onder de map `data` zijn tekstbestanden met data te vinden, die kunnen worden ingelezen door R-code.
 - Onder de map `background` is 'hulp'-materiaal te vinden dat kan dienen als input voor concrete Rmd-bestanden.
+Er is ook uitleg te vinden hoe je met R Markdown en Bookdown kunt werken.
 - Wie de Rmd bestanden op zijn PC compileert naar een uitvoerformaat (html, pdf), zal deze bestanden zien verschijnen onder een map `docs`. Deze map is niet opgenomen onder versiebeheer (is uitgesloten door .gitignore). Het ontsluiten van de webpagina's gebeurt in een later stadium.
     - de 'Build' knop in RStudio compileert de **site** onder **`docs/site`**.
-    - de manueel uitvoerbare `bookdown::render_book` functies in de R chunk *functies_om_te_compileren* van de **detaildocumenten** compileren een outputbestand (bv. pdf) onder **`docs/site/files`**. Deze kunnen dan worden aangeroepen (gedownload) vanaf de website. Onder `docs/site/files` kunnen ook andere downloadbare bestanden worden gezet (of met R-code daar weggeschreven), zoals csv-bestanden.
+    - de manueel uitvoerbare `bookdown::render_book` functies in de R chunk *functies_om_te_compileren* van de **detaildocumenten** compileren een outputbestand (bv. pdf) onder **`docs/site/files`**. Deze kunnen dan worden aangeroepen (gedownload) vanaf de website.
 
 
 ### Inhoudelijke onderdelen
@@ -54,6 +57,10 @@ Voor HabNorm wordt er ook gewerkt aan het documenteren van de keuzes. Tevens wor
     - typespecifieke keuzes (desgevallend alleen in de typespecifieke rapporten)
 
 In het algemeen zijn de cursieve onderdelen nog veel breder bruikbaar, namelijk voor (prioritering in) onderzoek en monitoring van het natuurlijk milieu in het algemeen.
+
+### Literatuurreferenties
+
+Literatuurreferenties kunnen in BibTeX-formaat worden toegevoegd in `mnm_keuzes.bib` (tekstbestand) onder de map `source`. Je kunt records in BibTeX-formaat genereren met literatuurbeheersoftware.
 
 
 ### Samenwerken

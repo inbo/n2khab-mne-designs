@@ -18,10 +18,61 @@ Belangrijk om op te merken is dat door toepassing van dit principe, **een aantal
 
 _Voor meer achtergrond bij de afbakening van doelpopulaties verwijzen we naar het [technisch achtergronddocument](https://drive.google.com/uc?export=download&id=0B-DYcTNHFnIXYmpEcXY2RlYzQ3M) van het afwegingskader milieudrukken._
 
-**De basisdoelpopulaties zijn weergegeven in Figuur \@ref(fig:) -- het betreft de gekleurde cellen.**
+**De basisdoelpopulaties zijn weergegeven in Figuur \@ref(fig:basisdoelpop-totaalwhh) -- het betreft de gekleurde cellen.**
 
-** Figuur XXXXXX. Totaalweergave van de basisdoelpopulatie, met sortering van types volgens (unieke) waterhuishoudingsklasse en dan volgens typeklasse, en met alfabetische sortering van milieudrukken **
 
+```{r basisdoelpop-totaalwhh, echo = FALSE, fig.width = 9, fig.height=12, message=FALSE, warning=FALSE, fig.cap = "_Totaalweergave van de basisdoelpopulaties -- het betreft de gekleurde cellen. Types zijn gesorteerd volgens (unieke) waterhuishoudingsklasse en dan volgens typeklasse. Milieudrukken zijn alfabetisch gesorteerd. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)._"}
+types_whh <- read_csv("../../data/08_types_whh.csv")
+types_whh2 <-
+    types_whh %>% 
+    group_by(Vegcode) %>% 
+    mutate(AantLand = n()) %>% 
+    spread(key = Waterhuishouding, value = Waterhuishouding, fill = "") %>% 
+    rename(L1 = "Droog tot vochtig",
+           L2 = "Tijdelijk tot permanent nat",
+           L3 = "Oppervlaktewater") %>% 
+    mutate(Waterhuishoudingsklasse_2 = 
+               ifelse(AantLand == 1,
+                                      str_c(L1, L2, L3),
+                                      str_c(L1, L2, sep = " + ")
+                                      )
+           ) %>% 
+    ungroup %>% 
+    select(Vegcode, Waterhuishoudingsklasse_2) %>% 
+    mutate(Waterhuishoudingsklasse_2 = factor(Waterhuishoudingsklasse_2, levels = 
+                                          .$Waterhuishoudingsklasse_2 %>% 
+                                          unique %>% sort %>% 
+                                          .[c(1, 2, 4, 3)]
+                                          ))
+basisdoelpop <-
+    read_csv("../../data/08_basisdoelpop.csv") %>% 
+    mutate(Typeklasse = factor(Typeklasse, levels = 
+                               .$Typeklasse %>% 
+                               unique),
+           Categorie = factor(Categorie, levels = c("H", "M", "L", "S", "P")))
+
+basisdoelpop_whh2 <- 
+    basisdoelpop %>%
+    inner_join(types_whh2) %>% 
+    mutate(    # sorteren van druk- en vegcode-levels
+        Druk = factor(Druk,
+                  levels = (distinct(., Druk) %>% 
+                                mutate(Druk = as.character(Druk)) %>% 
+                                arrange(Druk) %>% 
+                                .$Druk)
+                  ),
+        Vegcode = factor(Vegcode,
+                  levels = (distinct(., Waterhuishoudingsklasse_2, Typeklasse, Vegcode) %>% 
+                            mutate(Vegcode = as.character(Vegcode)) %>% 
+                            arrange(desc(Waterhuishoudingsklasse_2), desc(Typeklasse), desc(Vegcode)) %>% 
+                            .$Vegcode)
+        )
+    )
+
+basisdoelpop_whh2 %>% 
+    myraster_whh2(str_c("MNM: aanduiding waarover uitspraken gewenst zijn (vragen beantwoorden)",
+                        "\n(i.e. de gekleurde vakjes: doelpopulatie x milieudruk)"))
+```
 
 
 

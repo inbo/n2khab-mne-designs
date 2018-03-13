@@ -13,7 +13,7 @@ _Voor meer achtergrond bij het afwegingskader milieudrukken verwijzen we naar ee
 
 ### Typespecifieke rangschikking van milieudrukken
 
-De rangschikking is weergegeven in Figuur \@ref(fig:milieudruk_rangschikking). Deze bevat de volgende mogelijke scores ('Categorie') voor elk type en elke milieudruk:
+De rangschikking is weergegeven in Figuur \@ref(fig:milieudruk-rangschikking). Deze bevat de volgende mogelijke scores ('Invloedrelatie') voor elk type en elke milieudruk:
 
 - **H**: er is actueel een invloed met een **groot** belang in Vlaanderen, van de milieudruk op het type;
 - **M**: er is actueel een invloed met een **matig** belang in Vlaanderen, van de milieudruk op het type;
@@ -23,17 +23,85 @@ De rangschikking is weergegeven in Figuur \@ref(fig:milieudruk_rangschikking). D
 
 Het **belang** van een invloed hangt samen met zowel de 'gemiddelde' impact op de beïnvloede standplaatsen als het oppervlakte-aandeel van het type in Vlaanderen dat door de milieudruk wordt beïnvloed. Dit is in overeenstemming met de werkwijze in de artikel-17-rapportage. **H, M en L** staan samen voor 'betekenisvolle invloed'.
 
-**XXXXXXX figuur milieudruk_rangschikking. In legende verwijzen naar de lijst milieudrukken en types**
+
+```{r milieudruk-rangschikking, echo=FALSE, fig.width = 9, fig.height=12, message = FALSE, warning = FALSE, fig.cap = "_Inschatting van de actuele invloed van elke milieudruk op elk type, op niveau Vlaanderen. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)._"}
+kruisdruk <- 
+    milieudruk_rangschikking %>% 
+    inner_join(
+        tibble(
+        Categorie = factor(levels(milieudruk_rangschikking$Categorie),levels = levels(milieudruk_rangschikking$Categorie)),
+        CategorieWaarde = c(25,20,5,1,1)
+        )
+    ) %>% 
+    select(Vegcode, Druk, CategorieWaarde) %>% 
+    spread(key = Druk, value = CategorieWaarde, fill = 0)
+
+row.names(kruisdruk) <- kruisdruk$Vegcode
+    
+kruisdruk_CA <- 
+    kruisdruk %>% 
+    select(-Vegcode) %>% 
+    cca
+
+plotdata_basis <- 
+    milieudruk_rangschikking %>% 
+    select(Vegcode,Druk,Categorie,Rang) %>% 
+    mutate(    # sorteren van druk- en vegcode-levels
+        Druk = factor(Druk,
+                  levels = (-scores(kruisdruk_CA)$species[,"CA1"] %>% 
+                                         sort %>% 
+                                         names)),
+        Vegcode = factor(Vegcode,
+                  levels = (scores(kruisdruk_CA)$sites[,"CA1"] %>% 
+                                         sort %>% 
+                                         names))
+    )
+
+plotdata_basis %>% myraster("Typespecifieke rangschikking van milieudrukken")
+```
 
 
 ### Algemene rangschikking en indeling van milieudrukken
 
 Er is geopteerd voor een rangschikking van milieudrukken **per waterhuishoudingsklasse**. Op deze manier wordt een meer gelijkmatige vertegenwoordiging bekomen van de waterhuishoudingsklassen in de algemene rangschikking. De koppeling van milieudrukken met waterhuishoudingsklassen volgt uit de koppeling tussen types en waterhuishoudingsklassen in het systeemschema. Een type kan tot meer dan één waterhuishoudingsklasse behoren.
 
-De rangschikking van een milieudruk in één waterhuishoudingsklasse is gebaseerd op de (gewogen) relatieve frequentie van types die een hoge of matige (H of M) invloed ondervinden van die milieudruk. Deze uitkomst is als getal (fractie tussen 0 en 1) weergegeven in Figuur \@ref(fig:druk_whh), en definieert de rangschikking van milieudrukken per waterhuishoudingsklasse.
+De rangschikking van een milieudruk in één waterhuishoudingsklasse is gebaseerd op de (gewogen) relatieve frequentie van types die een hoge of matige (H of M) invloed ondervinden van die milieudruk. Deze uitkomst is als getal (fractie tussen 0 en 1) weergegeven in Figuur \@ref(fig:druk-whh), en definieert de rangschikking van milieudrukken per waterhuishoudingsklasse.
 
-**XXXXXXX figuur druk_whh. In legende verwijzen naar de lijst milieudrukken en types**
+```{r druk-whh, echo=FALSE, fig.width = 3.5, fig.height=7, out.width="40%", message = FALSE, warning = FALSE, fig.cap = "_Rangschikking van milieudrukken per waterhuishoudingsklasse. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)._"}
+whhlevs <- c("Droog tot vochtig",
+             "Tijdelijk tot permanent nat",
+             "Oppervlaktewater")
+drukgroep_whh <- 
+    read_csv("../../data/08_drukgroep_whh.csv") %>% 
+    mutate(Waterhuishouding = factor(Waterhuishouding, 
+                                     levels = whhlevs))
+gew_freq_cats_per_druk_whh <- 
+    read_csv("../../data/08_gew_freq_cats_per_druk_whh.csv") %>% 
+    mutate(Waterhuishouding = factor(Waterhuishouding, 
+                                     levels = whhlevs))
+nieuwelevs <- 
+    drukgroep_whh$Druk %>% 
+    unique %>% 
+    sort(decreasing = TRUE)
+drukgroep_whh_plot <- 
+    function(df){
+        df %>% 
+            ggplot(aes(x = Waterhuishouding, y = Druk)) +
+            geom_tile(aes(fill = Milieudrukkengroep), colour = "grey30") +
+            scale_fill_manual(values = olympic_colours) + 
+            scale_x_discrete(position = "top") +
+            theme(panel.background = element_blank(),
+                  axis.text.x = element_text(angle = 60, hjust = 0)
+                ) +
+            labs(y = "Milieudruk")
+    }
+drukgroep_whh %>% 
+    inner_join(gew_freq_cats_per_druk_whh) %>% 
+    mutate(Druk = factor(Druk, levels = nieuwelevs)) %>% 
+    drukgroep_whh_plot +
+    geom_text(aes(label = round(WRelFreq_HM, 2)), colour = "purple4", size = 3) 
+```
 
-Op basis van de resultaten zijn de milieudrukken toegewezen aan een **groep a, b, c of d**, voor elke waterhuishoudingsklasse. In Figuur \@ref(fig:druk_whh) is dit te zien als de kleur van de cellen. Daarbij bevat groep a de milieudrukken met het hoogste belang en groep d deze met het laagste belang.
+Op basis van de resultaten zijn de milieudrukken toegewezen aan een **groep a, b, c of d**, voor elke waterhuishoudingsklasse. In Figuur \@ref(fig:druk-whh) is dit te zien als de kleur van de cellen. Daarbij bevat groep a de milieudrukken met het hoogste belang en groep d deze met het laagste belang.
 
 
