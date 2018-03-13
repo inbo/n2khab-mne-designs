@@ -15,13 +15,9 @@ De selectie van primaire standplaatsfactoren is gebeurd **op basis van het afweg
 In de MNM kijken we specifiek naar **P-proxies** [^P-proxies], zeker in een eerste periode. Die keuze is gemaakt omwille van het belang van milieudruk-informatie voor het brongerichte maatregelenbeleid, en omdat informatie over milieudrukken belangrijker is bij de bepaling van de staat van instandhouding. Voor meer informatie, zie het basisrapport [@vanderhaeghe_vraagstelling_2017]. Een **verdere subselectie** is gebeurd door:
 
 - alleen nog die P-proxies te weerhouden die we als meest typische **vertegenwoordiger** zien van de soms ruimere set van nog beschikbare P-proxies;
-- per waterhuishoudingsklasse alleen P-proxies te selecteren uit het **meest rechtstreeks door de milieudruk beïnvloede milieucompartiment**.
+- per waterhuishoudingsklasse alleen P-proxies te selecteren uit het **meest rechtstreeks door de milieudruk beïnvloede milieucompartiment** (maximale P-nabijheid).
 
-In Figuur \@ref() zijn de geselecteerde primaire standplaatsfactoren per milieudruk en milieucompartiment weergegeven.
-
-**Figuur XXXXXXXXX mildr x stplf, per comp. onder elkaar te schikken.**
-
-
+In Figuur \@ref(fig:scenvgl) is het effect van deze subselecties op het aantal primaire standplaatsfactoren weergegeven. In Figuur \@ref(fig:stpl-whh) zijn de geselecteerde primaire standplaatsfactoren per milieudruk en milieucompartiment weergegeven.
 
 
 [^milieuvariabele]: Voor monitoring wordt elke (primaire en aanvullende) standplaatsfactor concreet gekoppeld aan de keuze van een (primaire resp. aanvullende) *milieuvariabele*, die zo gedefinieerd zal moeten zijn dat ze alle aspecten omvat van de staalname, bewaring, meetmethode, aggregatiemethode e.d. (alles wat van invloed is op de numerieke waarde). De keuze van een milieuvariabele voor een standplaatsfactor hangt samen met meerdere factoren en gebeurt voornamelijk door experten van het milieucompartiment in kwestie.
@@ -30,6 +26,66 @@ In Figuur \@ref() zijn de geselecteerde primaire standplaatsfactoren per milieud
 
 
 
+```{r scenvgl, fig.width=12, fig.height=6, message=FALSE, warning=FALSE, echo=FALSE, fig.cap="_Het aantal primaire standplaatsfactoren dat wordt weerhouden per milieudruk, milieucompartiment en waterhuishoudingsklasse. Links: in het scenario zonder subselectie van P-proxies; rechts: in het verkozen scenario. Voor de verklaring van milieudrukken, zie paragraaf \\@ref(reflijsten)._"}
+basispop_pproxy <- 
+    read_csv("../../data/10_basispop_pproxy.csv") %>% 
+    mutate(Druk = factor(Druk, 
+                         levels = read.csv("../../data/10_basispop_pproxy_druklevels.csv")$x),
+           Compartiment = factor(Compartiment, 
+                         levels = read.csv("../../data/10_basispop_pproxy_complevels.csv")$x),
+           Standplaatsfactor = factor(Standplaatsfactor, 
+                         levels = read.csv("../../data/10_basispop_pproxy_stplflevels.csv")$x),
+           Standplaatsfactor_Comp = factor(Standplaatsfactor_Comp, 
+                         levels = read.csv("../../data/10_basispop_pproxy_stplfcomplevels.csv")$x),
+           Waterhuishouding = factor(Waterhuishouding, levels = whhlevs),
+           Pnabijheid = factor(Pnabijheid, 
+                               levels = c("Compartiment\nmet maximale\nP-nabijheid", "Compartiment\nmet lagere\nP-nabijheid")),
+           Standplaatsfactor = recode(Standplaatsfactor,
+                                      "waterpeil (ook waterregime bv. GxG, Pxx duurlijn, amplitude,?)" = 
+                                          "waterpeil (incl. waterregime)",
+                                      "polluenten (milieuvreemde): zware metalen & organische" = 
+                                          "polluenten",
+                                      "fysische stabiliteit van de bodem" = 
+                                          "bodemmobilisatie",
+                                      "organische polluenten (en pesticiden) + zware metalen" = 
+                                          "polluenten")
+           )
 
+plot1 <- 
+    basispop_pproxy %>% 
+    distinct(Druk, Waterhuishouding, Milieudrukkengroep, Compartiment, Pnabijheid, Standplaatsfactor) %>% 
+    count(Druk, Waterhuishouding, Milieudrukkengroep, Compartiment, Pnabijheid) %>% 
+    rename(AantalStplf = n) %>% 
+    compplot2 +
+        labs(title = "Scenario 0")
 
+basispop_pproxy_S2 <-
+    basispop_pproxy %>% 
+    filter(Vertegenwoordiger  == "Ja" | is.na(Vertegenwoordiger)) %>% 
+    group_by(Druk, Waterhuishouding, Milieudrukkengroep) %>% 
+    filter((Pnabijheid %>% as.numeric == min(Pnabijheid %>% as.numeric)) |
+               is.na(Pnabijheid) | 
+               (Druk == "Druk12" & Waterhuishouding == "Oppervlaktewater")
+               ) %>% 
+    ungroup %>% 
+    filter(Druk != "Druk103" |
+               Compartiment != "Grondwater")
+
+plot2 <- 
+    basispop_pproxy_S2 %>% 
+    distinct(Druk, Waterhuishouding, Milieudrukkengroep, Compartiment, Pnabijheid, Standplaatsfactor) %>% 
+    count(Druk, Waterhuishouding, Milieudrukkengroep, Compartiment, Pnabijheid) %>% 
+    rename(AantalStplf = n) %>% 
+    compplot2 +
+        labs(title = "Verkozen scenario")
+
+gridExtra::grid.arrange(plot1, plot2, nrow = 1)
+```
+
+```{r stpl-whh, fig.width=9, fig.height=10, message=FALSE, warning=FALSE, echo=FALSE, fig.cap="_Geselecteerde standplaatsfactoren per milieucompartiment. D, N en O vertegenwoordigen de drie waterhuishoudingsklassen en duiden aan welke types van de basisdoelpopulatie in aanmerking komen voor de beschouwde combinatie milieucompartiment x milieudruk. Voor de verklaring van milieudrukken, zie paragraaf \\@ref(reflijsten)._"}
+basispop_pproxy_S2 %>% 
+    stpl_plot_whh +
+        facet_wrap(~Compartiment, ncol = 2, scales = "free") +
+        labs(title = "Verkozen scenario")
+```
 
