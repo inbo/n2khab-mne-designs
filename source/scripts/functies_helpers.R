@@ -211,7 +211,7 @@ compplot2 <- function(df) {
                   colour = "purple4", size = 4, fontface = "bold") +
         # geom_point(aes(alpha = Pnabijheid),
         #            size = 2) +
-        scale_alpha_manual(values = c(1, 0.3), breaks = c(
+        scale_alpha_manual(values = c(1, 0.45), breaks = c(
             "Compartiment\nmet maximale\nP-nabijheid",
             "Compartiment\nmet lagere\nP-nabijheid")) +
         scale_fill_manual(values = olympic_colours) +
