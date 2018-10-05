@@ -98,14 +98,15 @@ GRTS als basis voor een goede ruimtelijke spreiding en voor maximaliseren van de
 Te overwegen opties:
 
 - GRTS (equal probability): beste ruimtelijke dekking, grootste eenvoud en flexibiliteit, maar vermoedelijk minder kosteneffectief
-- two-stage GRTS met per meetnet geoptimaliseerde grootte van de PSU's. De PSU's zijn dan hogere-orde rastereenheden van het GRTS-grid.
+- two-stage GRTS met per meetnet geoptimaliseerde grootte van de PSU's (primary sampling units). De PSU's zijn dan hogere-orde rastereenheden van het GRTS-grid.
     - voordeel ten opzichte van ruimtelijk variërende geografische eenheden (PSU's zoals gemeenten, fysische systeemeenheden, ecodistricten, ...) op maat van elk meetnet, is de grotere consistentie en overlap tussen de meetnetten, de gelijke ruimtelijke dekking per PSU en de eenvoud om te up- of downsizen (ontwerpscenario's) volgens de noden.
     
-Specificaties GRTS-procedure:
+Specificaties GRTS-procedure (los van de two-stage optie in X-Y):
 
 - GRTS balanceren volgens 3 kenmerken: X-coördinaat, Y-coördinaat, lijst van mogelijke types (te matchen met habitatkaart).
     - De reden om ook volgens type te balanceren is om informatie te bevatten voor elk type. Dit is robuust t.a.v. variërende keuzes over langere tijd, m.b.t. het belang van elk type.
-    - De factor 'type' bevat ook 'geen type' als level en wordt voor GRTS getransformeerd in een continue numerieke variabele.
+    - De factor 'type' bevat ook 'geen type' als level (die buiten de doelpopulatie zal vallen, maar in Vlaanderen aanwezig is)
+    - De factor wordt voor GRTS getransformeerd in een continue numerieke variabele.
     - Zal dus leiden tot sampling in een 3D-volume (X:Y:type).
     - De doelpopulatie (steekproefkader) van een concreet meetnet (bv. verdroging via grondwater) is een subset van dit volume: combinaties van Vlaamse X, Vlaamse Y en de voorkomende types (beperkt tot deze die we voor het meetnet viseren). Eén XY-coördinaat kan meerdere types bevatten.
 - om de koppeling met het meetnet biotische habitatkwaliteit te maximaliseren, wordt:
@@ -174,10 +175,13 @@ Hieronder: verschillende mogelijke benaderingen voor steekproefgrootteberekening
 
 De analyses kunnen best gebeuren per habitatgroep. Habitatgroepen hebben een verschillend aantal types. Na keuze van de voor steekproefgrootteberekening 'bepalende' habitatgroep, is de *gemiddelde* steekproefgrootte per type gekend. Dit kan gebruikt worden voor de bepaling van de overall steekproefgrootte, in de veronderstelling dat de steekproef gebalanceerd wordt volgens types (al dan niet achteraf herwogen, zie inferentie).
 
-De analyses gebeuren, met uitzondering van het eerste scenario, door de inferentie te doen zoals beschreven onder het stuk [inferentie](#inferentie), met volgende vereenvoudigingen:
+De analyses gebeuren, met uitzondering van de eerste benadering, door de inferentie te doen zoals beschreven onder het stuk [inferentie](#inferentie), met volgende vereenvoudigingen:
 
 - geen herweging van types volgens beleidsbelang
 - het effect van de regression estimator wordt vervangen door een design-effect (in ruimte en/of tijd)
+
+De benaderingen worden tevens vergeleken op basis van kostprijsberekening.
+
 
 ## Louter kostengebaseerd
 
@@ -231,7 +235,7 @@ Betreft het doen van uitspraken over de doelpopulatie op basis van een steekproe
 
 De schattingen voor groepen van types ('supertype') kunnen:
 
-- *type-gebalanceerd* gebeuren (equal probabilities over types hanteren, cf. spatiale steekproefopzet)
+- *type-gebalanceerd* gebeuren (equal probabilities over types hanteren, cf. spatiale steekproefopzet). Dit zal automatisch het geval zijn bij een eenvoudige inferentieprocedure met equal probabilities, of bij multi-stage inferentie met equal probabilities binnen elke PSU.
 - ofwel met post-hoc (adjusted) sampling weights werken om de inferentie te doen voor een op welbepaalde manier *ongelijk samengesteld* supertype (cf. de rangschikking van types volgens beleidsbelang). Door gewichten post-hoc aan te passen, en niet a priori (via stratificatie in design) vermijden we inflexibiliteit t.a.v. wijzigingen in het steekproefkader en in de keuzes omtrent de toe te passen wegingen.
 
 Voor zowel toestand als trend zijn schattingen mogelijk voor verschillende subpopulaties (type-gebalanceerd of -ongebalanceerd):
@@ -251,16 +255,9 @@ De inferenties voor feitelijke types zullen slechts dezelfde precisie halen als 
 
 De design-based schatters betreffen zoveel mogelijk regression (of ratio) estimators, zodat de juistheid en precisie gevoelig verhogen. Bemerk dat dit in de ontwerpoefening voorlopig alleen als een design-effect wordt meegenomen. Bij revisies van de meetnetten kan dit meer concreet meespelen in steekproefgroottebepaling.
 
-De **modelvorm** van het verband tussen de auxiliary component (kan een constructie zijn met meerdere covariaten in ruimte en tijd) en de responsvariabeleis zodanig dat de best mogelijke correlatie (spatiaal en / of temporeel) wordt bekomen met de responsvariabele. Behalve de aangewezen covariaten dus ook spatiale en temporele dependency inbouwen.
+De **modelvorm** van het verband tussen de auxiliary component (kan een constructie zijn met meerdere covariaten in ruimte en tijd) en de responsvariabeleis zodanig kiezen dat de best mogelijke correlatie (spatiaal en / of temporeel) wordt bekomen met de responsvariabele. Behalve de aangewezen covariaten dus ook spatiale en temporele dependency inbouwen.
 
 Een regression estimator bevat minstens twee *pi-estimators* (design-based: de respons + één per covariaat van de auxiliary) en minstens één *gekende parameter* van de (sub)doelpopulatie (één per covariaat van de auxiliary). Aangezien de pi-estimators uitgaan van een welbepaalde balans tussen de types (equal of unequal weights), dient ook de parameter berekend te worden door analoge weging van de type-specifieke parameters, die worden berekend op basis van het steekproefkader.
-
-## Finite population correction
-
-Voor alle design-based onderdelen van de inferenties, i.e. de volledige toestandsbepaling (spatiotemporeel) en de spatiale component van de trendbepaling, wordt er rekening gehouden met de "finite population correction". De variantieschatter van elke (regression) estimator wordt daartoe vermenigvuldigd met $(1- n/N)$ waarbij:
-
-- $N$ staat voor het totale aantal units van de betreffende (sub)populatie in het steekproefkader (zonder weging van types, gewoon reëel totaal voor types samen)
-- $n$ staat voor het aantal sample units
 
 ## Werkwijze van inferentie
 
@@ -274,6 +271,13 @@ Trend:
 
 - Iets wat altijd werkt: spatiaal aggregeren en daarna toepassen in een model om de temporele trend te analyseren. Want de designs zijn niet static! Het model moet rekening houden met de autocorrelatie. Advies in @de_gruijter_sampling_2006: weighted least squares regression of spatial means, with weights inversely proportional to variances of spatial means.
 - Alternatief is eerst volledig model-based werken (spatiaal en temporeel), op basis hiervan de sample-unit-specifieke trend voorspellen (voor alle sample units), en vervolgens spatiaal een design-based inferentie doen (volgens subpopulaties enz.). Dit is wellicht krachtiger (lokaal variërende trend is toegelaten), en het doet geen geweld aan de design-based ruimtelijke inferentie.
+
+## Finite population correction
+
+Voor alle design-based onderdelen van de inferenties, i.e. de volledige toestandsbepaling (spatiotemporeel) en de spatiale component van de trendbepaling, wordt er rekening gehouden met de "finite population correction". De variantieschatter van elke (regression) estimator wordt daartoe vermenigvuldigd met $(1- n/N)$ waarbij:
+
+- $N$ staat voor het totale aantal units van de betreffende (sub)populatie in het steekproefkader (zonder weging van types, gewoon reëel totaal voor types samen)
+- $n$ staat voor het aantal sample units
 
 
 
