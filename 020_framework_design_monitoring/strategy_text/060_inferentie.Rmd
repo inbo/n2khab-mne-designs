@@ -7,7 +7,7 @@ Betreft het doen van uitspraken over de doelpopulatie op basis van een steekproe
 De schattingen voor typegroepen gebeuren:
 
 - in het geval van één eenvoudig totaalmeetnet door subpopulatieschatting via poststratificatie
-- in het geval van typespecifieke meetnetten (met lage precisie) met een samengestelde (afgeleide) estimator: (al dan niet gelijk gewogen) gemiddelde van de types
+- in het geval van strata (met lage precisie) volgens type: met een samengestelde (afgeleide) estimator: (al dan niet gelijk gewogen) gemiddelde van de types
 
 Voor zowel toestand als trend zijn schattingen mogelijk voor verschillende subpopulaties. Alnaargelang de design gebeurt alles door subpopulatieschatting via poststratificatie of gebeuren berekeningen post-hoc met een samengestelde estimator:
 
@@ -17,13 +17,15 @@ Voor zowel toestand als trend zijn schattingen mogelijk voor verschillende subpo
 - voor de typegroepen, binnen het SBZ-H-netwerk
 - voor de feitelijke types in Vlaanderen
 - voor de feitelijke types, binnen het SBZ-H-netwerk
+- voor andere mogelijke groeperingen van types, in Vlaanderen
+- voor andere mogelijke groeperingen van types,, binnen het SBZ-H-netwerk
 
 Bij subpopulatieschatting via poststratificatie conditioneren we de grootte van de sample weights zodanig dat het geschatte aantal units van de subpopulatie gelijk is aan het werkelijke aantal units van de subpopulatie in het steekproefkader. Zie @overton_desirable_1996.
 
 
 ## Regression estimators
 
-De design-based schatters betreffen zoveel mogelijk regression (of ratio) estimators, zodat de juistheid en precisie gevoelig verhogen. Bemerk dat dit in de ontwerpoefening voorlopig alleen als een design-effect wordt meegenomen. Bij revisies van de meetnetten kan dit meer concreet meespelen in steekproefgroottebepaling.
+De design-based schatters betreffen zoveel mogelijk regression (of ratio) estimators, zodat de juistheid en precisie verhogen. Bemerk dat dit in de ontwerpoefening voorlopig alleen als een design-effect wordt meegenomen, of helemaal niet (conservatief). Bij revisies van de meetnetten kan dit meer concreet meespelen in steekproefgroottebepaling.
 
 De **modelvorm** van het verband tussen de auxiliary component (kan een constructie zijn met meerdere covariaten in ruimte en tijd) en de responsvariabele zodanig kiezen dat de best mogelijke correlatie (spatiaal en / of temporeel) wordt bekomen met de responsvariabele. Behalve de aangewezen covariaten (die voor de gehele doelpopulatie gekend moeten zijn!) dus ook spatiale en temporele dependency inbouwen. Het model kan voor meerdere of alle types samen worden opgebouwd, desgevallend gebruik makend van een covariaat type of typegroep. Zolang de predicties maar redelijk zijn.
 
@@ -33,11 +35,11 @@ Een regression estimator bevat minstens twee *pi-estimators* (design-based: de r
 
 Praktisch: zoveel mogelijk terugvallen op R-packages zoals het `survey` package, `spsurvey` e.d. NB. voor de SE-schattingen van kwantielen worden daarbij (intern) typisch resampling procedures zoals bootstrapping toegepast.
 
-Toestand + trend spatiaal: steeds naar typegroepen toe werken, hetzij met een samengestelde estimator op basis van type-meetnetten, hetzij via subpopulation estimation (via poststratificatie) op basis van één totaalmeetnet.
+Toestand + trend spatiaal: steeds naar typegroepen toe werken, hetzij met een samengestelde estimator op basis van type-strata, hetzij via subpopulation estimation (via poststratificatie) op basis van één totaalmeetnet.
 
 Toestand:
 
-Afhankelijk van de concrete steekproefstrategie in een meetnet, de overeenkomstige formules toepassen. Typisch eerst spatiaal aggregeren en daarna temporeel, vermits het spatial sampling pattern verandert in de tijd.
+Afhankelijk van de concrete steekproefstrategie in een meetnet, de overeenkomstige formules toepassen. Typisch eerst spatiaal aggregeren en daarna temporeel, vermits het spatial sampling pattern verandert in de tijd. Meer in het algemeen de correcte estimator gebruiken in overeenstemming met de design.
 
 Indien er repeated measurements voorkomen binnen de periode waarover een spatiotemporele aggregatie gebeurt (units die meerdere keren zijn bemeten), zoals in rotational en split panel designs, kan de spatiotemporele inferentie beter in één beweging gedaan worden waarbij repeated measurements worden downweighted in de analyse (zie @lumley_complex_2011 par. 3.4).
 
@@ -45,8 +47,8 @@ Indien er repeated measurements voorkomen binnen de periode waarover een spatiot
 
 Trend:
 
-- Iets wat altijd werkt: spatiaal aggregeren en daarna toepassen in een model om de temporele trend te analyseren. Want de designs zijn niet static! Het model moet rekening houden met de autocorrelatie. Advies in @de_gruijter_sampling_2006: weighted least squares regression of spatial means, with weights inversely proportional to variances of spatial means.
-- Alternatief is eerst volledig model-based werken (spatiaal en temporeel), op basis hiervan de sample-unit-specifieke trend voorspellen (voor alle sample units), en vervolgens spatiaal een design-based inferentie doen (volgens subpopulaties enz.). Dit is wellicht krachtiger (lokaal variërende trend is toegelaten), en het doet geen geweld aan de design-based ruimtelijke inferentie.
+- Iets wat altijd werkt: spatiaal aggregeren en daarna toepassen in een model om de temporele trend te analyseren. In het bijzonder bij non-static designs. Het model moet rekening houden met de autocorrelatie. Advies in @de_gruijter_sampling_2006: weighted least squares regression of spatial means, with weights inversely proportional to variances of spatial means.
+- Alternatief is eerst volledig model-based werken (spatiaal en temporeel), op basis hiervan de locatiespecifieke trend voorspellen (voor alle sample units afzonderlijk), en vervolgens spatiaal een design-based inferentie doen (volgens subpopulaties enz.). Dit is wellicht krachtiger (lokaal variërende trend is toegelaten), en het doet geen geweld aan de design-based ruimtelijke inferentie.
 - Nog een alternatief is om de locatiespecifieke trend op basis van niet-complete tijdsreeksen te corrigeren op basis van het regressieverband tussen 'complete trend' en 'niet-complete trend' voor een panel met complete tijdsreeksen, als dat er is (bv. een pure panel in een split panel design). Zie @stevens_spatially_1999 p. 426.
 
 ## Finite population correction
