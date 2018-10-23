@@ -91,6 +91,29 @@ toestand <-
         Locatie = 1:200
     ) %>% 
     as.tibble()
+```
+
+```{r}
+toestand %>% 
+    ggplot(aes(x = Maand, y = Locatie)) + 
+    geom_tile(data = toestand, fill = "lightgreen") +
+    scale_x_continuous(breaks = seq(1,61,12)) +
+    labs(title = "Toestandsmonitoring 6 jaar: temporele doelpopulatie 1") +
+    theme(panel.background = element_blank())
+```
+
+```{r}
+toestand %>% 
+    ggplot(aes(x = Maand, y = Locatie)) + 
+    geom_tile(data = toestand %>% filter((Maand %% 12) %in% 4:7),
+                                        fill = "lightgreen") +
+    scale_x_continuous(breaks = seq(1,61,12)) +
+    labs(title = "Toestandsmonitoring 6 jaar: temporele doelpopulatie 2") +
+    theme(panel.background = element_blank())
+```
+
+
+```{r}
 toestand %>% 
     bind_cols(
         Bemonster = runif(200*72) > 0.98
@@ -100,10 +123,10 @@ toestand %>%
     ggplot(aes(x = Maand, y = Locatie)) + 
     geom_tile(data = toestand, fill = "lightgreen") +
     geom_tile(data = toestand %>% filter((Maand %% 12) %in% 4:7),
-                                        fill = "violet",
-                                         alpha = 0.5) +
+                                        fill = "darkgreen",
+                                         alpha = 0.2) +
         geom_point(size = 0.5) +
-    scale_x_continuous(breaks = c(1,13,25,37,49,61)) +
+    scale_x_continuous(breaks = seq(1,61,12)) +
     labs(title = "Toestandsmonitoring 6 jaar") +
     theme(panel.background = element_blank())
 ```
@@ -147,14 +170,14 @@ toestand %>%
         - afhankelijk van milieuvariabele
 
 ```{r}
-toestand <- 
+trendpop <- 
     expand.grid(
         Maand = 1:144,
         Locatie = 1:200
     ) %>% 
     as.tibble()
 steekproefdata <- 
-    toestand %>% 
+    trendpop %>% 
     arrange(Maand %/% 72, Maand, Locatie) %>% 
     bind_cols(
         Bemonster = rep(runif(200*72) > 0.99, 2),
@@ -165,8 +188,8 @@ steekproefdata <-
            Bemonster)
 steekproefdata %>% 
     ggplot(aes(x = Maand, y = Locatie)) + 
-    geom_tile(data = toestand, fill = "lightgreen") +
-    geom_tile(data = toestand %>% filter((Maand %% 12) %in% 4:7),
+    geom_tile(data = trendpop, fill = "lightgreen") +
+    geom_tile(data = trendpop %>% filter((Maand %% 12) %in% 4:7),
                                         fill = "violet",
                                          alpha = 0.5) +
     geom_point(aes(colour = Milieuvariabele),
@@ -232,7 +255,8 @@ SEdata %>%
                colour = Aantal_types,
                group = Aantal_types)) +
         geom_line() + 
-        scale_colour_gradient(low = "blue", high = "darkred") +
+        scale_colour_gradient(low = "blue", high = "darkred",
+                              guide = guide_colourbar(title = "Aantal types\nper groep")) +
         labs(title = "Assumptie: schatting is met dezelfde precisie voor elk type",
              x = "Standaardfout (SE) van parameterschatting per type",
              y = "SE parameterschatting per typeGROEP")
@@ -245,17 +269,19 @@ SEdata %>%
                SE_typegroepparameter / SE_typeparameter) %>% 
     ggplot(aes(x = Aantal_types,
                y = Ratio_groepSE_typeSE)) +
-    geom_line()
+    geom_line() +
+    labs(x = "Aantal types per groep",
+         y = "SE_groep / SE_type")
 ```
 
 \begin{center}
 
-Verband bij gelijke precisie van de typeschatters:
+Verband bij gelijke precisie van de typeschatters en gelijke weging van types:
 
 
 $$SE_{groep} = \frac{SE_{type}}  {\sqrt k}$$
 
-met $k$ het aantal types
+met $k$ het aantal types in de groep
 
 \end{center}
 
