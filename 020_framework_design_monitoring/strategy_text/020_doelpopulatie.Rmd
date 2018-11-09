@@ -15,7 +15,57 @@ Temporeel:
 
 - Voor toestandsbeschrijving standaard uitgaan van 6 jaar. Is de lengte van één natuurbeleidscyclus.
 - Voor trendbeschrijving kijken naar perioden van 12 of 24 jaar (scenario's).
-- In beide gevallen is per meetnet aan te geven welke periode binnen het jaar relevant is, en dus de temporele doelpopulatie af te bakenen.
+- In beide gevallen is per meetnet aan te geven welke periode binnen het jaar relevant is, en dus de temporele doelpopulatie af te bakenen. Dit zal verschillen volgens de milieuvariabele. Cf. figuren.
+
+```{r}
+set.seed(123456)
+toestand <- 
+    expand.grid(
+        Maand = 1:72,
+        Locatie = 1:200
+    ) %>% 
+    as.tibble()
+```
+
+```{r}
+toestand %>% 
+    ggplot(aes(x = Maand, y = Locatie)) + 
+    geom_tile(data = toestand, fill = "lightgreen") +
+    scale_x_continuous(breaks = seq(1,61,12)) +
+    labs(title = "Toestandsmonitoring 6 jaar: temporele doelpopulatie 1") +
+    theme(panel.background = element_blank())
+```
+
+```{r}
+toestand %>% 
+    ggplot(aes(x = Maand, y = Locatie)) + 
+    geom_tile(data = toestand %>% filter((Maand %% 12) %in% 4:7),
+                                        fill = "lightgreen") +
+    scale_x_continuous(breaks = seq(1,61,12)) +
+    labs(title = "Toestandsmonitoring 6 jaar: temporele doelpopulatie 2") +
+    theme(panel.background = element_blank())
+```
+
+
+```{r}
+toestand %>% 
+    bind_cols(
+        Bemonster = runif(200*72) > 0.98
+    ) %>% 
+    filter((Maand %% 12) %in% 4:7,
+           Bemonster) %>% 
+    ggplot(aes(x = Maand, y = Locatie)) + 
+    geom_tile(data = toestand, fill = "lightgreen") +
+    geom_tile(data = toestand %>% filter((Maand %% 12) %in% 4:7),
+                                        fill = "darkgreen",
+                                         alpha = 0.2) +
+        geom_point(size = 0.5) +
+    scale_x_continuous(breaks = seq(1,61,12)) +
+    labs(title = "Toestandsmonitoring 6 jaar") +
+    theme(panel.background = element_blank())
+```
+
+
 
 ## Doelparameters en beoogd type van uitspraken
 

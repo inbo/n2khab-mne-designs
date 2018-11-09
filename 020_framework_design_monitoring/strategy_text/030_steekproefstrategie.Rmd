@@ -19,8 +19,55 @@ Uitgaande van de eerder gestelde principes zijn er maar twee robuuste en relatie
 - stratificeren volgens types, met lage-precisie-uitspraken per stratum (type). Een samengestelde estimator voor de typegroep kan dan post-hoc worden berekend als een (al dan niet gelijk gewogen) gemiddelde van de types. De variantie van deze afgeleide estimator is functie van de typespecifieke varianties. De steekproefgrootte per type heeft op die manier doorwerking in de precisie van uitspraken per typegroep, die de trigger is om de typespecifieke steekproefgroottes te kiezen (evenredig met de typespecifieke standaardafwijking en met finite population correction).
     - dit heeft het voordeel van onafhankelijkheid tussen de verschillende types, en geeft beter zicht op concrete types
     - indien nodig kan een type (ook in een later stadium) intensiever worden gemeten zonder dat dit inferentieprocedures compliceert.
-    - dit laat tevens toe om voor bepaalde types de populatie-eenheden anders in te vullen (bv. plassen)
-    - bemerk dat hoe meer types een typegroep telt, hoe minder nauwkeurig de typespecifieke uitspraak zal zijn en hoe goedkoper de totale opzet. Er wordt immers gestuurd op precisie op niveau van de typegroep.
+    - dit laat tevens toe om voor bepaalde types de populatie-eenheden anders in te vullen, én zonodig om er een andere design toe te passen. Een voorbeeld zijn de plassen en de waterlopen.
+    - bemerk dat hoe meer types een typegroep gemiddeld telt, hoe minder nauwkeurig de typespecifieke uitspraak zal zijn en hoe goedkoper de totale opzet. Er wordt immers gestuurd op precisie op niveau van de typegroep. *Zie figuren en onderstaande indicatieve formule.*
+
+Belangrijk bij een zo breed inzetbare steekproefstrategie is dat de effectiviteit (hoge precisie) bekomen wordt door:
+
+1. de spatiale balancering (spatial design);
+1. een goede temporele spreiding (temporal design & revisit design);
+1. het gebruik van auxiliary information door regression estimators (continue auxiliaries) of poststratificatie (categorische auxiliary) te gebruiken (model-assisted design).
+
+```{r}
+SEdata <- 
+    expand.grid(
+    SE_typeparameter = c(10,50),
+    Aantal_types = 1:30
+) %>% 
+    mutate(SE_typegroepparameter = 
+               sqrt(1 / Aantal_types^2 * SE_typeparameter^2 * Aantal_types))
+SEdata %>% 
+    ggplot(aes(x = SE_typeparameter,
+               y = SE_typegroepparameter,
+               colour = Aantal_types,
+               group = Aantal_types)) +
+        geom_line() + 
+        scale_colour_gradient(low = "blue", high = "darkred",
+                              guide = guide_colourbar(title = "Aantal types\nper groep")) +
+        labs(title = "Assumptie: schatting is met dezelfde precisie voor elk type",
+             x = "Standaardfout (SE) van parameterschatting per type",
+             y = "SE parameterschatting per typeGROEP")
+```
+
+
+```{r}
+SEdata %>% 
+    mutate(Ratio_groepSE_typeSE =
+               SE_typegroepparameter / SE_typeparameter) %>% 
+    ggplot(aes(x = Aantal_types,
+               y = Ratio_groepSE_typeSE)) +
+    geom_line() +
+    labs(x = "Aantal types per groep",
+         y = "SE_groep / SE_type")
+```
+
+
+Verband tussen de standaardfouten van groepsschatter en typeschatter, bij gelijke precisie van de typeschatters en gelijk aandeel van de typeschatters in de groepsschatter:
+
+
+$$SE_{groep} = \frac{SE_{type}}  {\sqrt k}$$
+
+met $k$ het aantal types in de groep
 
 Belangrijk bij een zo breed inzetbare steekproefstrategie is dat de effectiviteit (hoge precisie) bekomen wordt door 1) de spatiale balancering, 2) een goede temporele spreiding (revisit design) en 3) het gebruik van auxiliary information door regression estimators te gebruiken (model-assisted design).
 
