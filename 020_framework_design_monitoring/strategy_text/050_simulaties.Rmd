@@ -58,13 +58,28 @@ Vertrekkend van een reeds bestaande, aselecte steekproef: bootstrap sampling voo
 
 ## Steekproefsimulaties met een goed aan beschikbare data fittend model
 
-Modelvorm: deze beschouwt minstens de kenmerken van de steekproefopzet, bv. jaar, maand, type, evt. typegroep. Het model dient de data redelijkerwijze te fitten, dus ook andere covariaten en dependencies kunnen aangewezen zijn (bodemtype, regio, effectieve neerslag, ...). Om steekproeven te kunnen simuleren, is het nodig dat deze aspecten ruimtelijk aan het steekproefkader gekoppeld zijn.
+Modelvorm: deze beschouwt minstens de kenmerken van de steekproefopzet, bv. jaar, maand, type, evt. typegroep. Het model dient de data redelijkerwijze te fitten, dus ook andere covariaten en dependencies kunnen aangewezen zijn (bodemtype, regio, effectieve neerslag, ...). Om realistische steekproeven te kunnen simuleren, is het wenselijk dat deze aspecten ruimtelijk aan het steekproefkader gekoppeld zijn.
 
-Het gebruik van dit model geldt onder de assumptie dat het model de volledige doelpopulatie goed beschrijft. Om het typeniveau te kunnen beschrijven, zullen diverse types ook in kleinere groepjes moeten worden gelumpt (weliswaar fijner niveau dan typegroepen) om er genoeg data over te hebben voor modellering.
+Het basismodel dat we fitten, is (op observation-level):
 
-De design matrix van het model variëren, door waarden te trekken uit het steekproefkader in overeenstemming met de gekozen scenario-attributen. Er kan tegelijk gesampled worden uit de distributie van de modelparameters (fixed & random), zodat ook rekening wordt gehouden met de onzekerheid op de modelschattingen.
-    
-Voor verschillende trendgroottes voor een typegroep worden 1000 'grote' steekproeven gegenereerd. Een subsample binnen elke steekproef laat dan spatiaal of temporeel kleinere, gesimuleerde steekproeven toe, alsook opsplitsing tussen types.
+`Variabele = type_(subgroep)_fixed + jaar_continuous_fixed (+ maand_continuous_fixed) + temporal dependency + residual error`
+
+Het gebruik van het model geldt onder de assumptie dat het model de volledige spatiotemporele doelpopulatie goed beschrijft. Om het typeniveau te kunnen beschrijven, zullen diverse types ook in kleinere (sub)groepjes moeten worden gelumpt (fijner niveau dan de typegroepen) om er genoeg data over te hebben voor modellering.
+
+Het fixed effect 'maand' wordt minstens toegevoegd indien de scenario's zich onderscheiden in hun temporele design binnen het jaar, of wanneer er in het geval van repeated measurements binnen een jaar geen aggregatie gebeurt van data tot jaarniveau. Dit fixed effect kan daarnaast altijd de realiteitszin van het model verhogen, maar is niet noodzakelijk, indien met jaarlijks geaggregeerde waarden wordt gerekend.
+
+Steekproeven worden **gesimuleerd**, enerzijds door gekozen waarden te kiezen voor fixed factoren in overeenstemming met een scenario (i.h.b. de revisit design) en anderzijds door te samplen uit de distributie van de random modelparameters.
+
+In aanwezigheid van *ruimtegebonden, fixed modelfactoren* (behalve 'type', waarvoor alle niveaus in gelijkaardige mate worden betrokken) worden waarden getrokken uit de distributie van de factor in het steekproefkader, volgens een bi- of multinomiale kansverdeling. De opname in het model veronderstelt een wezenlijke bijdrage in de variatie van de milieuvariabele, wat impliceert dat het een dergelijke modelfactor in aanmerking komt voor verhoging van juistheid en precisie door *poststratificatie* toe te passen bij de inferentie.
+
+De simulaties gebeuren met het *detrended* model, i.e. het model zonder de trend. Zodoende kunnen achteraf trends worden gevarieerd volgens scenario's, door deze trends bij te tellen.
+
+Indien het bovenstaande *continue jaareffect* in het model moeilijk fit aan de data (analoog voor maand):
+
+- een alternatief is het model te fitten met jaar als random factor (en temporal dependency toevoegen) ofwel het effect louter als temporal dependency opnemen ('detrending'). Voor steekproefsimulaties de factor jaar (of temporal dependency) eruit laten en vervangen door een gekende meerjarentrend (met temporal dependency);
+- voor toestandsschattingen kan het model desgewenst nog een stap verder worden vereenvoudigd, door het jaar- (en maand-) effect niet op te nemen in het model, en louter een random factor 'zesjaarperiode' op te nemen die de variatie tussen programmacycli opvangt. Binnen één gesimuleerde steekproef is de getrokken waarde hiervan dan constant te houden. Het nadeel van deze benadering is dat scenario's niet kunnen onderscheiden tussen verschillende temporele en revisit designs.
+
+Er worden 1000 spatiaal en temporeel 'grote' steekproeven gegenereerd, en vervolgens gevarieerd met uiteenlopende trendgroottes. Een subsample binnen elke gesimuleerde steekproef is dan een spatiaal of temporeel kleinere, gesimuleerde steekproef.
 
 Evaluatie van deze gesimuleerde steekproeven gebeurt door de inferentie te doen op niveau van de typegroep en (eventueel) voor het SBZ-H netwerk, zoals voorzien in de monitoring. Zie hoofdstuk \@ref(inferentie).
 
