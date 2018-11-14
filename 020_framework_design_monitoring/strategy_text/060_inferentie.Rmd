@@ -41,13 +41,414 @@ Toestand + trend spatiaal: steeds naar typegroepen toe werken, hetzij met een sa
 
 ### Toestand
 
-Afhankelijk van de concrete steekproefstrategie in een meetnet, de overeenkomstige formules toepassen. Typisch eerst spatiaal aggregeren en daarna temporeel, vermits het spatial sampling pattern verandert in de tijd. Meer in het algemeen de correcte estimator gebruiken in overeenstemming met de design.
+Afhankelijk van de concrete steekproefstrategie in een meetnet, de correcte estimator toepassen. In het voorbeeld hieronder gebeurt spatiotemporele aggregatie in één keer. Een optie is om in twee trappen te aggregeren: eerst spatiaal en daarna temporeel; dit is van belang wanneer sampling weights veranderen binnen de periode waarover de toestand wordt geschat.
 
-Indien er repeated measurements voorkomen binnen de periode waarover een spatiotemporele aggregatie gebeurt (units die meerdere keren zijn bemeten), zoals in rotational en split panel designs, kan de spatiotemporele inferentie beter in één beweging gedaan worden waarbij repeated measurements worden downweighted in de analyse (zie @lumley_complex_2011 par. 3.4).
+Indien er repeated measurements voorkomen binnen de periode waarover een spatiotemporele aggregatie gebeurt (units die meerdere keren zijn bemeten), zoals in rotational en split panel designs, dan moeten repeated measurements worden downweighted in de analyse ten opzichte van eenmalige observaties [zie @lumley_complex_2011 par. 3.4].
 
 <!-- Mogelijks als een multi-stage sample te analyseren (PSU's: jaren). -->
 
-Trend:
+Hier volgt fictief voorbeeld van analyse, voor verder gebruik als referentie in de monitoring (een aantal stappen kunnen generieker worden gemaakt, als functie). Het betreft inferentie één typegroep; het principe kan herhaald worden voor verschillende types.
+
+We construeren eerst een voorbeeldsteekproef voor inferentie over toestand en trend, en voeren daarna de inferentie uit. Dit zijn de kenmerken van de steekproef:
+
+- één groep van vijf types
+- binnen elk type is de design spatiaal ongestructureerd
+- de temporele design is systematisch met een periode van één jaar
+- de revisit design is een split panel [1-0, 1-5], dus bestaande uit een pure panel en een serially alternating pattern met een cyclus van 6 jaar. Het pure panel dient voor verbeterde trendschattingen
+- de steekproef betreft een periode van 12 jaar, dus twee cycli. De toestandsschatting gebeurt voor de eerste cyclus, de inferentie over trend gebeurt over beide cycli samen
+- het meetnet beschouwt twee fictieve milieuvariabelen
+- er is een toenemende trend ingebracht voor Variabele 1 (trendgrootte is type-afhankelijk) en geen voor Variabele 2
+- naast een typespecifieke trend heeft elk type ook een eigen intercept
+- 
+- er is een spatiale factor met 3 levels (dat kan bv. bodemtype zijn) opgenomen waarvan we invloed verwachten op de milieuvariabele. We kennen de ruimtelijke verdeling van de spatiale factor voor de doelpopulatie
+- we onderscheiden ook het domein 'binnen SBZ-H netwerk'. Ook voor het domein is de populatiegrootte per type gekend
+- er is voor de eenvoud uitgegaan van:
+    - een gelijke bemonsteringsinspanning voor de vijf types
+    - een gelijke residuele variantie binnen de vijf types (residueel t.o.v. de trend), die weliswaar verschilt tussen beide variabelen
+    - een gelijke populatieverdeling voor de vijf types tussen binnen (75%) en buiten SBZ
+    - een gelijke populatieverdeling voor de vijf types over de 3 levels van de spatiale factor (10%, 30% resp. 60%).
+
+```{r echo=TRUE, message=FALSE}
+onecycle <- tibble(
+        Panel = c(rep(1, 180), # panel 1
+                      map(2:7, function(x) rep(x, 30)) %>% unlist), # panel 2 tot 7
+        Year = c(map(2013:2018, function(x) rep(x, 30)) %>% unlist, # panel 1
+                 map(2013:2018, function(x) rep(x, 30)) %>% unlist), # panel 2 tot 7
+        Type = c(rep(map(str_c("Type", 1:5), function(x) rep(x, 6)) %>% unlist, 6), # panel 1
+                 rep(map(str_c("Type", 1:5), function(x) rep(x, 6)) %>% unlist, 6)), # panel 2 tot 7 
+        LocationID = c(rep(str_c("Loc", str_pad(1:30, 3, pad = "0")), 6), # panel 1
+                        str_c("Loc", str_pad(31:210, 3, pad = "0"))) # panel 2 tot 7 
+    ) %>% 
+    inner_join(
+        tibble(
+            LocationID = str_c("Loc", str_pad(1:210, 3, pad = "0")),
+            InSBZ = (rbinom(210, 1, 0.75) == 1),
+            SpatialFactor = rmultinom(210, size = 1, prob = c(0.1,0.3,0.6)) %>% 
+                                t %>% 
+                                as_tibble %>% 
+                                mutate(result = V1 + 2 * V2 + 3 * V3) %>% 
+                                pull(result) %>% 
+                                str_c("Spat", .) %>% 
+                                as.factor
+        )
+    ) %>% 
+    mutate(
+        PopSize = ifelse(Type == "Type1", 45000, 
+               ifelse(Type == "Type2", 3000, 
+               ifelse(Type == "Type3", 500, 
+               ifelse(Type == "Type4", 8000, 
+                                       5000
+                      )))),
+        SamplingWeight = PopSize / 42 # elk type kreeg 42 unieke locaties toebedeeld
+    )
+monitoringdata <- 
+    onecycle %>% 
+    mutate(Year = Year + 6) %>% 
+    bind_rows(onecycle, .) %>% # extra 6-jarige cyclus toevoegen
+    mutate(
+        Variable1 = ifelse(Type == "Type1", 75 + 2 * (Year - 2013), 
+                       ifelse(Type == "Type2", 65 + 1.5 * (Year - 2013), 
+                       ifelse(Type == "Type3", 85 + 1.7 * (Year - 2013), 
+                       ifelse(Type == "Type4", 67 + 2.8 * (Year - 2013), 
+                                               81 + 1.2 * (Year - 2013) 
+                              )))),
+        Variable1 = Variable1 + rnorm(720, sd = 10),
+        Variable1 = ifelse(SpatialFactor == "1", Variable1 - 25,
+                       ifelse(SpatialFactor == "2", Variable1, Variable1 + 15)),
+        Variable2 = ifelse(Type == "Type1", 200, 
+                       ifelse(Type == "Type2", 140, 
+                       ifelse(Type == "Type3", 180, 
+                       ifelse(Type == "Type4", 260, 
+                                               220 
+                              )))),
+        Variable2 = Variable2 + rnorm(720, sd = 30),
+        Variable2 = ifelse(SpatialFactor == "1", Variable2 - 100,
+                       ifelse(SpatialFactor == "2", Variable2, Variable2 + 150))
+    )
+```
+
+Enkele voorbeeldgegevens (één observatie per panel x jaar x type x domein (binnen/buiten SBZ)):
+
+```{r}
+monitoringdata %>%
+    group_by(Panel, Year, Type, InSBZ) %>%
+    summarise(LocationID = first(LocationID),
+              SpatialFactor = first(SpatialFactor),
+              Variable1 = first(Variable1),
+              Variable2 = first(Variable2)
+              )
+```
+
+Aantal observaties (locatiebezoeken), gespreid over panels, types en jaren:
+
+```{r}
+monitoringdata %>% 
+    group_by(Panel, Year, Type) %>% 
+    summarise(Count = n()) %>% 
+    ungroup %>% 
+    spread(key = Year, value = Count, fill = "") %>% 
+    kable
+```
+
+Het totaal aantal unieke locaties is `r monitoringdata$LocationID %>% unique %>% length` en het aantal bezochte locaties per jaar is `r monitoringdata %>% distinct(Year, LocationID) %>% count(Year) %>% slice(1) %>% pull(n)`.
+
+Het aantal unieke steekproeflocaties per type:
+
+```{r}
+monitoringdata %>% 
+    distinct(Type, LocationID) %>% 
+    count(Type) %>% 
+    kable
+```
+
+Het aantal unieke steekproeflocaties per type en per panel:
+
+```{r}
+monitoringdata %>% 
+    distinct(Type, Panel, LocationID) %>% 
+    count(Type, Panel) %>% 
+    spread(key = Panel, value = n) %>% 
+    kable
+```
+
+Het aantal bezoeken per type en per panel, voor de eerste cyclus:
+
+```{r}
+monitoringdata %>% 
+    filter(Year < 2019) %>% 
+    count(Panel, Type) %>% 
+    spread(key = Panel, value = n) %>% 
+    kable
+```
+
+
+Het verschil tussen beide bovenstaande tabellen wordt verklaard door de herhaling in het eerste panel: 1/7 van de unieke locaties per type wordt jaarlijks bemonsterd, wat resulteert in evenveel observaties van een éénmalig bezochte locaties als observaties van jaarlijks bezochte locaties.
+
+Het aantal observaties (bezoeken) per type, verdeeld over de jaren van de eerste cyclus:
+
+```{r}
+monitoringdata %>% 
+    filter(Year < 2019) %>% 
+    distinct(Type, LocationID, Year) %>% 
+    count(Type, Year) %>% 
+    spread(key = Year, value = n) %>% 
+    kable
+```
+
+
+Het aantal unieke locaties per type over domein (binnen/buiten SBZ) en de spatiale factor:
+
+```{r}
+monitoringdata %>% 
+    distinct(Type, LocationID, InSBZ, SpatialFactor) %>% 
+    count(Type, InSBZ, SpatialFactor) %>% 
+    spread(key = SpatialFactor, value = n, fill = 0) %>% 
+    kable
+```
+
+De populatiegrootte van de verschillende types is:
+
+```{r}
+monitoringdata %>% 
+    distinct(Type, PopSize) %>% 
+    kable
+```
+
+
+De populatiegrootte is telkens voor precies 75% aanwezig binnen SBZ-H en 25% erbuiten. In de steekproef is dit dus slechts bij benadering het geval.
+
+Hieronder wordt de wijze van inferentie weergegeven per type voor de toestand van de eerste cyclus (spatiotemporeel gemiddelde + kwantielen over zes jaar), via poststratificatie rekening houdend met het effect van de spatiale factor, en rekening houdend met de finite-population correction. Het gebeurt tevens voor de toestand binnen SBZ (subpopulatieschatting waarbij we conditioneren voor de gekende subpopulatiegrootte binnen SBZ).
+
+Een eerste voorbereidende stap is om de sampling weights van elke locatie te delen door het aantal herhalingen dat in de data optreedt, zodat elke locatie evenveel meespeelt.
+
+```{r echo = TRUE, message=FALSE}
+statusdata <-
+    monitoringdata %>% 
+    filter(Year < 2019) %>% 
+    count(LocationID) %>% 
+    rename(TimesRepeated = n) %>% 
+    inner_join(monitoringdata %>% filter(Year < 2019), .) %>% 
+    mutate(SamplingWeight_reweighted = SamplingWeight / TimesRepeated)
+```
+
+
+Inspectie van de verschillende in de dataset optredende sampling weights (van de respectievelijke observaties), volgens type en panel:
+
+```{r}
+statusdata %>% 
+    mutate(Panel_recoded = ifelse(Panel == 1, "Panel 1", 
+                                "Panels 2-7")) %>% 
+    distinct(Panel_recoded, Type, SamplingWeight, TimesRepeated, SamplingWeight_reweighted) %>% 
+    select(Panel_recoded, Type, SamplingWeight, TimesRepeated, SamplingWeight_reweighted) %>% 
+    kable
+```
+
+De individuele observaties van panel 1 krijgen dus elk een veel kleiner gewicht in de toestandsschatting. Op die manier heeft dit panel evenveel belang in de toestandsschatting dan de andere panels. De primaire functie van dit panel is het verbeteren van de inferentie voor trend.
+
+```{r echo=TRUE}
+status_estimates <- function(statusdf) {
+    
+    statusdf %>%
+    split(.$Type) %>%
+    map_dfr(.x = ., .f = function(df){
+        # designobject <- 
+        df %>% 
+        svydesign(id = ~1,
+                  weights = ~SamplingWeight_reweighted,
+                  fpc = ~PopSize,
+                  data = .
+                  ) %>%
+        postStratify(design = .,  # postStratify() is only needed when poststratification is done.
+                                  # For poststratification to be effective
+                                  # rather than destructive, it must be moderately to highly
+                                  # correlated with the target variable, so it
+                                  # is advisable to also compare without
+                                  # poststratification.
+                     strata = ~SpatialFactor,
+                     population = df %>%
+                                    distinct(SpatialFactor, PopSize) %>%
+                                    mutate(Freq = PopSize *
+                                               ifelse(SpatialFactor == "Spat1", 0.1,
+                                                      ifelse(SpatialFactor == "Spat2", 0.3, 0.6))
+                                           ) %>%
+                                    select(SpatialFactor, Freq)
+                         ) %>%
+        (function(designobject) {
+            status_mean <- 
+                svymean(~ Variable1 + Variable2,
+                        design = designobject)
+            
+            status_quantiles <- 
+                svyquantile(~ Variable1 + Variable2,
+                        design = designobject,
+                        quantiles = c(0.25, 0.5, 0.75),
+                        alpha = 0.10,
+                        ci = TRUE)
+            
+            status_mean %>% 
+                as_tibble %>% 
+                rownames_to_column %>% 
+                mutate(CI90_lower = mean - qnorm(0.95) * SE,
+                       CI90_upper = mean + qnorm(0.95) * SE) %>% 
+                gather(key = "Estimator_parameter", value = "Value", 2:5) %>% 
+                mutate(Estimated_parameter = "mean") %>% 
+                select(rowname, Estimated_parameter, Estimator_parameter, Value) %>% 
+                mutate(Estimator_parameter = ifelse(Estimator_parameter == "mean", 
+                                                    "estimate",
+                                                    Estimator_parameter)) %>% 
+                bind_rows(
+                    status_quantiles$quantiles %>% 
+                            as_tibble(rownames = NA) %>% 
+                            rownames_to_column %>% 
+                            gather(key = "Estimated_parameter", value = "Value", 2:4) %>% 
+                            mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
+                                   Estimator_parameter = "estimate") %>% 
+                            select(rowname, Estimated_parameter, Estimator_parameter, Value)
+                    ) %>% 
+                bind_rows(
+                    status_quantiles %>% 
+                        SE %>% 
+                        t %>% 
+                        as_tibble(rownames = NA) %>% 
+                        rownames_to_column %>% 
+                        gather(key = "Estimated_parameter", value = "Value", 2:4) %>% 
+                        mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
+                               Estimator_parameter = "SE") %>% 
+                        select(rowname, Estimated_parameter, Estimator_parameter, Value)
+                ) %>% 
+                bind_rows(
+                    map_dfr(1:2, function(x) {
+                        status_quantiles$CIs[x,,] %>% 
+                            t %>% 
+                            as_tibble(rownames = NA) %>% 
+                            rownames_to_column %>% 
+                            gather(key = "Estimated_parameter", value = "Value", 2:4) %>% 
+                            mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
+                                   Estimator_parameter = 
+                                       ifelse(x == 1, "lower", "upper") %>% 
+                                       str_c("CI90_", .)
+                                       ) %>% 
+                            select(rowname, Estimated_parameter, Estimator_parameter, Value)
+                        })
+                    )
+        }) %>% 
+        mutate(Type = df$Type %>% first) %>% 
+        rename(Variable = rowname) %>% 
+        select(Type, Variable, Estimated_parameter, Estimator_parameter, Value)
+    })
+    
+}
+```
+
+
+Schattingen voor Vlaamse doelpopulaties:
+
+```{r echo=TRUE}
+example_estimates_VL <- 
+    statusdata %>% 
+    status_estimates
+```
+
+```{r eval=FALSE}
+example_estimates_VL %>% 
+    (function(x) {
+        str(x)
+        x %>% 
+            distinct(Estimated_parameter, Estimator_parameter) %>% 
+            kable
+    })
+```
+
+Schattingen voor de doelpopulatie binnen het SBZ-H-netwerk (subpopulatieschatting waarbij we conditioneren voor de gekende subpopulatiegrootte binnen SBZ):
+
+```{r echo=TRUE, message=FALSE}
+example_estimates_SBZH <- 
+    statusdata %>% 
+    filter(InSBZ) %>% 
+    inner_join(
+        statusdata %>% 
+        filter(InSBZ) %>% 
+        distinct(Type, LocationID) %>% 
+        group_by(Type) %>% 
+        summarise(LocationCount = n()) %>% 
+        ungroup
+    ) %>% 
+    group_by(Type) %>% 
+    mutate(
+        PopSize = PopSize * 0.75,
+        SamplingWeight = PopSize / LocationCount,
+        SamplingWeight_reweighted = SamplingWeight / TimesRepeated
+    ) %>% 
+    ungroup %>% 
+    status_estimates
+```
+
+```{r eval=FALSE}
+example_estimates_SBZH %>% 
+    (function(x) {
+        str(x)
+        x %>% 
+            distinct(Estimated_parameter, Estimator_parameter) %>% 
+            kable
+    })
+```
+
+
+Berekenen van groepsschatters:
+
+```{r echo=TRUE}
+example_estimates <- 
+    example_estimates_VL %>% 
+    mutate(Domain = "Flanders") %>% 
+    bind_rows(
+        example_estimates_SBZH %>% 
+        mutate(Domain = "SBZH")
+    )
+example_estimates_withgroup <-
+    example_estimates %>% 
+    filter(Estimator_parameter %in% c("estimate", "SE")) %>% 
+    spread(key = Estimator_parameter, value = Value) %>% 
+    group_by(Domain, Variable, Estimated_parameter) %>%
+    summarise(estimate = mean(estimate),
+              SE = sqrt(sum(SE^2)) / n()
+    ) %>% 
+    ungroup %>% 
+    mutate(Type = "TypeGroup", 
+           CI90_lower = estimate - qnorm(0.95) * SE,
+           CI90_upper = estimate + qnorm(0.95) * SE
+           ) %>% 
+    gather(key = "Estimator_parameter", value = "Value", estimate, SE, CI90_lower, CI90_upper) %>% 
+    union(example_estimates)
+```
+
+Weergave van alle schattingen als tabel:
+
+```{r echo=TRUE}
+example_estimates_withgroup %>% 
+    spread(key = Estimator_parameter, value = Value) %>% 
+    select(1:4, 7:8, 5:6)
+```
+
+Weergave in grafieken van schattingen met hun 90% betrouwbaarheidsinterval:
+
+```{r echo=TRUE, fig.width=10, fig.height=6}
+example_estimates_withgroup %>% 
+    spread(key = Estimator_parameter, value = Value) %>% 
+    ggplot(aes(x = Type, 
+               y = estimate, 
+               ymin = CI90_lower,
+               ymax = CI90_upper,
+               colour = Estimated_parameter)) +
+        geom_point(position = position_dodge(width = 0.9)) + 
+        geom_errorbar(position = position_dodge(width = 0.9)) + 
+        facet_grid(Variable ~ Domain, scales = "free_y")
+```
+
+
+
+### Trend
+
+Algemeen:
 
 - verandering in tijd van de milieuvariabele wordt beschreven met een model
 - over een beschouwde periode van $x$ keer 6 jaar ($x$ > 1)
@@ -59,6 +460,9 @@ Werkwijze voor de spatiale aggregatie:
 - Het alternatief dat we verkiezen is om eerst volledig model-based werken (spatiaal en temporeel), op basis hiervan de locatiespecifieke trend voorspellen (voor alle sample units afzonderlijk), en vervolgens spatiaal een design-based inferentie doen (volgens subpopulaties enz.). Dit is krachtiger (lokaal variërende trend is toegelaten), en het doet geen geweld aan de design-based ruimtelijke inferentie.
     - Het betrouwbaarheidsinterval op de trendparameter wordt dan bepaald door de spatiale CI-bovengrens van de locatiespecifieke CI-bovengrens en de spatiale CI-ondergrens van de locatiespecifieke CI-ondergrens. Zie ook paragraaf \@ref(trendspecif).
 - Nog een alternatief is een two-phase sampling aanpak om de locatiespecifieke trend op basis van niet-complete tijdsreeksen te corrigeren op basis van het regressieverband tussen 'complete trend' en 'niet-complete trend' voor een panel met complete tijdsreeksen, als dit verband er is (bv. een pure panel in een split panel design). Zie @stevens_spatially_1999 [p. 426] en @de_gruijter_sampling_2006.
+
+Een uitwerking van het rekenvoorbeeld met de fictieve steekproef kan hier later worden toegevoegd. De essentie is dat op locatiebasis een trendschatter wordt berekend (zie paragraaf \@ref(trendspecif)), die vervolgens spatiaal wordt geaggregeerd op analoge wijze als de toestandsschatting (met gelijke sampling weights voor alle locaties van hetzelfde type).
+
 
 ## Finite population correction
 
