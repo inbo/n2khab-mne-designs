@@ -26,9 +26,11 @@ Onderstaande subparagrafen: verschillende mogelijke benaderingen voor steekproef
 
 ## Indien reeds gegevens bestaan van een *aselecte* steekproef (bv. fysicochemische variabelen waterkolom)
 
+<!--HVC ik denk dat je eerder de piste van simulaties vanaf een model zal gaan gebruiken, ook in dit geval-->
+
 Vertrekkend van een reeds bestaande, aselecte steekproef: bootstrap sampling voor simulatie van kleinere of grotere steekproeven, de nodige betrouwbaarheidsintervallen bepalen.
 
-- voordeel: eenvoud, geen model nodig
+- voordeel: eenvoud, geen model nodig <!--HVC tenzij in het geval van een parametrische bootstrap-->
 - nadeel: je hangt vast aan de intrinsieke eigenschappen van de data (bv. moeilijk om een andere trend te kiezen). Tevens gaat een deel van de correlatiestructuur verloren, mede afhankelijk van de bootstrap procedure.
 
 
@@ -58,30 +60,60 @@ Vertrekkend van een reeds bestaande, aselecte steekproef: bootstrap sampling voo
 
 ## Steekproefsimulaties met een goed aan beschikbare data fittend model
 
+<!-- HVC:  Ik zou hier verwijzen naar Bolker: 
+
+Estimating the power of a test of a null hypothesis by simulation requires the following steps (Bolker 2008):
+
+- Simulate many data sets assuming that the alternative hypothesis is true, that is, the effect of interest is not zero. ‘Many’ means enough to give an adequately precise power estimate. As a guide, with 100 simulations and 80% power, the power estimate will fall within 72–88% with 95% probability, while using 1000 simulations will reduce this range to 77·5–82·4%.
+- Using each simulated data set, perform a statistical test of the null hypothesis that the effect size is zero.
+Calculate the proportion of simulated data sets in which the null hypothesis was rejected. This proportion is the power estimate.
+- The effect of different designs and assumptions (e.g. sample size, effect size, random effect variances) on power can be explored by repeating steps 1–3 across a range of realistic scenarios.
+
+Ook de precisie waarmee een parameter geschat wordt kan via simulatie bepaald worden (de focus hoeft niet per se op power te liggen)
+-->
+
+
 Modelvorm: deze beschouwt minstens de kenmerken van de steekproefopzet, bv. jaar, maand, type, evt. typegroep. Het model dient de data redelijkerwijze te fitten, dus ook andere covariaten en dependencies kunnen aangewezen zijn (bodemtype, regio, effectieve neerslag, ...). Om realistische steekproeven te kunnen simuleren, is het wenselijk dat deze aspecten ruimtelijk aan het steekproefkader gekoppeld zijn.
 
 Het basismodel dat we fitten, is (op observation-level):
 
 `Variabele = type_(subgroep)_fixed + jaar_continuous_fixed (+ maand_continuous_fixed) + temporal dependency + residual error`
 
+<!--HVC: indien je dit model fit op bestaande data, heb je twee opties: (1) enkel de effect-sizes kiezen en simuleren -->
+
+<!--HVC: wat bedoel je hier met temporal dependency? Er zijn verschillende opties:
+- random intercept van locatie
+- random intercept van locatie + random slope voor jaar
+- cor(C)AR1 correlatiestructuur (of algemener een ARMA structuur)
+- zowel cor(C)AR1 als random effect van locatie?
+- en wellicht nog vele anderen...
+-->
+
+
 Het gebruik van het model geldt onder de assumptie dat het model de volledige spatiotemporele doelpopulatie goed beschrijft. Om het typeniveau te kunnen beschrijven, zullen diverse types ook in kleinere (sub)groepjes moeten worden gelumpt (fijner niveau dan de typegroepen) om er genoeg data over te hebben voor modellering.
 
 Het fixed effect 'maand' wordt minstens toegevoegd indien de scenario's zich onderscheiden in hun temporele design binnen het jaar, of wanneer er in het geval van repeated measurements binnen een jaar geen aggregatie gebeurt van data tot jaarniveau. Dit fixed effect kan daarnaast altijd de realiteitszin van het model verhogen, maar is niet noodzakelijk, indien met jaarlijks geaggregeerde waarden wordt gerekend.
 
-Steekproeven worden **gesimuleerd**, enerzijds door gekozen waarden te kiezen voor fixed factoren in overeenstemming met een scenario (i.h.b. de revisit design) en anderzijds door te samplen uit de distributie van de random modelparameters.
+Steekproeven worden **gesimuleerd**, enerzijds door gekozen waarden te kiezen voor fixed factoren in overeenstemming met een scenario (i.h.b. de revisit design) en anderzijds door te samplen uit de distributie van de random modelparameters. <!-- HVC: ook in dit laatste geval kan je waarden kiezen voor de random effecten-->
 
-In aanwezigheid van *ruimtegebonden, fixed modelfactoren* (behalve 'type', waarvoor alle niveaus in gelijkaardige mate worden betrokken) worden waarden getrokken uit de distributie van de factor in het steekproefkader, volgens een bi- of multinomiale kansverdeling. De opname in het model veronderstelt een wezenlijke bijdrage in de variatie van de milieuvariabele, wat impliceert dat het een dergelijke modelfactor in aanmerking komt voor verhoging van juistheid en precisie door *poststratificatie* toe te passen bij de inferentie.
+In aanwezigheid van *ruimtegebonden, fixed modelfactoren* <!-- HVC: is bodemtextuur uit de bodemkaart hier een voorbeeld van? Indien ja graag toevoegen, want de term die je gebruikt is nogal moeilijk-->(behalve 'type', waarvoor alle niveaus in gelijkaardige mate worden betrokken) worden waarden getrokken uit de distributie van de factor in het steekproefkader, volgens een bi- of multinomiale kansverdeling. De opname in het model veronderstelt een wezenlijke bijdrage in de verklaring van de variatie van de milieuvariabele, wat impliceert dat een dergelijke modelfactor in aanmerking komt voor verhoging van juistheid en precisie door *poststratificatie* toe te passen bij de inferentie.
 
-De simulaties gebeuren met het *detrended* model, i.e. het model zonder de trend. Zodoende kunnen achteraf trends worden gevarieerd volgens scenario's, door deze trends bij te tellen.
+De simulaties gebeuren met het *detrended* model, i.e. het model zonder de trend. Zodoende kunnen achteraf trends worden gevarieerd volgens scenario's, door deze trends bij te tellen. <!--HVC kan je dat doen? Ben ik niet zo zeker van. Moet je niet de grootte van de beta-parameter voor jaar instellen en dan simuleren. Elke andere instelling van beta vereist nieuwe simulatie? -->
 
 Indien het bovenstaande *continue jaareffect* in het model moeilijk fit aan de data (analoog voor maand):
 
-- een alternatief is het model te fitten met jaar als random factor (en temporal dependency toevoegen) ofwel het effect louter als temporal dependency opnemen ('detrending'). Voor steekproefsimulaties de factor jaar (of temporal dependency) eruit laten en vervangen door een gekende meerjarentrend (met temporal dependency);
+- een alternatief is het model te fitten met jaar als random factor (en temporal dependency toevoegen) ofwel het effect louter als temporal dependency opnemen ('detrending') <!--HVC ik begrijp niet goed wat je hier bedoelt. Een random intercept van jaar in combinatie met een random intercept van locatie zou je kunnen beschouwen als een smoother voor jaar want een random intercept is een soort van smoother maar dan voor een factor. Net zoals bij een smoother voor jaar_continuous, krijg je dat de post-hoc geschatte random jaar effecten meer naar het globaal gemiddelde gezogen worden = shrinkage (ten opzichte van fixed effect van factor jaar)-->. Voor steekproefsimulaties de factor jaar (of temporal dependency) eruit laten en vervangen door een gekende meerjarentrend (met temporal dependency);
     - het is in dit geval aangewezen om een apart model te onderscheiden voor simulaties van de *toestand*, vermits met een random factor 'jaar' geen blok van 6 aaneensluitende jaren kunnen worden gesimuleerd. In het toestandsmodel is daarom ook een random factor 'zesjaarperiode' nodig, die de variatie tussen programmacycli opvangt. Binnen één gesimuleerde steekproef is de getrokken waarde hiervan dan constant te houden. Het nadeel van deze benadering is dat scenario's niet kunnen onderscheiden tussen verschillende temporele en revisit designs.
 - voor toestandsschattingen kan het model desgewenst nog een stap verder worden vereenvoudigd, door het jaar- (en maand-) effect niet op te nemen in het model, en louter de random factor 'zesjaarperiode' op te nemen, weliswaar met dezelfde vermelde beperkingen.
 
-Er worden 1000 spatiaal en temporeel 'grote' steekproeven gegenereerd, en vervolgens gevarieerd met uiteenlopende trendgroottes. Een subsample binnen elke gesimuleerde steekproef is dan een spatiaal of temporeel kleinere, gesimuleerde steekproef.
+Er worden 1000 <!-- ook met 100 heb je al een ruw idee, cf opmerking waarin ik verwijs naar Bolker --> spatiaal en temporeel 'grote' steekproeven gegenereerd, en vervolgens gevarieerd met uiteenlopende trendgroottes. Een subsample binnen elke gesimuleerde steekproef is dan een spatiaal of temporeel kleinere, gesimuleerde steekproef. <!--HVC ik denk dat je beter aparte simulaties doet voor verschillende steekproefgroottes. Subsamples nemen gaat de correlatiestructuur van je model breken (denk ik).-->
 
 Evaluatie van deze gesimuleerde steekproeven gebeurt door de inferentie te doen op niveau van de typegroep en (eventueel) voor het SBZ-H netwerk, zoals voorzien in de monitoring. Zie hoofdstuk \@ref(inferentie).
+
+## Steekproefsimulaties "from scratch"
+
+Zie https://cran.r-project.org/web/packages/simr/vignettes/fromscratch.html
+
+Kan ook gecombineerd worden met vorige indien je voor sommige parameters wel pilootdata hebt en voor andere niet of onvoldoende. Het is beter om meer scenario's door te rekenen met bijvoorbeeld verschillende waarden voor de variantie van een random intercept, dan de variantie te gebruiken die geschat wordt uit pilootdata (want de onzekerheid op variantieschatting is meestal zeer groot). Informatie over effect sizes, varianties, ... kan ook komen van expertenkennis, wiskundige overwegingen in het licht van wat realistisch is (bv je moet geen varianties instellen die maken dat er een behoorlijke kans is op simulatie van onrealistische waarden zoals een zeer diepe grondwatertafel).
 
 
