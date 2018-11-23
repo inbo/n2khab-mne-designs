@@ -78,11 +78,25 @@ met $k$ het aantal types in de groep
 
 ## Spatiaal
 
-GRTS als basis voor een goede ruimtelijke spreiding (~ efficiëntie van schatters) en voor maximaliseren van de koppeling met meetnet biotische habitatkwaliteit.
+Een GRTS-design [generalized random-tessellation stratified design; zie o.m. @stevens_spatially_2004] wordt genomen als basis voor een goede ruimtelijke spreiding (~ efficiëntie van schatters) en voor het maximaliseren van de koppeling met meetnet biotische habitatkwaliteit, waar de GRTS-strategie is gevolgd.
 
-- Celgrootte van 32 x 32 m² als basis voor de populatie-eenheid van terrestrische en semi-terrestrische types (overnemen grid van meetnet biotische habitatkwaliteit).
-    - Overweging: voor bepaalde milieuvariabelen een trap hoger werken in de grid-hiërarchie (64 x 64 m²), hetzij opvangen via de response design (zie verder). Een nadeel is echter de grotere fout in de oppervlaktegewijze vertegenwoordiging van types, en meer kans op mismatches al naargelang de response design.
-- Individuele plassen en segmenten van waterlopen zijn de populatie-eenheden voor aquatische types, maar dit is compatibel met een GRTS-trekking.
+Het principe van een GRTS-design is dat aan alle cellen van een vlakdekkend grid een rangnummer wordt toegekend via een hiërarchische randomisatieprocedure. Het rangnummer dat we hier implementeren is de zg. reverse hierarchical order. Een volgens de rangnummers *opeenvolgende* reeks cellen is steeds te zien als een aselecte, ruimtelijk gebalanceerde equal-probability steekproef. Deze benadering is ook zeer flexibel om latere uitbreidingen van de steekproef toe te laten. Voor een toegankelijke introductie tot de methode, voer de volgende commando's uit in R:
+
+```r
+install.packages("devtools")
+devtools::install_github("ThierryO/grts", build_vignettes = TRUE)
+vignette("intro", package = "GRTS")
+```
+
+De volgende paragrafen delen de types in volgens drie groepen, waar de GRTS-design op een andere manier wordt toegepast:
+
+### Types met als sampling unit een rastercel uit het GRTS-grid
+
+Dit geldt typisch voor de terrestrische types.
+
+De celgrootte van 32 x 32 m² dient als basis voor de populatie-eenheid van terrestrische en semi-terrestrische types (overnemen grid van meetnet biotische habitatkwaliteit). 
+    - Overweging: voor bepaalde milieuvariabelen een trap hoger werken in de grid-hiërarchie (64 x 64 m²), hetzij opvangen via de response design (zie verder). Een nadeel is wel de grotere fout in de oppervlaktegewijze vertegenwoordiging van types (elke sampling unit telt dan effectief als 64 x 64 m²). Zie verder de sample-support-overwegingen in paragraaf \@ref(support).
+
 
 <!-- Te overwegen opties: -->
 
@@ -90,9 +104,7 @@ GRTS als basis voor een goede ruimtelijke spreiding (~ efficiëntie van schatter
 <!-- - two-stage GRTS met per meetnet geoptimaliseerde grootte van de PSU's (primary sampling units). De PSU's zijn dan hogere-orde rastereenheden van het GRTS-grid. -->
 <!--     - voordeel ten opzichte van ruimtelijk variërende geografische eenheden (PSU's zoals gemeenten, fysische systeemeenheden, ecodistricten, ...) op maat van elk meetnet, is de grotere consistentie en overlap tussen de meetnetten, de gelijke ruimtelijke dekking per PSU en de eenvoud om te up- of downsizen (ontwerpscenario's) volgens de noden. -->
     
-GRTS master sample gebruiken van het meetnet biotische habitatkwaliteit om de koppeling te maximaliseren
-
-- De doelpopulatie (steekproefkader) van een concreet meetnet (bv. verdroging via grondwater) is een subset hiervan: combinaties van Vlaamse X, Vlaamse Y en de voorkomende types (beperkt tot deze die we voor het meetnet viseren). Eén XY-coördinaat kan meerdere types bevatten.
+De doelpopulatie (steekproefkader) van een concreet meetnet (bv. verdroging via grondwater) is een subset van het GRTS-grid: combinaties van Vlaamse X, Vlaamse Y en de voorkomende types (beperkt tot deze die we voor het meetnet viseren). Eén XY-combinatie kan meerdere types bevatten.
 
 <!-- Aandachtspunt: de aquatische types. Minstens voor atmosferische meetnetten wordt dezelfde milieuvariabele beoogd voor terrestrische en aquatische types. Het heeft daarom meerwaarde om ook de aquatische types binnen dezelfde opzet mee te nemen, om de uitspraken los van aquatisch of terrestrisch te kunnen doen (want ook de atmosferische typegroepen zullen gemengde terrestrisch-aquatische groepen zijn). Het verschil met terrestrisch zit dan vooral in de terreinprocedure, gegeven een getrokken 32 m² cel: -->
 
@@ -104,6 +116,20 @@ GRTS master sample gebruiken van het meetnet biotische habitatkwaliteit om de ko
 <!-- Koppeling meetnet biotische habitatkwaliteit: -->
 
 <!-- *XXX nog bekijken hoe in habitatkwaliteit concreet is samengespoord met initiatieven van specifieke typeklassen (duinen, ...), om te evalueren hoe groot onze afwijking daarvan zal zijn. Default reflex: niets aan te doen. Tijdelijke tussenoplossingen (cf. overgangsfase grondwatermeetnet): E[schatter] heeft ongekende bias* -->
+
+
+### Types met als sampling unit een eenheid met variabele oppervlakte
+
+Bij types van stilstaande wateren telt elke plas als één functionele eenheid. Elke plas komt daarom overeen met één punt, random geselecteerd in de plas. Hier voorzien we twee complementaire manieren om inferentie te doen: niet en wel oppervlaktegewogen; zie verder paragraaf \@ref(plasinferentie).
+
+De sampling units voor de design zijn de punten. Aan de punten (en zo aan de plas) wordt het GRTS-rankingnummer toegekend van de cel waar het punt in valt. De voorwaarde daarbij is dat de cellen voldoende klein zijn zodat ze nooit twee punten (dus van twee plassen) tegelijk bevatten. Vervolgens worden punten getrokken volgens de reverse hierarchical order. Deze methode is gevolgd in het meetnet biotische habitatkwaliteit, zodat maximale koppeling zal ontstaan.
+
+We volgen voor de steekproefopzet echter niet de gestratificeerde design van het meetnet biotische habitatkwaliteit (aangepaste steekproefgrootte per klasse van plasoppervlakte), dit om inflexibiliteit te vermijden t.a.v. aanpassing van de stratumdefinitie [@overton_desirable_1996; @stevens_implementation_1994; @manly_sampling_2014]. Zie verder het hoofdstuk \@ref(inferentie).
+
+
+### Types met als sampling unit een lijnsegment van vaste lengte
+
+Voor types van waterlopen worden lijnsegmenten bemonsterd. Het steekproefkader wordt verdeeld in lijnsegmenten en er wordt at random één punt gekozen per lijnsegment, voor alle segmenten op dezelfde relatieve positie binnen het segment. Vervolgens wordt voor deze punten dezelfde steekproeftrekking toegepast als bij de plassen. Deze methode is gevolgd in het meetnet biotische habitatkwaliteit, zodat maximale koppeling zal ontstaan.
 
 
 ### Overgangsfase voor bestaande meetinstallaties
@@ -273,7 +299,8 @@ Wanneer gekozen is voor continue sampling units (oneindige doelpopulatie) -- zie
 
 In beide bovenstaande gevallen kan het zijn dat de gerandomiseerde toewijzing van deellocaties 'constrained' moet worden, conform de opmerking verder over de beperking van bemonstering tot een deel van de sampling unit.
 
-Wanneer bepaalde milieuvariabelen in een groter gebied worden bemeten dan de cel van 32 x 32 m², bv. bij een cirkelvormig proefvlak met straal 20 m, moet er op worden toegezien dat er geen overlappende proefvlakken worden uitgelegd. Dit is om extra verstoringseffecten te vermijden. Het is in dat geval wellicht te overwegen om een hogere celorde van het GRTS-grid te gebruiken als sampling unit, bv. 64 x 64 m².
+Wanneer bepaalde milieuvariabelen in een groter gebied worden bemeten dan de cel van 32 x 32 m², bv. bij een cirkelvormig proefvlak met straal 20 m, moet er op worden toegezien dat er geen overlappende proefvlakken worden uitgelegd. Dit is om extra verstoringseffecten te vermijden.
+Het is in dat geval ook te overwegen om een hogere celorde van het GRTS-grid te gebruiken als sampling unit, bv. 64 x 64 m². Een nadeel is dan wel de grotere fout in de oppervlaktegewijze vertegenwoordiging van types (elke eenheid telt dan effectief als 64 x 64 m²).
 
 Wanneer metingen over het hele oppervlak (lengte) van een sampling unit gebeuren om deze te kunnen vertegenwoordigen, dan nog zal het veldprotocol moeten rekening houden met gevallen waarbij slechts een deel wordt bemonsterd (ook al wordt het resultaat dan aangenomen als toepasselijk voor de gehele sampling unit):
 
