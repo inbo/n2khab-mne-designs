@@ -51,13 +51,10 @@ Toestand + trend spatiaal: steeds naar typegroepen toe werken, hetzij met een sa
 
 ### Toestand {#toestandinferentie}
 
-Afhankelijk van de concrete steekproefstrategie in een meetnet, de correcte estimator toepassen. In het voorbeeld hieronder gebeurt spatiotemporele aggregatie in één keer.
-
-Een optie is om in twee trappen te aggregeren: eerst spatiaal en daarna temporeel. Dit kan een eenvoudiger alternatief zijn voor het veranderen van sampling weights in de tijd, wat optreedt bij evoluties van de spatiale sampling weights in de tijd (aanpassingen spatiale steekproefopzet), of bij een onevenwichtige verdeling van inspanningen in de tijd. Tevens laat dit toe om ook een temporele finite-population-correction toe te passen wanneer voor een discrete temporele doelpopulatie is gekozen (zie paragraaf \@ref(support)).
-
-Indien er repeated measurements voorkomen binnen de periode waarover een spatiotemporele aggregatie gebeurt (units die meerdere keren zijn bemeten), zoals in rotational en split panel designs, dan moeten repeated measurements worden downweighted in de analyse ten opzichte van eenmalige observaties [zie @lumley_complex_2011 par. 3.4].
-
-<!-- Mogelijks als een multi-stage sample te analyseren (PSU's: jaren). -->
+- Afhankelijk van de concrete steekproefstrategie in een meetnet, de correcte estimator toepassen. In het voorbeeld in deze paragraaf gebeurt spatiotemporele aggregatie *in één keer*.
+- Een optie is om *in twee trappen* te aggregeren: eerst spatiaal en daarna temporeel. Dit kan een eenvoudiger alternatief zijn voor het veranderen van sampling weights in de tijd, wat optreedt bij evoluties van de spatiale sampling weights in de tijd (aanpassingen spatiale steekproefopzet), of bij een onevenwichtige verdeling van inspanningen in de tijd (zie ook verder: temporele poststratificatie). Tevens laat dit toe om ook een temporele finite-population-correction toe te passen wanneer voor een discrete temporele doelpopulatie is gekozen (zie paragraaf \@ref(support)).
+- Indien er *repeated measurements* voorkomen binnen de periode waarover een spatiotemporele aggregatie gebeurt (units die meerdere keren zijn bemeten), zoals in rotational en split panel designs, dan moeten repeated measurements worden downweighted in de analyse ten opzichte van eenmalige observaties [zie @lumley_complex_2011 par. 3.4].
+- Het is bovendien mogelijk om voor de (spatiotemporele) toestandsschatting *poststratificatie toe te passen op de tijdsfactor*, wanneer de verwachting bestaat dat de milieuvariabele gecorreleerd is met de onderscheiden tijdsstappen (in het voorbeeld hieronder: jaren). De populatiegrootte per tijdsstap (poststratum) is daarbij voor elk type gelijk aan zijn (spatiale) populatiegrootte. Dit is eveneens een manier om rekening te houden met onevenwichtige verdeling van inspanningen over de tijdsstappen.
 
 Hier volgt een fictief analysevoorbeeld, voor verder gebruik als referentie in de monitoring (een aantal stappen kunnen generieker worden gemaakt, als functie). Het betreft inferentie voor één typegroep. Het principe kan herhaald worden voor verschillende typegroepen.
 
@@ -90,6 +87,8 @@ We construeren eerst een voorbeeldsteekproef voor inferentie over toestand en tr
 
 Hieronder wordt de wijze van inferentie weergegeven per type en voor de typegroep, voor de toestand van de eerste cyclus (spatiotemporeel gemiddelde + kwantielen over zes jaar). Er wordt gewerkt met poststratificatie om het effect van de spatiale factor te capteren en zo de juistheid en precisie te verhogen. Dit is op voorwaarde van goede correlatie tussen de spatiale factor en de doelvariabele (zoniet doet het meer kwaad dan goed). Het verdient aanbeveling om het effect van poststratificatie te verifiëren in de praktijk.
 
+De functie om de schattingen te doen, bevat tevens de optie om te poststratificeren op jaren.
+
 Er wordt rekening gehouden met de finite-population correction. De inferentie gebeurt tevens voor de toestand binnen het SBZ-H-netwerk (subpopulatieschatting waarbij we conditioneren voor de gekende subpopulatiegrootte binnen het SBZ-H-netwerk).
 
 Inspectie van de verschillende in de dataset optredende sampling weights (van de respectievelijke observaties), volgens type en panel:
@@ -103,17 +102,17 @@ statusdata %>%
     kable
 ```
 
-De individuele observaties van panel 1 krijgen dus elk een veel kleiner gewicht in de toestandsschatting. Op die manier heeft dit panel evenveel belang in de toestandsschatting dan de andere panels. De primaire functie van dit panel is het verbeteren van de inferentie voor trend.
+De individuele observaties van panel 1 krijgen dus elk een veel kleiner gewicht in de toestandsschatting. Op die manier heeft dit panel evenveel belang in de toestandsschatting als de andere panels. De primaire functie van dit panel is het verbeteren van de inferentie voor trend.
 
 De schattingen van het gemiddelde en de 25-, 50- en 75-percentielen gebeuren met de onderstaande functie. Ook de standaardfout en de grenzen van het 90%-betrouwbaarheidsinterval worden voor elke schatting berekend.
 
 ```{r echo=TRUE}
-status_estimates <- function(statusdf) {
+status_estimates <- function(statusdf, poststrat_year = FALSE) {
     
     statusdf %>%
     split(.$Type) %>%
     map_dfr(.x = ., .f = function(df){
-        df %>% 
+        df %>%
         svydesign(id = ~1,
                   weights = ~SamplingWeight_reweighted,
                   fpc = ~PopSize,
@@ -121,18 +120,30 @@ status_estimates <- function(statusdf) {
                   ) %>%
         postStratify(design = .,  # postStratify() is only needed when poststratification is done.
                                   # For poststratification to be effective
-                                  # rather than destructive, it must be moderately to highly
-                                  # correlated with the target variable, so it
-                                  # is advisable to also compare without
-                                  # poststratification.
-                     strata = ~SpatialFactor,
-                     population = df %>%
+                                  # rather than destructive, the
+                                  # poststratification variable(s) must be
+                                  # moderately to highly correlated with the
+                                  # target variable, so it is advisable to also
+                                  # compare without poststratification.
+                     strata = if (poststrat_year) {
+                                     as.formula("~SpatialFactor + Year")} else {
+                                     as.formula("~SpatialFactor")},
+                     partial = poststrat_year, # ignore empty poststrata
+                     population = if (poststrat_year) {
+                                         df %>%
+                                    tidyr::expand(SpatialFactor, Year, PopSize) %>%
+                                    mutate(Freq = PopSize *
+                                               ifelse(SpatialFactor == "Spat1", 0.1,
+                                                      ifelse(SpatialFactor == "Spat2", 0.3, 0.6))
+                                           ) %>%
+                                    select(SpatialFactor, Year, Freq)} else {
+                                         df %>%
                                     distinct(SpatialFactor, PopSize) %>%
                                     mutate(Freq = PopSize *
                                                ifelse(SpatialFactor == "Spat1", 0.1,
                                                       ifelse(SpatialFactor == "Spat2", 0.3, 0.6))
                                            ) %>%
-                                    select(SpatialFactor, Freq)
+                                    select(SpatialFactor, Freq)}
                          ) %>%
         (function(designobject) {
             status_mean <- 
@@ -203,12 +214,14 @@ status_estimates <- function(statusdf) {
 
 <!--HVC bovenstaande functie kan wellicht eenvoudiger via svryr package, maar wel heel knap gedaan! Ik denk dat Toon W ook wel zeer goed deze code kan gebruiken-->
 
+We bepalen de schatters per type. We passen poststratificatie toe volgens de spatiale factor en volgens de jaren. Uit vergelijking bleek in dit voorbeeld dat de inferentie vooral heel wat nauwkeuriger werd door de temporele poststratificatie!
+
 Typeschattingen voor Vlaamse doelpopulaties:
 
-```{r echo=TRUE}
+```{r echo=TRUE, warning=FALSE}
 example_estimates_VL <- 
     statusdata %>% 
-    status_estimates
+    status_estimates(poststrat_year = TRUE)
 ```
 
 ```{r eval=FALSE}
@@ -223,7 +236,7 @@ example_estimates_VL %>%
 
 Typeschattingen voor de doelpopulatie binnen het SBZ-H-netwerk (subpopulatieschatting waarbij we conditioneren voor de gekende subpopulatiegrootte binnen het SBZ-H-netwerk):
 
-```{r echo=TRUE, message=FALSE}
+```{r echo=TRUE, message=FALSE, warning=FALSE}
 example_estimates_SBZH <- 
     statusdata %>% 
     filter(InSBZ) %>% 
@@ -242,7 +255,7 @@ example_estimates_SBZH <-
         SamplingWeight_reweighted = SamplingWeight / TimesRepeated
     ) %>% 
     ungroup %>% 
-    status_estimates
+    status_estimates(poststrat_year = TRUE)
 ```
 
 ```{r eval=FALSE}
