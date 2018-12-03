@@ -1,5 +1,5 @@
 ---
-title: "Een ruwe inschatting van steekproefgrootte voor toestandsbepaling in het grondwatermeetnet"
+title: "Een ruwe inschatting van steekproefgrootte voor toestandsbepaling in het terrestrische deel van het grondwatermeetnet"
 author: "Floris Vanderhaeghe"
 date: "november 2018"
 link-citations: true
@@ -26,21 +26,102 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+library(tidyverse)
+library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
 # Ten geleide
 
-Dit document loopt voorop op een meer gedegen berekening van de steekproefgrootte via steekproefsimulaties met modellen.
+Dit document loopt voorop op een meer gedegen berekening van de steekproefgrootte via steekproefsimulaties met modellen. De reden is om over een 'vage grootteorde' te kunnen beschikken.
+
+Concreet zijn dit de momenteel gehandhaafde vereenvoudigingen:
+
+- deelvarianties zijn onttrokken aan modellen die:
+    - nog niet beperkt zijn tot de types die effectief zullen worden meegenomen;
+    - de nulwaarden voor de variabelen HG3 en LG3 negeren, waardoor een onderschatting van de variantie ontstaat;
+- er wordt met slechts één scenario gewerkt, namelijk de 'gewenste' informatiekwaliteit;
+- we kijken enkel naar het gemiddelde (formules zijn daarvoor ter beschikking voor een eenvoudige opzet);
+- de milieuvariabelen voor het aquatische deel van het grondwatermeetnet zijn niet betrokken (want nog niet bepaald);
+- we gaan uit van de gemiddelde typegroep, en maken abstractie van de verschillen tussen typegroepen en types.  We kunnen daarom achteraf best het resultaat met 4 vermenigvuldigen, voor 4 typegroepen;
+- er wordt uitgegaan van één bodemtype, waardoor we achteraf het resultaat met 2.5 zullen vermenigvuldigen^[We nemen niet 3 omdat veenbodems maar half zo vaak voorkomen als de andere 2 klassen. Lichte bodems zijn in gelijke mate in de dataset vertegenwoordigd als zware bodems (qua aantal locaties).] om het eindtotaal te bekomen (lichte bodem, zware bodem, veen);
+- kortom we vermenigvuldigen de steekproefgrootte voor 1 typegroep op 1 bodemtype met 12. Dit kan een grote fout met zich meebrengen;
+- we doen een aanname over het aantal gebieden waarbinnen een typegroep voorkomt in een steekproef;
+- we negeren meerdere observaties binnen een jaar (chemie) en gebruiken het model voor 1 observatie per locatie en per jaar.
+
+# Methode
+
+We gebruiken een toepassing van de formule voor de variantie van een gemiddelde voor getrapte designs [@onkelinx_ontwerp_2008], omdat de modellen gebruik maken van random effecten:
+
+$\sigma^2_\hat{\mu} = \frac{1}{p}\cdot\sigma^2_{jaar} + \frac{1}{q}\cdot\sigma^2_{gebied} + \frac{1}{pqr}\cdot\sigma^2_{observatie}$
+
+Daarbij zijn bekend ($p$) of aangenomen[^ruimte] ($q$): $p = 6$, $q = 25$
+
+[^ruimte]: Op basis van de geanalyseerde data is aangenomen dat een typegroep in een steekproef in ongeveer 25 verschillende gebieden voorkomt (het betreft het liggingsattribuut van de fysische systemen voor LG3 en HG3, en ecodistricten voor de nutriëntvariabelen).
+
+We wensen $qr$ te schatten, i.e. het aantal locaties.
 
 # Instelwaarden voor de toestandsbepaling
 
-Zie verder [deze googlesheet](https://docs.google.com/spreadsheets/d/1IMlLh9EPPRLLoDNWkDzbVJU2cVvst7C8NyJRM2NvujM/edit#gid=229047732).
+We zullen de instelwaarden voor de niet-getransformeerde variabele omrekenen naar een gewenste $\sigma^2_\hat{\mu}$, waarbij $\hat{\mu}$ de schatting is van het gemiddelde van de *log-getransformeerde* variabele. Bron van de instelwaarden: [deze googlesheet](https://docs.google.com/spreadsheets/d/1IMlLh9EPPRLLoDNWkDzbVJU2cVvst7C8NyJRM2NvujM/edit#gid=229047732).
 
 ```{r}
-
+minimumquality <- 
+    tibble(target_variable = c("LG3",
+                               "HG3",
+                               "NO3",
+                               "NH4",
+                               "PO4"),
+            alpha = 0.1,
+            relative_errormargin = ifelse(str_detect(target_variable, "G3"), 
+                                          0.05, 
+                                          0.1)) %>% 
+    mutate(logscale_errormargin = log10(1 + relative_errormargin),
+           var_mu = (logscale_errormargin / qnorm(1 - alpha/2))^2)
+minimumquality %>% kable
 ```
 
+<!-- # Design-attributen die we onder controle hebben -->
+
+<!-- Gegeven een equiprobable, non-stratified design, zijn dit de knoppen om aan te draaien: -->
+
+<!-- - aantal locaties (meetpunten); -->
+<!-- - aantal jaren: we leggen dit in eerste instantie vast op zes jaar. -->
+
+# Berekening
+
+We hanteren de volgende waarden voor de varianties van jaar, gebied en locatie (observatie)
+
+```{r}
+modelvar <-
+    expand.grid(target_variable = c("LG3",
+                               "HG3",
+                               "NO3",
+                               "NH4",
+                               "PO4"),
+                variance_type = c("var_year", "var_area", "var_location")) %>% 
+    as_tibble() %>% 
+    arrange(target_variable) %>% 
+    cbind(estimate = c(0.127, 0.177, 0.55,
+                       0.105, 0.151, 0.4,
+                       0.075, 0.124, 0.2,
+                       0.015, 0.056, 0.15,
+                       0.08,  0.023, 0.08)^2)
+modelvar %>% kable()
+```
+
+```{r}
+minimumquality %>% 
+    inner_join(modelvar %>% spread(key = variance_type,
+                                   value = estimate)) %>% 
+    mutate(var_observ_std = (var_mu - 1/6 * var_year - 1/25 * var_area),
+        samplesize_1typegroup_1soiltype = ((var_mu - 1/6 * var_year - 1/25 * var_area) * 6 / var_location)^(-1))
+```
+
+Helaas levert dit ons behalve voor NH4 negatieve sample sizes op! Dit betekent dat de variantietermen voor jaar en gebied samen reeds groter zijn dan de beoogde variantie voor het gemiddelde, en dat we dit niet kunnen oplossen met meer observaties per gebied of jaar. Bedenkingen hierbij:
+
+- Vermoedelijk is dit wel op te lossen met poststratificatie, maar die complexiteit is niet vervat in de gevolgde benadering.
+- De varianties liggen heel dicht bij nul, wat een vermoedelijk grote fout veroorzaakt op de samplesizes, met deze benadering.
 
 
 # Literatuurreferenties {-}
