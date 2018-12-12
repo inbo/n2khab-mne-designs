@@ -1,20 +1,113 @@
 # Steekproefsimulatie en steekproefgrootteberekeningen
 
-Bovenop de onderstaande berekeningen is *idealiter* ook een **design-effect** te schatten voor het effect van *model-assisted* werken (regression estimator). Inschatting is dat het opzetten van de benodigde spatiotemporeel expliciete modellen die hiervoor nodig zijn, meer tijd in beslag neemt dan momenteel beschikbaar. Afhankelijk van de technische mogelijkheden op kortere termijn, zal ook voor het effect van *spatiale balancering* een inschatting van design-effect gebeuren. De design-effecten worden conservatief ingeschat op basis van literatuurbronnen ivm milieumonitoring.
+Bovenop de onderstaande berekeningen is *idealiter* ook een **design-effect** te schatten voor het effect van *model-assisted* werken (regression estimator / poststratificatie). Inschatting is dat het opzetten van de benodigde spatiotemporeel expliciete modellen die hiervoor nodig zijn, meer tijd in beslag neemt dan momenteel beschikbaar. Afhankelijk van de technische mogelijkheden op kortere termijn, zal ook voor het effect van *spatiale balancering* een inschatting van design-effect gebeuren. De design-effecten worden conservatief ingeschat op basis van literatuurbronnen ivm milieumonitoring.
 
-Een nog meer conservatieve benadering is om deze design-effecten niet mee te nemen. Mogelijks zal hiervoor worden gekozen. Steekproefgrootte wordt dan groter.
+Een nog meer conservatieve benadering is om deze design-effecten niet mee te nemen. Mogelijks zal hiervoor worden gekozen. De steekproefgrootte wordt dan groter.
 
-De analyses kunnen best gebeuren per typegroep, omdat de precisie op dit niveau het criterium vormt.
+De analyses kunnen gebeuren per typegroep, omdat de precisie op dit niveau het criterium vormt.
 
 Indien de benadering impliceert om inferenties na te bootsen zoals beschreven in hoofdstuk \@ref(inferentie), dan gebeuren voor scenario-vergelijking de volgende vereenvoudigingen:
 
 - gelijke weging van types
-- het effect van de regression estimator wordt vervangen door een design-effect (in ruimte en/of tijd), of genegeerd
+- het effect van de regression estimator / poststratificatie wordt vervangen door een design-effect (in ruimte en/of tijd), of genegeerd
 - het effect van GRTS-sampling wordt mogelijks ook vervangen door een design-effect (in ruimte), of genegeerd
 
 De **finite-population-correction** wordt steeds meegenomen bij het berekenen van varianties van kleinere strata (< 2000 populatie-eenheden beschikbaar voor een type).
 
-Onderstaande subparagrafen: verschillende mogelijke benaderingen voor steekproefgrootteberekeningen.
+De onderstaande paragrafen vertegenwoordigen verschillende mogelijke benaderingen voor steekproefgrootteberekeningen.
+
+
+## Met een eenvoudig model deelvarianties schatten
+
+Voor een voldoende eenvoudige opzet is het mogelijk om op analytische wijze een benaderende steekproefgrootteberekening te doen, op basis van:
+
+- de formules voor design-based schatting van een spatiaal gemiddelde (bruikbaar voor aggregatie van locatiespecifieke waarden van toestand en trend). Voor steekproefgrootteberekening worden in de formules gesubsitueerd:
+    - gekozen instelwaarden voor de doelparameters (hoofdstuk \@ref(doelparameters));
+    - de benodigde (spatiale, temporele) deelcomponenten van de variantie van de gebruikte schatter;
+- een eenvoudig model waarmee de benodigde variantiecomponenten worden geschat als random effecten. Het model wordt gefit aan beschikbare data met eenvoudige assumpties zoals: elke random component i.i.d. (constante variantie, onafhankelijk). Voor trendbepaling kan eventueel een random intercept + slope per locatie worden gebruikt om de spatiale variatie van de trend te isoleren.
+
+Eventueel kan de relatieve bijdrage van tijd en ruimte tot de variantie van een (spatiotemporele) schatter worden bepaald zodat de steekproefgrootte navenant over tijd en ruimte kan worden verdeeld.
+
+- Voordeel: deze benadering is relatief eenvoudig.
+- Nadelen:
+    - door eenvoudig tewerk te gaan, worden intrinsieke verschillen tussen types en typegroepen niet in rekening gebracht bij het bepalen van steekproefgroottes. Wanneer een meer 'natuurgetrouw' model wordt gefit, is dit model automatisch ook complexer zodat de (meer complexe) benadering in paragraaf \@ref(simulatie) meer voor de hand ligt;
+    - met deze eenvoudige modellen is het niet vanzelfsprekend om de onzekerheid op de variantiecomponenten te schatten, zodat het moeilijk is om de onzekerheid op een steekproefgrootteschatting te duiden;
+    - i.v.m. trend: doordat de formules geen rekening houden met autocorrelatie, en dit later wel gebeurt in analyses, zul je de standard error van de trend onderschatten omwille van autocorrelatie;
+    - deze methode beperkt zich daarom in de eerste plaats tot de design-based *toestandsbepalingen* van eenvoudige designs.
+
+
+## Steekproefsimulaties met een goed aan beschikbare data fittend model {#simulatie}
+
+<!-- HVC:  Ik zou hier verwijzen naar Bolker: 
+
+Estimating the power of a test of a null hypothesis by simulation requires the following steps (Bolker 2008):
+
+- Simulate many data sets assuming that the alternative hypothesis is true, that is, the effect of interest is not zero. ‘Many’ means enough to give an adequately precise power estimate. As a guide, with 100 simulations and 80% power, the power estimate will fall within 72–88% with 95% probability, while using 1000 simulations will reduce this range to 77·5–82·4%.
+- Using each simulated data set, perform a statistical test of the null hypothesis that the effect size is zero.
+Calculate the proportion of simulated data sets in which the null hypothesis was rejected. This proportion is the power estimate.
+- The effect of different designs and assumptions (e.g. sample size, effect size, random effect variances) on power can be explored by repeating steps 1–3 across a range of realistic scenarios.
+
+Ook de precisie waarmee een parameter geschat wordt kan via simulatie bepaald worden (de focus hoeft niet per se op power te liggen)
+
+FV: zie ook Johnson et al. (2015, cf. Mat&Meth waaruit bovenstaande is overgenomen), Kery & Royle (2015: ch. 4), simr package (Green & MacLeod, 2016), Zuur & Ieno (2016).
+-->
+
+
+Modelvorm: deze beschouwt minstens de kenmerken van de steekproefopzet, bv. jaar, maand, type, evt. typegroep. Het model dient de data redelijkerwijze te fitten, dus ook andere covariaten en dependencies kunnen aangewezen zijn (bodemtype, regio, effectieve neerslag, ...). Om realistische steekproeven te kunnen simuleren, is het wenselijk dat deze aspecten ruimtelijk aan het steekproefkader gekoppeld zijn.
+
+Het basismodel dat we fitten, is (op observation-level):
+
+```
+Variabele = type_(subgroep)_fixed + 
+            jaar_continuous_fixed (+ maand_continuous_fixed) + temporele autocorrelatie + 
+            locatie_random + 
+            residual error
+```
+
+<!--HVC: indien je dit model fit op bestaande data, heb je twee opties: (1) enkel de effect-sizes kiezen en simuleren -->
+
+<!--HVC: wat bedoel je hier met temporal dependency? Er zijn verschillende opties:
+- random intercept van locatie
+- random intercept van locatie + random slope voor jaar
+- cor(C)AR1 correlatiestructuur (of algemener een ARMA structuur)
+- zowel cor(C)AR1 als random effect van locatie?
+- en wellicht nog vele anderen...
+-->
+
+
+Het gebruik van het model geldt onder de assumptie dat het model de volledige spatiotemporele doelpopulatie goed beschrijft. Om het typeniveau te kunnen beschrijven, zullen diverse types ook in kleinere (sub)groepjes moeten worden gelumpt (fijner niveau dan de typegroepen) om er genoeg data over te hebben voor modellering.
+
+Het fixed effect 'maand' wordt minstens toegevoegd indien de scenario's zich onderscheiden in hun temporele design binnen het jaar, of wanneer er in het geval van repeated measurements binnen een jaar geen aggregatie gebeurt van data tot jaarniveau. Dit fixed effect kan daarnaast altijd de realiteitszin van het model verhogen, maar is niet noodzakelijk, indien met jaarlijks geaggregeerde waarden wordt gerekend.
+
+Steekproeven worden **gesimuleerd**, enerzijds door gekozen waarden te kiezen voor fixed factoren in overeenstemming met een scenario (i.h.b. de revisit design) en anderzijds door te samplen uit de distributie van de random modelparameters. <!-- HVC: ook in dit laatste geval kan je waarden kiezen voor de random effecten-->
+
+Bij aanwezigheid van *verklarende omgevingskenmerken* in het model, zoals bodemtextuur, worden waarden getrokken uit de distributie van de factor in het steekproefkader, volgens een bi- of multinomiale kansverdeling^[Dit geldt niet voor de factor 'type', waarvoor alle niveaus in gelijkaardige mate worden betrokken]. De opname in het model veronderstelt een wezenlijke bijdrage in de verklaring van de variatie van de milieuvariabele, wat impliceert dat een dergelijke modelfactor in aanmerking komt voor verhoging van juistheid en precisie door *poststratificatie* toe te passen bij de inferentie.
+
+De simulaties gebeuren met het *detrended* model, i.e. het model zonder de trend. Zodoende kunnen achteraf trends worden gevarieerd volgens scenario's, door deze trends bij te tellen. <!--HVC kan je dat doen? Ben ik niet zo zeker van. Moet je niet de grootte van de beta-parameter voor jaar instellen en dan simuleren. Elke andere instelling van beta vereist nieuwe simulatie? -->
+
+Indien het bovenstaande *continue jaareffect* in het model moeilijk fit aan de data (analoog voor maand):
+
+- een alternatief is het model te fitten met jaar in de random structuur, op een meer eenvoudige wijze. Het (sowieso) opnemen van temporele autocorrelatie kan hier voldoen, en jaar kan bovendien ook als een random intercept worden opgenomen. <!--HVC ik begrijp niet goed wat je hier bedoelt. Een random intercept van jaar in combinatie met een random intercept van locatie zou je kunnen beschouwen als een smoother voor jaar want een random intercept is een soort van smoother maar dan voor een factor. Net zoals bij een smoother voor jaar_continuous, krijg je dat de post-hoc geschatte random jaar effecten meer naar het globaal gemiddelde gezogen worden = shrinkage (ten opzichte van fixed effect van factor jaar)-->Voor steekproefsimulaties de factor jaar (of temporele autocorrelatie) eruit laten ('detrending') en vervangen door een gekende meerjarentrend;
+    - in het geval van een random effect 'jaar' is het aangewezen om een apart model te onderscheiden voor simulaties van de *toestand*, vermits anders geen blok van 6 aaneensluitende jaren kunnen worden gesimuleerd. In het toestandsmodel is daarom ook een random intercept 'zesjaarperiode' nodig, die de variatie tussen programmacycli opvangt. Binnen één gesimuleerde steekproef is de getrokken waarde hiervan dan constant te houden. Het nadeel van deze benadering is dat scenario's niet kunnen onderscheiden tussen verschillende temporele en revisit designs.
+- voor toestandsschattingen kan het model desgewenst nog een stap verder worden vereenvoudigd, door het jaar- (en maand-) effect niet op te nemen in het model, en louter het random effect 'zesjaarperiode' op te nemen, weliswaar met dezelfde vermelde beperkingen.
+
+Er worden een groot aantal, bv. in eerste instantie 100 <!-- ook met 100 heb je al een ruw idee, cf opmerking waarin ik verwijs naar Bolker --> spatiaal en temporeel 'grote' steekproeven gegenereerd, en vervolgens gevarieerd met uiteenlopende trendgroottes. Een subsample binnen elke gesimuleerde steekproef is dan een spatiaal of temporeel kleinere, gesimuleerde steekproef. <!--HVC ik denk dat je beter aparte simulaties doet voor verschillende steekproefgroottes. Subsamples nemen gaat de correlatiestructuur van je model breken (denk ik).-->
+De benadering met subsamples kan alleen op voorwaarde dat de correlatiestructuur van het model gerespecteerd kan blijven. Indien hier geen controle over is, dient elke steekproef rechtstreeks met het model te worden gesimuleerd.
+
+Compatibel met deze benadering is de methode om de modelobjecten voor steekproefsimulatie rechtstreeks te wijzigen, zie paragraaf \@ref(scratch).
+
+Evaluatie van deze gesimuleerde steekproeven gebeurt door de inferentie te doen op niveau van de typegroep, voor Vlaanderen en (eventueel) het SBZ-H netwerk, zoals voorzien in de monitoring. Zie hoofdstuk \@ref(inferentie).
+
+
+## Steekproefsimulaties vanuit manueel geconstrueerde modelobjecten (toelaten van a priori keuzes) {#scratch}
+
+Zie bijhorend [vignette](https://cran.r-project.org/web/packages/simr/vignettes/fromscratch.html) van het `simr` package. Het is mogelijk om de parameters van een model rechtstreeks aan te passen en zo steekproeven te simuleren vanuit het modelobject. Dit kan dus aansluitend op de voorgaande benadering. Belangrijke toepassingen zijn:
+
+- eigen gekozen waarde hanteren voor een trendparameter;
+- verschillende waarden hanteren voor variantieparameters, gezien de veelal grote onzekerheid op variantieschattingen^[Het is beter om meer scenario's door te rekenen met bijvoorbeeld verschillende waarden voor de variantie van een random intercept, dan de variantie te gebruiken die geschat wordt uit pilootdata (want de onzekerheid op variantieschatting is meestal zeer groot).];
+- a priori kennis incorporeren, indien je voor sommige parameters wel pilootdata hebt en voor andere niet of onvoldoende.  Informatie over effect sizes, varianties, ... kan ook komen van expertenkennis of wiskundige overwegingen in het licht van wat realistisch is.^[Bv. geen varianties instellen die maken dat er een behoorlijke kans is op simulatie van onrealistische waarden.]
+
+
 
 
 <!-- ## Louter kostengebaseerd -->
@@ -28,8 +121,8 @@ Onderstaande subparagrafen: verschillende mogelijke benaderingen voor steekproef
 
 Vertrekkend van een reeds bestaande, aselecte steekproef: bootstrap sampling voor simulatie van kleinere of grotere steekproeven, de nodige betrouwbaarheidsintervallen bepalen.
 
-- voordeel: eenvoud, geen model nodig
-- nadeel: je hangt vast aan de intrinsieke eigenschappen van de data (bv. moeilijk om een andere trend te kiezen). Tevens gaat een deel van de correlatiestructuur verloren, mede afhankelijk van de bootstrap procedure.
+- Voordeel: eenvoud, geen model nodig.^[Dit is met uitzondering van een parametrische bootstrap, waarbij je de eerst de distributie van de data modelleert en steekproeven simuleert uit die distributie ([bron](http://influentialpoints.com/Training/nonparametric-or-parametric_bootstrap.htm)).]
+- Nadeel: je hangt vast aan de intrinsieke eigenschappen van de data (bv. moeilijk om een andere trend te kiezen). Tevens gaat een deel van de correlatiestructuur verloren, mede afhankelijk van de bootstrap procedure.
 
 
 <!-- ## Vuistregels -->
@@ -40,32 +133,5 @@ Vertrekkend van een reeds bestaande, aselecte steekproef: bootstrap sampling voo
 
 
 
-<!-- ## Deelvarianties bepalen voor een eenvoudige opzet -->
-
-<!-- Voor een eenvoudige opzet zoals de voorgestelde: formules beschikbaar voor steekproefgrootteberekening (voor toestand en trend). Zij gaan uit van de instelwaarden en de variantiecomponenten van de design, voor schatting van een gemiddelde. Deze laatste kunnen met een eenvoudig model worden geschat (gefit aan beschikbare data met eenvoudige assumpties; alle observaties i.i.d.). -->
-
-<!-- Daarbij is de relatieve bijdrage van tijd en ruimte tot de variantie van een (spatiotemporele) schatter te bepalen zodat de steekproefgrootte navenant over tijd en ruimte kan worden verdeeld. -->
-
-<!-- De berekeningen houden ook rekening met de onzekerheid op de variantiecomponenten, volgens het model. -->
-
-<!-- Voordeel: relatief eenvoudig. -->
-
-<!-- Nadeel: -->
-
-<!-- - ivm trend: doordat de formules geen rekening houden met autocorrelatie, en dit later wel gebeurt in analyses, zul je de standard error van de trend onderschatten omwille van autocorrelatie. -->
-<!-- - deze methode beperkt zich daarom in de eerste plaats tot de design-based *toestandsbepalingen* van eenvoudige designs. -->
-
-
-## Steekproefsimulaties met een goed aan beschikbare data fittend model
-
-Modelvorm: deze beschouwt minstens de kenmerken van de steekproefopzet, bv. jaar, maand, type, typegroep. Het model dient de data redelijkerwijze te fitten, dus ook andere covariaten en dependencies kunnen aangewezen zijn (bodemtype, effectieve neerslag, ...). Om steekproeven te kunnen simuleren, is het nodig dat deze aspecten ruimtelijk aan het steekproefkader gekoppeld zijn.
-
-Het gebruik van dit model geldt onder de assumptie dat het model de volledige doelpopulatie goed beschrijft. Om het typeniveau te kunnen beschrijven, zullen diverse types ook in kleinere groepjes moeten worden gelumpt (weliswaar fijner niveau dan typegroepen) om er genoeg data over te hebben voor modellering.
-
-De design matrix van het model variëren, door waarden te trekken uit het steekproefkader in overeenstemming met de gekozen scenario-attributen. Er kan tegelijk gesampled worden uit de distributie van de modelparameters (fixed & random).
-    
-Voor verschillende trendgroottes voor een typegroep worden 1000 'grote' steekproeven gegenereerd. Een subsample binnen elke steekproef laat dan spatiaal of temporeel kleinere, gesimuleerde steekproeven toe, alsook opsplitsing tussen types.
-
-Evaluatie van deze gesimuleerde steekproeven gebeurt door de inferentie te doen op niveau van de typegroep en (eventueel) voor het SBZ-H netwerk, zoals voorzien in de monitoring.
 
 
