@@ -1,15 +1,15 @@
 # Inferentie
 
-Betreft het doen van uitspraken over de doelpopulatie op basis van een steekproef.
+Betreft het doen van uitspraken over de doelpopulatie op basis van een steekproef. De onderstaande methoden worden toegepast in de monitoring zelf, maar in principe ook voor de gesimuleerde steekproeven in de ontwerpfase, met dát verschil dat voor het ontwerp vereenvoudigingen en aannames gebeuren (zie onder).
 
-## De doelpopulatie van inferentie
+## Subpopulaties voor inferentie
 
 De schattingen voor typegroepen gebeuren:
 
 - in het geval van één eenvoudig totaalmeetnet door subpopulatieschatting via poststratificatie
 - in het geval van strata (met lage precisie) volgens type: met een samengestelde (afgeleide) estimator: (al dan niet gelijk gewogen) gemiddelde van de types
 
-Voor zowel toestand als trend zijn schattingen mogelijk voor verschillende subpopulaties. Alnaargelang de design gebeurt alles door subpopulatieschatting via poststratificatie of gebeuren berekeningen post-hoc met een samengestelde estimator:
+Voor zowel toestand als trend zijn schattingen mogelijk voor verschillende subpopulaties. Al naargelang de design gebeurt alles door subpopulatieschatting via poststratificatie of gebeuren verschillende berekeningen post-hoc met een samengestelde estimator:
 
 - voor de gehele doelpopulatie van een meetnet in Vlaanderen
 - voor de doelpopulatie binnen het SBZ-H-netwerk (zonder onderscheid tussen typegroepen)
@@ -18,44 +18,341 @@ Voor zowel toestand als trend zijn schattingen mogelijk voor verschillende subpo
 - voor de feitelijke types in Vlaanderen
 - voor de feitelijke types, binnen het SBZ-H-netwerk
 - voor andere mogelijke groeperingen van types, in Vlaanderen
-- voor andere mogelijke groeperingen van types,, binnen het SBZ-H-netwerk
+- voor andere mogelijke groeperingen van types, binnen het SBZ-H-netwerk
 
 Bij subpopulatieschatting via poststratificatie conditioneren we de grootte van de sample weights zodanig dat het geschatte aantal units van de subpopulatie gelijk is aan het werkelijke aantal units van de subpopulatie in het steekproefkader. Zie @overton_desirable_1996.
 
 
-## Regression estimators
+## Gebruik van omgevingskenmerken (auxiliary variables) {#auxiliaries}
 
-De design-based schatters betreffen zoveel mogelijk regression (of ratio) estimators, zodat de juistheid en precisie verhogen. Bemerk dat dit in de ontwerpoefening voorlopig alleen als een design-effect wordt meegenomen, of helemaal niet (conservatief). Bij revisies van de meetnetten kan dit meer concreet meespelen in steekproefgroottebepaling.
+Voor een meer accurate en precieze inferentie wordt gebruik gemaakt van informatielagen met een gekende waarde voor de gehele doelpopulatie en die correleren met de doelvariabele.
 
-De **modelvorm** van het verband tussen de auxiliary component (kan een constructie zijn met meerdere covariaten in ruimte en tijd) en de responsvariabele zodanig kiezen dat de best mogelijke correlatie (spatiaal en / of temporeel) wordt bekomen met de responsvariabele. Behalve de aangewezen covariaten (die voor de gehele doelpopulatie gekend moeten zijn!) dus ook spatiale en temporele dependency inbouwen. Het model kan voor meerdere of alle types samen worden opgebouwd, desgevallend gebruik makend van een covariaat type of typegroep. Zolang de predicties maar redelijk zijn.
+De design-based schatters betreffen dus zoveel mogelijk regression (of ratio) estimators (mbv continue auxiliaries), en/of zijn gebaseerd op poststratificatie met een categorische auxiliary, zodat de juistheid en precisie verhogen. Bemerk dat dit in de ontwerpoefening voorlopig alleen als een design-effect wordt meegenomen, of helemaal niet (conservatief). Bij revisies van de meetnetten kan dit meer concreet meespelen in steekproefgroottebepaling.
 
-Een regression estimator bevat minstens twee *pi-estimators* (design-based: de respons + één per covariaat van de auxiliary) en minstens één *gekende parameter* van de (sub)doelpopulatie (één per covariaat van de auxiliary).
+De **modelvorm** van het verband tussen de auxiliary component (kan een constructie zijn met meerdere covariaten in ruimte en tijd) en de responsvariabele is zodanig te kiezen dat de best mogelijke correlatie (spatiaal en / of temporeel) wordt bekomen met de responsvariabele. Behalve de aangewezen covariaten (die voor de gehele doelpopulatie gekend moeten zijn!) is dus ook spatiale en temporele dependency in te bouwen. Het model kan voor meerdere of alle types samen worden opgebouwd, desgevallend gebruik makend van een covariaat type of typegroep. Zolang de predicties maar redelijk zijn.
 
-## Werkwijze van inferentie
+Een regression estimator bevat minstens twee *pi-estimators* (design-based: de respons + één per covariaat van de auxiliary) en minstens één *gekende parameter* van de (sub)doelpopulatie (één per covariaat van de auxiliary). Bij poststratificatie worden de sampling weights bijgesteld [@de_gruijter_sampling_2006; @lumley_complex_2011; @overton_desirable_1996].
 
-Praktisch: zoveel mogelijk terugvallen op R-packages zoals het `survey` package, `spsurvey` e.d. NB. voor de SE-schattingen van kwantielen worden daarbij (intern) typisch resampling procedures zoals bootstrapping toegepast.
-
-Toestand + trend spatiaal: steeds naar typegroepen toe werken, hetzij met een samengestelde estimator op basis van type-strata, hetzij via subpopulation estimation (via poststratificatie) op basis van één totaalmeetnet.
-
-Toestand:
-
-Afhankelijk van de concrete steekproefstrategie in een meetnet, de overeenkomstige formules toepassen. Typisch eerst spatiaal aggregeren en daarna temporeel, vermits het spatial sampling pattern verandert in de tijd. Meer in het algemeen de correcte estimator gebruiken in overeenstemming met de design.
-
-Indien er repeated measurements voorkomen binnen de periode waarover een spatiotemporele aggregatie gebeurt (units die meerdere keren zijn bemeten), zoals in rotational en split panel designs, kan de spatiotemporele inferentie beter in één beweging gedaan worden waarbij repeated measurements worden downweighted in de analyse (zie @lumley_complex_2011 par. 3.4).
-
-<!-- Mogelijks als een multi-stage sample te analyseren (PSU's: jaren). -->
-
-Trend:
-
-- Iets wat altijd werkt: spatiaal aggregeren en daarna toepassen in een model om de temporele trend te analyseren. In het bijzonder bij non-static designs. Het model moet rekening houden met de autocorrelatie. Advies in @de_gruijter_sampling_2006: weighted least squares regression of spatial means, with weights inversely proportional to variances of spatial means.
-- Alternatief is eerst volledig model-based werken (spatiaal en temporeel), op basis hiervan de locatiespecifieke trend voorspellen (voor alle sample units afzonderlijk), en vervolgens spatiaal een design-based inferentie doen (volgens subpopulaties enz.). Dit is wellicht krachtiger (lokaal variërende trend is toegelaten), en het doet geen geweld aan de design-based ruimtelijke inferentie.
-- Nog een alternatief is om de locatiespecifieke trend op basis van niet-complete tijdsreeksen te corrigeren op basis van het regressieverband tussen 'complete trend' en 'niet-complete trend' voor een panel met complete tijdsreeksen, als dat er is (bv. een pure panel in een split panel design). Zie @stevens_spatially_1999 p. 426.
 
 ## Finite population correction
 
-Voor alle design-based onderdelen van de inferenties, i.e. de volledige toestandsbepaling (spatiotemporeel) en de spatiale component van de trendbepaling, wordt er rekening gehouden met de "finite population correction". De variantieschatter van elke (regression) estimator (dit kan dus per type zijn) wordt daartoe vermenigvuldigd met $(1- n/N)$ waarbij:
+Voor alle design-based onderdelen van de inferenties, i.e. de volledige toestandsbepaling (spatiotemporeel) en de spatiale component van de trendbepaling (zie verder), wordt er rekening gehouden met de "finite population correction". De variantieschatter van elke (regression) estimator (dit kan dus per type zijn) wordt daartoe vermenigvuldigd met $(1- n/N)$ waarbij:
 
 - $N$ staat voor het totale aantal units van de betreffende (sub)populatie in het steekproefkader
 - $n$ staat voor het aantal sample units
+
+
+
+## Werkwijze van inferentie {#inferentiewerkwijze}
+
+Praktisch: zoveel mogelijk terugvallen op R-packages zoals de packages `survey`, `srvyr`, `spsurvey` e.d.
+
+Toestand + trend spatiaal: steeds naar typegroepen toe werken, hetzij met een samengestelde estimator op basis van type-strata, hetzij via subpopulation estimation (via poststratificatie) op basis van één totaalmeetnet. We werken voortaan alleen met de eerste optie (type-estimators en samengestelde estimators).
+
+### Toestand {#toestandinferentie}
+
+- Afhankelijk van de concrete steekproefstrategie in een meetnet, de correcte estimator toepassen. In het voorbeeld in deze paragraaf gebeurt spatiotemporele aggregatie *in één keer*.
+- Een optie is om *in twee trappen* te aggregeren: eerst spatiaal en daarna temporeel. Dit kan een eenvoudiger alternatief zijn voor het veranderen van sampling weights in de tijd, wat optreedt bij evoluties van de spatiale sampling weights in de tijd (aanpassingen spatiale steekproefopzet), of bij een onevenwichtige verdeling van inspanningen in de tijd (zie ook verder: temporele poststratificatie). Tevens laat dit toe om ook een temporele finite-population-correction toe te passen wanneer voor een discrete temporele doelpopulatie is gekozen (zie paragraaf \@ref(support)).
+- Indien er *repeated measurements* voorkomen binnen de periode waarover een spatiotemporele aggregatie gebeurt (units die meerdere keren zijn bemeten), zoals in rotational en split panel designs, dan moeten repeated measurements worden downweighted in de analyse ten opzichte van eenmalige observaties [zie @lumley_complex_2011 par. 3.4].
+- Het is bovendien mogelijk om voor de (spatiotemporele) toestandsschatting *poststratificatie toe te passen op de tijdsfactor*, wanneer de verwachting bestaat dat de milieuvariabele gecorreleerd is met de onderscheiden tijdsstappen (in het voorbeeld hieronder: jaren). De populatiegrootte per tijdsstap (poststratum) is daarbij voor elk type gelijk aan zijn (spatiale) populatiegrootte. Dit is eveneens een manier om rekening te houden met onevenwichtige verdeling van inspanningen over de tijdsstappen.
+
+Hier volgt een fictief analysevoorbeeld, voor verder gebruik als referentie in de monitoring (een aantal stappen kunnen generieker worden gemaakt, als functie). Het betreft inferentie voor één typegroep. Het principe kan herhaald worden voor verschillende typegroepen.
+
+We construeren eerst een voorbeeldsteekproef voor inferentie over toestand en trend. De code hiervoor staat in bijlage \@ref(app:steekproef), samen met een verkenning van de datastructuur. We voeren hieronder de inferentie uit. Dit zijn de kenmerken van de steekproef:
+
+- één groep van vijf types
+- binnen elk type is de design spatiaal ongestructureerd
+- de temporele design is systematisch met een periode van één jaar
+- de revisit design is een split panel [1-0, 1-5], dus bestaande uit een pure panel en een serially alternating pattern met een cyclus van 6 jaar. Het pure panel dient voor verbeterde trendschattingen
+- de steekproef betreft een periode van 12 jaar, dus twee cycli. De toestandsschatting gebeurt voor de eerste cyclus, de inferentie over trend gebeurt over beide cycli samen
+- het meetnet beschouwt twee fictieve milieuvariabelen
+- er is een toenemende trend ingebracht voor Variabele 1 (trendgrootte is type-afhankelijk) en geen voor Variabele 2
+- naast een typespecifieke trend heeft elk type ook een eigen intercept 
+- er is een spatiale factor met 3 levels (dat kan bv. bodemtype zijn) opgenomen waarvan we invloed verwachten op de milieuvariabele. We kennen de ruimtelijke verdeling van de spatiale factor voor de doelpopulatie
+- we onderscheiden ook het domein 'binnen SBZ-H netwerk'. Ook voor het domein is de populatiegrootte per type gekend
+- er is voor de eenvoud uitgegaan van:
+    - een gelijke bemonsteringsinspanning voor de vijf types
+    - een gelijke residuele variantie binnen de vijf types (residueel t.o.v. de trend), die weliswaar verschilt tussen beide variabelen
+    - een gelijke populatieverdeling voor de vijf types tussen binnen (75%) en buiten SBZ
+    - een gelijke populatieverdeling voor de vijf types over de 3 levels van de spatiale factor (10%, 30% resp. 60%).
+    
+```{r ref.label='monitoringdata', message=FALSE}
+
+```
+
+```{r ref.label='statusdata', message=FALSE}
+
+```
+
+
+Hieronder wordt de wijze van inferentie weergegeven per type en voor de typegroep, voor de toestand van de eerste cyclus (spatiotemporeel gemiddelde + kwantielen over zes jaar). Er wordt gewerkt met poststratificatie om het effect van de spatiale factor te capteren en zo de juistheid en precisie te verhogen. Dit is op voorwaarde van goede correlatie tussen de spatiale factor en de doelvariabele (zoniet doet het meer kwaad dan goed). Het verdient aanbeveling om het effect van poststratificatie te verifiëren in de praktijk.
+
+De functie om de schattingen te doen, bevat tevens de optie om te poststratificeren op jaren.
+
+Er wordt rekening gehouden met de finite-population correction. De inferentie gebeurt tevens voor de toestand binnen het SBZ-H-netwerk (subpopulatieschatting waarbij we conditioneren voor de gekende subpopulatiegrootte binnen het SBZ-H-netwerk).
+
+Inspectie van de verschillende in de dataset optredende sampling weights (van de respectievelijke observaties), volgens type en panel:
+
+```{r}
+statusdata %>% 
+    mutate(Panel_recoded = ifelse(Panel == 1, "Panel 1", 
+                                "Panels 2-7")) %>% 
+    distinct(Panel_recoded, Type, SamplingWeight, TimesRepeated, SamplingWeight_reweighted) %>% 
+    select(Panel_recoded, Type, SamplingWeight, TimesRepeated, SamplingWeight_reweighted) %>% 
+    kable
+```
+
+De individuele observaties van panel 1 krijgen dus elk een veel kleiner gewicht in de toestandsschatting. Op die manier heeft dit panel evenveel belang in de toestandsschatting als de andere panels. De primaire functie van dit panel is het verbeteren van de inferentie voor trend.
+
+De schattingen van het gemiddelde en de 25-, 50- en 75-percentielen gebeuren met de onderstaande functie. Ook de standaardfout en de grenzen van het 90%-betrouwbaarheidsinterval worden voor elke schatting berekend.
+
+```{r echo=TRUE}
+status_estimates <- function(statusdf, poststrat_year = FALSE) {
+    
+    statusdf %>%
+    split(.$Type) %>%
+    map_dfr(.x = ., .f = function(df){
+        df %>%
+        svydesign(id = ~1,
+                  weights = ~SamplingWeight_reweighted,
+                  fpc = ~PopSize,
+                  data = .
+                  ) %>%
+        postStratify(design = .,  # postStratify() is only needed when poststratification is done.
+                                  # For poststratification to be effective
+                                  # rather than destructive, the
+                                  # poststratification variable(s) must be
+                                  # moderately to highly correlated with the
+                                  # target variable, so it is advisable to also
+                                  # compare without poststratification.
+                     strata = if (poststrat_year) {
+                                     as.formula("~SpatialFactor + Year")} else {
+                                     as.formula("~SpatialFactor")},
+                     partial = poststrat_year, # ignore empty poststrata
+                     population = if (poststrat_year) {
+                                         df %>%
+                                    tidyr::expand(SpatialFactor, Year, PopSize) %>%
+                                    mutate(Freq = PopSize *
+                                               ifelse(SpatialFactor == "Spat1", 0.1,
+                                                      ifelse(SpatialFactor == "Spat2", 0.3, 0.6))
+                                           ) %>%
+                                    select(SpatialFactor, Year, Freq)} else {
+                                         df %>%
+                                    distinct(SpatialFactor, PopSize) %>%
+                                    mutate(Freq = PopSize *
+                                               ifelse(SpatialFactor == "Spat1", 0.1,
+                                                      ifelse(SpatialFactor == "Spat2", 0.3, 0.6))
+                                           ) %>%
+                                    select(SpatialFactor, Freq)}
+                         ) %>%
+        (function(designobject) {
+            status_mean <- 
+                svymean(~ Variable1 + Variable2,
+                        design = designobject)
+            
+            status_quantiles <- 
+                svyquantile(~ Variable1 + Variable2,
+                        design = designobject,
+                        quantiles = c(0.25, 0.5, 0.75),
+                        alpha = 0.10,
+                        ci = TRUE)
+            
+            status_mean %>% 
+                as_tibble %>% 
+                rownames_to_column %>% 
+                mutate(CI90_lower = mean - qnorm(0.95) * SE,
+                       CI90_upper = mean + qnorm(0.95) * SE) %>% 
+                gather(key = "Estimator_parameter", value = "Value", 2:5) %>% 
+                mutate(Estimated_parameter = "mean") %>% 
+                select(rowname, Estimated_parameter, Estimator_parameter, Value) %>% 
+                mutate(Estimator_parameter = ifelse(Estimator_parameter == "mean", 
+                                                    "estimate",
+                                                    Estimator_parameter)) %>% 
+                bind_rows(
+                    status_quantiles$quantiles %>% 
+                            as_tibble(rownames = NA) %>% 
+                            rownames_to_column %>% 
+                            gather(key = "Estimated_parameter", value = "Value", 2:4) %>% 
+                            mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
+                                   Estimator_parameter = "estimate") %>% 
+                            select(rowname, Estimated_parameter, Estimator_parameter, Value)
+                    ) %>% 
+                bind_rows(
+                    status_quantiles %>% 
+                        SE %>% 
+                        t %>% 
+                        as_tibble(rownames = NA) %>% 
+                        rownames_to_column %>% 
+                        gather(key = "Estimated_parameter", value = "Value", 2:4) %>% 
+                        mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
+                               Estimator_parameter = "SE") %>% 
+                        select(rowname, Estimated_parameter, Estimator_parameter, Value)
+                ) %>% 
+                bind_rows(
+                    map_dfr(1:2, function(x) {
+                        status_quantiles$CIs[x,,] %>% 
+                            t %>% 
+                            as_tibble(rownames = NA) %>% 
+                            rownames_to_column %>% 
+                            gather(key = "Estimated_parameter", value = "Value", 2:4) %>% 
+                            mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
+                                   Estimator_parameter = 
+                                       ifelse(x == 1, "lower", "upper") %>% 
+                                       str_c("CI90_", .)
+                                       ) %>% 
+                            select(rowname, Estimated_parameter, Estimator_parameter, Value)
+                        })
+                    )
+        }) %>% 
+        mutate(Type = df$Type %>% first) %>% 
+        rename(Variable = rowname) %>% 
+        select(Type, Variable, Estimated_parameter, Estimator_parameter, Value)
+    })
+    
+}
+```
+
+<!--HVC bovenstaande functie kan wellicht eenvoudiger via svryr package, maar wel heel knap gedaan! Ik denk dat Toon W ook wel zeer goed deze code kan gebruiken-->
+
+We bepalen de schatters per type. We passen poststratificatie toe volgens de spatiale factor en volgens de jaren. Uit vergelijking bleek in dit voorbeeld dat de inferentie vooral heel wat nauwkeuriger werd door de temporele poststratificatie!
+
+Typeschattingen voor Vlaamse doelpopulaties:
+
+```{r echo=TRUE, warning=FALSE}
+example_estimates_VL <- 
+    statusdata %>% 
+    status_estimates(poststrat_year = TRUE)
+```
+
+```{r eval=FALSE}
+example_estimates_VL %>% 
+    (function(x) {
+        str(x)
+        x %>% 
+            distinct(Estimated_parameter, Estimator_parameter) %>% 
+            kable
+    })
+```
+
+Typeschattingen voor de doelpopulatie binnen het SBZ-H-netwerk (subpopulatieschatting waarbij we conditioneren voor de gekende subpopulatiegrootte binnen het SBZ-H-netwerk):
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+example_estimates_SBZH <- 
+    statusdata %>% 
+    filter(InSBZ) %>% 
+    inner_join(
+        statusdata %>% 
+        filter(InSBZ) %>% 
+        distinct(Type, LocationID) %>% 
+        group_by(Type) %>% 
+        summarise(LocationCount = n()) %>% 
+        ungroup
+    ) %>% 
+    group_by(Type) %>% 
+    mutate(
+        PopSize = PopSize * 0.75,
+        SamplingWeight = PopSize / LocationCount,
+        SamplingWeight_reweighted = SamplingWeight / TimesRepeated
+    ) %>% 
+    ungroup %>% 
+    status_estimates(poststrat_year = TRUE)
+```
+
+```{r eval=FALSE}
+example_estimates_SBZH %>% 
+    (function(x) {
+        str(x)
+        x %>% 
+            distinct(Estimated_parameter, Estimator_parameter) %>% 
+            kable
+    })
+```
+
+
+Berekening en toevoeging van groepsschatters:
+
+```{r echo=TRUE}
+example_estimates <- 
+    example_estimates_VL %>% 
+    mutate(Domain = "Flanders") %>% 
+    bind_rows(
+        example_estimates_SBZH %>% 
+        mutate(Domain = "SBZH")
+    )
+example_estimates_withgroup <-
+    example_estimates %>% 
+    filter(Estimator_parameter %in% c("estimate", "SE")) %>% 
+    spread(key = Estimator_parameter, value = Value) %>% 
+    group_by(Domain, Variable, Estimated_parameter) %>%
+    summarise(estimate = mean(estimate),
+              SE = sqrt(sum(SE^2)) / n()
+    ) %>% 
+    ungroup %>% 
+    mutate(Type = "TypeGroup", 
+           CI90_lower = estimate - qnorm(0.95) * SE,
+           CI90_upper = estimate + qnorm(0.95) * SE
+           ) %>% 
+    gather(key = "Estimator_parameter", value = "Value", estimate, SE, CI90_lower, CI90_upper) %>% 
+    union(example_estimates)
+```
+
+Weergave van alle schattingen als tabel:
+
+```{r echo=TRUE, results='asis'}
+example_estimates_withgroup %>% 
+    spread(key = Estimator_parameter, value = Value) %>% 
+    select(1:2, 4, 3, 7:8, 5:6) %>% 
+    pander::pandoc.table(split.table = Inf)
+```
+
+Weergave in grafieken van schattingen met hun 90% betrouwbaarheidsinterval:
+
+```{r echo=TRUE, fig.width=10, fig.height=6}
+example_estimates_withgroup %>% 
+    spread(key = Estimator_parameter, value = Value) %>% 
+    ggplot(aes(x = Type, 
+               y = estimate, 
+               ymin = CI90_lower,
+               ymax = CI90_upper,
+               colour = Estimated_parameter)) +
+        geom_point(position = position_dodge(width = 0.9)) + 
+        geom_errorbar(position = position_dodge(width = 0.9)) + 
+        facet_grid(Variable ~ Domain, scales = "free_y")
+```
+
+
+
+De inferenties op basis van gesimuleerde steekproeven, tijdens het ontwerp, kunnen vereenvoudigingen bevatten t.o.v. de bovenstaande, meer algemene benadering. Zo is het mogelijk dat er, bij gebrek aan een goede poststratificatievariabele, geen poststratificatie gebeurt. Ook is het te verwachten dat de toets aan het SBZ-H-domein niet standaard gebeurt, maar eerder wanneer specifiek nodig. De hoofdfocus ligt immers op Vlaanderen.
+
+Wanneer een goed bruikbare, continue auxiliary variabele beschikbaar is, zal er bij de analyse van monitoringsdata bovendien met regression estimation worden gewerkt (zie paragraaf \@ref(auxiliaries)), iets wat hierboven niet is geïmplementeerd.
+Ook zal dan de spatiale component van de inferentie kunnen worden betrokken, door rekening te houden met de GRTS-design in de schatting van de standaardfouten. In de simulaties wordt er niet spatiaal expliciet te werk gegaan (met gekende coördinaten per sample unit).
+
+
+### Trend
+
+Algemeen:
+
+- verandering in tijd van de milieuvariabele wordt beschreven met een model
+- over een beschouwde periode van $x$ keer 6 jaar ($x$ > 1)
+- bv. lineair: trend = (gemodelleerde) vaste toe- of afname per jaar
+
+Werkwijze voor de spatiale aggregatie:
+
+- Een algemene benadering die altijd werkt: spatiaal aggregeren en daarna toepassen in een model om de temporele trend te analyseren. In het bijzonder bruikbaar bij non-static designs. Het model moet rekening houden met de autocorrelatie. Advies in @de_gruijter_sampling_2006: weighted least squares regression of spatial means, with weights inversely proportional to variances of spatial means.
+- Het alternatief dat we verkiezen is om eerst volledig model-based werken (spatiaal en temporeel), op basis hiervan de locatiespecifieke trend voorspellen (voor alle sample units afzonderlijk), en vervolgens spatiaal een design-based inferentie doen (volgens subpopulaties enz.). Dit is krachtiger (lokaal variërende trend is toegelaten), en het doet geen geweld aan de design-based ruimtelijke inferentie.
+    - Het betrouwbaarheidsinterval op de trendparameter wordt dan bepaald door de spatiale CI-bovengrens van de locatiespecifieke CI-bovengrens en de spatiale CI-ondergrens van de locatiespecifieke CI-ondergrens. Zie ook paragraaf \@ref(trendspecif).
+- Nog een alternatief is een two-phase sampling aanpak om de locatiespecifieke trend op basis van niet-complete tijdsreeksen te corrigeren op basis van het regressieverband tussen 'complete trend' en 'niet-complete trend' voor een panel met complete tijdsreeksen, als dit verband er is (bv. een pure panel in een split panel design). Zie @stevens_spatially_1999 [p. 426] en @de_gruijter_sampling_2006.
+
+Een uitwerking van het rekenvoorbeeld met de fictieve steekproef kan hier later worden toegevoegd. De essentie is dat op locatiebasis een trendschatter wordt berekend (zie paragraaf \@ref(trendspecif)), die vervolgens spatiaal wordt geaggregeerd op analoge wijze als de toestandsschatting (met gelijke sampling weights voor alle locaties van hetzelfde type).
+
+
+### Oppervlakteweging voor een eindige doelpopulatie van punten {#plasinferentie}
+
+Bij types van stilstaande wateren telt elke plas als één functionele eenheid. Elke plas komt daarom overeen met één punt. Voor deze types zijn twee wijzen van inferentie *complementair*:
+
+1. inferentie met gelijke weging van de plassen: de sampling units van de design zijn de punten. Via subpopulatieschattingen (geconditioneerd door poststratificatie) is het daarenboven mogelijk om voor klassen van plasoppervlakte aparte uitspraken te doen (bv. volgens de oppervlakteklassen van het meetnet biotische habitatkwaliteit, maar dit hoeft niet en het kan worden aangepast);
+1. oppervlaktegewogen inferentie: omdat het voor de G-IHD nog steeds de oppervlakte is die als criterium geldt. De sampling units van de design zijn dan een kleine, vaste oppervlakte-eenheid ter hoogte van de punten. De sampling weight van elke plas wordt dan gelijkgesteld met zijn oppervlakte (dit is equivalent met poststratificatie van oppervlakte-eenheden (bv. 1 m²) met de individuele plassen als poststrata). Bemerk dat de volledige oppervlakte van een plas meetelt als habitattype of RBB van zodra ergens in deze plas een 'habitat- of RBB-waardige' levensgemeenschap voorkomt.
+
+
 
 

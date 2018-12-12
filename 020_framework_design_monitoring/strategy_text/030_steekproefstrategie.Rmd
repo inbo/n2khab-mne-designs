@@ -16,23 +16,86 @@ Uitgaande van de eerder gestelde principes zijn er maar twee robuuste en relatie
 
 - het idee van wegingen van types laten varen, en genoegen nemen met een equiprobable sample voor de hele doelpopulatie van een meetnet. Dit impliceert dat inferentie over typegroepen en types gebeurt als subpopulatieschattingen (via poststratificatie), en dat de precisies hiervan volledig van de *total* sample size afhangt en niet op maat gestuurd wordt.
     - dit is vrijwel zeker goedkoper, maar heeft een vrij beperkt toepassingsgebied en biedt weinig controle over precisie van subpopulation estimates.
-- stratificeren volgens types, met lage-precisie-uitspraken per stratum (type). Een samengestelde estimator voor de typegroep kan dan post-hoc worden berekend als een (al dan niet gelijk gewogen) gemiddelde van de types. De variantie van deze afgeleide estimator is functie van de typespecifieke varianties. De steekproefgrootte per type heeft op die manier doorwerking in de precisie van uitspraken per typegroep, die de trigger is om de typespecifieke steekproefgroottes te kiezen (evenredig met de typespecifieke standaardafwijking en met finite population correction).
-    - dit heeft het voordeel van onafhankelijkheid tussen de verschillende types, en geeft beter zicht op concrete types
+- stratificeren volgens types, met lage-precisie-uitspraken per stratum (type). Een samengestelde estimator voor de typegroep kan dan post-hoc worden berekend als een (al dan niet gelijk gewogen) gemiddelde van de types. De variantie van deze afgeleide estimator is functie van de typespecifieke varianties. De steekproefgrootte per type heeft op die manier doorwerking in de precisie van uitspraken per typegroep, die de trigger is om de typespecifieke steekproefgroottes te kiezen (evenredig met de typespecifieke standaardafwijking en met finite population correction). We streven naar eenzelfde precisie voor alle types.
+    - dit heeft het voordeel van onafhankelijkheid tussen de verschillende types, en geeft gelijkmatige informatie over concrete types. Er is ook van elk type informatie gewenst (cf. instandhoudingsbeleid: gunstige GSVI bereiken voor elk type).
+    - door te streven naar gelijke precisie van de types, blijft er in de toekomst flexibiliteit om de typegroepen anders in te vullen, en op diverse manieren samen te stellen uit de types (gewichten per type: bv. gelijk, volgens beleidsbelang, volgens oppervlakte).
+    -  voor de steekproefgrootteberekeningen in de ontwerpfase gaan we uit van gelijke typegewichten in de (post-hoc opgestelde) groepsschatters, om hier geen voorafnames in te doen.
     - indien nodig kan een type (ook in een later stadium) intensiever worden gemeten zonder dat dit inferentieprocedures compliceert.
-    - dit laat tevens toe om voor bepaalde types de populatie-eenheden anders in te vullen (bv. plassen)
-    - bemerk dat hoe meer types een typegroep telt, hoe minder nauwkeurig de typespecifieke uitspraak zal zijn en hoe goedkoper de totale opzet. Er wordt immers gestuurd op precisie op niveau van de typegroep.
+    - dit laat tevens toe om voor bepaalde types de populatie-eenheden anders in te vullen, én zonodig om er een andere design toe te passen. Een voorbeeld zijn de plassen en de waterlopen.
+    - bemerk dat hoe meer types een typegroep gemiddeld telt, hoe minder nauwkeurig de typespecifieke uitspraak zal zijn en hoe goedkoper de totale opzet. Er wordt immers gestuurd op precisie op niveau van de typegroep. *Zie figuren en onderstaande indicatieve formule.*
+    
+Concreet wordt **geopteerd voor de benadering om te stratificeren volgens types**.
 
-Belangrijk bij een zo breed inzetbare steekproefstrategie is dat de effectiviteit (hoge precisie) bekomen wordt door 1) de spatiale balancering, 2) een goede temporele spreiding (revisit design) en 3) het gebruik van auxiliary information door regression estimators te gebruiken (model-assisted design).
+Belangrijk bij een zo breed inzetbare steekproefstrategie is dat de effectiviteit (hoge precisie) bekomen wordt door:
+
+1. de spatiale balancering (spatial design);
+1. een goede temporele spreiding (temporal design & revisit design);
+1. het gebruik van auxiliary information door regression estimators (continue auxiliaries) of poststratificatie (categorische auxiliary) te gebruiken (model-assisted design).
+
+```{r SEgroep1, fig.cap="Een grotere standaardfout van de schatter per type resulteert in een grotere standaardfout van de schatter van de typegroep. Het effect (helling in de figuur) vermindert naarmate meer types in een groep zitten. Een assumptie bij deze figuur is een gelijke standaardfout voor alle types in de typegroep."}
+SEdata <- 
+    expand.grid(
+    SE_typeparameter = c(10,50),
+    Aantal_types = 1:30
+) %>% 
+    mutate(SE_typegroepparameter = 
+               sqrt(1 / Aantal_types^2 * SE_typeparameter^2 * Aantal_types))
+SEdata %>% 
+    ggplot(aes(x = SE_typeparameter,
+               y = SE_typegroepparameter,
+               colour = Aantal_types,
+               group = Aantal_types)) +
+        geom_line() + 
+        scale_colour_gradient(low = "blue", high = "darkred",
+                              guide = guide_colourbar(title = "Aantal types\nper groep")) +
+        labs(x = "Standaardfout (SE) van parameterschatting per type",
+             y = "SE parameterschatting per typeGROEP")
+```
+
+
+```{r SEgroep2, fig.cap="De verhouding tussen de standaardfout van de typegroepschatter en die van de typeschatter vermindert naarmate meer types in een groep zitten. Een assumptie bij deze figuur is een gelijke standaardfout voor alle types in de typegroep."}
+SEdata %>% 
+    mutate(Ratio_groepSE_typeSE =
+               SE_typegroepparameter / SE_typeparameter) %>% 
+    ggplot(aes(x = Aantal_types,
+               y = Ratio_groepSE_typeSE)) +
+    geom_line() +
+    labs(x = "Aantal types per groep",
+         y = "SE_groep / SE_type")
+```
+
+
+Verband tussen de standaardfouten van groepsschatter en typeschatter, bij gelijke precisie van de typeschatters en gelijk aandeel van de typeschatters in de groepsschatter:
+
+
+$$SE_{groep} = \frac{SE_{type}}  {\sqrt k}$$
+
+met $k$ het aantal types in de groep
+
 
 
 
 ## Spatiaal
 
-GRTS als basis voor een goede ruimtelijke spreiding (~ efficiëntie van schatters) en voor maximaliseren van de koppeling met meetnet biotische habitatkwaliteit.
+Een GRTS-design [generalized random-tessellation stratified design; zie o.m. @stevens_spatially_2004] wordt genomen als basis voor een goede ruimtelijke spreiding (~ efficiëntie van schatters) en voor het maximaliseren van de koppeling met meetnet biotische habitatkwaliteit, waar de GRTS-strategie is gevolgd.
 
-- Celgrootte van 32 x 32 m² als basis voor de populatie-eenheid van terrestrische en semi-terrestrische types (overnemen grid van meetnet biotische habitatkwaliteit).
-    - Overweging: voor bepaalde milieuvariabelen een trap hoger werken in de hiërarchie
-- Segmenten van waterlopen en individuele plassen zijn de populatie-eenheden voor aquatische types, maar dit is compatibel met een GRTS-trekking.
+Het principe van een GRTS-design is dat aan alle cellen van een vlakdekkend grid een rangnummer wordt toegekend via een hiërarchische randomisatieprocedure. Het rangnummer dat we hier implementeren is de zg. reverse hierarchical order. Een volgens de rangnummers *opeenvolgende* reeks cellen is steeds te zien als een aselecte, ruimtelijk gebalanceerde equal-probability steekproef. Deze benadering is ook zeer flexibel om latere uitbreidingen van de steekproef toe te laten. Voor een toegankelijke introductie tot de methode, voer de volgende commando's uit in R:
+
+```r
+install.packages("devtools")
+devtools::install_github("ThierryO/grts", build_vignettes = TRUE)
+vignette("intro", package = "GRTS")
+```
+
+De volgende paragrafen delen de types in volgens drie groepen, waar de GRTS-design op een andere manier wordt toegepast:
+
+### Types met als sampling unit een rastercel uit het GRTS-grid
+
+Dit geldt typisch voor de terrestrische types.
+
+De celgrootte van 32 x 32 m² dient als basis voor de populatie-eenheid van terrestrische en semi-terrestrische types (overnemen grid van meetnet biotische habitatkwaliteit). 
+    - Overweging: voor bepaalde milieuvariabelen een trap hoger werken in de grid-hiërarchie (64 x 64 m²), hetzij opvangen via de response design (zie verder). Een nadeel is wel de grotere fout in de oppervlaktegewijze vertegenwoordiging van types (elke sampling unit telt dan effectief als 64 x 64 m²). Zie verder de sample-support-overwegingen in paragraaf \@ref(support).
+
 
 <!-- Te overwegen opties: -->
 
@@ -40,9 +103,7 @@ GRTS als basis voor een goede ruimtelijke spreiding (~ efficiëntie van schatter
 <!-- - two-stage GRTS met per meetnet geoptimaliseerde grootte van de PSU's (primary sampling units). De PSU's zijn dan hogere-orde rastereenheden van het GRTS-grid. -->
 <!--     - voordeel ten opzichte van ruimtelijk variërende geografische eenheden (PSU's zoals gemeenten, fysische systeemeenheden, ecodistricten, ...) op maat van elk meetnet, is de grotere consistentie en overlap tussen de meetnetten, de gelijke ruimtelijke dekking per PSU en de eenvoud om te up- of downsizen (ontwerpscenario's) volgens de noden. -->
     
-GRTS master sample gebruiken van het meetnet biotische habitatkwaliteit om de koppeling te maximaliseren
-
-- De doelpopulatie (steekproefkader) van een concreet meetnet (bv. verdroging via grondwater) is een subset hiervan: combinaties van Vlaamse X, Vlaamse Y en de voorkomende types (beperkt tot deze die we voor het meetnet viseren). Eén XY-coördinaat kan meerdere types bevatten.
+De doelpopulatie (steekproefkader) van een concreet meetnet (bv. verdroging via grondwater) is een subset van het GRTS-grid: combinaties van Vlaamse X, Vlaamse Y en de voorkomende types (beperkt tot deze die we voor het meetnet viseren). Eén XY-combinatie kan meerdere types bevatten.
 
 <!-- Aandachtspunt: de aquatische types. Minstens voor atmosferische meetnetten wordt dezelfde milieuvariabele beoogd voor terrestrische en aquatische types. Het heeft daarom meerwaarde om ook de aquatische types binnen dezelfde opzet mee te nemen, om de uitspraken los van aquatisch of terrestrisch te kunnen doen (want ook de atmosferische typegroepen zullen gemengde terrestrisch-aquatische groepen zijn). Het verschil met terrestrisch zit dan vooral in de terreinprocedure, gegeven een getrokken 32 m² cel: -->
 
@@ -55,10 +116,29 @@ GRTS master sample gebruiken van het meetnet biotische habitatkwaliteit om de ko
 
 <!-- *XXX nog bekijken hoe in habitatkwaliteit concreet is samengespoord met initiatieven van specifieke typeklassen (duinen, ...), om te evalueren hoe groot onze afwijking daarvan zal zijn. Default reflex: niets aan te doen. Tijdelijke tussenoplossingen (cf. overgangsfase grondwatermeetnet): E[schatter] heeft ongekende bias* -->
 
+
+### Types met als sampling unit een eenheid met variabele oppervlakte
+
+Bij types van stilstaande wateren telt elke plas als één functionele eenheid. Elke plas komt daarom overeen met één punt, random geselecteerd in de plas. Hier voorzien we twee complementaire manieren om inferentie te doen: niet en wel oppervlaktegewogen; zie verder paragraaf \@ref(plasinferentie).
+
+De sampling units voor de design zijn de punten. Aan de punten (en zo aan de plas) wordt het GRTS-rankingnummer toegekend van de cel waar het punt in valt. De voorwaarde daarbij is dat de cellen voldoende klein zijn zodat ze nooit twee punten (dus van twee plassen) tegelijk bevatten. Vervolgens worden punten getrokken volgens de reverse hierarchical order. Deze methode is gevolgd in het meetnet biotische habitatkwaliteit, zodat maximale koppeling zal ontstaan.
+
+We volgen voor de steekproefopzet echter niet de gestratificeerde design van het meetnet biotische habitatkwaliteit (aangepaste steekproefgrootte per klasse van plasoppervlakte), dit om inflexibiliteit te vermijden t.a.v. aanpassing van de stratumdefinitie [@overton_desirable_1996; @stevens_implementation_1994; @manly_sampling_2014]. Zie verder het hoofdstuk \@ref(inferentie).
+
+
+### Types met als sampling unit een lijnsegment van vaste lengte
+
+Voor types van waterlopen worden lijnsegmenten bemonsterd. Het steekproefkader wordt verdeeld in lijnsegmenten en er wordt at random één punt gekozen per lijnsegment, voor alle segmenten op dezelfde relatieve positie binnen het segment. Vervolgens wordt voor deze punten dezelfde steekproeftrekking toegepast als bij de plassen. Deze methode is gevolgd in het meetnet biotische habitatkwaliteit, zodat maximale koppeling zal ontstaan.
+
+
+
+
+
+
 ## Temporeel
 
 
-Noot: er is geen temporele design van toepassing indien volledige tijdsreeksen beschikbaar (cf. grondwaterstanden met loggers / jaarlijkse data van elke locatie). Er blijft in dat geval *wel* onzekerheid op trendschatters vermits deze model-based worden geschat.
+Noot: er is geen temporele *sampling* design van toepassing indien volledige tijdsreeksen beschikbaar zijn (continumetingen zoals grondwaterstanden met loggers, of van elke locatie komen jaarlijkse data beschikbaar die het jaar voldoende vertegenwoordigen). Er blijft in dat geval *wel* onzekerheid op trendschatters vermits deze model-based worden geschat.
 
 - systematisch samplen (bv. jaarlijks, maandelijks). Nadeel is wel mogelijke onderschatting van de variantie, mede afhankelijk van hoe de temporele doelpopulatie is gedefinieerd.
 - minstens jaarlijks data verzamelen, want:
@@ -66,26 +146,36 @@ Noot: er is geen temporele design van toepassing indien volledige tijdsreeksen b
     - afhankelijk van de milieuvariabele is de aggregatie op jaarniveau de basis voor analyse en inferenties. Bv. XG3's
 - indien significante variatie optreedt binnen een jaar (cf. resultaten van modelwerk): het effect bepalen van meerdere keren bemonsteren per jaar op precisie van spatiotemporele toestand en van de trend
 
-## Spatiotemporeel
+## Revisit design
+
+De revisit design (s.s.) of panel design betreft de verdeling van locatiebezoeken over de tijd. Dit is dus spatiotemporeel: de revisit design neemt de spatiale en temporele design in acht.
 
 <!-- Mede afstemming nodig met strategie in meetnet biotische habitatkwaliteit (-> ? serially alternating pattern op jaarbasis, met bijstelling steekproef elke 12 jaar, en dus vasthouden aan locaties?) Pilootmonitoring abiotiek oppervlaktewater: volgt nu binnen elk jaar een pure panel-aanpak (repeated sampling). -->
+
+Een verzameling van alle locaties die in dezelfde tijdsvensters en volgens hetzelfde terugkeerpatroon worden bemeten, is een zg. *panel*. Typisch wordt een revisit design opgebouwd uit meerdere panels, die samen tot een goede verdeling in tijd en ruimte leiden.
+
+De panel-notaties hieronder volgen @mcdonald_review_2003.
 
 ### Over jaren heen
 
 Merk op dat de doelpopulatie ruimtelijk zal evolueren met de tijd. Daarom zesjaarlijks of vaker (bv. in opvolging van nieuwe versies habitatkaart) het steekproefkader bijwerken en trekking overeenkomstig aanpassen.
 
-De nodige steekproefgrootte kan verdeeld worden over meerdere panels om de behoefte aan toestand- en trendinformatie te balanceren (beide belangrijk, toestand meest belangrijk).
+De nodige steekproefgrootte kan verdeeld worden over meerdere panels om de behoefte aan toestand- en trendinformatie te balanceren (beide zijn belangrijk, toestand is meest belangrijk). Er zijn in principe heel wat mogelijkheden in verdeling van de spatiale steekproef over de tijd (uiteenlopende herhalingspatronen).
 
-De verdeling van steekproefelementen over panels komt neer op een opdeling van de steekproef in subsamples. Bij de toewijzing per jaar proberen we de volgende doelstellingen te combineren:
+Louter spatiale steekproeven (jaarlijkse data beschikbaar van elke locatie) zijn hier een 'pure panel' [1-0].
 
-- ruimtelijke balans en dekking per jaar (zodat de data van elk jaar op zich ook als ruimtelijk gebalanceerde steekproef dienst doen);
+De verdeling van steekproefelementen over panels -- de zg. *membership design* -- komt neer op een opdeling van de steekproef in subsamples.
+Dit kan voor een gegeven panel design nog op meerdere manieren.
+Concreet zullen de locaties uit een GRTS-trekking (reverse hierarchical order) als aaneensluitende blokken worden toegewezen aan respectievelijke panels, zodat elk panel ruimtelijk gebalanceerd is.
+
+Bij de toewijzing per jaar proberen we de volgende doelstellingen te combineren:
+
+- ruimtelijke balans en dekking per jaar. Zo kunnen de data van elk jaar op zich ook als ruimtelijk gebalanceerde steekproef dienst doen, wat inferenties over temporele *sub*populaties mogelijk maakt;
 - enkel indien veel punten zijn te bemonsteren per jaar: per jaar de steekproefelementen ruimtelijk méér bundelen dan het geval is voor de steekproef over meerdere jaren (beperking van verplaatsing geeft kostenefficiëntie).
 
 Dit is mogelijk door voor de toewijzing aan panels een GRTS-rangschikking op een hoger hiërarchisch niveau te gebruiken dan het niveau dat wordt gebruikt voor de steekproefelementen. Bv. voor panels hokken selecteren van ca. 1-enkele km²; het betreft dus een verdeling over de panels van alle hokken die de reeds getrokken steekproefelementen omvatten, en dit op zo'n manier dat het aantal steekproefelementen per jaar gelijkaardig is (panels met repeated measures in rekening genomen). Alle steekproefelementen die tot de voor één panel getrokken hokken behoren, rekenen we dus tot het betreffende panel.
 
 De grootste kostenefficiëntie zou bereikt worden door hetzelfde hokkenpatroon toe te passen voor zoveel mogelijk MNM-meetnetten samen, maar deze synergie vereist tevens dat die meetnetten een sterk overlappende spatiotemporele design volgen. I.e. gelijk aantal panels en gelijke panel design.
-
-Panel-notaties hieronder volgen @mcdonald_review_2003.
 
 <!-- #### Geen vaste meetinstallaties -->
 
@@ -106,31 +196,78 @@ Panel-notaties hieronder volgen @mcdonald_review_2003.
 
 <!-- Cf. grondwater, atmosfeer, evt. overstromingswater. -->
 
-Omdat veel non-responses optreden bij een eerste bezoek van nieuwe locaties (cf. rotational sampling, synchronous sampling), wordt gewerkt met een vaste set locaties (blijft wel onderhevig aan revisie ivm evolutie van het steekproefkader, cf. hiervoor). Dit is ook opportuun voor locaties met een vaste meetopstelling zoals peilbuizen. De synergie met meetnet biotische habitatkwaliteit hierdoor ook het grootst. Om enerzijds detailinformatie te bekomen over trend en anderzijds om de sampling-intensiteit te blijven beheersen, is eventueel een split panel te overwegen (zoniet: gaan voor het serially alternating pattern):
+Omdat veel non-responses optreden bij een eerste bezoek van nieuwe locaties (cf. rotational sampling, synchronous sampling), wordt gewerkt met een vaste set locaties (blijft wel onderhevig aan revisie ivm evolutie van het steekproefkader, cf. hiervoor). Dit is ook opportuun voor locaties met een vaste meetopstelling zoals peilbuizen. De synergie met meetnet biotische habitatkwaliteit is hierdoor ook het grootst. Om enerzijds detailinformatie te bekomen over trend en anderzijds om de sampling-intensiteit te blijven beheersen, is eventueel een **split panel** te overwegen (zoniet: gaan voor het serially alternating pattern):
 
-- enerzijds panels die laagfrequent worden bemeten: serially alternating pattern, bv. volgens design [1-3], [1-4], [1-6] of [1-12].
+- enerzijds panels die laagfrequent worden bemeten:
+    - hetzij een serially alternating pattern (elk panel wordt één keer bemeten in de cyclus), bv. volgens design [1-2] of [1-5] en eventueel zelfs [1-11];
+    - hetzij een periodisch rotational pattern (elk panel wordt enkele keren opeenvolgend bemeten), bv. [2-4], [2-10] of [3-10]
 - anderzijds 1 pure panel [1-0] (jaarlijks).
+
+In het pure panel kan het verband worden onderzocht tussen volledige tijdsreeksen (elk jaar gemeten: pure panel) en onvolledige tijdsreeksen (sommige jaren gemeten: laagfrequent). Dit verband is toe te passen als correctie van trendschatting voor de overige locaties [two-phase sampling, cf. @stevens_spatially_1999, of via mixed model predicties]. De voorwaarde hiervoor is dat trendschattingen met volledige en onvolledige tijdsreeksen onderling gecorreleerd zijn.
 
 De terugkeerperiode wordt best ingeschat op basis van de milieuvariabele:
 
 - ingeschatte snelheid van verandering
 - duurtijd en effect van verstoring
 
-Andere overweging voor terugkeerperiode: samensporen meetnet biotische habitatkwaliteit? (kostenefficiënter?)
+Een andere overweging voor de terugkeerperiode is een samensporing met het meetnet biotische habitatkwaliteit (3-, 12- of 18-jaarlijks) in de hoop dat dit kostenefficiëntie oplevert (combineren van terreinwerk). Omdat dit in de praktijk echter veelal niet gecombineerd zal kunnen worden (andere mensen, andere vereisten, tijdsbeperkingen, verschillen in temporele doelpopulatie), zien we dit evenwel niet als een referentie.
 
-De opzet gebeurt zodanig dat jaarlijks ongeveer eenzelfde aantal locaties wordt bemonsterd. De steekproefverdeling binnen een jaar is bv. 1/2 voor het pure panel en 1/2 voor laagfrequente locaties.
+Wel zal de terugkeerperiode -- cf. hoger -- steeds zo zijn dat:
+
+- ofwel 6 jaar (programmacyclus) een veelvoud is van de terugkeerperiode;
+- ofwel de terugkeerperiode een veelvoud is van 6 jaar.
+
+De opzet gebeurt zodanig dat jaarlijks ongeveer eenzelfde aantal locaties wordt bemonsterd. De steekproefverdeling *binnen een jaar* is bv. 1/2 voor het pure panel en 1/2 voor laagfrequente locaties.
 
 
 ### Binnen een jaar
 
-Optimalisatie mogelijk van de pure-panel aanpak binnen één jaar (cf. chemie waterkolom, zienswijze ICP, ...)? Enkele mogelijkheden:
+Verlichting mogelijk van de pure-panel aanpak binnen één jaar (cf. chemie waterkolom, zienswijze ICP, ...)? Enkele mogelijkheden:
 
-- spatiale opzet variëren binnen een jaar:
-    - rotating panel
-    - serially alternating panel
-    - synchronous sampling, systematisch in tijd (independent panels)
+- alternatieve revisit designs binnen een jaar, met afnemende nauwkeurigheid voor de meerjarenschatting van toestand en trend:
+    - split panel: een beperkt deel behouden als pure panel [1-0] en voorts een serially alternating [1-y] of periodisch rotational pattern [x-y]. Naar analogie van het systeem over de jaren.
+    - serially alternating panel [1-y]
+    - synchronous sampling, systematisch in tijd (independent panels [1-n])
 - tijdstippen binnen een jaar variëren:
     - frequentie van bezoeken is te variëren
     - begin- en eindtijdstip van de periode (~ indien verantwoord volgens vraagstelling)
+
+
+
+
+## Response design
+
+De response design (synoniemen: site design, operational design) beschrijft voor elke concrete milieuvariabele wat er wordt bepaald **per steekproefeenheid**, hoe dit gebeurt, en hoe dit leidt tot één waarde voor de milieuvariabele (doelvariabele, analysevariabele). Het betreft onder meer:
+
+- de manier om te verifiëren of de steekproefeenheid effectief tot de doelpopulatie van een MNM-meetnet behoort;
+- de keuze van de precieze meetlocatie binnen de steekproefeenheid, of deellocatie**s** indien de milieuvariabele meerdere locaties per steekproefeenheid integreert;
+- de manier om de bovenstaande informatie op te slaan (deel van de dataketen), inclusief aspecten van ontoegankelijkheid;
+- de keuze van het precieze tijdstip binnen de volgens de revisit design (of temporele steekproefeenheid) bepaalde bezoekperiode. Of de keuze van meerdere deeltijdstippen, indien de milieuvariabele meerdere tijdstippen per steekproefeenheid integreert;
+- de wijze om de waarde van meetvariabelen te bepalen (d.i. inclusief staalnamemethode, menging van eventuele deelstalen, bewaringsmethode, meetmethode, en alle gerelateerde logistieke aspecten);
+- de wijze om de bovenstaande, metinggebonden informatie op te slaan (deel van de dataketen), inclusief aspecten van niet-meetbaarheid (non-response);
+- de wijze om één unieke waarde te bepalen van de milieuvariabele (doelvariabele, analysevariabele), wat ook een numerieke aggregatie van deellocaties en deeltijdstippen met zich kan meebrengen.
+
+De aanpak moet steeds leiden tot een goede vertegenwoordiging van de volledige steekproefeenheid door het bekomen (al dan niet verwerkt) resultaat, i.e. de waarde van de milieuvariabele (analysevariabele, doelvariabele).
+
+Het aantal deeltijdstippen en deellocaties mag niet resulteren in een frequentie resp. densiteit die leiden tot beduidende verstoringseffecten tussen aangrenzende metingen of bezoeken. Zie ook paragraaf \@ref(support) voor overwegingen over de sample support.
+
+Een mogelijkheid in de toepassing van GRTS is om als ankerpunt voor de response design een random punt te kiezen in elke getrokken cel van 32 x 32 m², of in elk waterloopsegment. In het geval van discrete sampling units is dit nader te evalueren op zinvolheid, vermits dit niet is gebeurd in het biotisch meetnet.
+
+Wanneer gekozen is voor continue sampling units (oneindige doelpopulatie) -- zie paragraaf \@ref(support) -- dan is het verplicht om een steekproefpunt at random te kiezen in elke getrokken cel.
+
+- Ook wanneer voor een bepaalde milieuvariabele de metingen gebeuren in een punt (eventueel meerdere punten) of in een kleiner deel van een discrete sampling unit, om de sampling unit in zijn geheel te vertegenwoordigen, kan een randomisatieprocedure worden toegepast bij de keuze van de deellocatie(s).
+- Wanneer de feitelijke sampling units kleiner worden gekozen, kan in het geval van het GRTS-raster in eerste instantie worden gewerkt met de 32 x 32 m² cellen voor de trekking. Per cel moet dan at random één punt of deeloppervlak worden getrokken om de sampling unit mee te lokaliseren. In principe zou het 32 x 32 m² raster voor deze toepassing ook nog verder opgedeeld kunnen worden voor heel Vlaanderen (16 x 16 m², 4 x 4 m²), met GRTS-rangnummer.
+
+In beide bovenstaande gevallen kan het zijn dat de gerandomiseerde toewijzing van deellocaties 'constrained' moet worden, conform de opmerking verder over de beperking van bemonstering tot een deel van de sampling unit.
+
+Wanneer bepaalde milieuvariabelen in een groter gebied worden bemeten dan de cel van 32 x 32 m², bv. bij een cirkelvormig proefvlak met straal 20 m, moet er op worden toegezien dat er geen overlappende proefvlakken worden uitgelegd. Dit is om extra verstoringseffecten te vermijden.
+Het is in dat geval ook te overwegen om een hogere celorde van het GRTS-grid te gebruiken als sampling unit, bv. 64 x 64 m². Een nadeel is dan wel de grotere fout in de oppervlaktegewijze vertegenwoordiging van types (elke eenheid telt dan effectief als 64 x 64 m²).
+
+Wanneer metingen over het hele oppervlak (lengte) van een sampling unit gebeuren om deze te kunnen vertegenwoordigen, dan nog zal het veldprotocol moeten rekening houden met gevallen waarbij slechts een deel wordt bemonsterd (ook al wordt het resultaat dan aangenomen als toepasselijk voor de gehele sampling unit):
+
+- om verstoring door herhaalde metingen te vermijden, kan het nodig zijn om per bezoek andere deellocaties te bemonsteren (i.e. een revisit design voor de deellocaties binnen de sampling unit);
+- wanneer slechts een deel van de sampling unit overeenkomt met het type dat door de trekking is beoogd (heterogeniteit van de vegetatie), mag alleen binnen de perimeter van het type worden gemeten, tenzij men zeker is dat de milieuvariabele ongevoelig is aan deze gradiënt.
+
+Voor oppervlaktewateren (plassen en waterlopen) zullen voor grondwater- en atmosferische meetnetten één of twee punten gekozen moeten worden in de onmiddellijke omgeving van het oppervlaktewater teneinde de doelvariabele te kunnen bepalen.
 
 

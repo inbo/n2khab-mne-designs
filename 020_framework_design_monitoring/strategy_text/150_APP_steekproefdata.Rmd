@@ -1,0 +1,172 @@
+# Constructie van een fictieve monitoringsteekproef {#app:steekproef}
+
+Deze bijlage bevat de code voor het construeren van een fictieve steekproef, met de kenmerken vermeld in paragraaf \@ref(toestandinferentie).
+
+## Genereren van het object `monitoringdata` en verkenning van de structuur
+
+```{r monitoringdata, echo=TRUE, message=FALSE, eval=FALSE}
+onecycle <- tibble(
+        Panel = c(rep(1, 180), # panel 1
+                      map(2:7, function(x) rep(x, 30)) %>% unlist), # panel 2 tot 7
+        Year = c(map(2013:2018, function(x) rep(x, 30)) %>% unlist, # panel 1
+                 map(2013:2018, function(x) rep(x, 30)) %>% unlist), # panel 2 tot 7
+        Type = c(rep(map(str_c("Type", 1:5), function(x) rep(x, 6)) %>% unlist, 6), # panel 1
+                 rep(map(str_c("Type", 1:5), function(x) rep(x, 6)) %>% unlist, 6)), # panel 2 tot 7 
+        LocationID = c(rep(str_c("Loc", str_pad(1:30, 3, pad = "0")), 6), # panel 1
+                        str_c("Loc", str_pad(31:210, 3, pad = "0"))) # panel 2 tot 7 
+    ) %>% 
+    inner_join(
+        tibble(
+            LocationID = str_c("Loc", str_pad(1:210, 3, pad = "0")),
+            InSBZ = (rbinom(210, 1, 0.75) == 1),
+            SpatialFactor = rmultinom(210, size = 1, prob = c(0.1,0.3,0.6)) %>% 
+                                t %>% 
+                                as_tibble %>% 
+                                mutate(result = V1 + 2 * V2 + 3 * V3) %>% 
+                                pull(result) %>% 
+                                str_c("Spat", .) %>% 
+                                as.factor
+        )
+    ) %>% 
+    mutate(
+        PopSize = ifelse(Type == "Type1", 45000, 
+               ifelse(Type == "Type2", 3000, 
+               ifelse(Type == "Type3", 500, 
+               ifelse(Type == "Type4", 8000, 
+                                       5000
+                      )))),
+        SamplingWeight = PopSize / 42 # elk type kreeg 42 unieke locaties toebedeeld
+    )
+monitoringdata <- 
+    onecycle %>% 
+    mutate(Year = Year + 6) %>% 
+    bind_rows(onecycle, .) %>% # extra 6-jarige cyclus toevoegen
+    mutate(
+        Variable1 = ifelse(Type == "Type1", 75 + 2 * (Year - 2013), 
+                       ifelse(Type == "Type2", 65 + 1.5 * (Year - 2013), 
+                       ifelse(Type == "Type3", 85 + 1.7 * (Year - 2013), 
+                       ifelse(Type == "Type4", 67 + 2.8 * (Year - 2013), 
+                                               81 + 1.2 * (Year - 2013) 
+                              )))),
+        Variable1 = Variable1 + rnorm(720, sd = 10),
+        Variable1 = ifelse(SpatialFactor == "1", Variable1 - 25,
+                       ifelse(SpatialFactor == "2", Variable1, Variable1 + 15)),
+        Variable2 = ifelse(Type == "Type1", 200, 
+                       ifelse(Type == "Type2", 140, 
+                       ifelse(Type == "Type3", 180, 
+                       ifelse(Type == "Type4", 260, 
+                                               220 
+                              )))),
+        Variable2 = Variable2 + rnorm(720, sd = 30),
+        Variable2 = ifelse(SpatialFactor == "1", Variable2 - 100,
+                       ifelse(SpatialFactor == "2", Variable2, Variable2 + 150))
+    )
+```
+
+Enkele voorbeeldgegevens (één observatie per panel x jaar x type x domein (binnen/buiten SBZ)):
+
+```{r}
+monitoringdata %>%
+    group_by(Panel, Year, Type, InSBZ) %>%
+    summarise(LocationID = first(LocationID),
+              SpatialFactor = first(SpatialFactor),
+              Variable1 = first(Variable1),
+              Variable2 = first(Variable2)
+              )
+```
+
+Aantal observaties (locatiebezoeken), gespreid over panels, types en jaren:
+
+```{r}
+monitoringdata %>% 
+    group_by(Panel, Year, Type) %>% 
+    summarise(Count = n()) %>% 
+    ungroup %>% 
+    spread(key = Year, value = Count, fill = "") %>% 
+    kable
+```
+
+Het totaal aantal unieke locaties is `r monitoringdata$LocationID %>% unique %>% length` en het aantal bezochte locaties per jaar is `r monitoringdata %>% distinct(Year, LocationID) %>% count(Year) %>% slice(1) %>% pull(n)`.
+
+Het aantal unieke steekproeflocaties per type:
+
+```{r}
+monitoringdata %>% 
+    distinct(Type, LocationID) %>% 
+    count(Type) %>% 
+    kable
+```
+
+Het aantal unieke steekproeflocaties per type en per panel:
+
+```{r}
+monitoringdata %>% 
+    distinct(Type, Panel, LocationID) %>% 
+    count(Type, Panel) %>% 
+    spread(key = Panel, value = n) %>% 
+    kable
+```
+
+Het aantal bezoeken per type en per panel, voor de eerste cyclus:
+
+```{r}
+monitoringdata %>% 
+    filter(Year < 2019) %>% 
+    count(Panel, Type) %>% 
+    spread(key = Panel, value = n) %>% 
+    kable
+```
+
+
+Het verschil tussen beide bovenstaande tabellen wordt verklaard door de herhaling in het eerste panel: 1/7 van de unieke locaties per type wordt jaarlijks bemonsterd, wat resulteert in evenveel observaties van éénmalig bezochte locaties als observaties van jaarlijks bezochte locaties.
+
+Het aantal observaties (bezoeken) per type, verdeeld over de jaren van de eerste cyclus:
+
+```{r}
+monitoringdata %>% 
+    filter(Year < 2019) %>% 
+    distinct(Type, LocationID, Year) %>% 
+    count(Type, Year) %>% 
+    spread(key = Year, value = n) %>% 
+    kable
+```
+
+
+Het aantal unieke locaties per type over domein (binnen/buiten SBZ) en de spatiale factor:
+
+```{r}
+monitoringdata %>% 
+    distinct(Type, LocationID, InSBZ, SpatialFactor) %>% 
+    count(Type, InSBZ, SpatialFactor) %>% 
+    spread(key = SpatialFactor, value = n, fill = 0) %>% 
+    kable
+```
+
+De populatiegrootte van de verschillende types is:
+
+```{r}
+monitoringdata %>% 
+    distinct(Type, PopSize) %>% 
+    kable
+```
+
+
+De populatie is telkens voor precies 75% aanwezig binnen SBZ-H en 25% erbuiten. In de steekproef is dit dus slechts bij benadering het geval.
+
+## Afleiden van het object `statusdata` voor inferentie over de toestand
+
+Voor de inferentie over de toestand hanteren we in dit voorbeeld enkel de eerste cyclus en delen we de sampling weights van elke locatie door het aantal herhalingen dat in de data optreedt, zodat elke locatie evenveel meespeelt.
+
+```{r statusdata, echo = TRUE, message=FALSE, eval=FALSE}
+statusdata <-
+    monitoringdata %>% 
+    filter(Year < 2019) %>% 
+    count(LocationID) %>% 
+    rename(TimesRepeated = n) %>% 
+    inner_join(monitoringdata %>% filter(Year < 2019), .) %>% 
+    mutate(SamplingWeight_reweighted = SamplingWeight / TimesRepeated)
+```
+
+
+
+
