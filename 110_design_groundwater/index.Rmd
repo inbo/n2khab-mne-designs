@@ -40,13 +40,19 @@ library(lme4)
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
-# Ten geleide
+# Dankwoord {-}
+
+Onze dank gaat uit naar Hans Van Calster voor zijn suggesties om de methode begrijpelijker uit te leggen.
+
+
+# Ten geleide {#inleiding}
 
 Dit document loopt voorop op een meer gedegen berekening van de steekproefgrootte via steekproefsimulaties op basis van een adequaat model. De reden is om over een 'eerste idee van grootteorde' te kunnen beschikken.
 
-Voor meer achtergrondinformatie verwijzen we naar het rapport over de strategie in MNM voor steekproefopzet en inferentie [@vanderhaeghe_meetnetten_2018].
+Voor meer achtergrondinformatie verwijzen we naar het rapport over de strategie in de meetnetten natuurlijk milieu (MNM) voor steekproefopzet en inferentie [@vanderhaeghe_meetnetten_2018].
+Het voorliggend rapport is een toepassing van paragraaf 8.1 van dat rapport (toestand 11 dec 2018).
 
-We gebruiken een eenvoudig model om de variantie tussen locaties van één type te schatten, en substitueren dit in een formule voor een design-based schatter van het gemiddelde van een typegroep, om op die manier het totaal aantal nodige locaties te bepalen. Dit zijn de momenteel gehandhaafde vereenvoudigingen in de gebruikte benadering:
+We gebruiken een eenvoudig model om de variantie tussen locaties van één type te schatten, en schatten daarmee de variantie van de design-based schatter van het gemiddelde van een typegroep, om op die manier het totaal aantal nodige locaties te bepalen. Dit zijn de momenteel gehandhaafde vereenvoudigingen in de gebruikte benadering:
 
 - de variantie wordt afgeleid uit modellen, gefit aan data die nog niet geheel overeenstemmen met de doelpopulatie (in termen van types) voor de respectievelijke milieuvariabelen;
 - de milieuvariabelen voor het aquatische deel van het meetnet 'verdroging via grondwater' zijn niet betrokken (want nog niet bepaald). Om die reden negeren we op dit moment de aquatische types;
@@ -54,6 +60,7 @@ We gebruiken een eenvoudig model om de variantie tussen locaties van één type 
     - we kunnen daarbij uitgaan van ca. 55 terrestrische types voor het meetnet 'verdroging via grondwater' (primaire milieuvariabelen LG3 en HG3) en ca. 45 terrestrische types voor het meetnet 'eutrofiëring via grondwater' (primaire milieuvariabelen N-NO3, N-NH4, P-PO4);
 - we negeren meerdere observaties binnen een jaar (i.e. bij chemische variabelen) omdat we niet geïnteresseerd zijn in de (beperkte) variatie binnen de jaren;
 - omdat de modellen te eenvoudig zijn voor een realistische inferentie over de betrouwbaarheidsintervallen van variantieparameters, kennen we niet de onzekerheid op de geschatte variantie. We bekijken wel het effect van 0 tot 50% toename van de variantie op de steekproefgrootteberekening;
+- de variantie van de type- en typegroepschatter houdt nog geen rekening met de *finite-population-correction* (minder locaties nodig voor zeldzame types) en er wordt niet uitgegaan van *model-assisted* inferenties^[Voor meer info, zie paragraaf 10.2 van @vanderhaeghe_meetnetten_2018 (toestand 11 dec 2018).]. Beide aspecten leiden in de praktijk tot een kleinere steekproefgrootte;
 - voor de eenvoud beschouwen we hieronder enkel de toestand en niet de trend.
 
 
@@ -177,7 +184,7 @@ We merken hierbij op dat voor $\sigma^2_{spatial}$ geen rekening is gehouden met
 
 # Instelwaarden voor de toestandsbepaling
 
-We zullen de instelwaarden voor de niet-getransformeerde variabele omrekenen naar een gewenste $\sigma^2_{\hat{\mu}}$, waarbij ${\hat{\mu}}$ de schatting is van het gemiddelde van de *log~10~-getransformeerde* variabele. Bron van de instelwaarden: het 'gewenste' scenario B in [deze googlesheet](https://docs.google.com/spreadsheets/d/1IMlLh9EPPRLLoDNWkDzbVJU2cVvst7C8NyJRM2NvujM/edit#gid=229047732).
+We zullen de instelwaarden voor de niet-getransformeerde variabele omrekenen naar een gewenste $\sigma^2_{\hat{\mu}}$, waarbij ${\hat{\mu}}$ de schatting is van het gemiddelde van de *log~10~-getransformeerde* variabele. Zie paragraaf  \@ref(schatters) voor meer uitleg over dit verband. Bron van de instelwaarden: het 'gewenste' scenario B in [deze googlesheet](https://docs.google.com/spreadsheets/d/1IMlLh9EPPRLLoDNWkDzbVJU2cVvst7C8NyJRM2NvujM/edit#gid=229047732).
 
 ```{r}
 minimumquality <- 
@@ -240,7 +247,7 @@ GXGslang <-
            )
 ```
 
-We vertrekken van de data-objecten die Ivy Jansen eerder heeft samengesteld op 15 februari 2018 (LG3- en HG3-waarnemingen vanaf 1989), voor piëzometers met een filter met onderkant minder dan 3 meter onder maaiveld en van piëzometerkoppels alleen de meest ondiepe piëzometer. Voor een meer uitgebreide toelichting bij de dataselectie en een meer uitgebreide dataverkenning, zie Ivy's interne rapporten.
+We vertrekken van de data-objecten die eerder werden samengesteld op 15 februari 2018 (LG3- en HG3-waarnemingen vanaf 1989), voor piëzometers met een filter met onderkant minder dan 3 meter onder maaiveld en van piëzometerkoppels alleen de meest ondiepe piëzometer. Voor een meer uitgebreide toelichting bij de dataselectie en een meer uitgebreide dataverkenning, zie Ivy's interne rapporten.
 
 Ons hiervan afgeleide data-object ziet eruit als volgt:
 
@@ -394,7 +401,7 @@ GWnutr_anal <-
     mutate(logValue = log10(Value))
 ```
 
-We vertrekken van de data-objecten die Ivy Jansen eerder heeft samengesteld op 15 mei 2017 (N-NO3, N-NH4, P-PO4: waarnemingen vanaf 1983), voor piëzometers met een filter met onderkant minder dan 3 meter onder maaiveld en van piëzometerkoppels alleen de meest ondiepe piëzometer. Voor een meer uitgebreide toelichting bij de dataselectie en een meer uitgebreide dataverkenning, zie Ivy's interne rapporten.
+We vertrekken van de data-objecten die eerder werden samengesteld op 15 mei 2017 (N-NO3, N-NH4, P-PO4: waarnemingen vanaf 1983), voor piëzometers met een filter met onderkant minder dan 3 meter onder maaiveld en van piëzometerkoppels alleen de meest ondiepe piëzometer. Voor een meer uitgebreide toelichting bij de dataselectie en een meer uitgebreide dataverkenning, zie Ivy's interne rapporten.
 
 Ons hiervan afgeleide data-object ziet eruit als volgt:
 
