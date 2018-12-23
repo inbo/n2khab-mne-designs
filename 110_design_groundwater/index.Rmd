@@ -209,16 +209,20 @@ minimumquality %>% kable
 
 Zoals aangegeven bij de instelwaarden, zullen we werken met log-getransformeerde responsvariabelen, omdat de gewenste maximale foutmarges relatief zijn uitgedrukt. Dit vertaalt zich op de log-schaal in een constant bereik.
 
+Een bijzonderheid stelt zich hierbij voor de spatiale designs, zoals voor LG3 en HG3. Daar is het de bedoeling om de log-transformatie pas toe te passen *na* temporele aggregatie per locatie, i.e. na berekening van GLG resp. GHG op de originele schaal. Bemerk dat berekende GLG- en GHG-waarden op basis van bestaande data vaak afwijken van de werkelijkheid wegens het ontbreken van LG3 en HG3 voor heel wat jaren in een zesjaarperiode. We zullen die waarden daarom vervangen door een modelschatting (zie verder).
+
 ## Voor LG3 en HG3
 
 Deze variabelen drukken we voor de eenvoud uit in cm onder maaiveld, waarbij positief = beneden maaiveld. Bemerk wel dat dit het tegengestelde is van de courante werkwijze, dus in publieke communicatie is dit terug te transformeren. Tevens worden waarden boven maaiveld gelijkgesteld aan nul, omwille van de (overwegende) ecologische irrelevantie van variatie van stijghoogtes boven maaiveld. Dit zorgt wel voor artefacten in de verdeling van de responsvariabele; zie verder. De log-getransformeerde variabelen worden berekend op de positieve variabele vermeerderd met 1 cm.
 
 ### Beknopte dataverkenning
 
-```{r include=FALSE}
-GXGs <- git2rdata::read_vc("GXGs")
-GXGs <-
-      GXGs %>% 
+We vertrekken van de data-objecten die eerder werden samengesteld op 15 februari 2018 (LG3- en HG3-waarnemingen vanaf 1989), voor piëzometers met een filter met onderkant minder dan 3 meter onder maaiveld en van piëzometerkoppels alleen de meest ondiepe piëzometer. Voor een meer uitgebreide toelichting bij de dataselectie en een meer uitgebreide dataverkenning, zie Ivy's interne rapporten.
+
+```{r}
+XG3s <- git2rdata::read_vc("GXGs")
+XG3s <-
+      XG3s %>% 
       filter(HydroJaar >= 1989,
              !str_detect(Habitat, "31|rbbah")) %>% 
       mutate(
@@ -228,9 +232,8 @@ GXGs <-
         # InteractieFysRegioLigging = interaction(FysRegio, ligging2, drop = TRUE),
         Type = factor(Habitat)
         )
-# GXGs %>% glimpse
-GXGslang <-
-    GXGs %>%
+XG3lang <-
+    XG3s %>%
     select(HYear = HydroJaarStart, 
            fHYear = fHydroJaarStart,
            SixYearPeriod,
@@ -247,14 +250,13 @@ GXGslang <-
            posValue = Value + 1, # strikt positieve waarde
            logValue = log10(posValue)
            )
+
 ```
 
-We vertrekken van de data-objecten die eerder werden samengesteld op 15 februari 2018 (LG3- en HG3-waarnemingen vanaf 1989), voor piëzometers met een filter met onderkant minder dan 3 meter onder maaiveld en van piëzometerkoppels alleen de meest ondiepe piëzometer. Voor een meer uitgebreide toelichting bij de dataselectie en een meer uitgebreide dataverkenning, zie Ivy's interne rapporten.
-
-Ons hiervan afgeleide data-object ziet eruit als volgt:
+Het hiervan afgeleide data-object met jaarlijkse waarden van HG3 en LG3 ziet eruit als volgt:
 
 ```{r echo=TRUE}
-GXGslang %>% glimpse
+XG3lang %>% glimpse
 ```
 
 De variabele `SixYearPeriod` betreft de zesjarige Natura 2000 programmacyclus, genummerd vanaf 0 (periode 1989-1994). De variabelen `HYear` en `fHYear` betreffen het hydrologisch jaar, getransformeerd zodat HYear = 0 voor het hydrologisch jaar 1989.
@@ -262,7 +264,7 @@ De variabele `SixYearPeriod` betreft de zesjarige Natura 2000 programmacyclus, g
 Het gemiddeld aantal types per typegroep bedraagt 8.2 -- dit kan dus dienen als indicatie voor het verder gehanteerde aantal types in een groep. Onderstaande tabel toont het aantal types per typegroep. Merk op dat de groepen nog een oudere afbakening hanteren, maar het is een goede indicatie.
 
 ```{r}
-GXGslang %>% 
+XG3lang %>% 
     distinct(Typegroup, Type) %>% 
     count(Typegroup) %>% 
     kable
@@ -273,7 +275,7 @@ GXGslang %>%
 Beschikbaarheid aan observaties per variabele, volgens type en hydrologisch jaar:
 
 ```{r fig.height=6, fig.width=10}
-GXGslang %>% 
+XG3lang %>% 
     count(Variable, HYear, Type) %>% 
     ggplot(aes(x = HYear + 1989, fill = Type, y = n)) + 
         geom_bar(stat = "identity", position = "stack") +
@@ -281,7 +283,7 @@ GXGslang %>%
 ```
 
 ```{r fig.height=6, fig.width=10}
-GXGslang %>% 
+XG3lang %>% 
     count(Variable, HYear, Type) %>% 
     mutate(HYear_1989 = (HYear + 1989) %>% factor) %>% 
     ggplot(aes(x = Type, fill = HYear_1989, y = n)) + 
@@ -300,7 +302,7 @@ Uit een meer gedetailleerde inspectie stellen we vast dat elke locatie zowel een
 Zijn er observaties die meer dan één keer meetellen omwille van meerdere gekoppelde types aan een locatie?
 
 ```{r}
-GXGslang %>% 
+XG3lang %>% 
     distinct(Location, Type) %>% 
     count(Location) %>% 
     count(n)
@@ -310,7 +312,7 @@ Dus 15 locaties worden 2 keer gebruikt omdat ze aan twee verschillende types zij
 
 Het aantal observaties per variabele, locatie, type en jaar zou 1 moeten zijn:
 ```{r}
-GXGslang %>% 
+XG3lang %>% 
     count(Variable, Location, Type, HYear) %>% 
     filter(n > 1) %>% 
     nrow(.) == 0
@@ -319,14 +321,14 @@ GXGslang %>%
 De histogrammen tonen de verdeling van de waarden, zowel op de originele als de log~10~-getransformeerde schaal:
 
 ```{r, message=FALSE, fig.height=2, fig.width=8}
-GXGslang %>% 
+XG3lang %>% 
     ggplot(aes(x = Value)) +
         geom_histogram() +
         facet_wrap(~Variable)
 ```
 
 ```{r, message=FALSE, fig.height=2, fig.width=8}
-GXGslang %>% 
+XG3lang %>% 
     ggplot(aes(x = logValue)) +
         geom_histogram() +
         facet_wrap(~Variable)
@@ -334,31 +336,202 @@ GXGslang %>%
 
 Opvallend is de tweeledigheid in de distributie van de log-getransformeerde variabele, als gevolg van het aftoppen van waarden boven maaiveld. Dit treedt logischerwijze het meeste op bij HG3.
 
+Zoals vermeld zullen we werken met **temporeel gemiddelde waarden** per locatie en zesjaarperiode (GLG en GHG). Waar 6 waarden beschikbaar zijn van HG3 en LG3, kan dit rechtstreeks uit de data worden berekend. In de meeste gevallen zijn er echter ontbrekende LG3- of HG3-waarden. Dit wordt weergegeven in de onderstaande histogrammen (een eenheid = locatie x type x zesjaarperiode):
+
+```{r message=FALSE, fig.height=3, fig.width=8}
+XG3lang %>% 
+    group_by(SixYearPeriod, Type, Variable, Location) %>% 
+    summarise(Number_of_observed_years = n()) %>% 
+    ungroup %>% 
+    ggplot(aes(x = Number_of_observed_years)) +
+        geom_histogram() +
+        scale_x_continuous(breaks = 1:6) +
+        facet_wrap(~Variable)
+```
+
+
+We benaderen de werkelijke temporele gemiddelden in de gevallen met minder dan 6 geobserveerde jaren daarom met een model. Dit zal als effect hebben dat de temporele gemiddelden minder sterk uiteenlopen tussen locaties.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+GXGs <-
+    XG3lang %>% 
+    count(SixYearPeriod, Type, Typegroup, Variable, Location) %>% 
+    rename(n_obs = n) %>% # maximum 6 (6 jaar)
+    inner_join(XG3lang) %>% 
+    group_by(Variable) %>% 
+    nest() %>% 
+    # gefitte random effecten invullen wanneer n_obs < 6
+    mutate(prediction =
+               map(.x = data, .f = function(df) {
+                        M1 <- 
+                            lmer(Value ~ (1 | SixYearPeriod) + 
+                                         (1 | Type) + 
+                                         (1 | SixYearPeriod:Type) +
+                                         (1 | Location),
+                             data = df)
+                        predicted_GXG <-
+                            df %>% 
+                            filter(n_obs < 6) %>% # alleen modelschatting indien ontbrekende data
+                            distinct(SixYearPeriod, Location, Type, Typegroup) %>% 
+                            mutate(Value = predict(M1, newdata = .), 
+                                    Value = ifelse(Value < 0, 0, Value), # aftoppen
+                                    posValue = Value + 1, # strikt positieve waarde
+                                    logValue = log10(posValue))
+                        return(predicted_GXG)
+                    })
+    ) %>% 
+    mutate(compiled = 
+               map2(.x = data, .y = prediction, .f = function(df1, df2){
+                   # waar 6 observaties zijn, de GXG empirisch berekenen
+                   df1 %>% 
+                       filter(n_obs == 6) %>% 
+                       group_by(SixYearPeriod, Location, Type, Typegroup) %>% 
+                        summarise(Value = mean(Value)) %>% 
+                        ungroup %>% 
+                        mutate(posValue = Value + 1, # strikt positieve waarde
+                               logValue = log10(posValue)
+                               ) %>% 
+                       # de predicties voor < 6 observaties erbij plakken
+                       union(df2)
+               })) %>% 
+    select(Variable, compiled) %>% 
+    unnest
+```
+
+Het object met de zesjaarlijks gemiddelde waarden van HG3 en LG3 heeft de volgende kenmerken:
+
+```{r echo=TRUE}
+GXGs %>% glimpse
+```
+
+```{r vergelijking_data-gemiddelde-model, fig.width = 12, fig.height=15, eval=FALSE, include=FALSE}
+XG3lang %>% 
+    count(SixYearPeriod, Type, Typegroup, Variable, Location) %>% 
+    rename(n_obs = n) %>% 
+    inner_join(XG3lang %>% 
+                distinct(SixYearPeriod, Type, Typegroup, Variable, Location) %>% 
+                count(SixYearPeriod, Type, Typegroup, Variable) %>% 
+                rename(n_locs = n)) %>% 
+    inner_join(XG3lang) %>% 
+    filter(n_locs >= 5, n_locs < 10, n_obs < 6) %>% 
+    group_by(SixYearPeriod, Type, Typegroup, Variable, Location) %>% 
+    mutate(MeanObserved = mean(Value)) %>% 
+    ungroup %>% 
+    inner_join(GXGs %>% 
+                   select(-posValue, -logValue) %>% 
+                   rename(PredValue = Value)) %>% 
+    mutate(Location = as.character(Location)) %>% 
+    split(.$Variable) %>% 
+    map(.x = ., .f = function(df) {
+        ggplot(data = df, aes(x = Location)) + 
+            geom_point(aes(y = Value), alpha = 0.2, size = 2) +
+            geom_point(aes(y = MeanObserved), colour = "darkgreen", shape = 3) +
+            geom_point(aes(y = PredValue), colour = "red", shape = 3) +
+            facet_wrap(SixYearPeriod ~  Type, scales = "free", ncol = 5) +
+            theme(axis.text.x = element_blank(),
+                  panel.background = element_blank())
+    })
+```
+
+De spreiding van de data is gelijkaardig aan de jaarlijkse HG3- en LG3-waarden, maar bevat minder nullen. Dit is meest opvallend op de log~10~-getransformeerde schaal. Het is een effect van de temporele uitmiddeling:
+
+```{r, message=FALSE, fig.height=2, fig.width=8}
+GXGs %>% 
+    ggplot(aes(x = Value)) +
+        geom_histogram() +
+        facet_wrap(~Variable)
+```
+
+```{r, message=FALSE, fig.height=2, fig.width=8}
+GXGs %>% 
+    ggplot(aes(x = logValue)) +
+        geom_histogram() +
+        facet_wrap(~Variable)
+```
+
+
 ### Schatting
 
-We hanteren een eenvoudig lineair model met random effecten om $\sigma_{spatial}$ op basis van de gegeven dataset te schatten voor een gemiddeld type in de monitoring. In het geval van LG3 en HG3 zijn we niet geïnteresseerd in de variatie tussen jaren binnen één zesjaarperiode; die variatie komt in de residuele fout terecht van onderstaand model. We isoleren het effect van zesjaarperiode, type en locatie uit de responsvariabele. We corrigeren ook voor typespecifieke verschillen tussen zesjaarperioden. Het locatiegebonden effect in dit model weerspiegelt de afwijking van de locatiegebonden GLG- of GHG-waarden ten opzichte van het spatiaal gemiddelde van een 'doorsnee' type (binnen één zesjaarperiode), zodat de standaardafwijking van dit effect als schatter kan dienen voor $\sigma_{spatial}$.
+We hanteren een eenvoudig lineair model met random effecten om $\sigma_{spatial}$ op basis van de bekomen dataset (van zesjaarlijkse, locatie- en typespecifieke gemiddelden) te schatten voor een gemiddeld type in de monitoring. We isoleren het effect van zesjaarperiode en type uit de responsvariabele. We corrigeren ook voor typespecifieke verschillen tussen zesjaarperioden. De *residuen* van dit model zijn dan de afwijking van de locatiegebonden GLG- of GHG-waarden ten opzichte van het spatiaal gemiddelde van een 'doorsnee' type (binnen één zesjaarperiode), zodat de standaardafwijking van deze residuen als schatter kan dienen voor $\sigma_{spatial}$.
 
 We kunnen dit model, met een gaussiaanse foutdistributie en een identity-link, echter niet gaan gebruiken voor inferenties over het (superpopulatie)gemiddelde met betrouwbaarheidsintervallen (i.e. met betrekking tot de bemeten locaties), en dus niet voor steekproefsimulaties, vermits het model geen realistische assumpties maakt over de stochastische verdeling van de residuals en andere effecten. Voor dit doel kan een gamma-GLMM vermoedelijk wel dienen. Ook kan daarbij best een effect van 'gebied' worden toegevoegd (cf. ecoregio, bodemtype, fysisch systeem, ...).
 
+```{r eval=FALSE, include=FALSE}
+# oefening om te tonen dat je op basis van de predicted waarden voor de random
+# levels van een random effects model, een nieuw random effect model kunt fitten
+# (met één effect minder, nl. Location) dat voor de residuele variantie een heel
+# gelijkaardig resultaat geeft als voor het aanvankelijk gefitte (en daarna
+# weggelaten) random effect.
+
+# We gebruiken deze techniek om in de gerunde chunks te kunnen werken met
+# gefitte niet-getransformeerde GXG-waarden (geschatte gemiddelde XG3's dus over
+# zes jaar), en deze dan pas 'log' te transformeren en met het model te
+# analyseren.
+XG3lang %>% 
+    split(.$Variable) %>% 
+    map(.x = ., .f = function(df) {
+        M1 <- 
+            lmer(Value ~ (1 | SixYearPeriod) + 
+                         (1 | Type) + 
+                         (1 | SixYearPeriod:Type) +
+                         (1 | Location),
+             data = df)
+        predicted_GXG <-
+            df %>% 
+                distinct(SixYearPeriod, Type, Location) %>% 
+                mutate(predictedval = predict(M1, newdata = .))
+        lmer(predictedval ~ (1 | SixYearPeriod) +
+                         (1 | Type) +
+                         (1 | SixYearPeriod:Type),
+             data = predicted_GXG)
+    }
+    )
+```
+
+
+
 ```{r echo=TRUE}
-GXGslang %>% 
+GXGs %>% 
     split(.$Variable) %>% 
     map(.x = ., .f = function(df) {
         lmer(logValue ~ (1 | SixYearPeriod) + 
                          (1 | Type) + 
-                         (1 | SixYearPeriod:Type) +
-                         (1 | Location),
+                         (1 | SixYearPeriod:Type),
              data = df)
     }
     )
 ```
 
-De vermelde waarde bij 'Location' hanteren we als schatting voor $\sigma_{spatial}$.
+De vermelde waarde bij 'Residual' hanteren we als schatting voor $\sigma_{spatial}$.
+
+
+```{r empirische_stdev1, eval=FALSE, include=FALSE}
+manualsd <- 
+    GXGs %>% 
+    group_by(SixYearPeriod, Type, Variable) %>% 
+    # mutate(nlocs_avail = n()) %>% 
+    # filter(nlocs_avail >= 10) %>%
+    summarise(Estimated_sigmaspatial = sd(logValue)) %>% 
+    ungroup()
+manualsd %>% 
+    ggplot(aes(x = Type, y = Estimated_sigmaspatial, colour = SixYearPeriod)) +
+    geom_point() + 
+    facet_wrap(~Variable) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r empirische_stdev2, eval=FALSE, include=FALSE}
+manualsd %>% 
+    group_by(Variable) %>% 
+    summarise(Estimated_sigmaspatial = mean(Estimated_sigmaspatial, na.rm = TRUE)) %>%
+    kable
+```
+
 
 <!-- Gamma random model: -->
 
 <!-- ```{r} -->
-<!-- GXGslang %>%  -->
+<!-- XG3lang %>%  -->
 <!--     split(.$Variable) %>%  -->
 <!--     map(.x = ., .f = function(df) { -->
 <!--         glmer(posValue ~ (1 | SixYearPeriod / HYear) + (1 | Type), -->
@@ -555,8 +728,8 @@ modelvar <-
                                "N-NH4",
                                "N-NO3",
                                "P-PO4"),
-                stdev_spatial = c(0.52407,
-                                   0.40290,
+                stdev_spatial = c(0.4305,
+                                   0.34035,
                                    0.57910,
                                    0.6568,
                                    0.49131)
@@ -635,9 +808,9 @@ some_scenarios1 %>%
 
 De volgende conclusies kunnen hierbij worden gemaakt, gegeven de eerder vermelde instelwaarden:
 
-- er is een grotere steekproefgrootte nodig voor de peildynamiek dan voor de nutriënten;
+- er is een overwegend grotere steekproefgrootte nodig voor de peildynamiek dan voor de nutriënten;
 - de nodige steekproefgrootte voor HG3 is hoger dan voor LG3;
-- we zien dat bij een toenemend aantal types per typegroep de nodige steekproefgrootte afneemt, maar dat dit afvlakt [zie ook @vanderhaeghe_meetnetten_2018]. Vanaf minder dan 8 types per typegroep is er daarentegen een steeds drastischer invloed op het aantal nodige locaties per type (zie ook de volgende figuur);
+- we zien dat bij een toenemend aantal types per typegroep de nodige steekproefgrootte afneemt, maar dat dit afvlakt [zie ook @vanderhaeghe_meetnetten_2018]. Vanaf minder dan 5 à 6 types per typegroep is er daarentegen een steeds drastischer invloed op het aantal nodige locaties per type (zie ook de volgende figuur);
 - de steekproefgrootte neemt toe met toenemende variantie, en dit effect is sterker naarmate minder types in een groep zitten (log-schaal Y-as).
 
 Daarnaast bekijken we, voor de bekomen waarde van $\hat\sigma^2_{spatial}$, het effect van instelwaarden in de range van scenario A (minimaal nodige informatiekwaliteit) tot scenario B (gewenste informatiekwaliteit). Het gaat om de toegelaten type I fout ($\alpha$) ^[Het complement, 1 - $\alpha$, is het betrouwbaarheidsniveau van de foutmarge.] en de gewenste relatieve foutmarge (`rel_error`) met die type I fout. Er is hierbij te vermelden dat deze instelwaarden richtinggevend zijn, maar niet stringent, vermits de keuze ervan niet vanzelfsprekend is geweest. Ook bekijken we opnieuw het effect van het aantal types in een typegroep. Opnieuw heeft de Y-as van de grafiek een logaritmische schaal!
@@ -730,7 +903,8 @@ Er is met andere woorden een opvallend effect van de gewenste precisie. Kostenbe
 1. opzet van het steekproefkader en de nodige attributen voor steekproeftrekking en design-based inferentie in MNM. Dit is overwegend een databeheerluik ^[Voor de nodige data, zie [deze googlesheet](https://docs.google.com/spreadsheets/d/1E8ERlfYwP3OjluL8d7_4rR1W34ka4LRCE35JTxf3WMI): verschillende Vlaamse geospatiale data, standaardlijsten, GRTS master sample, exports uit databanken, steekproefadministratie biotische habitatkwaliteit], waarbij reproduceerbaarheid belangrijk is voor latere revisies. Dit veronderstelt een versioneringssysteem van de basislagen;
 1. vaststellen van de mee te nemen types voor de respectievelijke meetnetten, op basis van feedback van experten medio 2018;
 1. vaststellen van de typegroepen (hoofdmeetnetten grondwater), op basis van extra input van experten in 2018;
-1. (bayesiaanse) modelbouw voor de respectievelijke milieuvariabelen die aangepast is aan de aard en de verdeling van de data, en die de probabiliteitsverdeling van fixed en random parameters teruggeeft zodat dit kan dienen voor steekproefsimulaties;
+1. (bayesiaanse) modelbouw voor de respectievelijke milieuvariabelen die aangepast is aan de aard en de verdeling van de data, en die de probabiliteitsverdeling van fixed en random parameters teruggeeft zodat dit kan dienen voor steekproefsimulaties^[
+In het geval van HG3 en LG3 modelleren we de jaarlijkse waarden, en zal de temporele aggregatie per locatie in de inferentiestap gebeuren.];
 1. steekproefsimulaties voor de respectievelijke milieuvariabelen: het nabootsen van een groot aantal steekproeven, in groepen volgens verschillende groottes en revisit designs (scenario's);
 1. voor elke steekproef de inferentie uitvoeren over toestand en trend van de respectievelijke milieuvariabelen, rekening houdend met de finite-population-correction en uitgaande van een bepaald aantal types per typegroep;
 1. toetsing van de resultaten met instelwaarden;
