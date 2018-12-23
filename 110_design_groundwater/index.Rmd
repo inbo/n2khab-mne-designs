@@ -771,7 +771,27 @@ some_samplesizes %>%
     kable
 ```
 
-Omdat we willen weten welk effect een onderschatting van de variantie kan hebben op deze steekproefgrootte, bekijken we dit effect binnen een range van 0 tot 50% *hogere* $\hat\sigma^2_{spatial}$. We bekijken ook hoe dit interageert met het aantal types in een typegroep. Op de grafiek heeft de Y-as een logaritmische schaal!
+Als controle rekenen we nog eens terug naar de relatieve foutenmarge die we hiermee verwachten bij een betrouwbaarheidsniveau van 90%, gegeven het berekende aantal locaties per jaar en de met het model geschatte spatiale variantie:
+
+```{r message = FALSE, echo = TRUE}
+some_samplesizes %>% 
+    inner_join(modelvar) %>% 
+    # de vertrekgegevens:
+    select(target_variable, n_locs_per_year, var_spatial) %>% 
+    mutate(var_mu_type = ifelse(str_detect(target_variable, "G3"), 
+                             var_spatial / n_locs_per_year,
+                             var_spatial / (n_locs_per_year * 6)),
+           var_mu = var_mu_type / 8,
+           logscale_errormargin = sqrt(var_mu) * qnorm(1 - 0.1/2), # alpha = 0.1
+           relative_errormargin = 10 ^ logscale_errormargin - 1  # te checken met instelwaarde
+    ) %>% 
+    kable
+```
+
+
+
+
+Omdat we willen weten welk effect een onderschatting van de variantie kan hebben op de steekproefgrootte, bekijken we dit effect binnen een range van 0 tot 50% *hogere* $\hat\sigma^2_{spatial}$. We bekijken ook hoe dit interageert met het aantal types in een typegroep. Op de grafiek heeft de Y-as een logaritmische schaal!
 
 ```{r message=FALSE, warning=FALSE}
 var_spat_extended <-
