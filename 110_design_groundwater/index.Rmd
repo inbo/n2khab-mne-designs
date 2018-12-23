@@ -1,0 +1,744 @@
+---
+title: "Een ruwe inschatting van steekproefgrootte voor toestandsbepaling in het terrestrische deel van het MNM-grondwatermeetnet"
+author: "Floris Vanderhaeghe, Ivy Jansen"
+date: "november-december 2018"
+link-citations: true
+linkcolor: link.colour
+citecolor: link.colour
+urlcolor: link.colour
+geometry: margin=1in
+mainfont: "Calibri"
+fontsize: 11pt
+documentclass: "article"
+csl: ../inbo.csl
+bibliography: ../RefsMNE_design.bib
+site: bookdown::bookdown_site
+output:
+  bookdown::pdf_book:
+    base_format: INBOmd::inbo_rapport
+    floatbarrier: subsubsection
+    citation_package: none
+    keep_tex: TRUE
+    keep_md: TRUE
+  bookdown::html_document2:
+    number_sections: yes
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../header.html
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(knitr)
+library(lme4)
+# library(kableExtra)
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Dankwoord {-}
+
+Onze dank gaat uit naar Hans Van Calster voor zijn suggesties om de methode begrijpelijker uit te leggen.
+
+
+# Ten geleide {#inleiding}
+
+Dit document loopt voorop op een meer gedegen berekening van de steekproefgrootte via steekproefsimulaties op basis van een adequaat model. De reden is om over een 'eerste idee van grootteorde' te kunnen beschikken.
+
+Voor meer achtergrondinformatie verwijzen we naar het rapport over de strategie in de meetnetten natuurlijk milieu (MNM) voor steekproefopzet en inferentie [@vanderhaeghe_meetnetten_2018].
+Het voorliggend rapport is een toepassing van paragraaf 8.1 van dat rapport (toestand 11 dec 2018).
+
+We gebruiken een eenvoudig model om de variantie tussen locaties van één type te schatten, en schatten daarmee de variantie van de design-based schatter van het gemiddelde van een typegroep, om op die manier het totaal aantal nodige locaties te bepalen. Dit zijn de momenteel gehandhaafde vereenvoudigingen in de gebruikte benadering:
+
+- de variantie wordt afgeleid uit modellen, gefit aan data die nog niet geheel overeenstemmen met de doelpopulatie (in termen van types) voor de respectievelijke milieuvariabelen;
+- de milieuvariabelen voor het aquatische deel van het meetnet 'verdroging via grondwater' zijn niet betrokken (want nog niet bepaald). Om die reden negeren we op dit moment de aquatische types;
+- we gaan uit van 'de gemiddelde typegroep' en 'het gemiddelde type', en maken abstractie van de verschillen tussen typegroepen en types;
+    - we kunnen daarbij uitgaan van ca. 55 terrestrische types voor het meetnet 'verdroging via grondwater' (primaire milieuvariabelen LG3 en HG3) en ca. 45 terrestrische types voor het meetnet 'eutrofiëring via grondwater' (primaire milieuvariabelen N-NO3, N-NH4, P-PO4);
+- we negeren meerdere observaties binnen een jaar (i.e. bij chemische variabelen) omdat we niet geïnteresseerd zijn in de (beperkte) variatie binnen de jaren;
+- omdat de modellen te eenvoudig zijn voor een realistische inferentie over de betrouwbaarheidsintervallen van variantieparameters, kennen we niet de onzekerheid op de geschatte variantie. We bekijken wel het effect van 0 tot 50% toename van de variantie op de steekproefgrootteberekening;
+- de variantie van de type- en typegroepschatter houdt nog geen rekening met de *finite-population-correction* (minder locaties nodig voor zeldzame types) en er wordt niet uitgegaan van *model-assisted* inferenties^[Voor meer info, zie paragraaf 10.2 van @vanderhaeghe_meetnetten_2018 (toestand 11 dec 2018).]. Beide aspecten leiden in de praktijk tot een kleinere steekproefgrootte;
+- voor de eenvoud beschouwen we hieronder enkel de toestand en niet de trend.
+
+
+# Concepten en methodiek
+
+## Schatters en instelwaarden {#schatters}
+
+We leggen hier kort enkele basisconcepten uit. Zie voor meer info @onkelinx_ontwerp_2008, @vanderhaeghe_meetnetten_2018 en meer algemene literatuur over kansrekening en statistische inferentie.
+
+De steekproefgrootte wordt gekozen om een gewenste **precisie** en **betrouwbaarheid** te bekomen van 'schatters', op het niveau van een typegroep. ^[Een typegroep is een niet al te heterogene groep van habitat(sub)types en RBB's, op maat van de milieuvariabele, waarvoor we voldoende nauwkeurige resultaten wensen.] De schatters zijn een berekening op basis van geobserveerde monitoringdata van een milieuvariabele, waarbij de data voortkomen uit een *aselecte* steekproefopzet (i.e. een steekproef die tot stand komt via een randomisatieprocedure). Met deze schattingen willen we de waarde $\mu$ voor de totale doelpopulatie zo goed mogelijk bepalen, met name van:
+
+- het spatiotemporeel gemiddelde gedurende zes jaar (toestand);
+- het spatiale gemiddelde van de trend van een milieuvariabele over (liefst) minstens 12 jaar (trend).
+
+We spreken van 'schatter' wanneer we de stochastische variabele bedoelen -- in dit rapport gesymboliseerd als $\hat{\mu}$. Het hoedje '$\hat{}$' verwijst naar het feit dat we een populatieparameter (zonder '$\hat{}$') schatten. De concrete uitkomst ('schatting') $\bar{x}$ bij monitoring zal afhangen van de concrete steekproef en dus van de steekproefgrootte en andere design-kenmerken. Een schatter heeft dus een kans(dichtheids)distributie (met een verwachte waarde (gemiddelde) $E[{\hat{\mu}}]$ en een variantie $\sigma^2_{\hat{\mu}}$). Deze distributie hangt af van steekproefgrootte en andere design-kenmerken. We spreken van een 'onvertekende schatter' als de verwachte waarde van de schatter ^[De verwachte waarde is het gemiddelde van de schattingen bekomen uit alle mogelijke steekproeven volgens een bepaalde design.] gelijk is aan de waarde $\mu$ van de populatieparameter die door de schatter wordt geschat. We werken in principe steeds met onvertekende schatters.
+
+De twee aspecten waarover we controle willen bij het ontwerp, zijn de foutenmarge (~ precisie) en het betrouwbaarheidsniveau. De grenzen die we er aan opleggen noemen we de **instelwaarden** (een ondergrens voor de informatiekwaliteit).
+
+
+### De foutenmarge
+
+De 'precisie' van schatters (schattingen) heeft betrekking op de *foutenmarge* van de schatting, gegeven alle kenmerken van de steekproefopzet. Door een aselecte steekproefbenadering en een 'design-based inferentie' te gebruiken, kunnen we *betrouwbaarheidsintervallen* bekomen die effectief betrekking hebben op alle Vlaamse locaties van een type en typegroep. Het betreft een betrouwbaarheidsinterval rondom de geschatte waarde op basis van de steekproef.
+
+Meer concreet bepaalt de foutenmarge het bereik rond de steekproefschatting (steekproefgemiddelde) waarvan we aannemen dat de populatieparameter (spatiaal of spatiotemporeel gemiddelde van de volledige populatie) erbinnen ligt. Dat bereik is dan ${\bar{x}} \pm {foutenmarge}$. De foutenmarge is dus de helft van het betrouwbaarheidsinterval indien dit interval symmetrisch is.
+
+Voor de foutenmarge kan een *instelwaarde* gekozen worden, dus we proberen aan te geven welke foutenmarge we niet wensen te overschrijden (i.e. we willen voldoende precisie). We maken onderscheid tussen een 'gewenste' foutenmarge om niet te overschrijden (een gewenst scenario) en een 'maximale' foutenmarge (een minimaal scenario: wat minimaal nodig is aan informatie voor een zinvolle betekenis).
+
+De foutenmarge wordt dus uitgedrukt op de **schaal** waarop de milieuvariabele wordt geanalyseerd, bv.:
+
+- *op de absolute schaal*: de foutenmarge is bv. een vast bereik op de schaal van de grondwaterdiepte. Een instelwaarde ervoor (maximale foutmarge) is een constante, rechtstreeks te interpreteren op deze schaal;
+- *op de logaritmisch getransformeerde schaal*: hetzelfde geldt als voor de absolute schaal, maar dan voor de logaritmisch getransformeerde milieuvariabele.
+    - Een belangrijke toepassing is het 'constant maken' van een instelwaarde die relatief wordt uitgedrukt, bv. 'de foutenmarge mag maximaal 10% zijn'. Op de absolute schaal betekent dit een toegelaten foutenmarge die toeneemt met de geschatte waarde (schatting). In het voorbeeld is dat dus $({\bar{x}} + 0.10 \cdot {\bar{x}}) - {\bar{x}}$ op de absolute schaal, oftewel $0.10 \cdot {\bar{x}}$ en dus afhankelijk van de waarde van ${\bar{x}}$. Vertaald naar de logschaal, in positieve richting ^[Op de logschaal is de foutenmarge het kleinst in de positieve richting (vanaf de schatting), en dus het strengst / meest conservatief. Daarom werken we met deze waarde.], wordt de foutenmarge *onafhankelijk* van de waarde van ${\bar{x}}$:
+    
+$$\log_{10} ({\bar{x}} + 0.10 \cdot {\bar{x}}) - \log_{10} {\bar{x}} = \log_{10} 1.10 + \log_{10} {\bar{x}} - \log_{10} {\bar{x}} = \log_{10} 1.10$$
+
+Voor de hoofdmeetnetten van het grondwatermeetnet (verdroging via grondwater en eutrofiëring via grondwater) zijn de primaire milieuvariabelen (= toestand- en trenduitspraken gewenst) de volgende: HG3, LG3, N-NH4, N-NO3, P-PO4. In al deze gevallen is gekozen om de analyse op de logschaal te doen en de instelwaarden relatief te bepalen. Een relatieve foutenmarge, uitgedrukt als fractie $f$ (tussen 0 en 1), wordt in de log~10~-schaal vertaald als een constante foutenmarge van $log_{10} (1 + f)$.
+
+In de notaties die volgen, zullen we log-transformaties niet vermelden, maar veronderstellen we dat $\hat{\mu}$, $\mu$ enzovoort op zich reeds verwijzen naar de log-getransformeerde variabele.
+
+
+### Het betrouwbaarheidsniveau van de foutenmarge: $1 - \alpha$
+
+Het betrouwbaarheidsniveau is de betrouwbaarheid van de uitspraak: 'de populatieparameter ligt in het bereik ${\bar{x}} \pm {foutenmarge}$'. Dit wordt uitgedrukt als een **kans** (tussen 0 en 1). We willen dat deze kans hoog genoeg is om betrouwbare uitspraken te doen. ^[
+De kans drukt uit welk aandeel van steekproeven de populatieparameter zouden omvatten - mocht je herhaaldelijke steekproeven kunnen nemen, wat niet het geval is).]
+
+Het complement van het betrouwbaarheidsniveau is de type I fout ($\alpha$), i.e. de kans dat de bovenstaande uitspraak verkeerd is.
+
+Ook voor het betrouwbaarheidsniveau $1 - \alpha$ kan een instelwaarde gekozen worden, volgens dezelfde principes (gewenst / minimaal). Typisch wordt in de MNM voor het gewenst scenario gekozen voor $1 - \alpha = 0.90$, en in het minimaal scenario voor $1 - \alpha = 0.80$.
+
+
+
+### De distributie (kansdichtheidsfunctie) van de schatter als sleutel tot het vraagstuk
+
+We legden al uit dat een onvertekende schatter een distributie kent met volgend gemiddelde en variantie:
+
+$$\hat{\mu} \sim (\mu,\sigma^2_{\hat{\mu}})$$
+
+Omdat schatters, zoals spatiale of spatiotemporele gemiddelden, berekend worden over een groter aantal observaties, zijn onze schatters bij goede benadering normaal verdeeld:
+
+$$\hat{\mu} \sim \mathcal{N} (\mu,\sigma^2_{\hat{\mu}})$$
+
+Dit impliceert dat de (tweezijdige) foutenmarge op een schatting $\bar{x}$, met een betrouwbaarheidsniveau $1 - \alpha$ als volgt kan worden uitgedrukt:
+
+$$foutenmarge = z_{1 - {\alpha}/2} \cdot \sigma_{\hat{\mu}}$$
+
+waarbij $z_{1 - {\alpha}/2}$ het ${1 - {\alpha}/2}$ percentiel is van de standaard normale verdeling $\mathcal{N} (0, 1)$.
+
+Met andere woorden, we kennen de relatie tussen de foutenmarge, het betrouwbaarheidsniveau en de standaardafwijking $\sigma_{\hat{\mu}}$ van de schatter. Nu is het zo dat de **steekproefgrootte** (samen met overige design-kenmerken) een belangrijke invloed heeft op de variantie $\sigma^2_{\hat{\mu}}$ van de schatter. Met de steekproefgrootte verwijzen we in eerste instantie naar een aantal meetpunten in de ruimte, maar in het algemeen is dit spatiaal en temporeel te bekijken.
+
+Voor een steekproefgrootteberekening is het dus belangrijk om de variantie van de typegroepschatter te ontbinden in deelcomponenten die bepaald worden door de design, waarbij ook het verband met de steekproefgrootte duidelijk wordt. Door de foutenmarge en het betrouwbaarheidsniveau in te stellen, stellen we (gezien de bovenstaande formule) een na te streven waarde in voor $\sigma_{\hat{\mu}}$. Dat zal zich doorvertalen naar de verschillende deelaspecten van de design waarover we controle hebben.
+
+*Omdat dit eerder deterministisch kan lijken, wijzen we de lezer nog eens op de vereenvoudigingen van de gevolgde procedure ten opzichte van de realiteit en op de implicaties hiervan (zie hoofdstuk \@ref(inleiding)).*
+
+
+
+## Types en typegroepen
+
+Hoewel we de steekproefgrootte willen bepalen in functie van kwaliteitseisen op het typegroepniveau, volgen we in de MNM een steekproefstrategie die voor elk type een (minder nauwkeurige) schatting mogelijk maakt, door te stratificeren volgens type. Dit geeft veel flexibiliteit naar veranderingen in de afbakening van typegroepen, de veranderende interesse in verschillende types en in de wijze waarop de typegroepschatter wordt gedefinieerd (door gelijke of ongelijke weging van types). Meer achtergrond hierbij wordt gegeven in @vanderhaeghe_meetnetten_2018.
+
+Concreet stellen we de typegroepschatter in dit rapport voor als $\hat{\mu}$ en de typeschatter als $\hat{\mu_{type}}$.
+
+
+
+## Samenstelling van de variantie van de typegroepschatter
+
+Specifiek in de context van de twee hoofdmeetnetten in het grondwatercompartiment, gaan we uit van het volgende verband tussen de variantie $\sigma^2_{\hat{\mu}}$ van een typegroepschatter ${\hat{\mu}}$ en de variantie $\sigma^2_{\hat{\mu_{type}}}$ van een typeschatter ${\hat{\mu_{type}}}$:
+
+$\sigma^2_{\hat{\mu}} = \frac{1}{n_{types}}\cdot\sigma^2_{\hat{\mu_{type}}}$
+
+met $\sigma^2_{\hat{\mu_{type}}}$:
+
+- in het geval van een spatiotemporele sampling design (chemische variabelen):
+
+$\sigma^2_{\hat{\mu_{type}}} = \frac{1}{n_{years} \cdot n_{locs\_per\_year}} \cdot \sigma^2_{spatial}$
+
+- in het geval van een spatiale sampling design (LG3 en HG3: er is geen sampling in de tijd want de volledige temporele doelpopulatie wordt bemeten^[Immers hebben we van elk jaar een observatie van de LG3 en de HG3, en dit voor alle meetpunten.]):
+
+$\sigma^2_{\hat{\mu_{type}}} = \frac{1}{n_{locs\_per\_year}} \cdot \sigma^2_{spatial}$
+
+Betekenis van symbolen: 
+
+- $n_{types}$: het aantal types in een typegroep;
+- $n_{years}$: het aantal jaren waarover de typeschatter wordt berekend -- we nemen aan dat $n_{years} = 6$;
+- $n_{locs\_per\_year}$: het aantal locaties die in één jaar worden gemeten (voor een spatiale sampling design: dit is het aantal bemeten locaties *tout-court*);
+- $\sigma^2_{spatial}$: de *spatiale variantie* (variabiliteit tussen de locaties) van één (gemiddeld!) type:
+    - het betreft de spatiale variantie *binnen één jaar* in het geval van een spatiotemporele sampling design (chemische variabelen);
+    - de spatiale variantie is *onafhankelijk van de jaren* in het geval van een spatiale sampling design. LG3 en HG3 worden eerst per locatie gemiddeld over de zes jaren (het locatiespecifieke tussenresultaat heeft in dit geval een naam: GLG resp. GHG). Deze waarden vormen de observaties voor analyse.
+    
+    Bemerk dat het in beide gevallen gaat over de variatie die we waarnemen *binnen één zesjaarperiode*.
+
+We maken in deze benadering geen onderscheid in variantieverschillen tussen verschillende types en tussen verschillende typegroepen; het gaat om een gemiddelde inschatting. Het verband tussen de standaardfout van de typeschatter en de typegroepschatter kwam reeds aan bod in @vanderhaeghe_meetnetten_2018.
+
+De aangenomen rol van het aantal jaren in $\sigma^2_{\hat{\mu_{type}}}$, in het geval van een spatiotemporele sampling design (chemische variabelen), betreft het effect van een poststratificatie over jaren, die in de praktijk nuttig is wanneer de variatie tussen jaren relatief groot is in vergelijking met de variatie binnen een jaar.
+
+Het aantal jaarlijkse locaties van een type, $n_{locs\_per\_year}$, is tevens het totale aantal locaties in het geval van een spatiale sampling design (zoals voor LG3 en HG3). $n_{locs\_per\_year}$ is te vermenigvuldigen met het aantal jaren van één cyclus (we gaan uit van 6 jaar) om het totale aantal locaties te bekomen voor een *independent panel* design, i.e. één cyclus van een *serially alternating* design (zoals voor de chemische variabelen).
+
+We wensen van $\sigma^2_{\hat{\mu_{type}}}$ een schatting te bekomen voor een 'doorsnee' type (het gemiddelde type), zodat we het aantal locaties $n_{locs\_per\_year}$ kunnen bepalen in functie van de gewenste nauwkeurigheid (zie instelwaarden) van de typegroepschatter. We zullen dit doen door met een eenvoudig model $\sigma^2_{spatial}$ van een gemiddeld type te schatten, zoals we dit zouden bekomen in monitoring. Bemerk dat we bij monitoring (en ook bij een steekproefgrootteschatting via steekproefsimulatie) een design-based inferentie beogen, wat aan de basis ligt van de bovenstaande formules [zie @vanderhaeghe_meetnetten_2018 voor een rekenvoorbeeld]. De analyse in de komende hoofdstukken loopt dus anders, en is alleen gericht op het bepalen van één specifieke variantiecomponent.
+
+We merken hierbij op dat voor $\sigma^2_{spatial}$ geen rekening is gehouden met de finite-population-correction; voor meer zeldzame types zal $n_{locs\_per\_year}$ dus lager zijn. Bovendien werken we tijdens de ontwerpfase nog niet met een zg. 'model-assisted' design-based inferentie. Dit is wel de bedoeling tijdens monitoring en dit kan voor een (zij het momenteel ongekende) verhoging van precisie (toestand en trend) en power (trend) zorgen.
+
+
+# Instelwaarden voor de toestandsbepaling
+
+We zullen de instelwaarden voor de niet-getransformeerde variabele omrekenen naar een gewenste $\sigma^2_{\hat{\mu}}$, waarbij ${\hat{\mu}}$ de schatting is van het gemiddelde van de *log~10~-getransformeerde* variabele. Zie paragraaf  \@ref(schatters) voor meer uitleg over dit verband. Bron van de instelwaarden: het 'gewenste' scenario B in [deze googlesheet](https://docs.google.com/spreadsheets/d/1IMlLh9EPPRLLoDNWkDzbVJU2cVvst7C8NyJRM2NvujM/edit#gid=229047732).
+
+```{r}
+minimumquality <- 
+    tibble(target_variable = c("HG3",
+                               "LG3",
+                               "N-NH4",
+                               "N-NO3",
+                               "P-PO4"),
+            alpha = 0.1,
+            relative_errormargin = ifelse(str_detect(target_variable, "G3"), 
+                                          0.05, 
+                                          0.1)) %>% 
+    mutate(logscale_errormargin = log10(1 + relative_errormargin),
+           var_mu = (logscale_errormargin / qnorm(1 - alpha/2))^2)
+minimumquality %>% kable
+```
+
+
+# Schatting van $\sigma_{spatial}$
+
+Zoals aangegeven bij de instelwaarden, zullen we werken met log-getransformeerde responsvariabelen, omdat de gewenste maximale foutmarges relatief zijn uitgedrukt. Dit vertaalt zich op de log-schaal in een constant bereik.
+
+## Voor LG3 en HG3
+
+Deze variabelen drukken we voor de eenvoud uit in cm onder maaiveld, waarbij positief = beneden maaiveld. Bemerk wel dat dit het tegengestelde is van de courante werkwijze, dus in publieke communicatie is dit terug te transformeren. Tevens worden waarden boven maaiveld gelijkgesteld aan nul, omwille van de (overwegende) ecologische irrelevantie van variatie van stijghoogtes boven maaiveld. Dit zorgt wel voor artefacten in de verdeling van de responsvariabele; zie verder. De log-getransformeerde variabelen worden berekend op de positieve variabele vermeerderd met 1 cm.
+
+### Beknopte dataverkenning
+
+```{r include=FALSE}
+GXGs <- git2rdata::read_vc("GXGs")
+GXGs <-
+      GXGs %>% 
+      filter(HydroJaar >= 1989,
+             !str_detect(Habitat, "31|rbbah")) %>% 
+      mutate(
+        HydroJaarStart = HydroJaar - min(HydroJaar),
+        fHydroJaarStart = factor(HydroJaarStart),
+        SixYearPeriod = factor(floor((HydroJaar - 1989) / 6)),
+        # InteractieFysRegioLigging = interaction(FysRegio, ligging2, drop = TRUE),
+        Type = factor(Habitat)
+        )
+# GXGs %>% glimpse
+GXGslang <-
+    GXGs %>%
+    select(HYear = HydroJaarStart, 
+           fHYear = fHydroJaarStart,
+           SixYearPeriod,
+           Location = MeetpuntWID,
+           HG3 = GHG_2,
+           LG3 = GLG_2,
+           Type,
+           Typegroup = HabitatGroep) %>%
+    # count(is.na(HG3), is.na(LG3))  # verdacht: de data zijn gepaard (steeds beide wel of beide niet gekend)
+    filter(!is.na(HG3) | !is.na(LG3)) %>%
+    gather(key = "Variable", value = "Value", HG3, LG3) %>% 
+    filter(!is.na(Value)) %>% 
+    mutate(Value = ifelse(Value > 0, 0, -Value * 100), # van meter naar cm; positief wordt onder maaiveld
+           posValue = Value + 1, # strikt positieve waarde
+           logValue = log10(posValue)
+           )
+```
+
+We vertrekken van de data-objecten die eerder werden samengesteld op 15 februari 2018 (LG3- en HG3-waarnemingen vanaf 1989), voor piëzometers met een filter met onderkant minder dan 3 meter onder maaiveld en van piëzometerkoppels alleen de meest ondiepe piëzometer. Voor een meer uitgebreide toelichting bij de dataselectie en een meer uitgebreide dataverkenning, zie Ivy's interne rapporten.
+
+Ons hiervan afgeleide data-object ziet eruit als volgt:
+
+```{r echo=TRUE}
+GXGslang %>% glimpse
+```
+
+De variabele `SixYearPeriod` betreft de zesjarige Natura 2000 programmacyclus, genummerd vanaf 0 (periode 1989-1994). De variabelen `HYear` en `fHYear` betreffen het hydrologisch jaar, getransformeerd zodat HYear = 0 voor het hydrologisch jaar 1989.
+
+Het gemiddeld aantal types per typegroep bedraagt 8.2 -- dit kan dus dienen als indicatie voor het verder gehanteerde aantal types in een groep. Onderstaande tabel toont het aantal types per typegroep. Merk op dat de groepen nog een oudere afbakening hanteren, maar het is een goede indicatie.
+
+```{r}
+GXGslang %>% 
+    distinct(Typegroup, Type) %>% 
+    count(Typegroup) %>% 
+    kable
+    # kableExtra::kable_styling(full_width = FALSE, position = "left")
+```
+
+
+Beschikbaarheid aan observaties per variabele, volgens type en hydrologisch jaar:
+
+```{r fig.height=6, fig.width=10}
+GXGslang %>% 
+    count(Variable, HYear, Type) %>% 
+    ggplot(aes(x = HYear + 1989, fill = Type, y = n)) + 
+        geom_bar(stat = "identity", position = "stack") +
+        facet_wrap(~Variable, ncol = 1)
+```
+
+```{r fig.height=6, fig.width=10}
+GXGslang %>% 
+    count(Variable, HYear, Type) %>% 
+    mutate(HYear_1989 = (HYear + 1989) %>% factor) %>% 
+    ggplot(aes(x = Type, fill = HYear_1989, y = n)) + 
+        geom_bar(stat = "identity", position = "stack") +
+        facet_wrap(~Variable, ncol = 1) +
+        theme(axis.text.x = 
+                  element_text(angle = 90, 
+                               hjust = 1,
+                               vjust = 0.4))
+```
+
+Er zijn meer recente gegevens dan oudere, de types zijn in aantal ongelijk vertegenwoordigd en de oudere perioden hebben betrekking op een beperkter aantal types. Maar we gaan hiervan vertrekken voor berekeningen.
+
+Uit een meer gedetailleerde inspectie stellen we vast dat elke locatie zowel een HG3 als een LG3 heeft. Dit hangt vermoedelijk samen met de vereisten aan een jaarmeetreeks voor de berekening van een HG3- en een LG3-waarde.
+
+Zijn er observaties die meer dan één keer meetellen omwille van meerdere gekoppelde types aan een locatie?
+
+```{r}
+GXGslang %>% 
+    distinct(Location, Type) %>% 
+    count(Location) %>% 
+    count(n)
+```
+
+Dus 15 locaties worden 2 keer gebruikt omdat ze aan twee verschillende types zijn opgehangen.
+
+Het aantal observaties per variabele, locatie, type en jaar zou 1 moeten zijn:
+```{r}
+GXGslang %>% 
+    count(Variable, Location, Type, HYear) %>% 
+    filter(n > 1) %>% 
+    nrow(.) == 0
+```
+
+De histogrammen tonen de verdeling van de waarden, zowel op de originele als de log~10~-getransformeerde schaal:
+
+```{r, message=FALSE, fig.height=2, fig.width=8}
+GXGslang %>% 
+    ggplot(aes(x = Value)) +
+        geom_histogram() +
+        facet_wrap(~Variable)
+```
+
+```{r, message=FALSE, fig.height=2, fig.width=8}
+GXGslang %>% 
+    ggplot(aes(x = logValue)) +
+        geom_histogram() +
+        facet_wrap(~Variable)
+```
+
+Opvallend is de tweeledigheid in de distributie van de log-getransformeerde variabele, als gevolg van het aftoppen van waarden boven maaiveld. Dit treedt logischerwijze het meeste op bij HG3.
+
+### Schatting
+
+We hanteren een eenvoudig lineair model met random effecten om $\sigma_{spatial}$ op basis van de gegeven dataset te schatten voor een gemiddeld type in de monitoring. In het geval van LG3 en HG3 zijn we niet geïnteresseerd in de variatie tussen jaren binnen één zesjaarperiode; die variatie komt in de residuele fout terecht van onderstaand model. We isoleren het effect van zesjaarperiode, type en locatie uit de responsvariabele. We corrigeren ook voor typespecifieke verschillen tussen zesjaarperioden. Het locatiegebonden effect in dit model weerspiegelt de afwijking van de locatiegebonden GLG- of GHG-waarden ten opzichte van het spatiaal gemiddelde van een 'doorsnee' type (binnen één zesjaarperiode), zodat de standaardafwijking van dit effect als schatter kan dienen voor $\sigma_{spatial}$.
+
+We kunnen dit model, met een gaussiaanse foutdistributie en een identity-link, echter niet gaan gebruiken voor inferenties over het (superpopulatie)gemiddelde met betrouwbaarheidsintervallen (i.e. met betrekking tot de bemeten locaties), en dus niet voor steekproefsimulaties, vermits het model geen realistische assumpties maakt over de stochastische verdeling van de residuals en andere effecten. Voor dit doel kan een gamma-GLMM vermoedelijk wel dienen. Ook kan daarbij best een effect van 'gebied' worden toegevoegd (cf. ecoregio, bodemtype, fysisch systeem, ...).
+
+```{r echo=TRUE}
+GXGslang %>% 
+    split(.$Variable) %>% 
+    map(.x = ., .f = function(df) {
+        lmer(logValue ~ (1 | SixYearPeriod) + 
+                         (1 | Type) + 
+                         (1 | SixYearPeriod:Type) +
+                         (1 | Location),
+             data = df)
+    }
+    )
+```
+
+De vermelde waarde bij 'Location' hanteren we als schatting voor $\sigma_{spatial}$.
+
+<!-- Gamma random model: -->
+
+<!-- ```{r} -->
+<!-- GXGslang %>%  -->
+<!--     split(.$Variable) %>%  -->
+<!--     map(.x = ., .f = function(df) { -->
+<!--         glmer(posValue ~ (1 | SixYearPeriod / HYear) + (1 | Type), -->
+<!--              data = df, -->
+<!--              family = Gamma(link = "log") -->
+<!--         ) %>% summary -->
+<!--     } -->
+<!--     ) -->
+<!-- ``` -->
+
+## Voor N-NO3, N-NH4, P-PO4
+
+### Beknopte dataverkenning
+
+```{r include=FALSE}
+GWnutrients <- git2rdata::read_vc("FactChemischeMeting")
+GWnutrients <-
+      GWnutrients %>% 
+      filter(!str_detect(Habitat, "31|rbbah"),
+             ChemVarNaam %in% c("P-PO4", "N-NH4", "N-NO3")) %>%
+      mutate(
+        SixYearPeriod = factor(floor((Jaar - 1983) / 6)),
+        Type = factor(Habitat),
+        Year = Jaar - 1983,
+        fYear = factor(Year)
+        )
+GWnutr_anal <-
+    GWnutrients %>% 
+    select(Year, 
+           fYear,
+           SixYearPeriod,
+           Location = MeetpuntWID,
+           Type,
+           Typegroup = HabitatGroep,
+           Variable = ChemVarNaam,
+           Value = Meetwaarde) %>% 
+    group_by(Year, fYear, SixYearPeriod, 
+             Location, Type, Typegroup,
+             Variable) %>% 
+    summarise(Value = mean(Value)) %>% 
+    ungroup() %>% 
+    mutate(logValue = log10(Value))
+```
+
+We vertrekken van de data-objecten die eerder werden samengesteld op 15 mei 2017 (N-NO3, N-NH4, P-PO4: waarnemingen vanaf 1983), voor piëzometers met een filter met onderkant minder dan 3 meter onder maaiveld en van piëzometerkoppels alleen de meest ondiepe piëzometer. Voor een meer uitgebreide toelichting bij de dataselectie en een meer uitgebreide dataverkenning, zie Ivy's interne rapporten.
+
+Ons hiervan afgeleide data-object ziet eruit als volgt:
+
+```{r echo=TRUE}
+GWnutr_anal %>% glimpse
+```
+
+De variabele `SixYearPeriod` betreft de zesjarige Natura 2000 programmacyclus, genummerd vanaf 0 (periode 1983-1998). De variabelen `Year` en `fYear` betreffen het jaar, getransformeerd zodat Year = 0 voor het jaar 1983. We hebben herhaalde metingen van een locatie binnen een jaar herleid tot één gemiddelde waarde, omdat we niet geïnteresseerd zijn in de (beperkte) variatie binnen de jaren (zie analyses van Ivy).
+
+Het gemiddeld aantal types per typegroep bedraagt 11.5 -- dit kan dus dienen als indicatie voor het verder gehanteerde aantal types in een groep. Onderstaande tabel toont het aantal types per typegroep. Merk op dat de groepen nog een oudere afbakening hanteren, maar het is een goede indicatie.
+
+```{r}
+GWnutr_anal %>% 
+    distinct(Typegroup, Type) %>% 
+    count(Typegroup) %>% 
+    kable
+    # kableExtra::kable_styling(full_width = FALSE, position = "left")
+```
+
+
+Het aantal gegevens per variabele is exact gelijk voor N-NO3 en N-NH4 en ligt iets lager voor P-PO4:
+
+```{r}
+GWnutr_anal %>% 
+    count(Variable)
+```
+
+
+Beschikbaarheid aan observaties per variabele, volgens type en jaar:
+
+```{r fig.height=6, fig.width=10}
+GWnutr_anal %>% 
+    count(Variable, Year, Type) %>% 
+    ggplot(aes(x = Year + 1983, fill = Type, y = n)) + 
+        geom_bar(stat = "identity", position = "stack") +
+        facet_wrap(~Variable, ncol = 1)
+```
+
+```{r fig.height=6, fig.width=10}
+GWnutr_anal %>% 
+    count(Variable, Year, Type) %>% 
+    mutate(Year_1983 = (Year + 1983) %>% factor) %>% 
+    ggplot(aes(x = Type, fill = Year_1983, y = n)) + 
+        geom_bar(stat = "identity", position = "stack") +
+        facet_wrap(~Variable, ncol = 1) +
+        theme(axis.text.x = 
+                  element_text(angle = 90, 
+                               hjust = 1,
+                               vjust = 0.4))
+```
+
+De conclusies over deze grafieken zijn grosso modo als voor LG3 en HG3, met dat verschil dat er na 2000 een periode optreedt met relatief minder data.
+
+Zijn er observaties die meer dan één keer meetellen omwille van meerdere gekoppelde types aan een locatie?
+
+```{r}
+GWnutr_anal %>% 
+    distinct(Location, Type) %>% 
+    count(Location) %>% 
+    count(n)
+```
+
+Dus 11 locaties worden 2 keer gebruikt omdat ze aan twee verschillende types zijn opgehangen.
+
+Het aantal observaties per variabele, locatie, type en jaar zou 1 moeten zijn:
+```{r}
+GWnutr_anal %>% 
+    count(Variable, Location, Type, Year) %>% 
+    filter(n > 1) %>% 
+    nrow(.) == 0
+```
+
+De histogrammen tonen de verdeling van de waarden, zowel op de originele als de log~10~-getransformeerde schaal. Bemerk dat, voor de ongetransformeerde variabele, de y-as op de logaritmische schaal is weergegeven gezien de extreem steile verdeling van de ongetransformeerde variabele.
+
+```{r, message=FALSE, warning=FALSE, fig.height=2, fig.width=8}
+GWnutr_anal %>% 
+    ggplot(aes(x = Value)) +
+        geom_histogram() +
+        facet_wrap(~Variable, scales = "free_x") +
+        scale_y_continuous(trans = "log10")
+```
+
+```{r, fig.height=2, fig.width=8}
+GWnutr_anal %>% 
+    ggplot(aes(x = logValue)) +
+        geom_histogram(binwidth = 0.2) +
+        facet_wrap(~Variable)
+```
+
+Opvallend zijn de uitschieters in de onderste rij grafieken (voor `logValue`), die mogelijks te maken hebben met een artificiële oplossing voor stalen met een concentratie beneden de bepaalbaarheidsgrens (gelijkstelling met de helft van de bepaalbaarheidsgrens).
+
+Een nader zicht op de datasubset die min of meer overeenkomt met de hoogst uitschietende staven:
+
+```{r, message=FALSE, fig.height=3, fig.width=8}
+GWnutr_anal %>% 
+    pull(logValue) %>% 
+    findInterval(vec = seq(min(.), max(.), by = 0.2)) %>% 
+    cbind(GWnutr_anal, Class = factor(.)) %>% 
+    group_by(Variable, Class) %>% 
+    summarise(Count = n()) %>% 
+    ungroup() %>% 
+    inner_join(GWnutr_anal %>% 
+                    pull(logValue) %>% 
+                    findInterval(vec = seq(min(.), max(.), by = 0.2)) %>% 
+                    cbind(GWnutr_anal, Class = factor(.))) %>% 
+    filter(Count > 300) %>% 
+    ggplot(aes(x = Year + 1983, y = Value)) +
+        geom_point(position = "jitter", alpha = 0.1, colour = "darkblue") +
+        facet_wrap(~Variable) +
+        ylab("Value (mg/L)")
+```
+
+De donkerblauwe, horizontale lijnpatronen geven weer welke waarden het vaakst zijn toegepast voor dergelijke stalen, en in welke periode. Er zijn ook lichtere, horizontale lijnpatronen te zien. Het is zonder verdere opzoeking niet meteen duidelijk wat de achtergrond van de patronen is, maar we mogen er van uitgaan dat de werkelijke concentraties anders waren.
+
+
+
+### Schatting
+
+Een deels gelijkaardige benadering wordt gevolgd als voor LG3 en HG3, met dezelfde bemerking dat het gefitte model louter gebruikt kan worden voor de extractie van variantiecomponenten. De verschillen zijn de volgende:
+
+- we zijn bijkomend geïnteresseerd in de variatie tussen jaren binnen één zesjaarperiode, aangezien we de spatiale variantie per jaar willen schatten;
+- we isoleren daarom het effect van jaar, zesjaarperiode en type uit de responsvariabele. We corrigeren ook voor typespecifieke verschillen tussen jaren en zesjaarperioden;
+- de *residuen* van dit model zijn dan de locatiegebonden afwijking ten opzichte van het jaarlijks gemiddelde van een 'doorsnee' type (binnen één zesjaarperiode), zodat de standaardafwijking van deze residuen als schatter kan dienen voor $\sigma_{spatial}$.
+
+```{r echo=TRUE}
+GWnutr_anal %>% 
+    split(.$Variable) %>% 
+    map(.x = ., .f = function(df) {
+        lmer(logValue ~ (1 | SixYearPeriod / Year) +
+                        (1 | Type) +
+                        (1 | Type:Year) +
+                        (1 | Type:SixYearPeriod),
+             data = df)
+    }
+    )
+```
+
+De vermelde waarde bij 'Residual' hanteren we als schatting voor $\sigma_{spatial}$.
+
+
+# Een ruwe inschatting van $n_{locs\_per\_year}$
+
+We hanteren de volgende waarden voor $\hat\sigma_{spatial}$ en $\hat\sigma^2_{spatial}$.
+
+```{r}
+modelvar <-
+    tibble(target_variable = c("HG3",
+                               "LG3",
+                               "N-NH4",
+                               "N-NO3",
+                               "P-PO4"),
+                stdev_spatial = c(0.52407,
+                                   0.40290,
+                                   0.57910,
+                                   0.6568,
+                                   0.49131)
+    ) %>% 
+    mutate(var_spatial = stdev_spatial^2)
+modelvar %>% kable()
+```
+
+
+```{r}
+give_me_some_samplesize <- 
+    function(minqual, var_spat, n_years){
+        minqual %>% 
+        inner_join(var_spat) %>% 
+        mutate(
+        n_locs_per_year = ifelse(str_detect(target_variable, "G3"),
+                                 var_spatial / (var_mu * n_types),
+                                 var_spatial / (var_mu * n_types * n_years)),
+        n_locs = ifelse(str_detect(target_variable, "G3"),
+                           ceiling(n_locs_per_year),
+                           ceiling(n_locs_per_year * 6))
+        )
+    }
+```
+
+
+Op basis van de eerder vermelde formules berekenen we de waarde voor $n_{locs\_per\_year}$, waarbij we stellen dat $n_{types} = 8$ en $n_{years} = 6$. Rekening houdend met jaarlijks andere locaties voor de chemische variabelen, leiden we daaruit het totaal aantal locaties per type af (naar boven afgerond: `n_locs`).
+
+```{r echo = TRUE, message=FALSE}
+some_samplesizes <- 
+    give_me_some_samplesize(minqual = minimumquality,
+                         var_spat = modelvar %>% 
+                             mutate(n_types = 8),
+                         n_years = 6) %>% 
+    select(target_variable,
+           n_locs_per_year,
+           n_locs)
+some_samplesizes %>%
+    kable
+```
+
+Omdat we willen weten welk effect een onderschatting van de variantie kan hebben op deze steekproefgrootte, bekijken we dit effect binnen een range van 0 tot 50% *hogere* $\hat\sigma^2_{spatial}$. We bekijken ook hoe dit interageert met het aantal types in een typegroep. Op de grafiek heeft de Y-as een logaritmische schaal!
+
+```{r message=FALSE, warning=FALSE}
+var_spat_extended <-
+    modelvar %>% 
+    pull(target_variable) %>% 
+    expand.grid(target_variable = ., 
+                pct = seq(0, 50, 2),
+                n_types = seq(1, 25, 1)) %>% 
+    inner_join(modelvar) %>% 
+    select(-stdev_spatial) %>% 
+    mutate(var_spatial = var_spatial * (100 + pct) / 100)
+some_scenarios1 <- 
+    give_me_some_samplesize(minqual = minimumquality,
+                     var_spat = var_spat_extended,
+                     n_years = 6)
+```
+
+```{r fig.height=8, fig.width=10}
+some_scenarios1 %>% 
+    mutate(
+        n_locs = ifelse(str_detect(target_variable, "G3"),
+                           n_locs_per_year,
+                           n_locs_per_year * 6),
+        n_types = factor(n_types)
+    ) %>% 
+    ggplot(aes(x = pct, y = n_locs, colour = n_types, group = n_types)) + 
+        geom_line() + 
+        facet_wrap(~target_variable, scales = "free_y") +
+        scale_y_continuous(trans = "log10",
+                           breaks = c(1:9*10, 1:9*100)) +
+        labs(x = "Percentage extra spatial variance above estimated value",
+             y = "Number of locations per type")
+```
+
+De volgende conclusies kunnen hierbij worden gemaakt, gegeven de eerder vermelde instelwaarden:
+
+- er is een grotere steekproefgrootte nodig voor de peildynamiek dan voor de nutriënten;
+- de nodige steekproefgrootte voor HG3 is hoger dan voor LG3;
+- we zien dat bij een toenemend aantal types per typegroep de nodige steekproefgrootte afneemt, maar dat dit afvlakt [zie ook @vanderhaeghe_meetnetten_2018]. Vanaf minder dan 8 types per typegroep is er daarentegen een steeds drastischer invloed op het aantal nodige locaties per type (zie ook de volgende figuur);
+- de steekproefgrootte neemt toe met toenemende variantie, en dit effect is sterker naarmate minder types in een groep zitten (log-schaal Y-as).
+
+Daarnaast bekijken we, voor de bekomen waarde van $\hat\sigma^2_{spatial}$, het effect van instelwaarden in de range van scenario A (minimaal nodige informatiekwaliteit) tot scenario B (gewenste informatiekwaliteit). Het gaat om de toegelaten type I fout ($\alpha$) ^[Het complement, 1 - $\alpha$, is het betrouwbaarheidsniveau van de foutmarge.] en de gewenste relatieve foutmarge (`rel_error`) met die type I fout. Er is hierbij te vermelden dat deze instelwaarden richtinggevend zijn, maar niet stringent, vermits de keuze ervan niet vanzelfsprekend is geweest. Ook bekijken we opnieuw het effect van het aantal types in een typegroep. Opnieuw heeft de Y-as van de grafiek een logaritmische schaal!
+
+```{r message=FALSE, warning=FALSE}
+minqual_extended <-
+    expand.grid(target_variable = c("HG3", "LG3"),
+                alpha = seq(0.1, 0.2, 0.05),
+                relative_errormargin = seq(0.05, 0.1, 0.025)) %>% 
+    rbind(
+        expand.grid(target_variable = c("N-NH4", "N-NO3", "P-PO4"),
+                alpha = seq(0.1, 0.2, 0.05),
+                relative_errormargin = seq(0.1, 0.2, 0.05))
+    ) %>% 
+    mutate(logscale_errormargin = log10(1 + relative_errormargin),
+       var_mu = (logscale_errormargin / qnorm(1 - alpha/2))^2)
+var_spat_extended2 <-
+    modelvar %>% 
+    pull(target_variable) %>% 
+    expand.grid(target_variable = ., 
+                n_types = seq(1, 25, 1)) %>% 
+    inner_join(modelvar) %>% 
+    select(-stdev_spatial)
+some_scenarios2 <- 
+    give_me_some_samplesize(minqual = minqual_extended,
+                     var_spat = var_spat_extended2,
+                     n_years = 6)
+```
+
+```{r fig.height=8, fig.width=10}
+p <- 
+    some_scenarios2 %>% 
+    mutate(
+        n_locs = ifelse(str_detect(target_variable, "G3"),
+                           n_locs_per_year,
+                           n_locs_per_year * 6),
+        alpha_label = str_c("alpha = ", alpha),
+        rel_error_label = str_c("rel_error = ", relative_errormargin * 100, "%") %>% factor,
+        rel_error_label = factor(rel_error_label, levels(rel_error_label)[c(4:5, 1:3)])
+    ) %>% 
+    ggplot(aes(x = n_types, y = n_locs, colour = target_variable, group = target_variable)) + 
+        geom_line() + 
+        facet_grid(alpha_label ~ rel_error_label) +
+        labs(x = "Number of types per typegroup",
+             y = "Number of locations per type")
+p + scale_y_continuous(trans = "log10",
+                       breaks = c(1:4, seq(10, 40, 10), 100, 200, 300))
+```
+
+We kunnen hierbij de volgende conclusies maken:
+
+- het beschouwde bereik van de relatieve foutmarge heeft duidelijk een grotere invloed op de steekproefgrootte dan het beschouwde bereik van $\alpha$;
+- het onderscheid tussen de steekproefgrootte voor verschillende milieuvariabelen is in deze weergave beter te zien;
+    - hierbij is op te merken dat we voor de steekproefdimensionering **geen onderscheid** zullen maken tussen de verschillende nutriënten, of tussen HG3 en LG3;
+- ook het grote effect van het aantal types in een typegroep is goed te zien. Bemerk dat dit met een lineair geschaalde Y-as nog veel extremer is, zoals *hieronder* te zien.
+
+```{r fig.height=6, fig.width=10}
+p
+```
+
+# Conclusies en vooruitzichten
+
+Afgaande op het aantal locaties voor het gewenste scenario B, en rekening houdend met het totaal aantal types in de doelpopulatie, kunnen we becijferen dat het totale aantal nodige locaties de onderstaande zouden zijn. Dit is enerzijds zonder rekening te houden met finite-population-correction (en dus overschat voor zeldzame types), maar anderzijds ook ervan uitgaande dat de werkelijke variantie niet groter is dan geschat (cf. effect van variantie-onderschatting, in grafiek hoger).
+
+```{r}
+some_samplesizes %>% 
+    mutate(n_locs_alltypes = ifelse(str_detect(target_variable, "G3"),
+                                    n_locs * 55,
+                                    n_locs * 45)) %>% 
+    select(target_variable, n_locs_alltypes) %>% 
+    kable
+```
+
+Bij eenzelfde type I fout (10%) en eenzelfde aantal types per groep (8), maar met een grotere toegelaten relatieve foutmarge op de typegroepschatter (10% bij de peildynamiek, 20% bij de chemische variabelen), zijn dit de aantallen:
+
+```{r}
+some_scenarios2 %>% 
+    filter(alpha == 0.1, n_types == 8) %>% 
+    filter((str_detect(target_variable, "G3") & relative_errormargin == 0.1) | 
+               (!str_detect(target_variable, "G3") & relative_errormargin == 0.2)) %>% 
+    mutate(n_locs_alltypes = ifelse(str_detect(target_variable, "G3"),
+                                    n_locs * 55,
+                                    n_locs * 45)) %>% 
+    select(target_variable, n_locs_alltypes) %>% 
+    kable
+```
+
+Er is met andere woorden een opvallend effect van de gewenste precisie. Kostenberekeningen kunnen hier verdere afwegingen onderbouwen, maar het is aangewezen om eerst de steekproefgrootteberekeningen op een beter gefundeerde manier te onderbouwen. De volgende stappen zijn hiertoe te volgen:
+
+1. opzet van het steekproefkader en de nodige attributen voor steekproeftrekking en design-based inferentie in MNM. Dit is overwegend een databeheerluik ^[Voor de nodige data, zie [deze googlesheet](https://docs.google.com/spreadsheets/d/1E8ERlfYwP3OjluL8d7_4rR1W34ka4LRCE35JTxf3WMI): verschillende Vlaamse geospatiale data, standaardlijsten, GRTS master sample, exports uit databanken, steekproefadministratie biotische habitatkwaliteit], waarbij reproduceerbaarheid belangrijk is voor latere revisies. Dit veronderstelt een versioneringssysteem van de basislagen;
+1. vaststellen van de mee te nemen types voor de respectievelijke meetnetten, op basis van feedback van experten medio 2018;
+1. vaststellen van de typegroepen (hoofdmeetnetten grondwater), op basis van extra input van experten in 2018;
+1. (bayesiaanse) modelbouw voor de respectievelijke milieuvariabelen die aangepast is aan de aard en de verdeling van de data, en die de probabiliteitsverdeling van fixed en random parameters teruggeeft zodat dit kan dienen voor steekproefsimulaties;
+1. steekproefsimulaties voor de respectievelijke milieuvariabelen: het nabootsen van een groot aantal steekproeven, in groepen volgens verschillende groottes en revisit designs (scenario's);
+1. voor elke steekproef de inferentie uitvoeren over toestand en trend van de respectievelijke milieuvariabelen, rekening houdend met de finite-population-correction en uitgaande van een bepaald aantal types per typegroep;
+1. toetsing van de resultaten met instelwaarden;
+1. kosten- en personeelsberekeningen;
+1. keuze van een scenario;
+1. uitvoeren van de GRTS-steekproeftrekking conform het scenario, aangevuld met een benadering voor de overgangsfase m.b.t. bestaande meetpunten;
+1. uitwerking van een meetplan.
+
+Meer informatie over deze stappen is te vinden in @vanderhaeghe_meetnetten_2018.
+
+
+# Literatuurreferenties {-}
+
