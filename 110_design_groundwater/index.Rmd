@@ -22,6 +22,7 @@ output:
     keep_md: TRUE
   bookdown::html_document2:
     number_sections: yes
+    code_folding: hide
     fig_caption: yes
     df_print: paged
     toc: TRUE
@@ -33,11 +34,19 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+options(stringsAsFactors = FALSE,
+        knitr.table.format = "pandoc")
 library(tidyverse)
 library(knitr)
 library(lme4)
+library(readxl)
 # library(kableExtra)
-knitr::opts_chunk$set(echo = FALSE)
+uitvoer <- knitr::opts_knit$get("rmarkdown.pandoc.to")
+opts_chunk$set(
+  echo = ifelse(is.null(uitvoer), TRUE,
+                !(uitvoer %in% c("latex", "docx"))),
+  dpi = 300
+)
 ```
 
 # Dankwoord {-}
@@ -893,34 +902,38 @@ We kunnen hierbij de volgende conclusies maken:
 p
 ```
 
-# Conclusies en vooruitzichten
+# Conclusies en vooruitzichten {#conclusies}
 
 Afgaande op het aantal locaties voor het gewenste scenario B, en rekening houdend met het totaal aantal types in de doelpopulatie, kunnen we becijferen dat het totale aantal nodige locaties de onderstaande zouden zijn. Dit is enerzijds zonder rekening te houden met finite-population-correction (en dus overschat voor zeldzame types), maar anderzijds ook ervan uitgaande dat de werkelijke variantie niet groter is dan geschat (cf. effect van variantie-onderschatting, in grafiek hoger).
 
 ```{r}
-some_samplesizes %>% 
+scenB <- 
+    some_samplesizes %>% 
     mutate(n_locs_alltypes = ifelse(str_detect(target_variable, "G3"),
                                     n_locs * 55,
                                     n_locs * 45)) %>% 
-    select(target_variable, n_locs_alltypes) %>% 
+    select(target_variable, n_locs_alltypes)
+scenB %>% 
     kable
 ```
 
 Bij eenzelfde type I fout (10%) en eenzelfde aantal types per groep (8), maar met een grotere toegelaten relatieve foutmarge op de typegroepschatter (10% bij de peildynamiek, 20% bij de chemische variabelen), zijn dit de aantallen:
 
 ```{r}
-some_scenarios2 %>% 
+scenA <- 
+    some_scenarios2 %>% 
     filter(alpha == 0.1, n_types == 8) %>% 
     filter((str_detect(target_variable, "G3") & relative_errormargin == 0.1) | 
                (!str_detect(target_variable, "G3") & relative_errormargin == 0.2)) %>% 
     mutate(n_locs_alltypes = ifelse(str_detect(target_variable, "G3"),
                                     n_locs * 55,
                                     n_locs * 45)) %>% 
-    select(target_variable, n_locs_alltypes) %>% 
+    select(target_variable, n_locs_alltypes)
+scenA %>% 
     kable
 ```
 
-Er is met andere woorden een opvallend effect van de gewenste precisie. Kostenberekeningen kunnen hier verdere afwegingen onderbouwen, maar het is aangewezen om eerst de steekproefgrootteberekeningen op een beter gefundeerde manier te onderbouwen. De volgende stappen zijn hiertoe te volgen:
+Er is met andere woorden een opvallend effect van de gewenste precisie. Kostenberekeningen kunnen hier verdere afwegingen onderbouwen (een benadering is te vinden in bijlage \@ref(app:kosten)), maar het is aangewezen om eerst de steekproefgrootteberekeningen op een beter gefundeerde manier te onderbouwen. De volgende stappen zijn hiertoe te volgen:
 
 1. opzet van het steekproefkader en de nodige attributen voor steekproeftrekking en design-based inferentie in MNM. Dit is overwegend een databeheerluik ^[Voor de nodige data, zie [deze googlesheet](https://docs.google.com/spreadsheets/d/1E8ERlfYwP3OjluL8d7_4rR1W34ka4LRCE35JTxf3WMI): verschillende Vlaamse geospatiale data, standaardlijsten, GRTS master sample, exports uit databanken, steekproefadministratie biotische habitatkwaliteit], waarbij reproduceerbaarheid belangrijk is voor latere revisies. Dit veronderstelt een versioneringssysteem van de basislagen;
 1. vaststellen van de mee te nemen types voor de respectievelijke meetnetten, op basis van feedback van experten medio 2018;
@@ -936,7 +949,4 @@ In het geval van HG3 en LG3 modelleren we de jaarlijkse waarden, en zal de tempo
 1. uitwerking van een meetplan.
 
 Meer informatie over deze stappen is te vinden in @vanderhaeghe_meetnetten_2018.
-
-
-# Literatuurreferenties {-}
 
