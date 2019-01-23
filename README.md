@@ -4,9 +4,24 @@ This repo aims at providing the design of monitoring programmes for the natural 
 
 The main folders consider the following topics:
 
-- (in Dutch:) website on choices (selections) for the MNE
-- (in Dutch:) a framework for design choices and other aspects of the monitoring workflow (data management, data quality, analytical, reporting, revision, QAQC)
+- 010 (in Dutch:) website on choices (selections) for the MNE
+- 020 (in Dutch:) a framework for design choices, inference strategy and other aspects of the monitoring workflow (data management, data quality, analytical, reporting, revision, QAQC)
+- 110 (in Dutch:) design of the monitoring programme for the groundwater compartment
 - (to be extended)
+
+
+## How to contribute to this repository?
+
+1. Decide to which branch (c.q. pull request) you want to contribute (**reference branch**).
+1. In your local repo, make your own new branch after having checked out the reference branch. In this way, the new branch is derived from the reference branch.
+  - _Alternatively_, make your changes on the remote repo (at github.com), starting from the reference branch, and commit your changes as a new pull request. This workflow avoids the need of 1) having git installed locally and 2) managing your local repo. However, the possibilities of working with git are more limited.
+1. Make the commits that you want to make, **in your branch**.
+1. Push your local brach to the remote repo (github.com).
+1. In the remote repo, start a pull request for this branch (+ request review, add clarification etc.). _Make sure to correctly set the reference branch for this pull request!_
+1. When approved, your branch will be merged with the reference branch in the remote repo (at github.com).
+1. Pull the reference branch and clean up your local repo in order to keep up with the remote.
+
+More info on git workflows at INBO: <https://inbo.github.io/tutorials/tags/git/>
 
 
 ## General information on the MNE
