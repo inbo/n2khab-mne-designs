@@ -14,7 +14,7 @@ The main folders consider the following topics:
 
 1. Decide to which branch (c.q. pull request) you want to contribute (**reference branch**).
 1. In your local repo, make your own new branch after having checked out the reference branch. In this way, the new branch is derived from the reference branch.
-  - _Alternatively_, make your changes on the remote repo (at github.com), starting from the reference branch, and commit your changes as a new pull request. This workflow avoids the need of 1) having git installed locally and 2) managing your local repo. However, the possibilities of working with git are more limited.
+    - _Alternatively_, make your changes on the remote repo (at github.com), starting from the reference branch, and commit your changes as a new pull request. This workflow avoids the need of 1) having git installed locally and 2) managing your local repo. However, the possibilities of working with git are more limited.
 1. Make the commits that you want to make, **in your branch**.
 1. Push your local brach to the remote repo (github.com).
 1. In the remote repo, start a pull request for this branch (+ request review, add clarification etc.). _Make sure to correctly set the reference branch for this pull request!_
