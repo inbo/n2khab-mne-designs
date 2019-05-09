@@ -1,0 +1,230 @@
+# (APPENDIX) Bijlagen {-}
+
+# Bijlage: kostenberekening terrestrisch deel van het grondwatermeetnet {#app:kosten}
+
+Op basis van de kosten in de [googlesheet](https://docs.google.com/spreadsheets/d/1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc) van de milieuvariabelen, is een vereenvoudigde tabel opgesteld met eenheidskosten voor het grondwatermeetnet.
+
+Belangrijk is dat de overige kosten, o.a. het ontwerp van de dataketen, het databeheer, de analyses, de kwaliteitshandhaving, de rapportages, projectmanagement e.d., **niet** zijn vervat in de onderstaande cijfers. De onderstaande resultaten betreffen alleen het werk dat direct gerelateerd is met de gegevensinzameling.
+
+De tabel met eenheidskosten:
+
+```{r}
+kosten <- 
+    read_excel("../../Meetnetontwerp/Kostencijfers.xlsx", 
+           sheet = "Grondwater",
+           range = cell_cols(c("A:H"))
+           )
+```
+
+\blandscape
+
+\scriptsize
+
+```{r echo=TRUE}
+kosten %>% 
+    kable
+```
+
+
+\normalsize
+
+\elandscape
+
+
+Toelichtingen en bemerkingen:
+
+- het aantal uren of euro's geldt voor een aantal meetpunten, vernoemd in de kolom `Eenheid_meetpunten`;
+- de activiteiten zijn geclusterd tot activiteittypes; de voornaamste zijn:
+    - meetpuntinstallatie: betreft piëzometerinstallatie, zowel voor grondwaterkwantiteit (waterstanden) als -kwaliteit (chemie);
+    - datainzameling kwantiteit: het meetwerk voor stijghoogtes;
+    - datainzameling kwaliteit: het meetwerk voor grondwaterchemie;
+- euro's hebben alleen betrekking op de nodige werkingsmiddelen en niet op personeelskosten. In verschillende gevallen gaat het om **kilometerkosten**. We zullen deze in de meeste tabellen **niet meenemen**, maar op het einde wordt daarvan ook de implicatie getoond;
+- euro's ivm verplaatsing zijn gerekend aan 0.35 EUR/km;
+- piëzometers voor kwantiteit zijn steeds voorzien van een logger, maar niet van een modem;
+- `Periode_jaren` geeft aan *om de hoeveel jaar de activiteit ter hoogte van hetzelfde meetpunt plaatsvindt*. In het geval van installatie is gerekend met een gemiddelde afschrijvingstijd van een meetinstallatie (of onderdelen ervan, zoals de logger) van 6 jaar.
+
+We berekenen de kost per meetpunt (delen door `Eenheid_meetpunten`) en per jaar (delen door `Periode_jaren`), en sommeren de kosten volgens activiteittype.
+
+- De kost per jaar 'verrekent' hierdoor de verdeling van meetpunten over jaren in het geval van grondwaterchemie (en mag dus met het totale aantal meetpunten over 6 jaar worden vermenigvuldigd om de kost per jaar te kennen). Tevens omvat het de verdubbeling of verviervoudiging van het werk daar waar vaker dan jaarlijks meetpunten worden bezocht.
+- We negeren in de berekening het forfait voor de mobiele uitrusting van een terreinmedewerker, omdat het niet refereert aan een aantal meetpunten, maar aan de nodige personeelsinzet. Dit dient dus achteraf te worden toegevoegd.
+
+```{r echo=TRUE}
+maak_kostensum <- function(df, met_km = TRUE) {
+    df %>% 
+    filter(Activiteittype != "Mobiele_meetuitrusting_forfait") %>% 
+    mutate(EUR_werkingsmiddelen_per_eenheid = if(met_km) {
+        EUR_werkingsmiddelen_per_eenheid} else {
+        ifelse(str_detect(Activiteit, "Verplaatsing|uitlezen"), 0, EUR_werkingsmiddelen_per_eenheid)
+        }
+    ) %>% 
+    mutate(Dagendeskund_per_meetpt_per_jaar = 
+               Aantal_deskundigen * Uren_per_eenheid / (7.6 * Eenheid_meetpunten * Periode_jaren),
+           Dagenwetensch_per_meetpt_per_jaar = 
+               Aantal_wetenschappers * Uren_per_eenheid / (7.6 * Eenheid_meetpunten * Periode_jaren),
+           EUR_werkingsmiddelen_per_meetpt_per_jaar = 
+               EUR_werkingsmiddelen_per_eenheid / (Eenheid_meetpunten * Periode_jaren)) %>% 
+    group_by(Activiteittype) %>% 
+    summarise(
+           Dagendeskund_per_meetpt_per_jaar = 
+               sum(Dagendeskund_per_meetpt_per_jaar, na.rm = TRUE),
+           Dagenwetensch_per_meetpt_per_jaar = 
+               sum(Dagenwetensch_per_meetpt_per_jaar, na.rm = TRUE),
+           EUR_werkingsmiddelen_per_meetpt_per_jaar = 
+               sum(EUR_werkingsmiddelen_per_meetpt_per_jaar, na.rm = TRUE)
+    ) %>% 
+    gather(key = "Kosttype", value = "Waarde_per_meetpt_per_jaar", 2:4) %>% 
+    mutate(Kosttype = plyr::revalue(Kosttype,
+                                    c("Dagendeskund_per_meetpt_per_jaar" = "Dagen_deskundige_perjaar",
+                                      "Dagenwetensch_per_meetpt_per_jaar" = "Dagen_wetenschapper_perjaar",
+                                      "EUR_werkingsmiddelen_per_meetpt_per_jaar" = "EUR_werkingsmiddelen_perjaar")))
+}
+kostensum <-
+    kosten %>% 
+    maak_kostensum
+kostensum_zonder_km <-
+    kosten %>% 
+    maak_kostensum(met_km = FALSE)
+kostensum_zonder_km %>% 
+    kable
+```
+
+We berekenen vervolgens het **jaarlijkse** aantal dagen en euro's, nodig voor scenario A resp. scenario B (zonder kilometerkosten):
+
+```{r echo=TRUE,message=FALSE}
+geef_kost_per_jaar <- function(df) {
+    scenA %>% 
+    rename(ScenA = n_locs_alltypes) %>% 
+    inner_join(scenB) %>% 
+    rename(ScenB = n_locs_alltypes) %>% 
+    filter(target_variable %in% c("HG3", "N-NO3")) %>% 
+    gather(key = "Scenario", value = "n_locs", 2:3) %>% 
+    group_by(Scenario) %>% 
+    summarise(
+        Datainzameling_kwaliteit = min(n_locs),
+        Datainzameling_kwantiteit = max(n_locs),
+        Meetpuntinstallatie = max(n_locs)
+        ) %>% 
+    gather(key = "Activiteittype",
+           value = "Aantal_meetpunten_6jaar",
+           2:4) %>% 
+    inner_join(df) %>% 
+    mutate(Waarde_per_jaar = 
+               round(Aantal_meetpunten_6jaar * Waarde_per_meetpt_per_jaar, 0),
+           Aantal_meetpunten_perjaar = ifelse(str_detect(Activiteittype, "kwantiteit"),
+                                              Aantal_meetpunten_6jaar,
+                                              round(Aantal_meetpunten_6jaar / 6, 0))) %>% 
+    select(-Waarde_per_meetpt_per_jaar,
+           -Aantal_meetpunten_6jaar) %>% 
+    spread(key = Kosttype, value = Waarde_per_jaar)
+}
+kosten_per_jaar <- 
+    geef_kost_per_jaar(kostensum)
+kosten_per_jaar_zonder_km <- 
+    geef_kost_per_jaar(kostensum_zonder_km)
+```
+
+\blandscape
+
+\scriptsize
+
+```{r echo=TRUE}
+kosten_per_jaar_zonder_km %>% 
+    kable
+```
+
+\normalsize
+
+\elandscape
+
+Of met het aantal dagen omgerekend naar **jaarlijkse VTE's**^[Er is uitgegaan van de volgende cijfers: 1 VTE wetenschapper = 160 dagen beschikbaar voor projectwerk; 1 VTE deskundige = 180 dagen beschikbaar voor projectwerk.]:
+
+```{r echo=TRUE}
+geef_VTE_per_jaar <- function(df) {
+    df %>% 
+    mutate(VTE_deskundige_perjaar = (Dagen_deskundige_perjaar / 180) %>% 
+               round(2),
+           VTE_wetenschapper_perjaar = (Dagen_wetenschapper_perjaar / 160) %>% 
+               round(2)) %>% 
+    select(Scenario,
+           Activiteittype,
+           Aantal_meetpunten_perjaar,
+           VTE_deskundige_perjaar,
+           VTE_wetenschapper_perjaar,
+           EUR_werkingsmiddelen_perjaar)
+}
+VTE_per_jaar <- 
+    geef_VTE_per_jaar(kosten_per_jaar)
+VTE_per_jaar_zonder_km <- 
+    geef_VTE_per_jaar(kosten_per_jaar_zonder_km)
+```
+
+\blandscape
+
+\scriptsize
+
+```{r echo=TRUE}
+VTE_per_jaar_zonder_km %>% 
+    kable
+```
+
+
+Met kilometerkosten bijgerekend (aan 0.35 EUR/km):
+
+```{r echo=TRUE}
+VTE_per_jaar %>% 
+    kable
+```
+
+\normalsize
+
+\elandscape
+
+We merken hierbij op:
+
+- het jaarlijks aantal meetpunten *voor de installatie-activiteit en voor de kwaliteitsmetingen* gaat uit van een evenredige verdeling van zes keer dit aantal over de zes jaren van de cyclus;
+- het aantal meetpunten *voor de kwantiteitsmetingen* is het totale aantal meetpunten van de cyclus. Dat komt omdat alle meetpunten continu worden opgevolgd. Dit aantal zal pas vanaf de tweede cyclus bereikt zijn, aangezien we kunnen uitgaan van een meerjarenspreiding van het installatiewerk bij de implementatie;
+- de *meetpuntinstallatie* is zesjaarlijks terugkerend, want de afschrijving van loggers en andere materialen is op zes jaar ingesteld. Het gaat dus ook om herstel en herinstallatie.
+
+
+Getotaliseerde jaarlijkse kostenschatting voor scenario A en B:
+
+```{r echo=TRUE}
+geeftotaal <- function(df) {
+    df %>% 
+    select(-Aantal_meetpunten_perjaar) %>% 
+    gather(key = "Kostentype", value = "Waarde", 3:5) %>% 
+    group_by(Scenario, Kostentype) %>% 
+    summarise(Waarde = sum(Waarde)) %>% 
+    mutate(Kostentype = factor(Kostentype, 
+                               levels = c("VTE_deskundige_perjaar",
+                                          "VTE_wetenschapper_perjaar",
+                                          "EUR_werkingsmiddelen_perjaar"))
+    ) %>% 
+    spread(key = Kostentype, value = Waarde)
+}
+VTE_per_jaar_zonder_km %>% 
+    geeftotaal %>% 
+    kable
+```
+
+Met kilometerkosten bijgerekend (aan 0.35 EUR/km):
+
+```{r echo=TRUE}
+VTE_per_jaar %>% 
+    geeftotaal %>% 
+    kable
+```
+
+
+We merken bij deze tabellen op:
+
+- er zijn meer scenario's mogelijk dan A en B;
+- het is aangewezen om eerst de steekproefgrootteberekeningen op een beter gefundeerde manier te onderbouwen (zie paragraaf \@ref(conclusies));
+- minstens in de eerste cyclus kan de voorziene tijd best met 25% worden verhoogd [@de_gruijter_sampling_2006], omdat extra onvoorziene hindernissen te verwachten zijn;
+- er is *bijkomend* voor elke terreinwerker zesjaarlijks een uitrusting van ca. 6500 EUR aan apparatuur te voorzien;
+- de overige personeelsinzet en werkingsmiddelen, o.a. het ontwerp van de dataketen, het databeheer, de analyses, de kwaliteitshandhaving, de rapportages, projectmanagement e.d., zijn **niet** vervat in de bovenstaande cijfers. De bovenstaande resultaten betreffen alleen het werk dat direct gerelateerd is met de gegevensinzameling.
+
+
+
+
+
