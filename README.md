@@ -31,9 +31,12 @@ Subfolders can contain their own RStudio project on the topic.
 For rather large subfolders (e.g. a report on a design), it is advised to further distinguish between a `src` and a `data` folder:
 
 - `src` contains R-scripts and/or bookdown projects
-- `data` is used to keep data sources, used or produced by code in the script.
-This can be data organised in the same way as in the [n2khab-preprocessing](https://github.com/inbo/n2khab-inputs) repo and hence _git-ignored_ here, as well as _specific_ data sources which are either versioned here (textual data) or in a Zenodo repository (for binary data, hence _git-ignored_ here).
-Regarding the first type of data (i.e. general n2khab data), it can as well be useful to have a separate `data` folder outside of the specific subfolder or even repo, in order to share the same data versions with other subfolders (i.e. other analyses) or even repositories.
+- `data` is used to keep data sources, used or produced by code in `src`.
+These can be binary/large data produced by code in the [n2khab-preprocessing](https://github.com/inbo/n2khab-inputs) repo and hence _git-ignored_ here, as well as _specific_ data sources which are either versioned here (textual data) or in a Zenodo repository (for binary/large data, hence _git-ignored_ here).
+    - Regarding the first type of data (i.e. general n2khab data), it can as well be useful to have a separate `data` folder outside of the specific subfolder or even the repo, in order to share the same data versions with other subfolders (i.e. other analyses) or repositories.
+    - In all cases it is advised to distinguish between:
+        - `data/10_raw`
+        - `data/20_processed`
 
 ## How to contribute to this repository?
 
