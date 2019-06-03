@@ -8,6 +8,8 @@ However variables, functions and scripts are primarily in English in order to ea
 
 ## Repository structure
 
+Please note that the RStudio file at the root of the repo is there only for miscellaneous purposes, such as updating this README.
+
 The main folders consider the following topics:
 
 - `010_making_choices_website`: website on choices (selections) for MNE
