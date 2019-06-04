@@ -1,0 +1,277 @@
+# Opmaak van een laag puntenreceptoren: verkenning van enkele pistes
+
+## Vlaanderendekkende, systematische puntenlaag
+
+Dit geeft thv habitats minder nauwkeurige resultaten bij kriging.
+
+We gebruiken het GRTS-grid op grovere schaal om punten te genereren:
+
+```{r}
+ras512 <- read_GRTSmh_diffres(datapath, level = 4)
+ras1024 <- read_GRTSmh_diffres(datapath, level = 5)
+```
+
+```{r}
+ras512
+ras512[!is.na(ras512)] %>% length()
+```
+
+```{r}
+ras1024
+ras1024[!is.na(ras1024)] %>% length()
+```
+
+Dit geeft de keuze tussen 53682 en 13678 puntreceptoren; de voorkeur gaat naar het eerste want is vermoedelijk nog haalbaar.
+
+De XY-coördinaten zijn eenvoudig te genereren.
+
+
+
+
+## Alleen punten in zones rond habitatvlekken
+
+### Lijst van types voor selectie uit habitatkaart
+
+Object met de types die de doelpopulatie bepalen:
+
+```{r message=FALSE}
+types_targetpop <-
+    read_scheme_types() %>% 
+    filter(scheme %in% c("ATM_03.1", "ATM_04.1")) %>% 
+    select(1:3) %>% 
+    inner_join(read_types() %>% 
+                   select(1:3))
+types_targetpop
+```
+
+De types van meetnet ATM_04.1 zijn een subset van deze in meetnet ATM_03.1.
+
+We zullen hiermee filteren op de habitatkaart, en willen dus per meetnet dat:
+
+1. ook hoofdtypecodes worden betrokken waar de doelpopulatie is gedefinieerd door _alle_ ertoe behorende subtypes;
+1. de subtypes van een hoofdtype worden betrokken waar de doelpopulatie is gedefinieerd door het hoofdtype.
+
+Geval 1:
+
+```{r message=FALSE}
+nrsubtypes <- 
+    read_types() %>% 
+    filter(typelevel == "subtype") %>% 
+    count(main_type, name = "nrsubtypes_checklist")
+main_types_to_add <- 
+    types_targetpop %>% 
+    filter(typelevel == "subtype") %>% 
+    count(scheme, main_type, name = "nrsubtypes_targpop") %>% 
+    inner_join(nrsubtypes) %>% 
+    filter(nrsubtypes_targpop == nrsubtypes_checklist) %>% 
+    select(scheme, 
+           type = main_type)
+main_types_to_add
+```
+
+Zijn deze hoofdtypes beperkt tot 1 typegroep of zijn ze gespreid?
+
+```{r}
+main_types_to_add_group <- 
+    main_types_to_add %>% 
+    inner_join(types_targetpop,
+               by = c("type" = "main_type",
+                      "scheme")) %>% 
+    distinct(scheme, type, typegroup)
+main_types_to_add_group %>% 
+    count(scheme, type) %>% 
+    filter(n > 1)
+```
+
+Behalve 2190 is alles tot 1 groep beperkt.
+We zullen 2190 toekennen aan 'ATM_03.1_group2', zodat we voor al deze bijkomende hoofdtypes ook een groepstoewijzing hebben:
+
+```{r}
+main_types_to_add_group <- 
+    main_types_to_add_group %>% 
+    filter(!(type == "2190" &
+                 typegroup == "ATM_03.1_group1"))
+```
+
+
+Geval 2:
+
+```{r message=FALSE, warning=FALSE}
+subtypes_to_add_group <- 
+    types_targetpop %>% 
+    filter(typelevel == "main_type") %>% 
+    select(scheme, 
+           main_type = type, 
+           typegroup) %>% 
+    inner_join(read_types() %>% 
+                filter(typelevel == "subtype") %>% 
+                select(main_type, type)) %>% 
+    select(scheme, type, typegroup)
+subtypes_to_add_group
+```
+
+Alles bijeen zetten:
+
+```{r warning=FALSE}
+types_targetpop_ext <- 
+    types_targetpop %>% 
+    select(scheme, type, typegroup) %>% 
+    union(main_types_to_add_group) %>% 
+    union(subtypes_to_add_group) %>% 
+    mutate(type = factor(type, 
+                         levels = types_targetpop$type %>% 
+                             levels))
+types_targetpop_ext
+```
+ 
+### Selectie uit de gestandaardiseerde habitatkaart
+
+```{r message=FALSE}
+polyg_attributes <- 
+    read_habitatmap_stdized(datapath) %>% 
+    .$habitatmap_patches %>% 
+    inner_join(types_targetpop_ext, .) %>% 
+    select(-patch_id, -code_orig)
+```
+
+```{r message=FALSE}
+polyg_sel <- 
+    read_habitatmap_stdized(datapath) %>% 
+    .$habitatmap_polygons %>% 
+    select(-description_orig) %>% 
+    semi_join(polyg_attributes)
+```
+
+```{r}
+polyg_sel
+```
+
+Weergave op kaart:
+
+```{r eval=FALSE}
+polyg_sel %>% mapview
+    ```
+
+
+### Buffer aanmaken omwille van relevante spatiale interpolatie
+
+Enkele scenario's:
+
+```{r}
+targ_contour_1000 <- 
+    polyg_sel %>% 
+    st_buffer(dist = 1000) %>% 
+    st_union
+targ_contour_500 <- 
+    polyg_sel %>% 
+    st_buffer(dist = 500) %>% 
+    st_union
+```
+
+Inspectie van het patroon:
+
+```{r}
+targ_contour_1000 %>% mapview
+```
+
+
+```{r}
+targ_contour_500 %>% mapview
+```
+
+We besluiten: voor een goede spatiale interpolatie komt de 500 m buffer niet in aanmerking.
+De meerwaarde van de 1000 m buffer, die ook niet ideaal is, ten opzichte van de Vlaamse situatie, zal dus afhangen van verschillen in aantal punten.
+
+### Omzetten naar punten (systematisch)
+
+We bekijken de rasters met resolutie 256 en 512 m:
+
+```{r}
+ras256 <- read_GRTSmh_diffres(datapath, level = 3)
+ras256
+```
+
+```{r}
+ras512_sel1000 <- 
+    ras512 %>% 
+    mask(targ_contour_1000 %>% as("Spatial"))
+ras512_sel1000[!is.na(ras512_sel1000)] %>% length()
+```
+
+```{r}
+ras256_sel1000 <- 
+    ras256 %>% 
+    mask(targ_contour_1000 %>% as("Spatial"))
+ras256_sel1000[!is.na(ras256_sel1000)] %>% length()
+```
+
+
+We besluiten:
+
+- op 1000 m buffer is alleen het 512 m raster bruikbaar (i.e. levert niet al te veel punten)
+- bijgevolg werken we beter op niveau Vlaanderen, want gelijkaardig aantal punten te berekenen volgens raster 512 m
+
+
+
+## Vlaanderendekkende, ruimtelijk gebalanceerde puntenspreiding
+
+Met dit scenario gaan we de `GRTS_master_habitats` data source bemonsteren, i.e. de eerste 53682 cellen zodat we alvast in elk Vlaams 512m-hok een punt hebben.
+
+We onderzoeken vervolgens de spreiding van de nearest neighbor afstanden.
+
+```{r}
+GRTSmh <- read_GRTSmh(datapath)
+```
+
+Het hoogste rangnummer dat we zullen selecteren, is:
+
+```{r}
+sorted_ranks <- 
+    GRTSmh %>% 
+    values %>% 
+    sort
+sorted_ranks[1:53682] %>% max
+```
+
+Berekening van de selectie:
+
+```{r warning=FALSE}
+GRTSmh_sel <- 
+    GRTSmh[GRTSmh <= 267602, drop = FALSE]
+```
+
+Berekening van de 5-nearest-neighbor afstanden:
+
+```{r}
+dists <- 
+    GRTSmh_sel %>% 
+    xyFromCell(cell = which(!is.na(GRTSmh_sel[]))) %>% 
+    spatstat::nndist(k = 1:5)
+```
+
+Spreiding is OK:
+
+```{r fig.height=8, fig.width=5}
+dists %>% 
+    as_tibble %>% 
+    gather(key = "distlevel", value = "distance") %>% 
+    ggplot(aes(x = distance)) +
+    geom_histogram(colour = "white", binwidth = 32) +
+    facet_wrap(~distlevel, ncol = 1) +
+    xlim(0, 1000)
+```
+
+Enkele cellen van het dekkende 512m-raster vallen hiermee af, i.e. het verschil tussen de twee onderstaande aantallen.
+Dit zullen cellen zijn op de grens van Vlaanderen waar we te weinig 32m cellen hebben met een laag rangnummer.
+
+```{r}
+ras512[!is.na(ras512)] %>% length()
+ras512[GRTSmh_sel] %>% .[!is.na(.)] %>%  length()
+```
+
+
+## Besluit
+
+Omwille van de interessante eigenschappen van de ruimtelijk gebalanceerde steekproef opteren we voor het laatste scenario.
+
+
