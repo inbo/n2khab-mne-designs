@@ -7,6 +7,19 @@
 Can be used for a bookdown project, R-scripts etc.
 - data sources go into a `data` folder right below `310_design_atmosphere`, so that these data versions can be shared between multiple sub-projects
 
+### Steps to start
+
+1. Right below `310_design_atmosphere`, make folders `data/10_raw` and `data/20_processed`.
+1. Install the `n2khab` package from [github](https://github.com/inbo/n2khab).
+1. Go to the dedicated folder on Q: `Prjdata/Projects/PRJ_Natura2000/n2khab-binaire-databronnen` (use citrix or a local network mount) and copy data sources: `GRTSmaster_habitats`, `habitatmap_stdized` into the corresponding folders from the local `data` folder.
+1. Run the R-script under `120_vlops_evaluation_mne` to generate the processed data source `typegroups_atm3.1_4.1_pol`
+1. Code goes under `120_vlops_evaluation_mne` and can be versioned with git.
+    - Smaller generated textdata can be stored in `data/20_processed` and versioned with git, if useful.
+    - Put VMM data that you use under `data/10_raw` in different subfolders; see [further](#data).
+    - Other (larger) processed data go under `data/20_processed` and are to be git-ignored.
+    
+More explanation is below. Especially, new 'raw' data sets used in workflows (like some VMM data) will need to be shared (start with Q-folder) for reproducibility
+
 ### File & directory management
 
 #### Locally
