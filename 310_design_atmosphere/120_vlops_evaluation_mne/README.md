@@ -71,7 +71,7 @@ VMM data are currently not in a distributed form, but those (subsets) that are u
 
 VMM data, often with several subsets and with accompanying metadata, original zip-file etc:
 
-- uncalibrated VLOPS point calculations for 2016 are here.
+- uncalibrated VLOPS point calculations for 2016 are [here](https://drive.google.com/open?id=1TusczXBJJJykqm12H7zZMRU_yLcaaD6l).
 This is for the point layer which INBO has provided and which can be reproduced by the bookdown project in `310_design_atmosphere/110_vlops_datapreparation`.
 From this trial by VMM, it seems that the number of calculated points is still excessively high to do this routinely.
 - measurement data of 2016 are [here](https://drive.google.com/open?id=14WF4rEhOhpKY_Y9zxqtgLJoJZeACmb3U)
