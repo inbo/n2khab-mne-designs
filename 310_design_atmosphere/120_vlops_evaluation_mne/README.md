@@ -86,7 +86,7 @@ Some of its code repeats some of the code from `310_design_atmosphere/110_vlops_
 
 Important distributed data by INBO:
 
-- habitatmap_stdized (see `?read_habitatmap_stdized`)
+- habitatmap_stdized (see `?n2khab::read_habitatmap_stdized`)
 - GRTSmaster_habitats and a few derived processed data sources.
 (See also: `vignette("v030_GRTSmh", package = "n2khab")`)
 - reference lists (see `vignette("v010_reference_lists", package = "n2khab")`)
