@@ -79,7 +79,9 @@ From this trial by VMM, it seems that the number of calculated points is still e
 
 Reproducible processed data sets (non-distributed):
 
-- `typegroups_atm3.1_4.1_pol`: reproduced by the R-script in the current folder `310_design_atmosphere/120_vlops_evaluation_mne`.
+- `typegroups_atm3.1_4.1_pol`: a geopackage with one polygon layer, reproduced by the R-script in the current folder `310_design_atmosphere/120_vlops_evaluation_mne`.
+It has all applicable polygons for the scheme on eutrophication (3.1) and the one on acidification (4.1), and gives the typegroup membership for each polygon (1 if it is a member, 0 if not).
+Multiple typegroup memberships are possible for the same polygon: because of the two different schemes, but also because multiple types may reside in the same polygon.
 You may also want to organise this R script within another structure.
 Some of its code repeats some of the code from `310_design_atmosphere/110_vlops_datapreparation`.
 - `vlops_pointreceptors_mne`: geospatial point layer, produced by the bookdown project in `310_design_atmosphere/110_vlops_datapreparation`
