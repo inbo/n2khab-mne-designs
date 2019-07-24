@@ -76,7 +76,7 @@ As VMM calibrates these results with the measurement data of 17 fixed stations (
 Further, there are many extra measurement locations for NH3, however these don't span a calendar year and hence may not be useful in calibration and model evaluation of NH3.
 
 Total eutrophying deposition is 'tmd' (totaal vermestend) and total acidifying deposition is 'tzd' (totaal verzurend).
-The first one is represented in the above gsheet as 'BD_Ntot' and the second one as 'BD_acidif'. See [this list](https://docs.google.com/spreadsheets/d/1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc/edit?pli=1#gid=0) for more on these abbreviations, but these two top-level variables still seem to be missing.
+The first one is represented in the above gsheet as 'BD_Ntot' and the second one as 'BD_acidif'. See [this list](https://docs.google.com/spreadsheets/d/1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc/edit?pli=1#gid=0) for more on these abbreviations.
 
 #### Data
 
