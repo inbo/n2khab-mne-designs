@@ -25,39 +25,21 @@ Het **belang** van een invloed hangt samen met zowel de 'gemiddelde' impact op d
 
 
 ```{r milieudruk-rangschikking, echo=FALSE, fig.width = 9, fig.height=12, message = FALSE, warning = FALSE, fig.cap = "Inschatting van de actuele invloed van elke milieudruk op elk type, op niveau Vlaanderen. Voor de verklaring van milieudrukken en types, zie paragraaf \\@ref(reflijsten)."}
-kruisdruk <- 
+veglevels_forplot <- 
     milieudruk_rangschikking %>% 
-    inner_join(
-        tibble(
-        Categorie = factor(levels(milieudruk_rangschikking$Categorie),levels = levels(milieudruk_rangschikking$Categorie)),
-        CategorieWaarde = c(25,20,5,1,1)
-        )
-    ) %>% 
-    select(Vegcode, Druk, CategorieWaarde) %>% 
-    spread(key = Druk, value = CategorieWaarde, fill = 0)
-
-row.names(kruisdruk) <- kruisdruk$Vegcode
-    
-kruisdruk_CA <- 
-    kruisdruk %>% 
-    select(-Vegcode) %>% 
-    cca
-
-plotdata_basis <- 
+    distinct(Typeklasse, Vegcode) %>% 
+    mutate(Vegcode = as.character(Vegcode)) %>% 
+    arrange(desc(Typeklasse), desc(Vegcode)) %>% 
+    dplyr::pull(Vegcode)
+grafiek_belang_milieudrukken_types <- 
     milieudruk_rangschikking %>% 
-    select(Vegcode,Druk,Categorie,Rang) %>% 
-    mutate(    # sorteren van druk- en vegcode-levels
-        Druk = factor(Druk,
-                  levels = (-scores(kruisdruk_CA)$species[,"CA1"] %>% 
-                                         sort %>% 
-                                         names)),
-        Vegcode = factor(Vegcode,
-                  levels = (scores(kruisdruk_CA)$sites[,"CA1"] %>% 
-                                         sort %>% 
-                                         names))
-    )
+    select(Typeklasse,Vegcode,Druk,Categorie,Rang) %>% 
+    mutate(Vegcode = factor(Vegcode,          # omdat rbb's anders achteraan staan
+                            levels = veglevels_forplot)
+           ) %>%
+    myraster("Actuele rol van milieudrukken op niveau Vlaanderen (expertenoordeel, effectenindicator)")
 
-plotdata_basis %>% myraster("Typespecifieke rangschikking van milieudrukken")
+grafiek_belang_milieudrukken_types
 ```
 
 Voor de klimaatdrukken 101 en 102 is nog verdere afstemming met experten nodig om de types beter te kunnen beoordelen.
