@@ -47,17 +47,6 @@ myraster <- function(mydata, mytitle){
     typeklasseschaal <- RColorBrewer::brewer.pal(10, "Paired")
     names(typeklasseschaal) <- levels(milieudruk_rangschikking$Typeklasse)
 
-    drukgroepering <-
-        tibble(
-            Druk = unique(mydata$Druk)
-        ) %>%
-        mutate(
-            Druk = factor(Druk,
-                          levels = (-scores(kruisdruk_CA)$species[,"CA1"] %>%
-                                        sort %>%
-                                        names))
-        )
-
     vegcodegroepering <-
         tibble(
             Vegcode = unique(mydata$Vegcode)
@@ -67,12 +56,8 @@ myraster <- function(mydata, mytitle){
         ) %>%
         mutate(
             Vegcode = factor(Vegcode,
-                             levels = (scores(kruisdruk_CA)$sites[,"CA1"] %>%
-                                           sort %>%
-                                           names))
+                             levels = levels(mydata$Vegcode))
         )
-
-
 
     ggplot() +
         geom_tile(data = mydata, aes(x = Druk, y = Vegcode, fill = Categorie)) +
@@ -93,12 +78,6 @@ myraster <- function(mydata, mytitle){
             geom = "point",
             x = -2, y = aantalvegcode, alpha = 0
         ) +
-
-        # geom_point(data = drukgroepering,
-        #     aes(x = Druk, y = aantalvegcode + 2 , alpha = Milieudrukkengroep),
-        #     size = 3, colour = colors()[30]
-        # ) +
-        # scale_alpha_manual(values = c("1"=1, "2"=0.5, "3"=0.25, "4"=0.1)) +
 
         geom_point(data = vegcodegroepering,
                    aes(x = -1, y = Vegcode, colour = Typeklasse),
