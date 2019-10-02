@@ -32,11 +32,18 @@ For rather large subfolders (e.g. a report on a design), it is advised to furthe
 
 - `src` contains R-scripts and/or bookdown projects
 - `data` is used to keep data sources, used or produced by code in `src`.
-These can be binary/large data produced by code in the [n2khab-preprocessing](https://github.com/inbo/n2khab-inputs) repo and hence _git-ignored_ here, as well as _specific_ data sources which are either versioned here (textual data) or in a Zenodo repository (for binary/large data, hence _git-ignored_ here).
-    - Regarding the first type of data (i.e. general n2khab data), it can as well be useful to have a separate `data` folder outside of the specific subfolder or even the repo, in order to share the same data versions with other subfolders (i.e. other analyses) or repositories.
-    - In all cases it is advised to distinguish between:
-        - `data/10_raw`
-        - `data/20_processed`
+
+Further, note that general binary/large data sources, either raw data sources or data sources produced by code in the
+[n2khab-preprocessing](https://github.com/inbo/n2khab-inputs) repo, should be organised according to data management conventions for N2KHAB projects.
+I.e., these N2KHAB data sources must be stored in a (git-ignored) folder `n2khab_data` (with subfolders `10_raw` and `20_processed`).
+This folder may also sit outside git repositories, in order to serve multiple projects.
+The [n2khab](https://github.com/inbo/n2khab) package provides functions to read these data sources and return them in a standardized way in R.
+What _you_ have to do is explained in the following **vignette** - read it! :
+
+```r
+vignette("v020_datastorage", package = "n2khab")
+```
+
 
 ## How to contribute to this repository?
 
