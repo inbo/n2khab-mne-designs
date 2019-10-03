@@ -2,10 +2,10 @@
 
 What we're going to explore here, is:
 
-- Areas per type + relation with PHAB selections
-
-
-- Divide between areas within and outside Special Areas of Conservation
+- Abundance of types
+    - Overall
+    - Terrestrial types: area proportion with PHAB < 10%
+    - Divide between areas within and outside Special Areas of Conservation
 
 
 - Relation with the shallowgroundwater layer
@@ -21,5 +21,111 @@ What we're going to explore here, is:
 
 
 - Combining terrestrial, lentic and lotic types in making a sampling frame?
+
+
+## Data preparation
+
+### List of types for joining with habitat data sources
+
+```{r}
+scheme_types_mne <- 
+    read_scheme_types(extended = TRUE) %>% 
+    filter(programme == "MNE") %>% 
+    distinct(scheme, type)
+scheme_types_mne
+```
+
+Expanding types per scheme:
+
+```{r}
+scheme_types_mne_expanded <- 
+    scheme_types_mne %>% 
+    group_by(scheme) %>% 
+    expand_types %>% 
+    ungroup
+scheme_types_mne_expanded
+```
+
+Unique types in the expanded list, with their hydrological class added:
+
+```{r}
+types_mne_expanded <- 
+    scheme_types_mne_expanded %>% 
+    distinct(type) %>% 
+    inner_join(read_types() %>% select(type, hydroclass = tag_2_shortname),
+               by = "type") %>% 
+    arrange(type)
+types_mne_expanded
+```
+
+The following types were added by expansion:
+
+```{r}
+scheme_types_mne %>% 
+    distinct(type) %>% 
+    anti_join(types_mne_expanded, .,
+              by = "type")
+```
+
+Frequency of hydroclasses:
+
+```{r}
+types_mne_expanded %>% 
+    count(hydroclass)
+```
+
+
+### Geospatial data sources of habitat types & RIB
+
+- Terrestrial types (incl. 'semi-terrestrial'), and with exclusion of remaining aquatic-type patches (within potentially terrestrial polygons):
+
+```{r}
+hmt <- read_habitatmap_terr()
+hmt_pat <- 
+    hmt$habitatmap_terr_patches %>% 
+    semi_join(types_mne_expanded %>% filter(!str_detect(hydroclass, "water")),
+              by = "type")
+hmt_pol <- hmt$habitatmap_terr_polygons
+# Note that 
+# hmt$habitatmap_terr_polygons %>% semi_join(hmt_pat, by = "polygon_id")
+# yields the same number of polygons: non-terrestrial polygons were already excluded
+```
+
+```{r}
+hmt_pat %>% 
+    distinct(type) %>% 
+    inner_join(types_mne_expanded, "type") %>% 
+    count(hydroclass)
+```
+
+- Surface waters (excluding 3260):
+
+```{r}
+wsh <- read_watersurfaces_hab(interpreted = TRUE)
+wsh_pol <- wsh$watersurfaces_polygons
+wsh_pat <- wsh$watersurfaces_patches
+```
+
+```{r}
+wsh_pat %>% 
+    distinct(type) %>% 
+    inner_join(types_mne_expanded %>% filter(str_detect(hydroclass, "water")),
+              by = "type")
+```
+
+
+- Type 3260:
+
+```{r}
+habstream <- read_habitatstreams()
+```
+
+```{r}
+types_mne_expanded %>% 
+    filter(type == "3260")
+```
+
+
+
 
 
