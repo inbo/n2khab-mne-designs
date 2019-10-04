@@ -1,31 +1,31 @@
-# Introduction and data preparation
+# Inleiding en voorbereiding data
 
-What we're going to explore here, is:
+We verkennen de volgende topics:
 
-- Abundance of types
-    - Overall
-    - Terrestrial types: area proportion with PHAB < 10%
-    - Divide between areas within and outside Special Areas of Conservation
+- Het voorkomen van types
+    - Algemeen
+    - Terrestrische types: aandeel van de oppervlakte die voorkomt in polygonen waarvoor `PHAB < 10%`
+    - Verdeling tussen binnen en buiten het SBZ-H netwerk
 
 
-- Relation with the shallowgroundwater layer
+- Relatie met de laag `shallowgroundwater`
 
 
 - Sample support
-    - Terrestrial: homogeneity of the target population within discrete raster cells
+    - Terrestrisch: homogeniteit van de doelpopulatie binnen discrete rastercellen
         - Distribution
         - Surface estimation error
 
 
-- GRTS reusal frequency of coarse raster cells when sampling fine raster cells, depending on type and coarse resolution
+- GRTSmh turnover van grove rastercellen bij bemonstering van kleine rastercellen, i.f.v type en grove resolutie
 
 
-- Combining terrestrial, lentic and lotic types in making a sampling frame?
+- Combineren van terrestrische types, watervlaktypes en 3260 in het steekproefkader
 
 
-## Data preparation
+## Datavoorbereiding
 
-### List of types for joining with habitat data sources
+### Lijst van types om met de habitatgerelateerde databronnen te koppelen
 
 ```{r}
 scheme_types_mne <- 
@@ -35,7 +35,7 @@ scheme_types_mne <-
 scheme_types_mne
 ```
 
-Expanding types per scheme:
+Expanderen van types per meetnet:
 
 ```{r}
 scheme_types_mne_expanded <- 
@@ -46,7 +46,7 @@ scheme_types_mne_expanded <-
 scheme_types_mne_expanded
 ```
 
-Unique types in the expanded list, with their hydrological class added:
+Types die voorkomen in de geëxpandeerde lijst, met hun waterhuishoudingsklasse (WHH-klasse):
 
 ```{r}
 types_mne_expanded <- 
@@ -64,14 +64,18 @@ types_mne_expanded <-
 types_mne_expanded
 ```
 
-The following types were added by expansion:
+De variabele `unresolved` is `TRUE` voor de extra types, toegevoegd door expansie van de lijst.
+Het betekent dat zulke types niet voorkomen in de definiërende typelijst van de doelpopulatie (als gevolg van hoofd- vs. subtypeniveau), maar dat polygonen met deze types in `habitatmap_terr` (geïnterpreteerde versie van het terrestrisch deel van de habitatkaart) vermodelijk (of voor extra subtypes: zeker) _deel uitmaken_ van de doelpopulatie.
+Of een polygoon, met een hoofdtypecode waarvoor `unresolved == TRUE`, ook werkelijk deel uitmaakt van de doelpopulatie, zal op terrein moeten blijken.
+
+De volgende types werden toegevoegd als gevolg van de expansie:
 
 ```{r}
 types_mne_expanded %>% 
     filter(unresolved)
 ```
 
-Frequency of hydroclasses:
+Frequentie van WHH-klassen:
 
 ```{r}
 types_mne_expanded %>% 
@@ -79,9 +83,9 @@ types_mne_expanded %>%
 ```
 
 
-### Geospatial data sources of habitat types & RIB
+### Geospatiale databronnen van habitattypes en RBB's
 
-- Terrestrial types (incl. 'semi-terrestrial'), and with exclusion of remaining aquatic-type patches (within potentially terrestrial polygons):
+- Ruimtelijke data van de terrestrische types (incl. 'semi-terrestrisch'), met uitsluiting van resterende 'patches' met aquatische types (binnen deze potentieel terrestrische polygonen):
 
 ```{r}
 hmt <- read_habitatmap_terr()
@@ -102,7 +106,7 @@ hmt_pat %>%
     count(hydroclass)
 ```
 
-- Surface waters (excluding 3260):
+- Watervlaktypes (d.w.z. aquatische types uitgezonderd 3260):
 
 ```{r}
 wsh <- read_watersurfaces_hab(interpreted = TRUE)
