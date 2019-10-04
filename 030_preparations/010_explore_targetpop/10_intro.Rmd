@@ -55,16 +55,20 @@ types_mne_expanded <-
     inner_join(read_types() %>% select(type, hydroclass = tag_2_shortname),
                by = "type") %>% 
     arrange(type)
+types_mne_expanded <- 
+    types_mne_expanded %>% 
+    mutate(unresolved = type %in% (types_mne_expanded %>% 
+                                    anti_join(scheme_types_mne, 
+                                              by = "type") %>% 
+                                    .$type))
 types_mne_expanded
 ```
 
 The following types were added by expansion:
 
 ```{r}
-scheme_types_mne %>% 
-    distinct(type) %>% 
-    anti_join(types_mne_expanded, .,
-              by = "type")
+types_mne_expanded %>% 
+    filter(unresolved)
 ```
 
 Frequency of hydroclasses:
