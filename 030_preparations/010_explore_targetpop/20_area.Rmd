@@ -77,19 +77,47 @@ types_area %>%
                                        vjust = 0.4))
 ```
 
+Verdeling van een aantal oppervlakteklassen van de watervlakken, volgens de polygoonoppervlakte:
+
+```{r fig.width=10, fig.height=2}
+cut_sw <- function(x) cut(x, c(0,1,5,10,50,100,150))
+wsh_area %>% 
+  mutate(area_class_ha = cut_sw(area) %>% fct_rev) %>% 
+  group_by(area_class_ha) %>% 
+  summarise(area = sum(area) %>% as.numeric) %>% 
+  ggplot(aes(x = "surfacewater types", y = area, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    labs(x = NULL, y = "areal distribution") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
 
 ### Watervlaktypes: aantal polygonen (per oppervlakteklasse) {#nrpolygons}
 
 Algehele verdeling van een aantal oppervlakteklassen van de watervlakken, in termen van het aantal polygonen `n`:
 
 ```{r}
-cut_sw <- function(x) cut(x, c(0,1,5,10,50,100,150))
 wsh_area %>% 
   mutate(area_class_ha = cut_sw(area)) %>% 
   count(area_class_ha)
 ```
 
-Per type:
+```{r fig.width=10, fig.height=2}
+wsh_area %>% 
+  mutate(area_class_ha = cut_sw(area) %>% fct_rev) %>% 
+  group_by(area_class_ha) %>% 
+  summarise(number_of_polygons = n_distinct(polygon_id)) %>% 
+  ggplot(aes(x = "surfacewater types", y = number_of_polygons, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    labs(x = NULL, y = "distribution of polygons") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
+De vergelijking met verdeling volgens oppervlakte benadrukt dat een relatief beperkt aantal grotere watervlakken een groot aandeel van de oppervlakte bestrijken.
+
+Verdeling per type:
 
 ```{r fig.height = 7, fig.width=5}
 typesw_levels <- 
