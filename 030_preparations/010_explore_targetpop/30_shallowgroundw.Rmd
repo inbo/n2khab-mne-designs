@@ -1,0 +1,235 @@
+# Inspectie van doelpopulatiebeperkende criteria: het geval van de laag `shallowgroundwater`
+
+Voor een aantal meetnetten gelden naast de doelpopulatie-definitie op basis van geselecteerde types, nog andere criteria die de doelpopulatie verder inperken:
+
+```{r}
+read_schemes() %>% 
+    filter(!is.na(spatial_restriction)) %>% 
+    select(scheme, scheme_name, spatial_restriction) %>% 
+    kable
+```
+
+We inspecteren in dit verband de laag `shallowgroundwater` die door Dries Adriaens werd samengesteld.
+Meer achtergrond over de totstandkoming van de databron is [hier](https://docs.google.com/document/d/1EGwZ3MB6bVvRXSvgva_6HSz7eQ95MN0sjGkun7cENXw) te vinden.
+
+Meer bepaald gaan we na of de laag voldoende betrouwbaar lijkt voor een toepassing a priori, door de spatiale relatie na te gaan tussen deze laag en de verspreiding van de _obligaat_ grondwaterafhankelijke, (semi-)terrestrische types:
+omvat de laag `shallowgroundwater` alle (de meeste) locaties met obligaat grondwaterafhankelijke, terrestrische types?
+De 'fractie van locaties' is daarbij het best oppervlaktegebaseerd, i.e. rekening houdend met PHAB.
+
+Indien de beperking tot locaties met ondiep grondwater niet a priori wordt toegepast, impliceert dit dat de steekproef hier niet op voorhand door wordt gestuurd.
+In dat geval zouden op terrein vaker locaties moeten worden bezocht (met facultatief grondwaterafhankelijke types) die geen ondiep grondwater hebben.
+
+We lezen de lijst van obligaat grondwaterafhankelijke types in en beperken deze tot zij die voorkomen in de standaardlijst van types.
+
+```{r message = FALSE, warning = FALSE}
+# the first time, run:
+# gs_auth()
+gwdep_ss <- gs_key("1bhXgamK28K--MSWF7goKNOWtWPEI149_QCpU-3V_k_E")
+# gs_browse(gwdep_ss)
+types_obliggwdep <-
+    gwdep_ss %>%
+    gs_read(ws = "Waterafhankelijke HT en RBB",
+            verbose = FALSE) %>% 
+    select(type = Afkorting, 
+           gwdep = Grondwaterafhankelijk) %>% 
+    filter(!is.na(type)) %>% 
+    filter(type != "x", # dummy regel verwijderen
+           type != "gh", # gh is onzinnig
+           gwdep == "(vrijwel) alle locaties grondwaterafhankelijk") %>% 
+    select(type) %>% 
+    semi_join(scheme_types_mne, by = "type") %>% 
+    mutate(type = factor(type, levels = scheme_types_mne$type %>% levels))
+```
+
+(Voor vroegere analysen omtrent de grondwaterafhankelijkheidsklassen, verwijzen we ook naar een eerder [R notebook](https://drive.google.com/uc?export=download&id=0B-DYcTNHFnIXWDM0aGtvWnczRnM).)
+
+We filteren de databron `habitatmap_terr` volgens het voorkomen van obligaat grondwaterafhankelijke, terrestrische types - kortweg 'obliggwdep-types'.
+
+```{r}
+hmt_pat_obliggwdep <- 
+    hmt_pat %>% 
+    semi_join(types_obliggwdep,  
+              by = "type")
+hmt_pol_obliggwdep <- 
+    hmt_pol %>% 
+    semi_join(hmt_pat_obliggwdep,
+              by = "polygon_id")
+```
+
+Ruwweg de helft van de polygonen blijft over in het object `hmt_pol_obliggwdep`:
+
+```{r}
+hmt_pol %>% nrow
+hmt_pol_obliggwdep %>% nrow
+```
+
+```{r warning=FALSE, results="hide"}
+hmt_pol_obliggwdep %>% 
+    writeVECT("hmt_pol_obliggwdep")
+```
+
+
+```{r warning=FALSE, results="hide"}
+execGRASS("v.in.ogr",
+          input = normalizePath(file.path(fileman_up("n2khab_data"),
+                                          "10_raw/shallowgroundwater")),
+          output = "shallow_gw",
+          flags = "o" # assume CRS is same as from GRASS, i.e. set CRS as epsg:31370
+          )
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+execGRASS("g.list", type = "vector", flags = "p")
+```
+
+```{r warning=FALSE, results="hide"}
+system("db.columns table=shallow_gw | grep -v cat | 
+       while read line; do
+         db.dropcolumn -f shallow_gw column=$line
+       done")
+```
+
+We behouden in GRASS alleen nog de unieke id-variable 'cat' over in `shallow_gw`:
+
+```{r}
+system("db.columns table=shallow_gw")
+```
+
+We voeren een union operatie uit en lezen het resultaat terug in R.
+
+```{r}
+system("v.overlay ainput=shallow_gw binput=hmt_pol_obliggwdep operator=or output=shallow_obliggwdep")
+```
+
+```{r}
+system("db.columns table=shallow_obliggwdep")
+system("v.db.renamecolumn map=shallow_obliggwdep column=a_cat,shallow_gw
+        v.db.renamecolumn map=shallow_obliggwdep column=b_polygon_id,polygon_id
+        v.db.dropcolumn map=shallow_obliggwdep column=b_cat")
+system("db.columns table=shallow_obliggwdep")
+```
+
+```{r eval=FALSE}
+system("v.out.ogr input=shallow_obliggwdep output=shallow_obliggwdep.gpkg")
+```
+
+
+```{r eval = FALSE, warning=FALSE, results="hide"}
+# launching GRASS GUI interface:
+execGRASS("g.gui", ui = "wxpython")
+```
+
+```{r warning=FALSE, results="hide"}
+shallow_obliggwdep <-
+    readVECT("shallow_obliggwdep") %>% 
+    st_set_crs(31370) %>% 
+    as_tibble %>% 
+    st_as_sf %>% 
+    mutate(shallow_gw = !is.na(shallow_gw)) %>% 
+    select(polygon_id,
+           shallow_gw)
+```
+
+De oppervlaktes ingenomen door obliggwdep-types, respectievelijk buiten en binnen de `shallowgroundwater` laag, zijn:
+
+```{r}
+shallow_obliggwdep %>% 
+    # only interested in polygons with obliggwdep types
+    filter(!is.na(polygon_id)) %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    group_by(polygon_id, shallow_gw) %>% 
+    # polygon areas, for each polygon_id x inside/outside shallow_gw:
+    summarise(area = sum(area)) %>% 
+    ungroup %>% 
+    # attaching PHAB information of the obliggwdep types:
+    inner_join(
+        hmt_pat_obliggwdep %>% 
+            mutate(polygon_id = as.character(polygon_id)) %>% 
+            # filtering by 'certain == TRUE' gave ca. same result, so not doing it.
+            # filter(certain) %>% 
+            group_by(polygon_id) %>% 
+            summarise(areal_frac_obliggwdep = sum(phab) / 100) %>% 
+            # not allowing total covered area per polygon to exceed the polygon area:
+            mutate(areal_frac_obliggwdep = 
+                       ifelse(areal_frac_obliggwdep > 1, 
+                              1, 
+                              areal_frac_obliggwdep)),
+        by = "polygon_id"
+            ) %>% 
+    # calculating area occupied by obliggwdep types:
+    mutate(area_obliggwdep = areal_frac_obliggwdep * area) %>% 
+    # totals for inside/outside shallow_gw:
+    group_by(shallow_gw) %>% 
+    summarise(area_obliggwdep = sum(area_obliggwdep)) %>% 
+    mutate(area_pct = ((area_obliggwdep / sum(area_obliggwdep)) %>% 
+                           as.numeric * 100) %>% round(1))
+```
+
+Dit betekent dat ca. 1/5 van de 'obliggwdep' oppervlakte niet gedekt is door de `shallowgroundwater` laag.
+Dit is nog een te grote afwijking om het steekproefkader mee in te perken.
+
+Inspectie van 'obliggwdep' polygonen buiten de `shallowgroundwater` laag:
+
+```{r}
+shallow_not_obliggwdep <- 
+    shallow_obliggwdep %>% 
+    filter(!is.na(polygon_id), !shallow_gw)
+shallow_not_obliggwdep %>% 
+    st_transform(4326) %>% 
+    leaflet() %>% 
+    addTiles() %>% 
+    addPolygons(color = "red", 
+                fill = FALSE,
+                weight = 2,
+                opacity = 1)
+# shallow_not_obliggwdep %>% 
+#     mapview::mapView(., color = "red", fill = FALSE)
+```
+
+Verdeling van de obliggwdep-types binnen en buiten de `shallowgroundwater` laag:
+
+```{r}
+shallow_obliggwdep_typesarea <- 
+    shallow_obliggwdep %>% 
+    # only interested in polygons with obliggwdep types
+    filter(!is.na(polygon_id)) %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    group_by(polygon_id, shallow_gw) %>% 
+    # polygon areas, for each polygon_id x inside/outside shallow_gw:
+    summarise(area = sum(area)) %>% 
+    ungroup %>% 
+    # attaching the obliggwdep types:
+    inner_join(
+        hmt_pat_obliggwdep %>% 
+            mutate(polygon_id = as.character(polygon_id)) %>% 
+            select(polygon_id, type, phab),
+        by = "polygon_id"
+    ) %>% 
+    mutate(area = area * phab / 100) %>% 
+    group_by(type, shallow_gw) %>% 
+    summarise(area = sum(area)) %>% 
+    ungroup
+```
+
+```{r fig.width=8, fig.height=6}
+typelev_shallow <- 
+    shallow_obliggwdep_typesarea %>% 
+    filter(!shallow_gw) %>% 
+    arrange(area) %>% 
+    .$type %>% 
+    as.character
+shallow_obliggwdep_typesarea %>% 
+    mutate(type = factor(type, levels = typelev_shallow),
+           shallow_gw = factor(shallow_gw) %>% fct_rev) %>% 
+    rename(in_shallow_gw = shallow_gw) %>% 
+    ggplot(aes(x = type, y = area, fill = in_shallow_gw)) +
+    geom_col() +
+    scale_fill_manual(values = c("green3", "red3")) +
+    coord_flip() +
+    ggtitle("area of obliggwdep types inside & outside of shallowgroundwater")
+```
+
+
