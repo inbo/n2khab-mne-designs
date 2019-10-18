@@ -1,0 +1,89 @@
+# Wat zijn de implicaties van het soort ruimtelijke koppeling met het GRTS raster?
+
+Er zijn twee manieren om een grid te koppelen met polygonen:
+
+- op basis van het centroid van elke rastercel: koppeling alleen wanneer dit punt overlapt met een polygoon
+- koppeling wanneer de rastercel overlapt met een polygoon
+
+We kijken per type naar het effect op de populatiegrootte, de juistheid van de oppervlakteschatting, en naar de trefkans.
+
+```{r}
+hmt_pol_ind <- 
+    hmt_pol %>% 
+    mutate(pol_index = 1:nrow(hmt_pol))
+```
+
+
+```{r}
+grtsmh <- read_GRTSmh()
+rtempl_fine <- 
+    raster(crs = crs(grtsmh),
+           ext = extent(grtsmh),
+           resolution = res(grtsmh) / 10)
+# rtempl_fine %>% 
+#     as("SpatialGrid")
+```
+
+```{r}
+rtempl_fine
+```
+
+
+```{r eval=FALSE, echo=FALSE}
+# raster::rasterize() takes forever
+system.time(
+hmt_r_ind <- 
+    hmt_pol_ind %>% 
+    select(pol_index) %>% 
+    as("Spatial") %>% 
+    rasterize(rtempl_fine,
+              field = "pol_index")
+)
+```
+
+
+```{r eval=FALSE, echo=FALSE}
+# stars::st_rasterize() takes all RAM and from there it becomes everlasting
+system.time(
+hmt_r_ind <- 
+    hmt_pol_ind %>% 
+    select(pol_index) %>% 
+    st_rasterize(rtempl_fine %>% 
+                     st_as_stars)
+)
+```
+
+```{r}
+# trying to get the polygon indices rasterized
+hmt_pol_ind %>% 
+    select(pol_index) %>% 
+    writeVECT("hmt_pol_ind")
+```
+
+```{r}
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+system("g.region -p
+        g.proj -j")
+```
+
+```{r results="hide"}
+# rasterization of polygon indices, on a 10-fold resolution of GRTSmh
+system("v.to.rast input=hmt_pol_ind output=hmt_r_ind use=attr attribute_column=pol_index")
+```
+
+
+```{r eval=FALSE, echo=FALSE}
+# trying to go via vectorization of GRTSmh + intersecting:
+execGRASS("r.in.gdal",
+          input = file.path(fileman_up("n2khab_data"),
+                            "10_raw/GRTSmaster_habitats/GRTSmaster_habitats.tif"),
+          output = "grtsmh",
+          flags = "o"
+)
+system("g.region -p
+        g.proj -j")
+# way to few memory to build the topology with r.to.vect, needed for v.overlay:
+system("r.to.vect -b input=grtsmh output=grtsmh_v type=area column=address")
+system("v.overlay ainput=grtsmh_v binput=hmt_pol_ind operator=and output=grtsmh_pol_ind")
+```
+
