@@ -362,6 +362,24 @@ sac_union <-
   st_union
 ```
 
+```{r}
+area_fl <- 
+  read_admin_areas(dsn = "flanders") %>% 
+  st_area() %>% 
+  set_units("ha")
+area_sac <- 
+  sac_union %>% 
+  st_area() %>% 
+  set_units("ha")
+```
+
+Het SBZ-H netwerk bestrijkt `r area_sac/area_fl *100 %>% round(1)`% van Vlaanderen.
+
+```{r}
+area_sac/area_fl
+```
+
+
 ### Types vertegenwoordigd door polygonen
 
 ```{r echo=FALSE, eval=FALSE}
@@ -511,10 +529,6 @@ all.equal(wshsac_area$area %>% sum,
 Oppervlakte en proportie van de terrestrische doelpopulatie binnen (`in_sac == TRUE`) en buiten SBZ-H, en de verhouding tot het Vlaams Gewest:
 
 ```{r}
-area_fl <- 
-  read_admin_areas(dsn = "flanders") %>% 
-  st_area() %>% 
-  set_units("ha")
 hmtsac_area %>% 
   group_by(in_sac) %>% 
   summarise(area = sum(area)) %>% 
@@ -525,10 +539,9 @@ hmtsac_area %>%
          )
 ```
 
-Er zal steeds een lagere precisie worden bekomen voor uitspraken over het SBZ-H-netwerk dan voor geheel Vlaanderen.
-Het ziet er echter naar uit dat het verschil niet extreem is wanneer het SBZ-H-netwerk niet wordt overbemonsterd: als de steekproefgrootte binnen het domein 50% is van het geheel, zorgt dit voor een 41% grotere foutmarge voor dit domein, vergeleken met het niveau Vlaanderen.
-Een equal probability design, zonder a priori domeinstructuur, zorgt voor eenvoud en flexibiliteit tgo. veranderingen in de toekomst.
-Dit lijkt op te wegen tegen het nadeel van een wat lagere precisie binnen het SBZ-H-netwerk, of de aanzienlijke meerinspanning die nodig is om de precisie daar op een hoger niveau te brengen.
+Bij een ruimtelijk constante inclusiekans per type, d.w.z. zonder rekening te houden met de SBZ-grenzen, zal er dus een gelijkaardige precisie zijn binnen en buiten het SBZ-H-netwerk, terwijl het netwerk maar een beperkt deel van Vlaanderen bedekt.
+Het lijkt daarom niet aangewezen om het SBZ-H-netwerk te overbemonsteren.
+Een equal probability design, zonder a priori domeinstructuur, heeft trouwens voor monitoring sowieso de voorkeur, omdat het zorgt voor eenvoud en flexibiliteit tgo. veranderingen in de toekomst.
 
 Voor de watervlaktypes:
 
@@ -578,7 +591,7 @@ wshsac_area %>%
 ```
 
 We zien dus dat de watervlaktypes dubbel zo vaak binnen als buiten het SBZ-H netwerk voorkomen, zodat de verwachte steekproefgrootte hier vanzelf dubbel zo groot zal zijn.
-De foutmarge zou hierdoor zo'n 23% groter worden binnen het SBZ-H-netwerk in vergelijking met Vlaanderen.
+De foutmarge zou hierdoor zo'n 30% afnemen binnen het SBZ-H-netwerk in vergelijking met erbuiten.
 
 Bemerk dat de vermelde effecten op foutmarges voor terrestrisch versus aquatisch doorgaans niet volgens die tweedeling optreden in MNM: typegroepering in de MNM betreft indelingen over terrestrische en aquatische types samen.
 
