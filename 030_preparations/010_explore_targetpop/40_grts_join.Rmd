@@ -7,83 +7,164 @@ Er zijn twee manieren om een grid te koppelen met polygonen:
 
 We kijken per type naar het effect op de populatiegrootte, de juistheid van de oppervlakteschatting, en naar de trefkans.
 
+<!-- + voor de koppeling volgens celoverlap met de polygonen: verdeling van de verwachte oppervlakte binnen elke cel (zal vrij goed totaliseren tot reële opp), resp. de totale celoppervlakte, over de cellen die met hun centroid treffen versus de overige. Dit vergelijken met de reëel gekende oppervlakte. -->
+
 ```{r}
-hmt_pol_ind <- 
+# CREATE and link to a permanent GRASS folder
+# link2GI::linkGRASS7(hmt_pol, gisdbase = ".", location = "grts_join",
+#                     search_path = if (.Platform$OS.type == "unix") {
+#                       "/usr/bin"} else NULL,
+#                     use_home = TRUE)
+
+# ONLY LINK to a permanent GRASS folder
+link2GI::linkGRASS7(gisdbase = ".", location = "grts_join", gisdbase_exist = TRUE,
+                    search_path = if (.Platform$OS.type == "unix") {
+                      "/usr/bin"} else NULL,
+                    use_home = TRUE)
+# gmeta()
+```
+
+
+```{r eval=FALSE}
+hmt_polpat <- 
     hmt_pol %>% 
-    mutate(pol_index = 1:nrow(hmt_pol))
+    inner_join(hmt_pat, by = "polygon_id") %>% 
+    select(type, phab)
 ```
 
 
-```{r}
-grtsmh <- read_GRTSmh()
-rtempl_fine <- 
-    raster(crs = crs(grtsmh),
-           ext = extent(grtsmh),
-           resolution = res(grtsmh) / 10)
-# rtempl_fine %>% 
-#     as("SpatialGrid")
+```{r results="hide", eval=FALSE}
+hmt_polpat %>% 
+    writeVECT("hmt_polpat")
 ```
 
-```{r}
-rtempl_fine
+```{r eval=FALSE}
+# use bbox of GRTSmh, 10-fold higher resolution:
+# system("g.proj -c datumtrans=1 epsg=31370") # this was necessary when linkGRASS() overwrited this, is fixed now
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=3.2")
 ```
 
 
-```{r eval=FALSE, echo=FALSE}
-# raster::rasterize() takes forever
-system.time(
-hmt_r_ind <- 
-    hmt_pol_ind %>% 
-    select(pol_index) %>% 
-    as("Spatial") %>% 
-    rasterize(rtempl_fine,
-              field = "pol_index")
-)
+```{r eval=FALSE}
+system("g.region -p
+        g.proj -j")
+```
+
+## Koppeling met polygonen op niveau van de rastercel
+
+```{r results="hide", eval=FALSE}
+# rasterization of phab values per type, on a 10-fold resolution of GRTSmh
+system("./shellscript_01_v.to.rast_parallel.sh")
+# hmt_pat$type %>% unique %>% sort %>% as.matrix() %>% cat(sep = "\n")
 ```
 
 
-```{r eval=FALSE, echo=FALSE}
-# stars::st_rasterize() takes all RAM and from there it becomes everlasting
-system.time(
-hmt_r_ind <- 
-    hmt_pol_ind %>% 
-    select(pol_index) %>% 
-    st_rasterize(rtempl_fine %>% 
-                     st_as_stars)
-)
-```
-
-```{r}
-# trying to get the polygon indices rasterized
-hmt_pol_ind %>% 
-    select(pol_index) %>% 
-    writeVECT("hmt_pol_ind")
-```
-
-```{r}
+```{r eval=FALSE}
+# use bbox & resolution of GRTSmh:
 system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
 system("g.region -p
         g.proj -j")
 ```
 
-```{r results="hide"}
-# rasterization of polygon indices, on a 10-fold resolution of GRTSmh
-system("v.to.rast input=hmt_pol_ind output=hmt_r_ind use=attr attribute_column=pol_index")
+```{r eval=FALSE}
+system("./shellscript_02_r.resamp.stats_parallel.sh")
+```
+
+### Verwachte celproportie: de trefkans voor random punt binnen rastercel
+
+```{r eval=FALSE}
+system("./shellscript_03_r.mapcalc_parallel.sh")
 ```
 
 
-```{r eval=FALSE, echo=FALSE}
-# trying to go via vectorization of GRTSmh + intersecting:
-execGRASS("r.in.gdal",
-          input = file.path(fileman_up("n2khab_data"),
-                            "10_raw/GRTSmaster_habitats/GRTSmaster_habitats.tif"),
-          output = "grtsmh",
-          flags = "o"
-)
-system("g.region -p
-        g.proj -j")
-# way to few memory to build the topology with r.to.vect, needed for v.overlay:
-system("r.to.vect -b input=grtsmh output=grtsmh_v type=area column=address")
-system("v.overlay ainput=grtsmh_v binput=hmt_pol_ind operator=and output=grtsmh_pol_ind")
+```{r}
+types_hmt <- unique(hmt_pat$type)
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.stats",
+              flags = "a",
+              input = str_c("detprob_", types_hmt[i]),
+              separator = "tab",
+              nsteps = 100)
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        enframe(name = NULL, value = "string") %>% 
+        separate(col = string,
+                 into = c("det_prob", "area"),
+                 sep = "\t") %>% 
+        filter(det_prob != "*") %>% 
+        mutate(det_prob1 = str_sub(det_prob, 1, 
+                               str_locate(.$det_prob, "-")[,1] - 1) %>% as.numeric,
+               det_prob2 = str_sub(det_prob, 
+                               str_locate(.$det_prob, "-")[,1] + 1) %>% as.numeric,
+               area = as.numeric(area),
+               type = types_hmt[i]) %>% 
+        rowwise %>% 
+        mutate(det_prob = mean(c(det_prob1, det_prob2))) %>% 
+        ungroup %>% 
+        select(type, det_prob, area)
+    
+    if (i == 1) {
+        hmt_freq_sub32 <- type_result
+        } else {
+        hmt_freq_sub32 <- 
+            hmt_freq_sub32 %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
 ```
+
+```{r}
+hmt_freq_sub32_dens <- 
+    hmt_freq_sub32 %>% 
+    mutate(area = area %>% set_units("m^2") %>% set_units("ha")) %>% 
+    group_by(type) %>% 
+    mutate(area_w = area %>% as.numeric / sum(area %>% as.numeric),
+           area_ha = sum(area %>% as.numeric)) %>% 
+    ungroup
+hmt_freq_sub32_dens %>% 
+    filter(area_ha > 15) %>%
+    ggplot(aes(x = det_prob, 
+               weight = area_w, 
+               colour = area_ha, 
+               group = type)) + 
+        geom_density() +
+        scale_colour_gradient(low = "grey90", high = "black", trans = "log")
+```
+
+```{r}
+hmt_freq_sub32_dens %>% 
+    filter(area_ha > 15) %>%
+    ggplot(aes(x = det_prob, 
+               weight = area_w, 
+               # fill = area_ha, 
+               group = type)) + 
+        geom_density(alpha = 0.1, colour = "grey80", fill = "grey70") +
+        theme(panel.background = element_blank())
+```
+
+```{r}
+hmt_freq_sub32_dens %>% 
+    mutate(area_w = area %>% as.numeric / sum(area %>% as.numeric)) %>% 
+    ggplot(aes(x = det_prob, 
+               weight = area_w)) + 
+        geom_density()
+```
+
+Er zijn dus heel veel fragmentjes.
+
+### Verwachte kans dat het type in de rastercel voorkomt
+
+<!-- via de max-lagen, hoger aangemaakt -->
+
+### Verwachte kans op treffen ter hoogte van het centroid van de rastercel
+
+<!-- hiervoor script 01 runnen op res 32 (maar andere outputnamen) -->
+
+## Koppeling met polygonen volgens centroid
+
+
 

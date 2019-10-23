@@ -1,0 +1,1 @@
+/home/floris/shellscript_03_r.mapcalc_parallel.sh
