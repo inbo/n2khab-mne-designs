@@ -1,1 +1,0 @@
-/home/floris/v.to.rast_parallel.sh
