@@ -49,11 +49,8 @@ rbbhc
 rbbhf
 rbbhfl
 rbbkam
-rbbkam+
 rbbvos
-rbbvos+
 rbbzil
-rbbzil+
 7140_base
 7140_meso
 7140_mrd
@@ -66,7 +63,6 @@ rbbmr
 rbbms
 9110
 9120
-9120_qb
 9130_end
 9130_fm
 9150
@@ -86,27 +82,26 @@ rbbso
 rbbsp)
 
 # counting the number of non-NULL cells (res 3.2) per cell at current resolution (32):
-# for type in "${types[@]}" ; do
-# if [ `pgrep -c r.resamp.stats` -lt 4 ] ; then
-#        echo "Started counting for type '${type}' ..."
-#        r.resamp.stats input=phabs_${type} output=count_${type} method=count --overwrite &
-#    else
-#        echo "Started counting for type '${type}' ..."
-#        r.resamp.stats input=phabs_${type} output=count_${type} method=count --overwrite
-#    fi
-# done
-#
+for type in "${types[@]}" ; do
+if [ `pgrep -c r.resamp.stats` -lt 4 ] ; then
+       echo "Started counting for type '${type}' ..."
+       r.resamp.stats input=phabs_${type} output=count_${type} method=count --overwrite &
+   else
+       echo "Started counting for type '${type}' ..."
+       r.resamp.stats input=phabs_${type} output=count_${type} method=count --overwrite
+   fi
+done
+
 # summing the phab values (res 3.2) per cell at current resolution (32):
-# for type in "${types[@]}" ; do
-# if [ `pgrep -c r.resamp.stats` -lt 4 ] ; then
-#        echo "Started summing for type '${type}' ..."
-#        r.resamp.stats input=phabs_${type} output=sum_${type} method=sum --overwrite &
-#    else
-#        echo "Started summing for type '${type}' ..."
-#        r.resamp.stats input=phabs_${type} output=sum_${type} method=sum --overwrite
-#    fi
-# done
-# wait
+for type in "${types[@]}" ; do
+if [ `pgrep -c r.resamp.stats` -lt 4 ] ; then
+       echo "Started summing for type '${type}' ..."
+       r.resamp.stats input=phabs_${type} output=sum_${type} method=sum --overwrite &
+   else
+       echo "Started summing for type '${type}' ..."
+       r.resamp.stats input=phabs_${type} output=sum_${type} method=sum --overwrite
+   fi
+done
 
 # maximum of phab values (res 3.2) per cell at current resolution (32):
 for type in "${types[@]}" ; do

@@ -86,13 +86,24 @@ types_mne_expanded %>%
 ### Geospatiale databronnen van habitattypes en RBB's
 
 - We lezen de ruimtelijke data in van de terrestrische types (incl. 'semi-terrestrisch'), met uitsluiting van resterende 'patches' met aquatische types (binnen deze potentieel terrestrische polygonen).
+Na de beperking tot de types in `types_mne_expanded` mergen we tevens de geëxpandeerde subtypes 9120_qb, rbbkam+, rbbzil+, rbbvos+, 5130_hei en 5130_kalk terug in hun hoofdtype, aangezien in de MNM op dat niveau wordt gewerkt bij die types.
 
 ```{r}
 hmt <- read_habitatmap_terr(keep_aq_patches = FALSE)
-hmt_pat <- 
+hmt_pat <-
     hmt$habitatmap_terr_patches %>% 
     semi_join(types_mne_expanded,
-              by = "type")
+              by = "type") %>% 
+    mutate(type = recode(type,
+                         "rbbkam+" = "rbbkam",
+                         "rbbvos+" = "rbbvos",
+                         "rbbzil+" = "rbbzil",
+                         "9120_qb" = "9120",
+                         "5130_hei" = "5130",
+                         "5130_kalk" = "5130") %>% 
+               as.character %>% 
+               factor(levels = levels(types_mne_expanded$type))
+           )
 hmt_pol <- 
     hmt$habitatmap_terr_polygons %>% 
     select(polygon_id)
