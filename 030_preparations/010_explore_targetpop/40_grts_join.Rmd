@@ -5,7 +5,7 @@ Er zijn twee manieren om een grid te koppelen met polygonen:
 - op basis van het centroid van elke rastercel: koppeling alleen wanneer dit punt overlapt met een polygoon
 - koppeling wanneer de rastercel overlapt met een polygoon
 
-We kijken per type naar het effect op de populatiegrootte, de juistheid van de oppervlakteschatting, en naar de trefkans.
+We kijken per type naar het effect op de juistheid van de oppervlakteschatting, en naar de trefkans.
 
 <!-- + voor de koppeling volgens celoverlap met de polygonen: verdeling van de verwachte oppervlakte binnen elke cel (zal vrij goed totaliseren tot reële opp), resp. de totale celoppervlakte, over de cellen die met hun centroid treffen versus de overige. Dit vergelijken met de reëel gekende oppervlakte. -->
 
@@ -176,15 +176,193 @@ hmt_freq_sub32_dens %>%
 
 Er zijn dus heel veel fragmentjes.
 
+### Oppervlakte van de types in de cellen, volgens twee berekeningsmethoden en volgens twee cel-touching methoden
+
+
+```{r eval=FALSE}
+system("shellscripts/shellscript_05_zonal_stats_parallel.sh")
+```
+
+```{r}
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.univar",
+                     flags = "t",
+                     map = str_c("sum_", types_hmt[i]),
+                     zones = str_c("centr_touched_", types_hmt[i]),
+                     separator = "comma")
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        str_c(collapse = "\n") %>% 
+        read_csv %>% 
+        # divide by 100 to get phab as fraction
+        # another divide by 100 to get areal proportion
+        # the sum statistic is the sum of phabs-sums *, so:
+        mutate(areaprop_sum = sum / 10^4,
+               type = types_hmt[i],
+               centroid_touched = zone == 1) %>% 
+        select(type,
+               centroid_touched,
+               count = non_null_cells,
+               areaprop_sum)
+    
+    if (i == 1) {
+        hmt_count_area <- type_result
+        } else {
+        hmt_count_area <- 
+            hmt_count_area %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+# * phabs-sums: i.e. the GRASS layers sum_xxxx, with resolution 32 m and which sum the phab values in the corresponding phabs_xxxx layer with resolution 3.2 m.
+```
+
+
+```{r}
+cell_area <- 32^2 %>% set_units("m^2") %>% set_units("ha")
+hmt_count_area <- 
+    hmt_count_area %>% 
+    mutate(area_cells = count * cell_area,
+           area_cellprops = areaprop_sum * cell_area)
+```
+
+```{r fig.height=20, fig.width=12}
+hmt_count_area %>% 
+    pivot_longer(cols = contains("area_"),
+                 names_to = "area_method",
+                 values_to = "area") %>% 
+    ggplot(aes(x = area_method, y = area, fill = centroid_touched)) +
+        geom_col() +
+        facet_wrap(~type, scales = "free_y") +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+
+```{r fig.height=20, fig.width=12}
+hmt_area_methods <- 
+    hmt_count_area %>% 
+    pivot_longer(cols = contains("area_"),
+                 names_to = "area_method",
+                 values_to = "area") %>% 
+    filter(centroid_touched | area_method == "area_cellprops") %>% 
+    group_by(type, area_method) %>% 
+    summarize(area = sum(area)) %>% 
+    pivot_wider(names_from = area_method, values_from = area) %>%
+    rename(area_cells_centroidcells = area_cells) %>% 
+    inner_join(hmt_count_area %>% 
+                   filter(centroid_touched) %>% 
+                   select(type,
+                          area_cellprops_centroidcells = area_cellprops),
+               by = "type") %>% 
+    inner_join(typest_area, by = "type") %>% 
+    rename(area_fromvect = area)
+hmt_area_methods %>% 
+    pivot_longer(cols = -type,
+                 names_to = "area_method",
+                 values_to = "area") %>% 
+    ggplot(aes(x = area_method, y = area)) +
+        geom_col() +
+        facet_wrap(~type, scales = "free_y") +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+```{r}
+hmt_area_methods %>% 
+    mutate(cellprops = (area_cellprops / area_fromvect) %>% as.numeric,
+           cellprops_centroidcells = (area_cellprops_centroidcells / area_fromvect) %>% as.numeric,
+           cells_centroidcells = (area_cells_centroidcells / area_fromvect) %>% as.numeric) %>% 
+    pivot_longer(cols = cellprops:cells_centroidcells,
+                 names_to = "area_method",
+                 values_to = "area_rel") %>% 
+    ggplot(aes(x = area_method, y = area_rel)) + geom_boxplot() + 
+    coord_cartesian(ylim = c(0, 5))
+```
+
+Bij verdere inspectie op kaart blijken de types met grotere oppervlakte-overschatting bij het werken met een raster, types te zijn die grotendeels bestaan uit kleine of smalle fragmenten.
+
 ### Verwachte kans dat het type in de rastercel voorkomt
 
-<!-- via de max-lagen, hoger aangemaakt -->
+```{r}
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.stats",
+              flags = "c",
+              input = str_c("max_", types_hmt[i]),
+              separator = "tab",
+              nsteps = 100)
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        enframe(name = NULL, value = "string") %>% 
+        separate(col = string,
+                 into = c("phabmax", "count"),
+                 sep = "\t") %>% 
+        filter(phabmax != "*") %>% 
+        mutate(phabmax1 = str_sub(phabmax, 1, 
+                               str_locate(.$phabmax, "-")[,1] - 1) %>% as.numeric,
+               phabmax2 = str_sub(phabmax, 
+                               str_locate(.$phabmax, "-")[,1] + 1) %>% as.numeric,
+               count = as.numeric(count),
+               type = types_hmt[i]) %>% 
+        rowwise %>% 
+        # divide by 100 to get phab as fraction
+        mutate(det_prob = mean(c(phabmax1, phabmax2) / 100)) %>% 
+        ungroup %>% 
+        select(type, det_prob, count)
+    
+    if (i == 1) {
+        hmt_det_prob <- type_result
+        } else {
+        hmt_det_prob <- 
+            hmt_det_prob %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+```
 
-### Verwachte kans op treffen ter hoogte van het centroid van de rastercel
+```{r}
+hmt_det_prob_dens <- 
+    hmt_det_prob %>% 
+    group_by(type) %>% 
+    mutate(weight = count / sum(count),
+           totalnrcells = sum(count)) %>% 
+    ungroup
+```
 
-<!-- hiervoor script 01 runnen op res 32 (maar andere outputnamen) -->
 
-## Koppeling met polygonen volgens centroid
+```{r warning=FALSE, echo=FALSE, eval=FALSE}
+hmt_det_prob_dens %>% 
+    ggplot(aes(x = det_prob, 
+               weight = weight, 
+               colour = totalnrcells, 
+               group = type)) + 
+        geom_density() +
+        scale_colour_gradient(low = "grey90", high = "black", trans = "log")
+```
+
+```{r warning=FALSE, echo=FALSE, eval=FALSE}
+hmt_det_prob_dens %>% 
+    ggplot(aes(x = det_prob, 
+               weight = weight, 
+               group = type)) + 
+        geom_density(alpha = 0.1, colour = "grey80", fill = "grey70") +
+        theme(panel.background = element_blank())
+```
+
+```{r}
+hmt_det_prob_dens %>% 
+    mutate(weight = count / sum(count)) %>%
+    ggplot(aes(x = det_prob, 
+               weight = weight)) + 
+        geom_density()
+```
+
+
 
 
 
