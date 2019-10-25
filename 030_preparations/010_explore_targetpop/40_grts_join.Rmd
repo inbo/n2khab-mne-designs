@@ -35,8 +35,29 @@ hmt_polpat <-
 
 ```{r results="hide", eval=FALSE}
 hmt_polpat %>% 
-    writeVECT("hmt_polpat")
+    writeVECT("hmt_polpat",
+              v.in.ogr_flags = c("overwrite", "o"))
 ```
+
+```{r eval=FALSE}
+# use bbox & resolution of GRTSmh:
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+system("g.region -p
+        g.proj -j")
+```
+
+```{r eval=FALSE, include=FALSE}
+# hmt_pat$type %>% unique %>% sort %>% as.matrix() %>% cat(sep = "\n")
+```
+
+
+```{r eval=FALSE}
+system("shellscripts/shellscript_04_v.to.rast32_r.mapcalc_parallel.sh")
+```
+
+
+
+## Koppeling met polygonen op niveau van de rastercel
 
 ```{r eval=FALSE}
 # use bbox of GRTSmh, 10-fold higher resolution:
@@ -50,12 +71,9 @@ system("g.region -p
         g.proj -j")
 ```
 
-## Koppeling met polygonen op niveau van de rastercel
-
 ```{r results="hide", eval=FALSE}
 # rasterization of phab values per type, on a 10-fold resolution of GRTSmh
 system("shellscripts/shellscript_01_v.to.rast_parallel.sh")
-# hmt_pat$type %>% unique %>% sort %>% as.matrix() %>% cat(sep = "\n")
 ```
 
 
@@ -70,11 +88,15 @@ system("g.region -p
 system("shellscripts/shellscript_02_r.resamp.stats_parallel.sh")
 ```
 
-### Verwachte celproportie: de trefkans voor random punt binnen rastercel
+### De oppervlakteproportie van elk type in de cellen
 
-```{r eval=FALSE}
-system("shellscripts/shellscript_03_r.mapcalc_parallel.sh")
-```
+We beschouwen de distributie van de (verwachte) oppervlakteproportie binnen elke cel, i.e. de proportie van deelcellen x de gemiddelde phab-waarde (als proportie) in de deelcellen.
+
+Dit is tevens de trefkans bij selectie op basis van 1 punt in de rastercel (random of systematisch, bv. centroid).
+
+<!-- ```{r eval=FALSE} -->
+<!-- system("shellscripts/shellscript_03_r.mapcalc_parallel.sh") -->
+<!-- ``` -->
 
 
 ```{r}
@@ -82,8 +104,8 @@ types_hmt <- unique(hmt_pat$type)
 sink(tempfile())
 for (i in 1:length(types_hmt)) {
     out <- execGRASS("r.stats",
-              flags = "a",
-              input = str_c("detprob_", types_hmt[i]),
+              flags = "c",
+              input = str_c("sum_", types_hmt[i]),
               separator = "tab",
               nsteps = 100)
     
@@ -92,19 +114,21 @@ for (i in 1:length(types_hmt)) {
         attr("resOut") %>% 
         enframe(name = NULL, value = "string") %>% 
         separate(col = string,
-                 into = c("det_prob", "area"),
+                 into = c("phabsum", "count"),
                  sep = "\t") %>% 
-        filter(det_prob != "*") %>% 
-        mutate(det_prob1 = str_sub(det_prob, 1, 
-                               str_locate(.$det_prob, "-")[,1] - 1) %>% as.numeric,
-               det_prob2 = str_sub(det_prob, 
-                               str_locate(.$det_prob, "-")[,1] + 1) %>% as.numeric,
-               area = as.numeric(area),
+        filter(phabsum != "*") %>% 
+        mutate(phabsum1 = str_sub(phabsum, 1, 
+                               str_locate(.$phabsum, "-")[,1] - 1) %>% as.numeric,
+               phabsum2 = str_sub(phabsum, 
+                               str_locate(.$phabsum, "-")[,1] + 1) %>% as.numeric,
+               count = as.numeric(count),
                type = types_hmt[i]) %>% 
         rowwise %>% 
-        mutate(det_prob = mean(c(det_prob1, det_prob2))) %>% 
+        # divide by 100 to get phab as fraction
+        # another divide by 100 to get areal proportion
+        mutate(areaprop = mean(c(phabsum1, phabsum2) / 10^4)) %>% 
         ungroup %>% 
-        select(type, det_prob, area)
+        select(type, areaprop, count)
     
     if (i == 1) {
         hmt_freq_sub32 <- type_result
@@ -120,16 +144,15 @@ sink()
 ```{r}
 hmt_freq_sub32_dens <- 
     hmt_freq_sub32 %>% 
-    mutate(area = area %>% set_units("m^2") %>% set_units("ha")) %>% 
     group_by(type) %>% 
-    mutate(area_w = area %>% as.numeric / sum(area %>% as.numeric),
-           area_ha = sum(area %>% as.numeric)) %>% 
+    mutate(weight = count / sum(count),
+           totalnrcells = sum(count)) %>% 
     ungroup
 hmt_freq_sub32_dens %>% 
-    filter(area_ha > 15) %>%
-    ggplot(aes(x = det_prob, 
-               weight = area_w, 
-               colour = area_ha, 
+    # filter(area_ha > 15) %>%
+    ggplot(aes(x = areaprop, 
+               weight = weight, 
+               colour = totalnrcells, 
                group = type)) + 
         geom_density() +
         scale_colour_gradient(low = "grey90", high = "black", trans = "log")
@@ -137,10 +160,8 @@ hmt_freq_sub32_dens %>%
 
 ```{r}
 hmt_freq_sub32_dens %>% 
-    filter(area_ha > 15) %>%
-    ggplot(aes(x = det_prob, 
-               weight = area_w, 
-               # fill = area_ha, 
+    ggplot(aes(x = areaprop, 
+               weight = weight, 
                group = type)) + 
         geom_density(alpha = 0.1, colour = "grey80", fill = "grey70") +
         theme(panel.background = element_blank())
@@ -148,9 +169,9 @@ hmt_freq_sub32_dens %>%
 
 ```{r}
 hmt_freq_sub32_dens %>% 
-    mutate(area_w = area %>% as.numeric / sum(area %>% as.numeric)) %>% 
-    ggplot(aes(x = det_prob, 
-               weight = area_w)) + 
+    mutate(weight = count / sum(count)) %>%
+    ggplot(aes(x = areaprop, 
+               weight = weight)) + 
         geom_density()
 ```
 
