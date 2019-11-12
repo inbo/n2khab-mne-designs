@@ -7,7 +7,7 @@ Er zijn twee manieren om een grid te koppelen met polygonen:
 
 We kijken per type naar het effect op de trefkans (aanwezigheid van het type in een rastercel) en op de juistheid van de oppervlakteschatting.
 
-```{r}
+```{r results="hide"}
 # CREATE and link to a permanent GRASS folder
 # link2GI::linkGRASS7(hmt_pol, gisdbase = ".", location = "grts_join",
 #                     search_path = if (.Platform$OS.type == "unix") {
@@ -200,7 +200,7 @@ In principe zou voor de berekening met alle joint probabilities tussen de deelce
 ]
 Deze benadering zal de trefkans vergroten, maar zorgt anderzijds voor een uitdaging/probleem om met de tussen cellen variërende oppervlakteproportie rekening te houden (zie verder).
 
-```{r}
+```{r message=FALSE, results="hide"}
 sink(tempfile())
 for (i in 1:length(types_hmt)) {
     out <- execGRASS("r.stats",
@@ -294,13 +294,13 @@ Echter bleek dit hoger reeds het geval: de oppervlakteproportie (zie puntgebasee
 We zouden hier in feite moeten wegen.
 Bij een puntgebaseerde koppeling kan daarentegen worden verwacht dat de oppervlakte met equal probability wordt vertegenwoordigd, omdat cellen vaker gekoppeld zijn wanneer de proportie (trefkans) hoger is.
 
-Gezien de veel hogere trefkans bij een celgebaseerde koppeling, gaan we nog na of via deze methode nog de totale oppervlakte van een type goed kan worden vertegenwoordigd, in vergelijking met de puntgebaseerde koppeling.
+Gezien de veel hogere trefkans bij een celgebaseerde koppeling, gaan we wel na of via deze methode nog de totale oppervlakte van een type goed kan worden vertegenwoordigd, in vergelijking met de puntgebaseerde koppeling.
 
 ### Methode
 
 Voor de oppervlakteberekening op basis van de celoppervlakte, kunnen twee methoden worden onderscheiden:
 
-- **area_cells**: elke cel telt mee voor de volledige celppervlakte (1024 m²);
+- **area_cells**: elke cel telt mee voor de volledige celoppervlakte (1024 m²);
 - **area_cellprops**: elke cel telt mee voor de celoppervlakte x de verwachte proportie van het type in de cel.
 
 We kunnen dit combineren met de beide koppelingsmethoden.
@@ -315,7 +315,7 @@ Zonder vermelding van 'centroid' in een methodenaam, betekent dit dat beide groe
 
 ### Resultaten
 
-```{r}
+```{r message=FALSE, results="hide"}
 sink(tempfile())
 for (i in 1:length(types_hmt)) {
     out <- execGRASS("r.univar",
@@ -441,7 +441,7 @@ Op basis van deze grafiek kunnen we besluiten dat de puntgebaseerde methode in d
 
 ## Besluit
 
-## Koppelingsmethode en mogelijke oplossingen voor resterende problemen
+### Koppelingsmethode en mogelijke oplossingen voor resterende problemen
 
 Ondanks de aanlokkelijk hogere trefkans van de celgebaseerde methode, besluiten we dat enkel de puntgebaseerde methode adequaat zal zijn om de doelpopulatie goed te vertegenwoordigen in een equal-probability design.
 
@@ -457,7 +457,7 @@ Anderzijds blijft de phab-waarde wel gelijk, dus waar dit aan de lage kant is, z
 Types hebben in heel wat polygonen een lage phab-waarde (paragraaf \@ref(trefk_pol)).
 Een verder nadeel is de sterk verminderde overlap (- 75% voor één niveau dieper) met de punten van het meetnet biotische habitatkwaliteit.
 
-## Bemonsteringsmethode
+### Bemonsteringsmethode
 
 Vermits een rastercel veelal maar voor een deel door een type is bedekt, is een protocol nodig dat bepaalt hoe binnen de rastercel het type wordt bemonsterd.
 Het is op zich geen probleem dat in de ene cel een kleiner deeloppervlak wordt bemonsterd dan in een andere cel, en toch evenveel meespeelt: de puntgebaseerde selectiemethode zorgt automatisch voor een groter aandeel cellen met grotere oppervlakteproportie, waardoor de laatste meer wegen in de global quantity estimators.
