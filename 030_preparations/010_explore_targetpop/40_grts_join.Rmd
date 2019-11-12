@@ -2,7 +2,8 @@
 
 Er zijn twee manieren om een grid te koppelen met polygonen:
 
-- puntgebaseerd: op basis van het centroid of een random punt in elke rastercel: koppeling alleen wanneer dit punt overlapt met een polygoon (op terrein: wanneer het punt overlapt met het type)
+- puntgebaseerd: op basis van het centroid of een random punt in elke rastercel: koppeling alleen wanneer dit punt overlapt met een polygoon (op terrein: wanneer het punt overlapt met het type).
+Dit is de methode zoals toegepast in het meetnet biotische habitatkwaliteit.
 - koppeling wanneer de rastercel overlapt met een polygoon
 
 We kijken per type naar het effect op de trefkans (aanwezigheid van het type in een rastercel) en op de juistheid van de oppervlakteschatting.
@@ -309,9 +310,11 @@ We delen daarvoor de cellen die het type _omvatten_ (celgebaseerde methode) op i
 - cellen waarvan het centroid valt in een polygoon met het type (in grafieken: 'centroid_touched = TRUE'; 'cell_centroids').
 Bemerk dat dit niet automatisch betekent dat dit centroid in de praktijk met het type overeenkomt;
 dit is o.a. beïnvloed door de waarde van phab.
+Deze selectie is een toepassing van de _puntgebaseerde koppelingsmethode_ (namelijk volgens centroid).
 - de overige cellen ('centroid_touched = FALSE')
 
 Zonder vermelding van 'centroid' in een methodenaam, betekent dit dat beide groepen cellen zijn betrokken.
+Het samennemen van beide groepen komt overeen met de _celgebaseerde koppelingsmethode_.
 
 ### Resultaten
 
@@ -354,7 +357,7 @@ sink()
 
 In onderstaande grafiek zijn per type de verschillende berekeningsmethoden te zien.
 Het valt op dat het aantal (omvattende) cellen zonder centroid in een polygoon van het type, vaak even groot of groter is dat het aantal mét centroid in een typepolygoon (vergelijk beide categorieën in de rechterstaven -- daar speelt elke cel immers evenveel mee).
-Dat terwijl het _aantal_ cellen zonder centroid in een typepolygoon duidelijk maar voor een klein oppervlakte-aandeel meespeelt (vergelijk categorieën in de linkerstaven)!
+Dat terwijl de cellen zonder centroid in een typepolygoon duidelijk maar voor een klein oppervlakte-aandeel meespelen (vergelijk categorieën in de linkerstaven)!
 Het is te verwachten dat het totaal volgens de _area_cellprops_ methode dichter aansluit bij de werkelijke oppervlakte.
 Het is daarnaast duidelijk dat de berekening die alle cellen integraal meetelt, veel hogere uitkomsten geeft.
 
@@ -382,9 +385,10 @@ hmt_count_area %>%
 Op basis hiervan vergelijken we vier oppervlakteresultaten per type:
 
 - _area_cellprops_: zie hoger; het betreft het totaal van de linkerstaven in voorgaande grafiek;
-- _area_cellprops_centroidcells_: dit is een benadering voor de _area_cells_ methode, beperkt tot de cellen waarvan het centroid _in de praktijk_ met het type samenvalt.
-De celproportie schat immers de trefkans van een punt in de cel, waardoor dit als correctie geldt op de _area_cells_ methode.
 - _area_cells_centroidcells_: de _area_cells_ methode, beperkt tot de cellen waarvan het centroid samenvalt met _een polygoon van het type_.
+- _area_cellprops_centroidcells_: de _area_cellprops_ methode, beperkt tot de cellen waarvan het centroid samenvalt met een polygoon van het type.
+Dit kan tevens gezien worden als een correctie op _area_cells_centroidcells_, namelijk beperkt tot de cellen waarvan het centroid _**in de praktijk**_ met het type samenvalt.
+De celproportie schat immers de trefkans van een punt in de cel, waardoor dit als correctie geldt.
 - _area_fromvect_: de berekende totale oppervlakte van het type, op basis van polygoonoppervlakte en phab per polygoon.
 We beschouwen dit als de best mogelijke benadering van de werkelijkheid.
 
@@ -451,11 +455,11 @@ Het beschouwen van GRTS-cellen op een hoger hiërarchisch niveau (lagere resolut
 In de lage-resolutiecel (bv. 256 x 256 m²) zou dan het steekproefkader op resolutie 32 m bijgewerkt moeten worden, zodat dit voor alle betrokken types een meerwaarde oplevert.
 We onderzoeken dit in het volgende hoofdstuk.
 
-Een eventueel verder alternatief zou kunnen zijn om kleinere cellen te gebruiken dan resolutie 32 m:
-het is te verwachten dat bij lagere GRTS-niveaus bij een grotere proportie van (type-bevattende) cellen het centroid de typepolygoon bevat: een gemiddeld hogere polygoonbedekking binnen elke cel.
-Anderzijds blijft de phab-waarde wel gelijk, dus waar dit aan de lage kant is, zal weinig verbetering optreden.
-Types hebben in heel wat polygonen een lage phab-waarde (paragraaf \@ref(trefk_pol)).
-Een verder nadeel is de sterk verminderde overlap (- 75% voor één niveau dieper) met de punten van het meetnet biotische habitatkwaliteit.
+Een eventueel verder alternatief zou kunnen zijn om kleinere cellen te gebruiken dan resolutie 32 m.
+Het is immers te verwachten dat, bij lagere GRTS-niveaus, het centroid in een groter aandeel van (type-bevattende) cellen de typepolygoon bevat: dit komt door een gemiddeld hogere polygoonbedekking binnen elke cel.
+Anderzijds blijft de phab-waarde onveranderd, dus waar dit aan de lage kant is, zal weinig verbetering optreden.
+Types hebben in heel wat polygonen een lage phab-waarde (paragraaf \@ref(trefk-pol)).
+Een verder nadeel van deze methode is de sterk verminderde overlap (- 75% voor één niveau dieper) met de punten van het meetnet biotische habitatkwaliteit.
 
 ### Bemonsteringsmethode
 
