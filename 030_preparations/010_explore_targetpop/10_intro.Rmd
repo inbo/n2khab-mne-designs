@@ -4,7 +4,7 @@ We verkennen de volgende topics:
 
 - Het voorkomen van types
     - Algemeen
-    - Terrestrische types: trefkans in een polygoon en patchgroottes
+    - Terrestrische types: trefkans in een polygoon en oppervlakte van types in een polygoon
     - Vertegenwoordiging van het domein 'SBZ-H-netwerk'
 
 
@@ -85,13 +85,13 @@ types_mne_expanded %>%
 
 ### Geospatiale databronnen van habitattypes en RBB's
 
-- We lezen de ruimtelijke data in van de terrestrische types (incl. 'semi-terrestrisch'), met uitsluiting van resterende 'patches' met aquatische types (binnen deze potentieel terrestrische polygonen).
+- We lezen de ruimtelijke data in van de terrestrische types (incl. 'semi-terrestrisch'), met uitsluiting van resterende aquatische types (binnen deze potentieel terrestrische polygonen).
 Na de beperking tot de types in `types_mne_expanded` mergen we tevens de geëxpandeerde subtypes 9120_qb, rbbkam+, rbbzil+, rbbvos+, 5130_hei en 5130_kalk terug in hun hoofdtype, aangezien in de MNM op dat niveau wordt gewerkt bij die types.
 
 ```{r}
-hmt <- read_habitatmap_terr(keep_aq_patches = FALSE)
-hmt_pat <-
-    hmt$habitatmap_terr_patches %>% 
+hmt <- read_habitatmap_terr(keep_aq_types = FALSE)
+hmt_occ <-
+    hmt$habitatmap_terr_types %>% 
     semi_join(types_mne_expanded,
               by = "type") %>% 
     mutate(type = recode(type,
@@ -108,14 +108,14 @@ hmt_pol <-
     hmt$habitatmap_terr_polygons %>% 
     select(polygon_id)
 # Note that 
-# hmt$habitatmap_terr_polygons %>% semi_join(hmt_pat, by = "polygon_id")
+# hmt$habitatmap_terr_polygons %>% semi_join(hmt_occ, by = "polygon_id")
 # yields the same number of polygons: non-terrestrial polygons were already excluded
 ```
 
 Daarin is het aantal types per hydroklasse als volgt verdeeld:
 
 ```{r}
-hmt_pat %>% 
+hmt_occ %>% 
     distinct(type) %>% 
     inner_join(types_mne_expanded, "type") %>% 
     count(hydroclass)
@@ -128,11 +128,11 @@ wsh <- read_watersurfaces_hab(interpreted = TRUE)
 wsh_pol <- 
     wsh$watersurfaces_polygons %>% 
     select(polygon_id)
-wsh_pat <- wsh$watersurfaces_patches
+wsh_occ <- wsh$watersurfaces_types
 ```
 
 ```{r}
-wsh_pat %>% 
+wsh_occ %>% 
     distinct(type) %>% 
     inner_join(types_mne_expanded,
               by = "type") %>% 

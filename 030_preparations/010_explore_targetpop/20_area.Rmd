@@ -18,14 +18,14 @@ wsh_area <-
     st_drop_geometry %>% 
     select(polygon_id, area)
 typest_area <- 
-    hmt_pat %>% 
+    hmt_occ %>% 
     select(polygon_id, type, phab) %>% 
     inner_join(hmt_area, by = "polygon_id") %>% 
     mutate(area = area * phab / 100) %>% 
     group_by(type) %>% 
     summarize(area = sum(area))
 typesw_area <- 
-    wsh_pat %>% 
+    wsh_occ %>% 
     select(polygon_id, type) %>% 
     inner_join(wsh_area, by = "polygon_id") %>% 
     group_by(type) %>% 
@@ -125,7 +125,7 @@ typesw_levels <-
   mutate(type = fct_reorder(type, area, .desc = TRUE)) %>% 
   .$type %>% 
   levels
-wsh_pat %>% 
+wsh_occ %>% 
   inner_join(wsh_area, by = "polygon_id") %>% 
   mutate(area_class_ha = cut_sw(area) %>% fct_rev) %>% 
   group_by(type, area_class_ha) %>% 
@@ -170,29 +170,29 @@ stream_length %>%
 
 
 
-## Terrestrische types: trefkans in een polygoon en patchgroottes {#trefk_pol}
+## Terrestrische types: trefkans in een polygoon en oppervlakte van types in een polygoon {#trefk-pol}
 
 ### Aandachtspunt ivm steekproef(kader): verdeling van PHAB klassen
 
-In het bewerkte, terrestrische deel van de habitatkaart (databron `habitatmap_terr`) komen types voor als 'patches' binnen 'polygonen'.
-Voor elke patch is het procentueel oppervlakte-aandeel van de polygoon opgegeven via de variabele `phab`.
+In het bewerkte, terrestrische deel van de habitatkaart (databron `habitatmap_terr`) komen types voor als fracties binnen 'polygonen'.
+Voor elke type is het procentueel oppervlakte-aandeel van de polygoon opgegeven via de variabele `phab`.
 
-Het probleem voor het steekproefkader is dat we van patches met phab < 100 de ligging binnen de polygoon niet kennen.
-Merk daarbij op dat een patch ruimtelijk uit meerdere 'vlekken' kan bestaan binnen dezelfde polygoon.
+Het probleem voor het steekproefkader is dat we van types met phab < 100 de ligging binnen de polygoon niet kennen.
+Merk daarbij op dat een type ruimtelijk uit meerdere 'vlekken' kan bestaan binnen dezelfde polygoon.
 
   
-De overall verdeling van phab voor de patches is als volgt:
+De overall verdeling van `phab` is als volgt:
 
 ```{r fig.width=12, fig.height=5}
-hmt_pat %>% 
+hmt_occ %>% 
   ggplot(aes(x = phab)) + geom_histogram(binwidth = 10, fill = "grey60")
 ```
 
 Samengenomen tot enkele klassen:
 
 ```{r fig.height=2.5, fig.width=7}
-hmt_pat_area <- 
-  hmt_pat %>% 
+hmt_occ_area <- 
+  hmt_occ %>% 
   select(polygon_id, type, certain, phab) %>% 
   inner_join(hmt_area, by = "polygon_id") %>% 
   mutate(area = area * phab / 100,
@@ -202,18 +202,18 @@ hmt_pat_area <-
 
 
 ```{r fig.height=2.5, fig.width=7}
-hmt_pat_area %>% 
+hmt_occ_area %>% 
   ggplot(aes(x = "all types", fill = phab_class)) + 
   geom_bar(position = "fill") +
   scale_y_continuous(breaks = seq(0,1,0.1)) +
   coord_flip() +
-  labs(x = NULL, y = "distribution of patches")
+  labs(x = NULL, y = "distribution of type occurrences")
 ```
 
-De oppervlakteverdeling van phab-klassen, op basis van de patch-oppervlaktes (patch-oppervlakte = phab/100 * polygoonoppervlakte).
+De oppervlakteverdeling van phab-klassen, op basis van de geschatte oppervlaktes per type in elk polygoon (geschatte oppervlakte = phab/100 * polygoonoppervlakte):
 
 ```{r fig.height=2.5, fig.width=7}
-hmt_pat_area %>% 
+hmt_occ_area %>% 
   group_by(phab_class) %>% 
   summarise(area = sum(area) %>% as.numeric) %>% 
   ggplot(aes(x = "all types", y = area, fill = phab_class)) + 
@@ -227,7 +227,7 @@ We zien aanzienlijke verschillen tussen types:
 
 ```{r fig.height=12, fig.width=7}
 typelevels_phab <- 
-  hmt_pat_area %>% 
+  hmt_occ_area %>% 
   mutate(area = area %>% as.numeric) %>% 
   group_by(type) %>% 
   summarize(area_prop10 = sum(area[.data$phab <= 10]) / sum(area),
@@ -235,7 +235,7 @@ typelevels_phab <-
   arrange(area_prop10, area_prop50) %>% 
   .$type %>% 
   as.character
-hmt_pat_area %>% 
+hmt_occ_area %>% 
   mutate(area = area %>% as.numeric,
          type = factor(type, levels = typelevels_phab)) %>% 
   ggplot(aes(x = type, y = area, fill = phab_class)) + 
@@ -249,7 +249,7 @@ Beschouwd per typeklasse:
 
 ```{r fig.width=12, fig.height=3}
 typeclasslevels_phab <- 
-  hmt_pat_area %>% 
+  hmt_occ_area %>% 
   inner_join(read_types() %>% select(type, typeclass = typeclass_name),
              by = "type") %>% 
   mutate(area = area %>% as.numeric) %>% 
@@ -259,7 +259,7 @@ typeclasslevels_phab <-
   arrange(area_prop10, area_prop50) %>% 
   .$typeclass %>% 
   as.character
-hmt_pat_area %>% 
+hmt_occ_area %>% 
   inner_join(read_types() %>% select(type, typeclass = typeclass_name),
              by = "type") %>% 
   mutate(area = area %>% as.numeric,
@@ -291,10 +291,10 @@ hmt_area %>%
 Bemerk dat de 'binwidth' van alle histogrammen 0.1 ha bedraagt.
 De eerste bin (0 - 1000 m²) komt dus ruwweg overeen met de gridcelgrootte van 32*32 m² zoals gebruikt in het meetnet biotische habitatkwaliteit.
 
-Histogram van polygoonoppervlakte per patch, gegroepeerd volgens phab-klasse (verticale as is variabel geschaald):
+Histogram van polygoonoppervlakte per type-record, gegroepeerd volgens phab-klasse (verticale as is variabel geschaald):
 
 ```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
-hmt_pat %>% 
+hmt_occ %>% 
   select(polygon_id, type, certain, phab) %>% 
   inner_join(hmt_area, by = "polygon_id") %>% 
   mutate(phab_class = cut(phab, c(0, 5, 10, 25, 50, 75, 90, 95, 100), 
@@ -315,18 +315,19 @@ Een alternatief is dus de polygoon te hanteren als basis voor uitwisseling, en d
 Een ander aspect van de hoge abundantie van kleine polygonen, is de wellicht frequent voorkomende situatie dat een gridcel maar voor een deel in de polygoon ligt.
 En vaker nog, dat een gridcel niet volledig bedekt is door het type in kwestie (gezien de phab-waarde van een type in een polygoon).
 
-### Patchoppervlakte
+### Oppervlakte van types binnen polygonen
 
-Onderstaand histogram toont de verdeling van de feitelijke patchoppervlaktes binnen polygonen (met als _overlay_ (_niet_ gestapeld) de polygoonoppervlakteverdeling van eerder).
-De patchoppervlakte is de best mogelijke benadering van de reële oppervlakte van types in de doelpopulatie.
+Onderstaand histogram toont de verdeling van de oppervlaktes van types binnen polygonen (met als _overlay_ (_niet_ gestapeld) de polygoonoppervlakteverdeling van eerder).
+De hier geschatte type-oppervlakte is de best mogelijke benadering van de reële oppervlakte van types in de doelpopulatie.
 
 ```{r message=FALSE, warning=FALSE}
-hmt_pat_area %>% 
-  mutate(object = "patch") %>% 
+hmt_occ_area %>% 
+  mutate(object = "type") %>% 
   select(object, area) %>% 
   rbind(hmt_area %>% 
               mutate(object = "polygon") %>% 
               select(object, area)) %>% 
+  mutate(object = factor(object) %>% fct_rev) %>% 
   ggplot(aes(x = area, fill = object)) +
   geom_histogram(binwidth = 0.1,
                  position = "identity",
@@ -334,24 +335,24 @@ hmt_pat_area %>%
   scale_x_unit(limits = c(0, 3))
 ```
 
-Zoals te verwachten zijn patch-oppervlaktes nog schever verdeeld dan polygoonoppervlaktes.
+Zoals te verwachten zijn type-oppervlaktes nog schever verdeeld dan polygoonoppervlaktes.
 
-Niet van elke patch was bij de kartering (of bij omzetting van de BWK) even zeker dat het om het betreffende type gaat (gestapeld histogram):
+Niet van elk type was bij de kartering (of bij omzetting van de BWK) even zeker dat het om het betreffende type gaat (gestapeld histogram):
 
 ```{r message=FALSE, warning=FALSE}
-hmt_pat_area %>% 
+hmt_occ_area %>% 
   ggplot(aes(x = area, fill = certain)) +
   geom_histogram(binwidth = 0.1,
                  position = "fill") +
   scale_x_unit(limits = c(0, 3)) +
-  ylab("Relative number of patches")
+  ylab("Relative number of type occurrences")
 ```
 
-Behalve de ligging van de patches wordt het steekproefkader dus ook bezwaard met deze onzekerheden, die iets vaker optreden bij kleinere patches.
+Behalve onzekerheden i.v.m. de ligging van de types wordt het steekproefkader dus ook bezwaard met deze onzekerheden, die iets vaker optreden bij kleinere oppervlaktes.
 
-In `r hmt_pat %>% summarise(prop = sum(!certain) / n()) %>% (.$prop * 100) %>% round(1)` procent van de patches is de bepaling van het type als onzeker beschouwd.
+In `r hmt_occ %>% summarise(pct = sum(!certain) / n() * 100) %>% pull(pct) %>% round(1)` procent van de type-records is de bepaling van het type als onzeker beschouwd.
 Vermits ook plaatsen waar `certain == TRUE` niet overal zullen overeenkomen met de actuele situatie (evolutie van het terrein sinds de kartering), is dit cijfer als een ondergrens te beschouwen.
-Dit staat nog los van de ruimtelijke onzekerheid omtrent de ligging van een patch in een polygoon.
+Dit staat nog los van de ruimtelijke onzekerheid omtrent de ligging van een type in een polygoon.
   
   
 ## Vertegenwoordiging van het domein 'SBZ-H-netwerk'
@@ -497,7 +498,7 @@ wshsac_area <-
     st_drop_geometry %>% 
     select(polygon_id, in_sac, area)
 typestsac_area <- 
-    hmt_pat %>% 
+    hmt_occ %>% 
     select(polygon_id, type, phab) %>% 
     inner_join(hmtsac_area, by = "polygon_id") %>% 
     mutate(area = area * phab / 100) %>% 
@@ -505,7 +506,7 @@ typestsac_area <-
     summarize(area = sum(area)) %>% 
     ungroup
 typeswsac_area <- 
-    wsh_pat %>% 
+    wsh_occ %>% 
     select(polygon_id, type) %>% 
     inner_join(wshsac_area, by = "polygon_id") %>% 
     group_by(type, in_sac) %>% 
