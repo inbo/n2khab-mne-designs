@@ -294,11 +294,14 @@ De eerste bin (0 - 1000 m²) komt dus ruwweg overeen met de gridcelgrootte van 3
 Histogram van polygoonoppervlakte per patch, gegroepeerd volgens phab-klasse (verticale as is variabel geschaald):
 
 ```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
-hmt_pat_area %>% 
-  mutate(phab_class = phab_class %>% fct_rev) %>% 
+hmt_pat %>% 
+  select(polygon_id, type, certain, phab) %>% 
+  inner_join(hmt_area, by = "polygon_id") %>% 
+  mutate(phab_class = cut(phab, c(0, 5, 10, 25, 50, 75, 90, 95, 100), 
+                          include.lowest = TRUE)) %>% 
   ggplot(aes(x = area)) + 
     geom_histogram(binwidth = 0.1, fill = "grey60") +
-    scale_x_unit(limits = c(0, 3)) +
+    scale_x_unit(limits = c(0, 4)) +
     facet_wrap(~phab_class,
                labeller = "label_both",
                scales = "free_y")
