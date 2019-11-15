@@ -1,0 +1,131 @@
+# Hoe vaak worden cellen bezocht binnen eenzelfde grotere cel?
+
+```{r}
+hmt_pol_id <- 
+    hmt_pol %>% 
+    mutate(pol_id = 1:n())
+```
+
+```{r results="hide", eval=FALSE}
+hmt_pol_id %>% 
+    writeVECT("hmt_pol_id",
+              v.in.ogr_flags = c("overwrite", "o"))
+system("v.to.rast input=hmt_pol_id output=hmt_pol_ras use=attr attribute_column=pol_id memory=3000 --overwrite")
+system("r.out.gdal input=hmt_pol_ras output=pol_id.tif -c --overwrite")
+```
+
+```{r}
+r_pol_id <- raster("pol_id.tif")
+NAvalue(r_pol_id) <- -1 # also all values lower than -1 will be NA
+# r_pol_id[] %>% summary
+```
+
+```{r}
+grts_b <- read_GRTSmh(brick = TRUE)
+grts_b[[11]] <- r_pol_id
+grts_polygon_id <- 
+    grts_b[!is.na(grts_b$pol_id)] %>% 
+    as_tibble %>% 
+    filter(!is.na(level0)) %>% # removes a series of border cells
+    inner_join(hmt_pol_id %>% st_drop_geometry, 
+               by = "pol_id") %>% 
+    select(-pol_id)
+# an idea for n2khab_data (+ reading function in n2khab):
+# grts_polygon_id %>% git2rdata::write_vc("grts_polygon_id", sorting = "level0")
+```
+
+```{r fig.width=8, fig.height=10, warning=FALSE}
+type_grts <- 
+    hmt_occ %>% 
+    select(polygon_id, type) %>% 
+    distinct %>% 
+    inner_join(grts_polygon_id, 
+               by = "polygon_id")
+turnover3 <- 
+    type_grts %>% 
+    group_by(type) %>% 
+    arrange(level0) %>% 
+    mutate(rank = 1:n()) %>% 
+    group_by(type, level3) %>% 
+    arrange(type, level3, level0) %>% 
+    mutate(visits_waited = rank - lag(rank)) %>% 
+    filter(!is.na(visits_waited))
+typelev <- 
+    turnover3 %>% 
+    group_by(type) %>% 
+    summarise(med = median(visits_waited)) %>% 
+    arrange(med) %>% 
+    pull(type) %>% 
+    as.character
+turnover3 %>% 
+    ungroup %>% 
+    mutate(type = factor(type, levels = typelev)) %>% 
+    ggplot(aes(x = type, y = visits_waited)) +
+    geom_boxplot(outlier.shape = NA) +
+    scale_y_log10(breaks = c(1,5,10,50,100,500,1000,5000,1e4,5e4,1e5),
+                  limits = c(1, 1e5)) +
+    coord_flip() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+Verdeling van het aantal types dat samen voorkomt in een level3-cel:
+
+```{r}
+type_grts %>% 
+    distinct(level3, type) %>% 
+    count(level3,
+          name = "nrtypes") %>% 
+    ggplot(aes(x = nrtypes)) +
+    geom_bar(position = "fill") +
+    ylab("nrcells")
+```
+
+Verdeling van het aantal level3-cellen per type:
+
+```{r warning=FALSE}
+type_grts %>% 
+    distinct(level3, type) %>% 
+    count(type,
+          name = "nrcells") %>% 
+    ggplot(aes(x = nrcells)) +
+    geom_histogram(binwidth = 200, fill = "white", colour = "grey60") +
+    scale_x_continuous(limits = c(-100,7000), breaks = seq(0,7000,400)) +
+    ylab("nrtypes")
+```
+
+Verdeling van het aantal level3-cellen per type, in de laagste klassen:
+
+```{r warning=FALSE}
+type_grts %>% 
+    distinct(level3, type) %>% 
+    count(type,
+          name = "nrcells") %>% 
+    ggplot(aes(x = nrcells)) +
+    geom_histogram(binwidth = 50, fill = "white", colour = "grey60") +
+    scale_x_continuous(limits = c(-50,1000), breaks = seq(0,1000,100)) +
+    ylab("nrtypes")
+```
+
+De meerderheid van de level3-cellen heeft per type meerdere level0-cellen ter beschikking (in bepaalde gevallen tientallen):
+
+```{r fig.width=8, fig.height=10}
+count_0_in_3 <- 
+    type_grts %>% 
+    group_by(type) %>% 
+    count(level3, name = "nrlevel0cells_per_level3cell")
+typelev2 <- 
+    count_0_in_3 %>% 
+    summarise(med = median(nrlevel0cells_per_level3cell)) %>% 
+    arrange(med) %>% 
+    pull(type) %>% 
+    as.character
+count_0_in_3 %>% 
+    ungroup %>% 
+    mutate(type = factor(type, levels = typelev2)) %>% 
+    ggplot(aes(x = type, y = nrlevel0cells_per_level3cell)) +
+    geom_boxplot(outlier.size = 0.2, outlier.alpha = 0.3) +
+    coord_flip() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+
