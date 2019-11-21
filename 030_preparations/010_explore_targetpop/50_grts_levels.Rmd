@@ -1,6 +1,36 @@
-# Hoe vaak worden cellen bezocht binnen eenzelfde grotere cel?
+# Relaties tussen verschillende hiërarchische GRTS-resoluties bij de terrestrische types
 
-```{r}
+Een uitdaging voor de meetnetten natuurlijk milieu zijn de onbetrouwbaarheden in het terrestrische steekproefkader, dat gebaseerd zal worden op de databron `habitatmap_terr`:
+
+- van een willekeurige puntlocatie in een polygoon met een beoogd type is er alleen informatie over de kans op voorkomen van een type, vertegenwoordigd door de `phab`-waarde van een type in een polygoon.
+Met andere woorden, het is raak ofwel ernaast;
+- in veel polygonen staat een type nog op 'onzeker' omdat het gelabeld is in combinatie met een ander type (betekenis: 'ofwel', niet 'en');
+- het gebeurt niet zelden dat een type in realiteit niet meer aanwezig is, hetzij door spontane successie, hetzij door toedoen van menselijke ingrepen.
+
+Een gevolg hiervan is dat, bij het terreinwerk, een cel die niet blijkt te voldoen (is niet het beoogde type) uit de steekproef wegvalt en vervangen zal moeten worden door een volgende cel van de GRTS-rangschikking.
+Een dergelijke nieuwe cel zal typisch ver gelegen zijn van de weggevallen plaats.
+Noot: we spreken hier steeds over cellen van resolutie 32 m als steekproefeenheid; we verwijzen hiernaar als 'level0-cellen' vermits dit de labelling is in de databronnen `GRTSmh_brick` en `GRTSmh_diffres`.
+
+Het was reeds duidelijk dat de wijze van koppeling tussen het GRTS-raster en `habitatmap_terr` deze trefkans eveneens beïnvloedt.
+
+Een interessante piste om hier praktisch aan te verhelpen (zowel voor punt- als celgebaseerde koppeling), zou kunnen zijn om een level0-cel (32 m) die wegvalt te vervangen door de volgende level0-cel (volgens GRTS-rangnummer) _binnen de cel van een hoger hiërarchisch GRTS-niveau die correspondeert met de wegvallende level0-cel_.
+
+Dit zou er op neerkomen dat eerst het voorkomen van het doeltype in de level0-cellen in die grotere cel goed gekarteerd moet worden, alvorens de GRTS-selectie in de grotere cel correct te kunnen toepassen.
+M.a.w. een lokale update van het steekproefkader wordt dan beoogd op het terrein.
+Omdat een dergelijke lokale update van het steekproefkader moeilijk haalbaar is voor niveaus hoger dan 'level3' (cellen van 256 x 256 m²)^[
+Bemerk dat de GRTS-niveaus overeenkomen met resoluties die verspringen volgens machten van 2.
+],
+zullen we kijken naar relaties tussen **level0** en **level3**:
+
+- hoe snel wordt elke concrete level3 herbezocht, bij het aflopen van alle level0-cellen van een type volgens de GRTS-rangschikking?
+- in welke mate komen types van de gezamenlijke MNM-doelpopulatie samen voor in level3-cellen, en hoe zinvol is het om niet alleen het doeltype maar ook de andere types te bemonsteren?
+- hoeveel level3-cellen, en level0-cellen per level3-cel zijn er ter beschikking per type?
+
+## Hoe vaak worden de level0-cellen bezocht binnen een level3-cel?
+
+We willen weten hoe snel elke concrete level3 wordt herbezocht, bij het aflopen van alle level0-cellen van een type volgens de GRTS-rangschikking.
+
+```{r eval=FALSE}
 hmt_pol_id <- 
     hmt_pol %>% 
     mutate(pol_id = 1:n())
@@ -14,13 +44,13 @@ system("v.to.rast input=hmt_pol_id output=hmt_pol_ras use=attr attribute_column=
 system("r.out.gdal input=hmt_pol_ras output=pol_id.tif -c --overwrite")
 ```
 
-```{r}
+```{r eval=FALSE}
 r_pol_id <- raster("pol_id.tif")
 NAvalue(r_pol_id) <- -1 # also all values lower than -1 will be NA
 # r_pol_id[] %>% summary
 ```
 
-```{r}
+```{r eval=FALSE}
 grts_b <- read_GRTSmh(brick = TRUE)
 grts_b[[11]] <- r_pol_id
 grts_polygon_id <- 
@@ -30,9 +60,17 @@ grts_polygon_id <-
     inner_join(hmt_pol_id %>% st_drop_geometry, 
                by = "pol_id") %>% 
     select(-pol_id)
+```
+
+
+```{r eval=FALSE}
 # an idea for n2khab_data (+ reading function in n2khab):
 # grts_polygon_id %>% git2rdata::write_vc("grts_polygon_id", sorting = "level0")
+# grts_polygon_id %>% write_csv("grts_polygon_id.csv")
+# grts_polygon_id <- git2rdata::read_vc("grts_polygon_id") %>% as_tibble
+# but perhaps still better to do this with grts_type
 ```
+
 
 ```{r fig.width=8, fig.height=10, warning=FALSE}
 type_grts <- 
@@ -61,12 +99,16 @@ turnover3 %>%
     ungroup %>% 
     mutate(type = factor(type, levels = typelev)) %>% 
     ggplot(aes(x = type, y = visits_waited)) +
-    geom_boxplot(outlier.shape = NA) +
+    geom_boxplot(outlier.size = 0.2, outlier.alpha = 0.3) +
     scale_y_log10(breaks = c(1,5,10,50,100,500,1000,5000,1e4,5e4,1e5),
                   limits = c(1, 1e5)) +
     coord_flip() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
 ```
+
+## Coëxistentie van types in een level3-cel
+
+We willen weten in welke mate types van de gezamenlijke MNM-doelpopulatie samen voorkomen in dezelfde level3-cellen, en hoe zinvol het is om niet alleen het doeltype maar ook de andere types te bemonsteren.
 
 Verdeling van het aantal types dat samen voorkomt in een level3-cel:
 
@@ -76,9 +118,34 @@ type_grts %>%
     count(level3,
           name = "nrtypes") %>% 
     ggplot(aes(x = nrtypes)) +
-    geom_bar(position = "fill") +
+    geom_bar() +
     ylab("nrcells")
 ```
+
+Verdeling van het aantal types dat samen voorkomt in een level3-cel, _binnen de level0-cellen die bemonsterd worden indien n~type~ = 50_:
+
+```{r fig.width=2, fig.height=2}
+type_grts %>% 
+    group_by(type) %>% 
+    arrange(type, level0) %>% 
+    slice(1:50) %>% 
+    distinct(level3, type) %>% 
+    count(level3,
+          name = "nrtypes") %>% 
+    ggplot(aes(x = nrtypes)) +
+    geom_bar(fill = "white", colour = "grey60") +
+    scale_x_continuous(breaks = 1) +
+    ylab("nrcells")
+```
+
+Dit wil dus zeggen dat steekproeven van grootte 50 (per type) _niet_ tussen types overlappen op het niveau van level3-cellen.
+Met andere woorden, een update van het steekproefkader op terrein zal vooral voor het type in kwestie een potentieel bruikbare benadering zijn, en niet voor andere types.
+
+## Het voorkomen van types in level3- en level0-cellen
+
+We willen weten hoeveel level3-cellen, en level0-cellen per level3-cel er ter beschikking zijn per type.
+
+### Het voorkomen van types in level3-cellen
 
 Verdeling van het aantal level3-cellen per type:
 
@@ -105,6 +172,8 @@ type_grts %>%
     scale_x_continuous(limits = c(-50,1000), breaks = seq(0,1000,100)) +
     ylab("nrtypes")
 ```
+
+### Aantal level0-cellen binnen de level3-cellen van een type
 
 De meerderheid van de level3-cellen heeft per type meerdere level0-cellen ter beschikking (in bepaalde gevallen tientallen):
 
