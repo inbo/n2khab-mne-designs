@@ -6,7 +6,7 @@ Er zijn twee manieren om een grid te koppelen met polygonen:
 Dit is de methode zoals toegepast in het meetnet biotische habitatkwaliteit.
 - koppeling wanneer de rastercel overlapt met een polygoon
 
-We kijken per type naar het effect op de trefkans (aanwezigheid van het type in een rastercel) en op de juistheid van de oppervlakteschatting.
+We kijken per type naar het effect op de trefkans (aanwezigheid van het type in een rastercel), op de juistheid van de oppervlakteschatting en op de populatiegrootte (i.e. aantal cellen).
 
 ```{r results="hide"}
 # CREATE and link to a permanent GRASS folder
@@ -475,6 +475,55 @@ hmt_area_methods %>%
 ```
 
 Op basis van deze grafiek kunnen we besluiten dat de puntgebaseerde methode in de praktijk (_cellprops_centroidcells_) de beste benadering zal zijn om de oppervlakte van een type te vertegenwoordigen, op een manier die proportioneel is met de type-oppervlakte per cel.
+
+## Effect van koppelingsmethode op de populatiegrootte
+
+We gaan na wat het effect is van de koppelingsmethode -- 'centroïd-based' versus 'cell-based' -- op de populatiegrootte.
+
+Het verschil tussen beide methoden, per type:
+
+```{r}
+pop_size <- 
+    hmt_det_prob_dens %>%  # object hmt_freq_sub32_dens would equally work here
+    distinct(type, 
+             cellbased = totalnrcells) %>% 
+    inner_join(hmt_count_area %>% 
+                filter(centroid_touched) %>% 
+                select(type, 
+                       centroidbased = count),
+               by = "type") %>% 
+    pivot_longer(cols = 2:3,
+                 names_to = "count_method",
+                 values_to = "population_size")
+```
+
+```{r fig.height=20, fig.width=12}
+pop_size %>% 
+    ggplot(aes(x = count_method, y = population_size)) +
+    geom_col(position = "dodge") +
+    facet_wrap(~type, scales = "free_y") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+De populatiegrootte volgens celgebaseerde koppeling blijkt ongeveer 50% groter.
+
+Een grafiek over alle types heen benadrukt de grote verschillen tussen types:
+
+```{r}
+pop_size %>% 
+    ggplot(aes(x = count_method, y = population_size)) +
+    geom_boxplot() +
+    coord_cartesian(ylim = c(0, 5e4))
+```
+
+Nadere inspectie van enkele percentielen:
+
+```{r}
+pop_size %>% 
+    split(.$count_method) %>% 
+    lapply(function(x) quantile(x$population_size, c(0,.1,.25,.5,.75,.9,1)))
+```
+
 
 ## Besluit
 
