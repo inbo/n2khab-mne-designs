@@ -351,39 +351,49 @@ De populatiegrootte van een type komt in dat geval overeen met het werkelijke aa
 De cel wordt daarbij gelijkgesteld met een kleinere oppervlakte, die ze vertegenwoordigt.
 De som van deze waarden is dan per definitie de totale oppervlakte van de doelpopulatie.
 
-Gezien de veel hogere trefkans bij een celgebaseerde koppeling, wordt in volgende paragrafen nog nagegaan welke oppervlakteresultaten we bekomen bij toepassing van , in vergelijking met de puntgebaseerde koppeling.
+De celgebaseerde koppeling heeft het voordeel van een hogere trefkans en ze biedt een gedeeltelijke oplossing voor het vaak voorkomen van kleine habitatvlekken.
+Daarnaast laat deze benadering makkelijker toe om de grootte van de steekproefeenheid te variëren van meetnet tot meetnet (ifv milieuvariabele) zonder dat dit leidt tot verminderde koppeling tussen deze meetnetten.
+Door minder rastercellen te moeten verwerpen op terrein, vermindert sowieso wel de synergie met het biotisch meetnet.
 
-_Noot: voor toepassing op terrein van de celgebaseerde koppeling, zou wel een minimum bedekkingspercentage kunnen worden geëist van het type in een cel, dit om de bemonstering van bv. bodem fysisch mogelijk te maken. _
-_Het voldoen aan de vereiste is te verifiëren op terrein (niet via een theoretische preselectie)._
+### Koppelingsmethode en sample support
 
-### Methode
+De sample support omvat de grootte, vorm en oriëntatie van de steekproefeenheid.
+De steekproefeenheid is een GRTS-cel waarbinnen het type wordt bemonsterd (op basis van de regels voor een punt- of celgebaseerde koppeling).
 
-Voor de oppervlakteberekening op basis van de celoppervlakte, kunnen twee methoden worden onderscheiden:
+Het komt vaak voor dat een type maar in een deel van deze cel voorkomt, en dan wordt ook alleen dat deel bemonsterd, om op die manier de steekproefeenheid (de cel) te vertegenwoordigen.
+De bemonsterde oppervlakte binnen de cel kan variëren, bv. indien met gepoolde deelstalen/-metingen wordt gewerkt.
 
-- **area_cells**: elke cel telt mee voor de volledige celoppervlakte (1024 m²);
-- **area_cellprops**: elke cel telt mee voor de celoppervlakte x de verwachte proportie van het type in de cel.
+- Het is een mogelijkheid om binnen de cel maar op één plaats te bemonsteren om de volledige vlek in de cel te vertegenwoordigen, indien aangenomen of aangetoond kan worden dat hierdoor geen grote meetfout optreedt (het punt moet de cel redelijkerwijze kunnen vertegenwoordigen).
+Dit zal afhangen van de milieuvariabele in kwestie.
+- Het is tevens mogelijk dat de milieuvariabele voor een groter bereik geldt dan de habitatvlek.
+Voorbeelden zijn grondwater- en atmosferische variabelen.
+In dat geval hoeft de meting niet noodzakelijk in een habitatvlek te gebeuren, en is het zelfs mogelijk dat de meting meerdere aanwezige types afdekt.
 
-We kunnen dit combineren met de beide koppelingsmethoden.
-We delen daarvoor de cellen die het type _omvatten_ (celgebaseerde methode) op in twee groepen:
+Voor ruimtelijk weinig variërende milieuvariabelen kan worden geopteerd voor een hoger GRTS-celniveau als steekproefeenheid (bv. level1: 64 x 64 m² of zelfs level2: 128 x 128 m²):
 
-- cellen waarvan het centroid valt in een polygoon met het type (in grafieken: 'centroid_touched = TRUE'; 'cell_centroids').
-Bemerk dat dit niet automatisch betekent dat dit centroid in de praktijk met het type overeenkomt;
-dit is o.a. beïnvloed door de waarde van phab.
-Deze selectie is een toepassing van de _puntgebaseerde koppelingsmethode_ (namelijk volgens centroid).
-- de overige cellen ('centroid_touched = FALSE')
+- een voordeel van deze benadering is tevens de kleinere populatiegrootte;
+- dit behoudt bij een celgebaseerde koppeling hoge synergie met MNM-meetnetten op een andere resolutie (bv. 32 x 32 m²) aangezien de cellen van verschillende niveaus elkaar omvatten en dezelfde volgorde van cellen wordt gehanteerd in de GRTS-rangschikkingen op verschillende niveaus;
+- een nadeel bij de interpretatie voor een celgebaseerde koppeling is wel dat er in het geval van niet-weging van units een grotere absolute range aan vlekoppervlaktes binnen cellen zal worden gelijkgesteld aan de gemiddelde celoppervlakte;
+- werken op een hoger GRTS-celniveau dan 32 x 32 m² zal minder interessant zijn voor de puntgebaseerde koppeling vermits er dan nog vaker mismatches zullen optreden met de doelpopulatie.
+Tevens zou de synergie met MNM-meetnetten op andere resoluties en met het biotische meetnet compleet verloren gaan, omdat er dan effectief volgens andere punten wordt gekoppeld.
 
-Zonder vermelding van 'centroid' in een methodenaam, betekent dit dat beide groepen cellen zijn betrokken.
-Het samennemen van beide groepen komt overeen met de _celgebaseerde koppelingsmethode_.
+Voor toepassing op terrein van de celgebaseerde koppeling zou wel een minimum bedekkingspercentage kunnen worden geëist van het type in een cel, dit om de bemonstering van bv. bodem fysisch mogelijk te maken.
+Het voldoen aan deze vereiste is te verifiëren op terrein (niet via een theoretische preselectie).
 
-### Resultaten
+### Effect van koppelingsmethode op de populatiegrootte
+
+Voor de concrete implementatie van de puntgebaseerde methode werken we met de centroïden, zoals toegepast in het meetnet biotische habitatkwaliteit.
+
+We gaan na wat het effect is van de koppelingsmethode -- 'centroïd-based' versus 'cell-based' -- op de populatiegrootte.
+Daarbij houden we rekening met de trefkans op basis van phab (ter hoogte van het centroid, resp. de maximale waarde binnen de cel).
 
 ```{r message=FALSE, results="hide"}
+# summing phab-values (as fractions) at centroids:
 sink(tempfile())
 for (i in 1:length(types_hmt)) {
     out <- execGRASS("r.univar",
                      flags = "t",
-                     map = str_c("sum_", types_hmt[i]),
-                     zones = str_c("centr_touched_", types_hmt[i]),
+                     map = str_c("phab_", types_hmt[i]),
                      separator = "comma")
     
     type_result <- 
@@ -392,146 +402,67 @@ for (i in 1:length(types_hmt)) {
         str_c(collapse = "\n") %>% 
         read_csv %>% 
         # divide by 100 to get phab as fraction
-        # another divide by 100 to get areal proportion
-        # the sum statistic is the sum of phabs-sums *, so:
-        mutate(areaprop_sum = sum / 10^4,
-               type = types_hmt[i],
-               centroid_touched = zone == 1) %>% 
+        # the sum statistic is the sum of phab *, so:
+        mutate(phab_sum = sum / 100,
+               type = types_hmt[i]) %>% 
         select(type,
-               centroid_touched,
-               count = non_null_cells,
-               areaprop_sum)
+               phab_sum)
     
     if (i == 1) {
-        hmt_count_area <- type_result
+        hmt_popsize_centroid <- type_result
         } else {
-        hmt_count_area <- 
-            hmt_count_area %>% 
+        hmt_popsize_centroid <- 
+            hmt_popsize_centroid %>% 
             bind_rows(type_result)
     }
 }
 sink()
-# * phabs-sums: i.e. the GRASS layers sum_xxxx, with resolution 32 m and which sum the phab values in the corresponding phabs_xxxx layer with resolution 3.2 m.
-```
-
-In onderstaande grafiek zijn per type de verschillende berekeningsmethoden te zien.
-Het valt op dat het aantal (omvattende) cellen zonder centroid in een polygoon van het type, vaak even groot of groter is dat het aantal mét centroid in een typepolygoon (vergelijk beide categorieën in de rechterstaven -- daar speelt elke cel immers evenveel mee).
-Dat terwijl de cellen zonder centroid in een typepolygoon duidelijk maar voor een klein oppervlakte-aandeel meespelen (vergelijk categorieën in de linkerstaven)!
-Het is te verwachten dat het totaal volgens de _area_cellprops_ methode dichter aansluit bij de werkelijke oppervlakte.
-Het is daarnaast duidelijk dat de berekening die alle cellen integraal meetelt, veel hogere uitkomsten geeft.
-
-Deze patronen zijn gevolg van grote randeffecten: types komen vaak voor als kleine polygonen waarrond het type ontbreekt.
-
-```{r}
-cell_area <- 32^2 %>% set_units("m^2") %>% set_units("ha")
-hmt_count_area <- 
-    hmt_count_area %>% 
-    mutate(area_cells = count * cell_area,
-           area_cellprops = areaprop_sum * cell_area)
-```
-
-```{r fig.height=20, fig.width=12}
-hmt_count_area %>% 
-    pivot_longer(cols = contains("area_"),
-                 names_to = "area_method",
-                 values_to = "area") %>% 
-    ggplot(aes(x = area_method, y = area, fill = centroid_touched)) +
-        geom_col() +
-        facet_wrap(~type, scales = "free_y") +
-        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
-```
-
-Getotaliseerd over alle types:
-
-```{r fig.width=4, fig.height=5}
-hmt_count_area %>% 
-    pivot_longer(cols = contains("area_"),
-                 names_to = "area_method",
-                 values_to = "area") %>% 
-    group_by(area_method, centroid_touched) %>% 
-    summarise(area = sum(area)) %>% 
-    ggplot(aes(x = area_method, y = area, fill = centroid_touched)) +
-        geom_col() +
-        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+# * phab_xxxx: phab-values of cells, i.e. for centroid at resolution 32 m (GRTSmh)
 ```
 
 
-Op basis hiervan vergelijken we vier oppervlakteresultaten per type:
-
-- _area_cellprops_: zie hoger; het betreft het totaal van de linkerstaven in voorgaande grafiek per type;
-- _area_cells_centroidcells_: de _area_cells_ methode, beperkt tot de cellen waarvan het centroid samenvalt met _een polygoon van het type_.
-- _area_cellprops_centroidcells_: de _area_cellprops_ methode, beperkt tot de cellen waarvan het centroid samenvalt met een polygoon van het type.
-Dit kan tevens gezien worden als een correctie op _area_cells_centroidcells_, namelijk beperkt tot de cellen waarvan het centroid _**in de praktijk**_ met het type samenvalt.
-De celproportie schat immers de trefkans van een punt in de cel, waardoor dit als correctie geldt.
-- _area_fromvect_: de berekende totale oppervlakte van het type, op basis van polygoonoppervlakte en phab per polygoon.
-We beschouwen dit als de best mogelijke benadering van de werkelijkheid.
-
-```{r}
-hmt_area_methods <- 
-    hmt_count_area %>% 
-    pivot_longer(cols = contains("area_"),
-                 names_to = "area_method",
-                 values_to = "area") %>% 
-    filter(centroid_touched | area_method == "area_cellprops") %>% 
-    group_by(type, area_method) %>% 
-    summarize(area = sum(area)) %>% 
-    pivot_wider(names_from = area_method, values_from = area) %>%
-    rename(area_cells_centroidcells = area_cells) %>% 
-    inner_join(hmt_count_area %>% 
-                   filter(centroid_touched) %>% 
-                   select(type,
-                          area_cellprops_centroidcells = area_cellprops),
-               by = "type") %>% 
-    inner_join(typest_area, by = "type") %>% 
-    rename(area_fromvect = area)
+```{r message=FALSE, results="hide"}
+# summing maximum phab-values (as fractions) - i.e. for joining at cell level:
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.univar",
+                     flags = "t",
+                     map = str_c("max_", types_hmt[i]),
+                     separator = "comma")
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        str_c(collapse = "\n") %>% 
+        read_csv %>% 
+        # divide by 100 to get phab as fraction
+        # the sum statistic is the sum of phabs-max *, so:
+        mutate(detprob_sum = sum / 100,
+               type = types_hmt[i]) %>% 
+        select(type,
+               detprob_sum)
+    
+    if (i == 1) {
+        hmt_popsize_cells <- type_result
+        } else {
+        hmt_popsize_cells <- 
+            hmt_popsize_cells %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+# * max_xxxx: maximum of phabs-subcell values, at resolution 32 m (GRTSmh)
 ```
 
-
-```{r fig.height=20, fig.width=12}
-hmt_area_methods %>% 
-    pivot_longer(cols = -type,
-                 names_to = "area_method",
-                 values_to = "area") %>% 
-    ggplot(aes(x = area_method, y = area)) +
-        geom_col() +
-        facet_wrap(~type, scales = "free_y") +
-        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
-```
-
-Bij verdere inspectie op kaart blijken de types met grotere oppervlakte-overschatting bij het werken met een raster, types te zijn die grotendeels bestaan uit kleine of smalle fragmenten.
-Het is duidelijk dat hiervoor de rasterbenadering minder goed werkt.
-
-De verhouding tot de uitkomst voor _area_fromvect_, is als volgt gespreid voor alle types samen:
-
-```{r}
-hmt_area_methods %>% 
-    mutate(cellprops = (area_cellprops / area_fromvect) %>% as.numeric,
-           cellprops_centroidcells = (area_cellprops_centroidcells / area_fromvect) %>% as.numeric,
-           cells_centroidcells = (area_cells_centroidcells / area_fromvect) %>% as.numeric) %>% 
-    pivot_longer(cols = cellprops:cells_centroidcells,
-                 names_to = "area_method",
-                 values_to = "area_rel") %>% 
-    ggplot(aes(x = area_method, y = area_rel)) + geom_boxplot() + 
-    coord_cartesian(ylim = c(0, 5))
-```
-
-Op basis van deze grafiek kunnen we besluiten dat de puntgebaseerde methode in de praktijk (_cellprops_centroidcells_) de beste benadering zal zijn om de oppervlakte van een type te vertegenwoordigen, op een manier die proportioneel is met de type-oppervlakte per cel.
-
-## Effect van koppelingsmethode op de populatiegrootte
-
-We gaan na wat het effect is van de koppelingsmethode -- 'centroïd-based' versus 'cell-based' -- op de populatiegrootte.
 
 Het verschil tussen beide methoden, per type:
 
 ```{r}
 pop_size <- 
-    hmt_det_prob_dens %>%  # object hmt_freq_sub32_dens would equally work here
-    distinct(type, 
-             cellbased = totalnrcells) %>% 
-    inner_join(hmt_count_area %>% 
-                filter(centroid_touched) %>% 
-                select(type, 
-                       centroidbased = count),
+    hmt_popsize_cells %>% 
+    rename(cellbased = detprob_sum) %>% 
+    inner_join(hmt_popsize_centroid %>% 
+                rename(centroidbased = phab_sum), 
                by = "type") %>% 
     pivot_longer(cols = 2:3,
                  names_to = "count_method",
@@ -546,15 +477,35 @@ pop_size %>%
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
 ```
 
-De populatiegrootte volgens celgebaseerde koppeling blijkt ongeveer 50% groter.
+De populatiegrootte volgens celgebaseerde koppeling is overwegend 50% tot >100% groter, afhankelijk van het type.
+Dit is goed te zien in de spreiding van de relatieve verschillen ((cellbased - centroidbased) / centroidbased * 100):
 
-Een grafiek over alle types heen benadrukt de grote verschillen tussen types:
+```{r message=FALSE}
+pop_size %>% 
+    pivot_wider(names_from = count_method,
+                values_from = population_size) %>% 
+    mutate(pct_diff = (cellbased - centroidbased) / centroidbased * 100) %>% 
+    ggplot(aes(x = pct_diff)) +
+    geom_histogram(fill = "white", colour = "grey60")
+```
 
-```{r}
+Een grafiek over alle types heen benadrukt de grote variatie in populatiegrootte tussen types:
+
+```{r fig.width=5, fig.height=5}
 pop_size %>% 
     ggplot(aes(x = count_method, y = population_size)) +
-    geom_boxplot() +
-    coord_cartesian(ylim = c(0, 5e4))
+    geom_jitter(width = 0.1, alpha = 0.4) +
+    coord_cartesian(ylim = c(0, 7.5e4))
+```
+
+Ingezoomd op de waarden tot 15000:
+
+```{r fig.width=5, fig.height=5}
+pop_size %>% 
+    ggplot(aes(x = count_method, y = population_size)) +
+    geom_jitter(width = 0.1, alpha = 0.4) +
+    scale_y_continuous(breaks = seq(0, 15e3, 1e3)) +
+    coord_cartesian(ylim = c(0, 1.5e4))
 ```
 
 Nadere inspectie van enkele percentielen:
@@ -566,28 +517,4 @@ pop_size %>%
 ```
 
 
-## Besluit
-
-### Koppelingsmethode en mogelijke oplossingen voor resterende problemen
-
-<!-- TO DO: hierboven en hieronder uitwerken ifv celselectie obv voldoende hoge celproportie. -->
-
-Ondanks de aanlokkelijk hogere trefkans van de celgebaseerde methode, besluiten we dat enkel de puntgebaseerde methode adequaat zal zijn om de doelpopulatie goed te vertegenwoordigen in een equal-probability design.
-
-Dit noopt tot een goede strategie om om te gaan met de frequent (tot overwegend) te verwachten uitval.
-
-Het beschouwen van GRTS-cellen op een hoger hiërarchisch niveau (lagere resolutie), rondom een geselecteerd punt op resolutie 32 m, kan hiervoor interessant zijn.
-In de lage-resolutiecel (bv. 256 x 256 m²) zou dan het steekproefkader op resolutie 32 m bijgewerkt moeten worden, zodat dit voor alle betrokken types een meerwaarde oplevert.
-We onderzoeken dit in het volgende hoofdstuk.
-
-Een eventueel verder alternatief zou kunnen zijn om kleinere cellen te gebruiken dan resolutie 32 m.
-Het is immers te verwachten dat, bij lagere GRTS-niveaus, het centroid in een groter aandeel van (type-bevattende) cellen de typepolygoon bevat: dit komt door een gemiddeld hogere polygoonbedekking binnen elke cel.
-Anderzijds blijft de phab-waarde onveranderd, dus waar dit aan de lage kant is, zal weinig verbetering optreden.
-Types hebben in heel wat polygonen een lage phab-waarde (paragraaf \@ref(trefk-pol)).
-Een verder nadeel van deze methode is de sterk verminderde overlap (- 75% voor één niveau dieper) met de punten van het meetnet biotische habitatkwaliteit.
-
-### Bemonsteringsmethode
-
-Vermits een rastercel veelal maar voor een deel door een type is bedekt, is een protocol nodig dat bepaalt hoe binnen de rastercel het type wordt bemonsterd.
-Het is op zich geen probleem dat in de ene cel een kleiner deeloppervlak wordt bemonsterd dan in een andere cel, en toch evenveel meespeelt: de puntgebaseerde selectiemethode zorgt automatisch voor een groter aandeel cellen met grotere oppervlakteproportie, waardoor de laatste meer wegen in de global quantity estimators.
 
