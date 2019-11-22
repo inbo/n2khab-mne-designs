@@ -193,6 +193,16 @@ hmt_freq_sub32_dens %>%
 De verwachte trefkans op basis van een punt (random, centroid, ...) is dus vaak vrij laag.
 Dit komt door een combinatie van onvolledig door polygonen afgedekte rastercellen, en doordat types vaak een kleiner deel van de polygoon bestrijken.
 
+```{r}
+hmt_freq_sub32_dens %>% 
+    arrange(desc(areaprop)) %>% 
+    mutate(cum_weight = cumsum(count) / sum(count)) %>% 
+    ggplot(aes(x = areaprop, 
+               y = cum_weight)) + 
+    geom_line() +
+    xlim(1,0)
+```
+
 ### Celgebaseerd: verwachte kans dat het type binnen de rastercel voorkomt
 
 Bij deze benadering wordt een type als aanwezig beschouwd in een rastercel van zodra het voorkomt in minstens één van de deelcellen.
@@ -281,10 +291,41 @@ hmt_det_prob_dens %>%
 
 Het is hieruit duidelijk dat deze methode in elk geval tot een gemiddeld veel hogere trefkans leidt.
 
+```{r}
+hmt_det_prob_dens %>% 
+    arrange(desc(det_prob)) %>% 
+    mutate(cum_weight = cumsum(count) / sum(count)) %>% 
+    ggplot(aes(x = det_prob, 
+               y = cum_weight)) + 
+    geom_line() +
+    xlim(1,0)
+```
 
-## Effect van koppelingsmethode en berekeningswijze op de celgebaseerde oppervlakteberekening van de types
+```{r}
+hmt_freq_sub32_dens %>% 
+    arrange(desc(areaprop)) %>% 
+    mutate(cum_relfreq = cumsum(count) / sum(count),
+           approach = "point-based") %>% 
+    select(approach, type, detection_prob = areaprop, cum_relfreq) %>% 
+    bind_rows(
+        hmt_det_prob_dens %>% 
+        arrange(desc(det_prob)) %>% 
+        mutate(cum_relfreq = cumsum(count) / sum(count),
+           approach = "cell-based") %>% 
+    select(approach, type, detection_prob = det_prob, cum_relfreq)
+    ) %>% 
+    ggplot(aes(x = detection_prob, 
+               y = cum_relfreq,
+               colour = approach,
+               group = approach)) + 
+    geom_line() +
+    xlim(1,0)
+```
 
-### Inleiding
+
+## De relatie tussen koppelingsmethode, oppervlaktevertegenwoordiging en grootte van een sampling unit, en populatiegrootte
+
+### Koppelingsmethode versus oppervlaktevertegenwoordiging van een sampling unit
 
 Een belangrijk element van de steekproefopzet is de definitie van de steekproefeenheid.
 Als we dit definiëren als een rastercel van 32 x 32 m², waarbij op een van de voormelde manieren (punt- of celgebaseerd) wordt bepaald of de rastercel deel uitmaakt van het steekproefkader / de steekproef, is de default in een equal-probability design om deze cellen ook elk evenveel rol te laten spelen in het inferentiestadium. ^[
