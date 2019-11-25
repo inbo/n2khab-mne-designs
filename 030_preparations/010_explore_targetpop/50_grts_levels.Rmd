@@ -30,6 +30,11 @@ zullen we kijken naar relaties tussen **level0** en **level3**:
 
 We willen weten hoe snel elke concrete level3 wordt herbezocht, bij het aflopen van alle level0-cellen van een type volgens de GRTS-rangschikking.
 
+```{r include=FALSE}
+vc_polygon_id <- all(file.exists("grts_polygon_id.tsv", "grts_polygon_id.yml"))
+```
+
+
 ```{r eval=FALSE}
 hmt_pol_id <- 
     hmt_pol %>% 
@@ -44,13 +49,13 @@ system("v.to.rast input=hmt_pol_id output=hmt_pol_ras use=attr attribute_column=
 system("r.out.gdal input=hmt_pol_ras output=pol_id.tif -c --overwrite")
 ```
 
-```{r eval=FALSE}
+```{r eval=!vc_polygon_id}
 r_pol_id <- raster("pol_id.tif")
 NAvalue(r_pol_id) <- -1 # also all values lower than -1 will be NA
 # r_pol_id[] %>% summary
 ```
 
-```{r eval=FALSE}
+```{r eval=!vc_polygon_id}
 grts_b <- read_GRTSmh(brick = TRUE)
 grts_b[[11]] <- r_pol_id
 grts_polygon_id <- 
@@ -63,14 +68,17 @@ grts_polygon_id <-
 ```
 
 
-```{r eval=FALSE}
+```{r eval=!vc_polygon_id}
 # an idea for n2khab_data (+ reading function in n2khab):
-# grts_polygon_id %>% git2rdata::write_vc("grts_polygon_id", sorting = "level0")
+grts_polygon_id %>% git2rdata::write_vc("grts_polygon_id", sorting = "level0")
 # grts_polygon_id %>% write_csv("grts_polygon_id.csv")
-# grts_polygon_id <- git2rdata::read_vc("grts_polygon_id") %>% as_tibble
-# but perhaps still better to do this with grts_type
 ```
 
+
+```{r}
+grts_polygon_id <- git2rdata::read_vc("grts_polygon_id") %>% as_tibble
+# but perhaps still better to do this with grts_type
+```
 
 ```{r fig.width=8, fig.height=10, warning=FALSE}
 type_grts <- 
