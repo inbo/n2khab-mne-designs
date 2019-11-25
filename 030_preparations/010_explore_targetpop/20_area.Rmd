@@ -354,6 +354,68 @@ hmt_occ_area %>%
 De verdeling van type-oppervlaktes op sub-level0 niveau (< 1024 m^2^) blijkt vrij gelijkmatig.
 Alleen de heel lage oppervlaktes (< ca. 75 m^2^) komen minder vaak voor.
 
+We kunnen dit ook weergeven volgens klassen van oppervlakte:
+
+```{r}
+cut_m2 <- function(x) {
+  cut(x %>% 
+        set_units("m^2") %>% 
+        drop_units, 
+      c(seq(0, 1024, 256), seq(2048, 8192, 2048), 16384, 32768, 65536, 10e6),
+      include.lowest = TRUE,
+      dig.lab = 7
+  )
+}
+```
+
+
+```{r}
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2) %>%
+  ggplot(aes(x = area_m2)) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+De eerste 4 balkjes betreffen groottes kleiner dan de level0-cel van 32 x 32 m².
+
+Relatief uitgedrukt:
+
+```{r fig.height=3.5, fig.width=9}
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2 %>% fct_rev) %>%
+  ggplot(aes(x = "all_types", fill = area_m2)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(x = NULL, y = "distribution of type occurrences")
+```
+
+We zien dat > 20% van de voorkomens van types gaat over oppervlaktes kleiner dan de level0-cel.
+
+Wanneer we dit per type bekijken:
+
+```{r fig.height=12, fig.width=7}
+typelevels_area <- 
+  hmt_occ_area %>% 
+  mutate(area = area %>% set_units("m^2") %>% drop_units) %>% 
+  group_by(type) %>% 
+  summarize(prop1024 = sum(area <= 1024) / n()) %>% 
+  arrange(prop1024) %>% 
+  .$type %>% 
+  as.character
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2 %>% fct_rev,
+         type = factor(type, levels = typelevels_area)) %>%
+  ggplot(aes(x = type, fill = area_m2)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(y = "distribution of type occurrences")
+```
+
+Er is bij heel wat types een aanzienlijk aandeel van ocurrences waar de oppervlakte van het type in de polygoon kleiner is dan de oppervlakte van een level0-cel (1024 m²).
+
 Niet van elk type was bij de kartering (of bij omzetting van de BWK) even zeker dat het om het betreffende type gaat (gestapeld histogram):
 
 ```{r message=FALSE, warning=FALSE}
