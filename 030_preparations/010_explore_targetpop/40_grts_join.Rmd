@@ -517,5 +517,35 @@ pop_size %>%
     lapply(function(x) quantile(x$population_size, c(0,.1,.25,.5,.75,.9,1)))
 ```
 
+De geschatte totale oppervlakte van een type volgens een celgebaseerde koppeling komt per definitie exact overeen met de doelpopulatie-oppervlakte op basis van de polygonen + phab-waarde, vermits de reële oppervlakte per cel wordt aangenomen (al dan niet gemiddeld over cellen).
+
+De geschatte totale oppervlakte van een type volgens een centroïdgebaseerde koppeling, in verhouding tot de totale oppervlakte van het type op basis van de polygonen + phab-waarde, duidt erop dat de concrete implementatie van de centroïdgebaseerde koppeling kan leiden tot overschatting van de reële oppervlakte:
+
+```{r message=FALSE, warning=FALSE}
+cell_area <- 32^2 %>% set_units("m^2") %>% set_units("ha")
+pop_size %>% 
+    filter(count_method == "centroidbased") %>% 
+    mutate(area_centroid = population_size * cell_area) %>% 
+    select(-count_method, -population_size) %>% 
+    inner_join(typest_area %>% rename(area_vectorbased = area), 
+               by = "type") %>% 
+    mutate(area_rel = (area_centroid / area_vectorbased) %>% drop_units) %>% 
+    ggplot(aes(x = area_rel)) + 
+    geom_histogram(fill = "white", colour = "grey60") + 
+    xlim(0, 5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
