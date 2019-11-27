@@ -406,7 +406,7 @@ Relatief uitgedrukt:
 ```{r patch-areas, fig.height=3.5, fig.width=9}
 hmt_occ_area %>% 
   mutate(area_m2 = area %>% cut_m2 %>% fct_rev) %>%
-  ggplot(aes(x = "all_types", fill = area_m2)) +
+  ggplot(aes(x = "terrestrial_types", fill = area_m2)) +
   geom_bar(position = "fill") +
   scale_y_continuous(breaks = seq(0,1,0.1)) +
   coord_flip() +
@@ -437,6 +437,49 @@ hmt_occ_area %>%
 ```
 
 Er is bij heel wat types een aanzienlijk aandeel van ocurrences waar de oppervlakte van het type in de polygoon kleiner is dan de oppervlakte van een level0-cel (1024 m²).
+
+Verdeling van deze klassen volgens oppervlakte:
+
+
+```{r fig.height=3.5, fig.width=9}
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2 %>% fct_rev,
+         area = area %>% drop_units) %>%
+  group_by(area_m2) %>% 
+  summarise(area = sum(area)) %>% 
+  ggplot(aes(x = "terrestrial_types", y = area, fill = area_m2)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(x = NULL, y = "areal distribution")
+```
+
+Per type:
+
+```{r fig.height=12, fig.width=7}
+typelevels_area <- 
+  hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2) %>% 
+  group_by(type) %>% 
+  summarize(areaprop1024 = sum(area[(.data$area %>% drop_units) <= 0.1024]) / sum(area)) %>% 
+  arrange(areaprop1024) %>% 
+  .$type %>% 
+  as.character
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2 %>% fct_rev,
+         type = factor(type, levels = typelevels_area),
+         area = area %>% drop_units) %>%
+  group_by(area_m2, type) %>% 
+  summarise(area = sum(area)) %>% 
+  ggplot(aes(x = type, y = area, fill = area_m2)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(x = NULL, y = "areal distribution")
+```
+
+Logischerwijs zien we bij de oppervlaktegewogen benadering maar een klein overall aandeel van de kleine oppervlaktes.
+Echter, bij zo'n 10 à 15 types (bovenaan in de grafiek) is het oppervlakte-aandeel ervan nog steeds > 10% (en soms > 20%).
 
 Niet van elk type was bij de kartering (of bij omzetting van de BWK) even zeker dat het om het betreffende type gaat (gestapeld histogram):
 
