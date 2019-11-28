@@ -85,8 +85,10 @@ grts_polygon_id <- git2rdata::read_vc("grts_polygon_id") %>% as_tibble
 ```{r fig.width=8, fig.height=10, warning=FALSE}
 type_grts <- 
     hmt_occ %>% 
-    select(polygon_id, type) %>% 
-    distinct %>% 
+    select(polygon_id, type, phab) %>% 
+    group_by(polygon_id, type) %>% 
+    summarise(phab = mean(phab)) %>% 
+    ungroup %>% 
     inner_join(grts_polygon_id, 
                by = "polygon_id")
 turnover3 <- 
@@ -185,7 +187,7 @@ type_grts %>%
 
 ### Aantal level0-cellen binnen de level3-cellen van een type
 
-De meerderheid van de level3-cellen heeft per type meerdere level0-cellen ter beschikking (in bepaalde gevallen tientallen):
+Zonder correctie volgens trefkans krijgen we het beeld dat de meerderheid van de level3-cellen per type meerdere level0-cellen ter beschikking heeft (in bepaalde gevallen tientallen):
 
 ```{r fig.width=8, fig.height=10}
 count_0_in_3 <- 
@@ -206,5 +208,42 @@ count_0_in_3 %>%
     coord_flip() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
 ```
+
+Houden we rekening met de trefkans op een type, dan is dit het resultaat:
+
+```{r fig.width=8, fig.height=10}
+count_0_in_3 <- 
+    type_grts %>% 
+    group_by(type, level3) %>% 
+    summarise(nrlevel0cells_per_level3cell = sum(phab) / 100)
+typelev2 <- 
+    count_0_in_3 %>% 
+    summarise(med = median(nrlevel0cells_per_level3cell)) %>% 
+    arrange(med) %>% 
+    pull(type) %>% 
+    as.character
+count_0_in_3 %>% 
+    ungroup %>% 
+    mutate(type = factor(type, levels = typelev2)) %>% 
+    ggplot(aes(x = type, y = nrlevel0cells_per_level3cell)) +
+    geom_boxplot(outlier.size = 0.2, outlier.alpha = 0.3) +
+    coord_flip() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+In tabelvorm:
+
+```{r}
+count_0_in_3 %>% 
+    summarise(min = min(nrlevel0cells_per_level3cell),
+              q1 = quantile(nrlevel0cells_per_level3cell, 0.25),
+              q2 = quantile(nrlevel0cells_per_level3cell, 0.5),
+              q3 = quantile(nrlevel0cells_per_level3cell, 0.75),
+              max = max(nrlevel0cells_per_level3cell)) %>% 
+    mutate(type = factor(type, levels = typelev2) %>% fct_rev) %>% 
+    arrange(type) %>% 
+    kable
+```
+
 
 
