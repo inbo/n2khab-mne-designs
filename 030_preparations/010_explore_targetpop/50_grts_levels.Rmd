@@ -118,6 +118,25 @@ turnover3 %>%
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
 ```
 
+Voor heel wat types blijkt herbezoek dus lang te duren.
+Bemerk dat we hierbij niet hebben gecorrigeerd volgens de trefkans.
+
+```{r results="hide", eval=FALSE}
+# Takes way too long and produces very large GeoTIFF, so don't do it!
+system("i.group group=maxphab input=$(g.list type=raster pattern='max_*' separator=comma)")
+system("r.out.gdal input=maxphab output=maxphab.tif type=UInt16 -m -f -c")
+```
+
+```{r eval=FALSE}
+# use bbox of level 3  (see read_GRTSmh_diffres(level=3)):
+# system("g.proj -c datumtrans=1 epsg=31370") # this was necessary when linkGRASS() overwrited this, is fixed now
+system("g.region w=22030 e=259086 s=153054 n=244190 res=256")
+system("shellscripts/shellscript_05_r.resamp.stats_level3_parallel.sh")
+# This creates:
+# - lev3_summax_xxxx: sum of max_xxxx (res 32 m) at resolution 256 m
+```
+
+
 ## Coëxistentie van types in een level3-cel
 
 We willen weten in welke mate types van de gezamenlijke MNM-doelpopulatie samen voorkomen in dezelfde level3-cellen, en hoe zinvol het is om niet alleen het doeltype maar ook de andere types te bemonsteren.
@@ -257,16 +276,91 @@ p1 <-
 ```
 
 ```{r}
-count_0_in_3 %>% 
-    summarise(min = min(nrlevel0cells_per_level3cell),
-              q1 = quantile(nrlevel0cells_per_level3cell, 0.25),
-              q2 = quantile(nrlevel0cells_per_level3cell, 0.5),
-              q3 = quantile(nrlevel0cells_per_level3cell, 0.75),
-              max = max(nrlevel0cells_per_level3cell)) %>% 
-    mutate(type = factor(type, levels = typelev2) %>% fct_rev) %>% 
-    arrange(type) %>% 
-    kable
+# use bbox of level 3 (see read_GRTSmh_diffres(level=3)):
+# system("g.proj -c datumtrans=1 epsg=31370") # this was necessary when linkGRASS() overwrited this, is fixed now
+system("g.region w=22030 e=259086 s=153054 n=244190 res=256")
 ```
 
 
+```{r message=FALSE, results="hide"}
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.stats",
+              flags = "c",
+              input = str_c("lev3_summax_", types_hmt[i]),
+              separator = "tab",
+              nsteps = 100)
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        enframe(name = NULL, value = "string") %>% 
+        separate(col = string,
+                 into = c("phabsummax", "count"),
+                 sep = "\t") %>% 
+        filter(phabsummax != "*") %>% 
+        mutate(phabsummax1 = str_sub(phabsummax, 1, 
+                               str_locate(.$phabsummax, "-")[,1] - 1) %>% as.numeric,
+               phabsummax2 = str_sub(phabsummax, 
+                               str_locate(.$phabsummax, "-")[,1] + 1) %>% as.numeric,
+               count = as.numeric(count),
+               type = types_hmt[i]) %>% 
+        rowwise %>% 
+        # divide by 100 to get phab as fraction
+        mutate(nrlevel0 = mean(c(phabsummax1, phabsummax2) / 100)) %>% 
+        ungroup %>% 
+        select(type, nrlevel0, count)
+    
+    if (i == 1) {
+        hmt_nrlevel0 <- type_result
+        } else {
+        hmt_nrlevel0 <- 
+            hmt_nrlevel0 %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+```
+
+```{r fig.height=12, fig.width=7}
+typelev4 <- 
+    hmt_nrlevel0 %>% 
+    group_by(type) %>% 
+    summarise(prop0 = sum(.data$count[.data$nrlevel0 < 0.5]) / sum(count),
+              prop1 = sum(.data$count[.data$nrlevel0 < 1.5]) / sum(count)
+              ) %>% 
+    arrange(prop1, prop0) %>% 
+    pull(type) %>% 
+    as.character
+p2 <- 
+    hmt_nrlevel0 %>% 
+    mutate(nrlevel0cells_per_level3cell_class = cut(nrlevel0, 
+                                                c(0, 0.5, 0.75, 1.5, 2.5, 3.5, 5.5, 7.5, 64),
+                                                include.lowest = TRUE,
+                                                right = FALSE) %>% fct_rev,
+           type = factor(type, levels = typelev4) %>% fct_rev
+           ) %>% 
+    group_by(type, nrlevel0cells_per_level3cell_class) %>% 
+    summarise(freq = sum(count)) %>% 
+    ggplot(aes(x = type, y = freq, fill = nrlevel0cells_per_level3cell_class)) +
+    geom_col(position = "fill") +
+    coord_flip() +
+    labs(y = "Proportion of level3-cells",
+         title = "Cell-based")
+```
+
+```{r results="hide"}
+# again use bbox & resolution of GRTSmh:
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+# system("g.region -p
+#         g.proj -j")
+```
+
+```{r fig.height=12, fig.width=15}
+gridExtra::grid.arrange(p1, p2, nrow = 1)
+```
+
+
+
+    
 
