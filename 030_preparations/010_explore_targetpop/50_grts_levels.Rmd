@@ -231,7 +231,30 @@ count_0_in_3 %>%
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
 ```
 
-In tabelvorm:
+
+```{r fig.height=12, fig.width=7}
+typelev3 <- 
+    count_0_in_3 %>% 
+    summarise(prop0 = sum(nrlevel0cells_per_level3cell < 0.5) / n(),
+              prop1 = sum(nrlevel0cells_per_level3cell < 1.5) / n()) %>% 
+    arrange(prop1, prop0) %>% 
+    pull(type) %>% 
+    as.character
+p1 <- 
+    count_0_in_3 %>% 
+    ungroup %>% 
+    mutate(nrlevel0cells_per_level3cell_class = cut(nrlevel0cells_per_level3cell, 
+                                                c(0, 0.5, 0.75, 1.5, 2.5, 3.5, 5.5, 7.5, 64),
+                                                include.lowest = TRUE,
+                                                right = FALSE) %>% fct_rev,
+           type = factor(type, levels = typelev3) %>% fct_rev
+           ) %>% 
+    ggplot(aes(x = type, fill = nrlevel0cells_per_level3cell_class)) +
+    geom_bar(position = "fill") +
+    coord_flip() +
+    labs(y = "Proportion of level3-cells",
+         title = "Centroid-based")
+```
 
 ```{r}
 count_0_in_3 %>% 
