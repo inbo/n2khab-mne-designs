@@ -131,7 +131,9 @@ system("shellscripts/shellscript_05_r.resamp.stats_level3_parallel.sh")
 ```
 
 
-## Coëxistentie van types in een level3-cel
+## Coëxistentie van types in een GRTS-cel van hoger hiërarchisch niveau
+
+### Op level3-niveau
 
 We willen weten in welke mate types van de gezamenlijke MNM-doelpopulatie samen voorkomen in dezelfde level3-cellen, en hoe zinvol het is om niet alleen het doeltype maar ook de andere types te bemonsteren.
 
@@ -166,9 +168,44 @@ type_grts %>%
 Dit wil dus zeggen dat steekproeven van grootte 50 (per type) _niet_ tussen types overlappen op het niveau van level3-cellen.
 Met andere woorden, een update van het steekproefkader op terrein zal vooral voor het type in kwestie een potentieel bruikbare benadering zijn, en niet voor andere types.
 
-## Het voorkomen van types in level3- en level0-cellen
+### Op level4-niveau
+
+Verdeling van het aantal types dat samen voorkomt in een level4-cel (zonder met trefkans op level4-niveau rekening te houden):
+
+```{r}
+type_grts %>% 
+    distinct(level4, type) %>% 
+    count(level4,
+          name = "nrtypes") %>% 
+    ggplot(aes(x = nrtypes)) +
+    geom_bar() +
+    ylab("nr_level3cells")
+```
+
+Deze verdeling is iets meer naar rechts dan bij het level3-niveau, wat logisch is.
+
+Verdeling van het aantal types dat samen voorkomt in een level4-cel, _binnen de level0-cellen die bemonsterd worden indien n~type~ = 50_:
+
+```{r fig.width=2, fig.height=2}
+type_grts %>% 
+    group_by(type) %>% 
+    arrange(type, level0) %>% 
+    slice(1:50) %>% 
+    distinct(level4, type) %>% 
+    count(level4,
+          name = "nrtypes") %>% 
+    ggplot(aes(x = nrtypes)) +
+    geom_bar(fill = "white", colour = "grey60") +
+    scale_x_continuous(breaks = 1) +
+    ylab("nrcells")
+```
+
+Hier geldt nog steeds dezelfde conclusie als voor level3.
+
+## Het voorkomen van types in hogere-orde- en level0-cellen
 
 We willen weten hoeveel level3-cellen, en level0-cellen per level3-cel er ter beschikking zijn per type.
+Analoog voor level4.
 
 ### Het voorkomen van types in level3-cellen
 
@@ -198,7 +235,84 @@ type_grts %>%
     ylab("nrtypes")
 ```
 
-### Aantal level0-cellen binnen de level3-cellen van een type
+### Het voorkomen van types in level4-cellen
+
+Verdeling van het aantal level4-cellen per type (zonder rekening te houden met trefkans, i.e. level0-cellen worden meegeteld in de level4-cel wanneer hun centroïd in een polygoon valt _met_ het type):
+
+```{r level4-pertype, warning=FALSE}
+type_grts %>% 
+    distinct(level4, type) %>% 
+    count(type,
+          name = "nrcells") %>% 
+    ggplot(aes(x = nrcells)) +
+    geom_histogram(binwidth = 200, fill = "white", colour = "grey60") +
+    scale_x_continuous(limits = c(-100,7000), breaks = seq(0,7000,400)) +
+    ylab("nrtypes")
+```
+
+Verdeling van het aantal level4-cellen per type, in de laagste klassen:
+
+```{r warning=FALSE}
+type_grts %>% 
+    distinct(level4, type) %>% 
+    count(type,
+          name = "nrcells") %>% 
+    ggplot(aes(x = nrcells)) +
+    geom_histogram(binwidth = 50, fill = "white", colour = "grey60") +
+    scale_x_continuous(limits = c(-50,1000), breaks = seq(0,1000,100)) +
+    ylab("nrtypes")
+```
+
+De distributie van het aantal level4-cellen is iets schever naar links dan voor level3 (zoals te verwachten), maar slechts in beperkte mate.
+Dit betekent dat veel level3-cellen als enige cel het type bevatten, binnen hun overeenkomstige level4-cel.
+
+We kunnen dit laatste meer concreet visualiseren als het aantal level3-cellen dat het type 'effectief' bevat (gedefinieerd volgens 'bevat minstens 1 level0-cel, rekening houdend met phab-correctie (dus som van phab-fracties is minstens 1)), per level 4-cel die een polygoon met het type omvat:
+
+```{r fig.height=2.5, fig.width=7}
+count_3_in_4 <- 
+    type_grts %>% 
+    group_by(type, level3, level4) %>% 
+    summarise(nrlevel0_in_3 = sum(phab) / 100) %>% 
+    group_by(type, level4) %>% 
+    summarise(nrlevel3cells_with_type_per_level4cell = sum(nrlevel0_in_3 >= 1)) %>% 
+    ungroup %>% 
+    mutate(nrlevel3cells_with_type_per_level4cell = factor(nrlevel3cells_with_type_per_level4cell) %>% fct_rev)
+count_3_in_4 %>% 
+    ggplot(aes(x = "terrestrial_types", 
+               fill = nrlevel3cells_with_type_per_level4cell)) +
+    geom_bar(position = "fill") +
+    labs(x = NULL, y = "distribution of level4-cells", fill = "nr of level3-cells\nwith type\nper level4-cell\nmatching polygon") +
+    coord_flip()
+```
+
+Apart per type:
+
+```{r fig.height=12, fig.width=7}
+typelev34 <- 
+    count_3_in_4 %>% 
+    count(type, nrlevel3cells_with_type_per_level4cell) %>% 
+    pivot_wider(names_from = nrlevel3cells_with_type_per_level4cell,
+                values_from = n,
+                values_fill = list(n = 0)) %>% 
+    mutate(total = `0` + `1` + `2` + `3` + `4`,
+           prop01 = (`0` + `1`) / total,
+           prop2 = `2` / total) %>% 
+    arrange(-prop01, -prop2) %>% 
+    pull(type) %>% 
+    as.character
+count_3_in_4 %>%
+    mutate(type = factor(type, levels = typelev34)) %>% 
+    ggplot(aes(x = type, 
+               fill = nrlevel3cells_with_type_per_level4cell)) +
+    geom_bar(position = "fill") +
+    labs(x = NULL, y = "distribution of level4-cells", fill = "nr of level3-cells\nwith type\nper level4-cell\nmatching polygon") +
+    coord_flip()
+```
+
+
+### Aantal level0-cellen binnen de hogere-orde-cellen van een type
+
+#### Level3-niveau
 
 Zonder correctie volgens trefkans krijgen we het beeld dat de meerderheid van de level3-cellen per type meerdere level0-cellen ter beschikking heeft (in bepaalde gevallen tientallen):
 
@@ -269,7 +383,7 @@ p1 <-
     geom_bar(position = "fill") +
     coord_flip() +
     labs(y = "Proportion of level3-cells",
-         title = "Centroid-based")
+         title = "Centroid-based, level 3")
 ```
 
 ```{r}
@@ -343,14 +457,7 @@ p2 <-
     geom_col(position = "fill") +
     coord_flip() +
     labs(y = "Proportion of level3-cells",
-         title = "Cell-based")
-```
-
-```{r results="hide"}
-# again use bbox & resolution of GRTSmh:
-system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
-# system("g.region -p
-#         g.proj -j")
+         title = "Cell-based, level 3")
 ```
 
 ```{r fig.height=12, fig.width=15}
@@ -362,6 +469,49 @@ _Noot: voor celgebaseerd zal het resultaat in werkelijkheid nog beter zijn. De t
 Het is hieruit duidelijk dat we met de centroïdgebaseerde benadering nog geregeld bij heel wat types level3-cellen (na kartering) zullen moeten afstoten omdat geen enkele level0-cel het type bevat.
 
 
+#### Level4-niveau
 
+Een optie is om ook level4-cellen te karteren (i.h.b. indien de ene level3-cel niets oplevert).
+
+```{r fig.height=12, fig.width=7}
+count_0_in_4 <- 
+    type_grts %>% 
+    group_by(type, level4) %>% 
+    summarise(nrlevel0cells_per_level4cell = sum(phab) / 100)
+typelev04 <- 
+    count_0_in_4 %>% 
+    summarise(prop0 = sum(nrlevel0cells_per_level4cell < 0.5) / n(),
+              prop1 = sum(nrlevel0cells_per_level4cell < 1.5) / n()) %>% 
+    arrange(prop1, prop0) %>% 
+    pull(type) %>% 
+    as.character
+p3 <- 
+    count_0_in_4 %>% 
+    ungroup %>% 
+    mutate(nrlevel0cells_per_level4cell_class = cut(nrlevel0cells_per_level4cell, 
+                                                c(0, 0.5, 0.75, 1.5, 2.5, 3.5, 7.5, 64, 256),
+                                                include.lowest = TRUE,
+                                                right = FALSE) %>% fct_rev,
+           type = factor(type, levels = typelev04) %>% fct_rev
+           ) %>% 
+    ggplot(aes(x = type, fill = nrlevel0cells_per_level4cell_class)) +
+    geom_bar(position = "fill") +
+    coord_flip() +
+    labs(y = "Proportion of level4-cells",
+         title = "Centroid-based, level 4")
+```
+
+```{r fig.height=12, fig.width=15}
+gridExtra::grid.arrange(p1, p3, nrow = 1)
+```
     
+Deze grafiek toont enige verbetering aan in de reductie van level4-cellen zonder level0-cel, maar niet dramatisch.
+Dit komt doordat in meer dan de helft van de gevallen maar 0 of 1 level3-cellen per level4-cel beschikbaar zijn die effectief het type bevatten.
 
+
+```{r results="hide"}
+# again use bbox & resolution of GRTSmh:
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+# system("g.region -p
+#         g.proj -j")
+```
