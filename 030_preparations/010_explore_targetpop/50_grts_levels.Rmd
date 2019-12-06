@@ -137,33 +137,40 @@ system("shellscripts/shellscript_05_r.resamp.stats_level3_parallel.sh")
 
 We willen weten in welke mate types van de gezamenlijke MNM-doelpopulatie samen voorkomen in dezelfde level3-cellen, en hoe zinvol het is om niet alleen het doeltype maar ook de andere types te bemonsteren.
 
-Verdeling van het aantal types dat samen voorkomt in een level3-cel (zonder met trefkans op level3-niveau rekening te houden):
+Verdeling van het aantal types dat samen voorkomt in een level3-cel, gebruik makend van een puntgebaseerde koppeling (i.e. met correctie volgens phab):
 
 ```{r}
-type_grts %>% 
-    distinct(level3, type) %>% 
+type_grts_effective_lev3 <- 
+    type_grts %>% 
+    group_by(level3, type) %>% 
+    summarise(nr_level0 = sum(phab) / 100) %>% 
+    filter(nr_level0 >= 1) %>% 
+    ungroup
+type_grts_effective_lev3 %>% 
     count(level3,
-          name = "nrtypes") %>% 
-    ggplot(aes(x = nrtypes)) +
+          name = "nrtypes_per_level3cell") %>% 
+    ggplot(aes(x = nrtypes_per_level3cell)) +
     geom_bar() +
     ylab("nr_level3cells")
 ```
 
-Verdeling van het aantal types dat samen voorkomt in een level3-cel, _binnen de level0-cellen die bemonsterd worden indien n~type~ = 50_:
+Verdeling van het aantal types dat samen voorkomt in een level3-cel, _binnen de level3-cellen die (effectief, dus phab-gecorrigeerd) bemonsterd worden indien n~type~ = 50_:
 
-```{r fig.width=2, fig.height=2}
+```{r}
 type_grts %>% 
+    semi_join(type_grts_effective_lev3, 
+              by = c("type", "level3")) %>% 
     group_by(type) %>% 
     arrange(type, level0) %>% 
     slice(1:50) %>% 
     ungroup %>% 
     distinct(level3, type) %>% 
     count(level3,
-          name = "nrtypes") %>% 
-    ggplot(aes(x = nrtypes)) +
-    geom_bar(fill = "white", colour = "grey60") +
-    scale_x_continuous(breaks = 1) +
-    ylab("nrcells")
+          name = "nrtypes_per_level3cell") %>% 
+    ggplot(aes(x = nrtypes_per_level3cell)) +
+    geom_bar() +
+    labs(y = "nr_level3cells",
+         title = "Sample size of 50 units per type (or all units if N < 50)")
 ```
 
 Dit wil dus zeggen dat steekproeven van grootte 50 (per type, of minder dan 50 indien N~type~ < 50) in beperkte mate tussen types overlappen op het niveau van level3-cellen (< 20% van de level3-cellen.
@@ -171,35 +178,42 @@ Bijgevolg heeft het zin om ook een of meer andere types te lokaliseren op level3
 
 ### Op level4-niveau
 
-Verdeling van het aantal types dat samen voorkomt in een level4-cel (zonder met trefkans op level4-niveau rekening te houden):
+Verdeling van het aantal types dat samen voorkomt in een level4-cel, gebruik makend van een puntgebaseerde koppeling (i.e. met correctie volgens phab):
 
 ```{r}
-type_grts %>% 
-    distinct(level4, type) %>% 
+type_grts_effective_lev4 <- 
+    type_grts %>% 
+    group_by(level4, type) %>% 
+    summarise(nr_level0 = sum(phab) / 100) %>% 
+    filter(nr_level0 >= 1) %>% 
+    ungroup
+type_grts_effective_lev4 %>% 
     count(level4,
-          name = "nrtypes") %>% 
-    ggplot(aes(x = nrtypes)) +
+          name = "nrtypes_per_level4cell") %>% 
+    ggplot(aes(x = nrtypes_per_level4cell)) +
     geom_bar() +
-    ylab("nr_level3cells")
+    ylab("nr_level4cells")
 ```
 
 Deze verdeling is iets meer naar rechts dan bij het level3-niveau, wat logisch is.
 
-Verdeling van het aantal types dat samen voorkomt in een level4-cel, _binnen de level0-cellen die bemonsterd worden indien n~type~ = 50_:
+Verdeling van het aantal types dat samen voorkomt in een level4-cel, _binnen de level4-cellen die bemonsterd worden indien n~type~ = 50_:
 
-```{r fig.width=2, fig.height=2}
+```{r}
 type_grts %>% 
+    semi_join(type_grts_effective_lev4, 
+              by = c("type", "level4")) %>% 
     group_by(type) %>% 
     arrange(type, level0) %>% 
     slice(1:50) %>% 
     ungroup %>% 
     distinct(level4, type) %>% 
     count(level4,
-          name = "nrtypes") %>% 
-    ggplot(aes(x = nrtypes)) +
-    geom_bar(fill = "white", colour = "grey60") +
-    scale_x_continuous(breaks = 1) +
-    ylab("nrcells")
+          name = "nrtypes_per_level4cell") %>% 
+    ggplot(aes(x = nrtypes_per_level4cell)) +
+    geom_bar() +
+    labs(y = "nr_level4cells",
+         title = "Sample size of 50 units per type (or all units if N < 50)")
 ```
 
 Hier geldt dezelfde conclusie als voor level3.
