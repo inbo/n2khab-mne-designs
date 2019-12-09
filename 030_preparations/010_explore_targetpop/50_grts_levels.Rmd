@@ -506,6 +506,147 @@ gridExtra::grid.arrange(p1, p3, nrow = 1)
 Deze grafiek toont enige verbetering aan in de reductie van level4-cellen zonder level0-cel, maar beperkt.
 Dit komt doordat in meer dan de helft van de gevallen maar 0 of 1 level3-cellen per level4-cel beschikbaar zijn die effectief het type bevatten.
 
+### Aantal 16 x 16 m² cellen binnen de level3-cellen van een type
+
+We gaan aanvullend na in hoeverre voor de centroïd-gebaseerde koppeling verbetering optreedt in het aantal type-bevattende cellen (binnen een level3-cel) door sampling units te nemen van 16 x 16 m² (level '-1').
+
+```{r include=FALSE}
+vc_polygon_id16 <- all(file.exists("grts16_polygon_id.tsv", "grts16_polygon_id.yml"))
+```
+
+```{r results="hide", eval=!vc_polygon_id16}
+# again use bbox & resolution of GRTSmh:
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+system("g.region -p
+        g.proj -j")
+```
+
+```{r results="hide", warning=FALSE, eval=!vc_polygon_id16}
+# read GRTS level0 & level3 in the GRASS database
+execGRASS("r.in.gdal",
+          flags = "o",
+          input = file.path(fileman_up("n2khab_data"), "10_raw/GRTSmaster_habitats/GRTSmaster_habitats.tif"),
+          output = "GRTSmh_lev0"
+          )
+execGRASS("r.in.gdal",
+          flags = "o",
+          input = file.path(fileman_up("n2khab_data"), "20_processed/GRTSmh_diffres/GRTSmh_diffres.3.tif"),
+          output = "GRTSmh_lev3"
+          )
+```
+
+
+```{r results="hide", eval=!vc_polygon_id16}
+# use resolution of 16 m:
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=16")
+system("g.region -p
+        g.proj -j")
+```
+
+
+```{r results="hide", eval=!vc_polygon_id16}
+system("v.to.rast input=hmt_pol_id output=hmt_pol_ras16 use=attr attribute_column=pol_id memory=3000 --overwrite")
+```
+
+
+
+```{r results="hide", eval=!vc_polygon_id16}
+system("i.group group=basemaps_for_res16 input=hmt_pol_ras16,GRTSmh_lev0,GRTSmh_lev3")
+system("r.out.gdal input=basemaps_for_res16 output=rasters_16.tif type=Int32 -m -c --overwrite")
+```
+
+```{r eval=!vc_polygon_id16}
+rasters_16 <- brick("rasters_16.tif")
+names(rasters_16) <- c("pol_id", "grts0_16", "level3")
+NAvalue(rasters_16) <- -1 # also all values lower than -1 will be NA
+```
+
+```{r eval=!vc_polygon_id16}
+rasters_16$pol_id[] %>% summary
+rasters_16$grts0_16[] %>% summary
+rasters_16$level3[] %>% summary
+```
+
+
+```{r eval=!vc_polygon_id16}
+hmt_pol_id <- 
+    hmt_pol %>% 
+    mutate(pol_id = 1:n())
+```
+
+
+```{r eval=!vc_polygon_id16}
+grts16_polygon_id <- 
+    rasters_16[!is.na(rasters_16$pol_id)] %>% 
+    as_tibble %>% 
+    filter(!is.na(grts0_16)) %>% # removes a series of border cells
+    inner_join(hmt_pol_id %>% st_drop_geometry, 
+               by = "pol_id") %>% 
+    select(-pol_id)
+```
+
+
+```{r eval=!vc_polygon_id16, warning=FALSE}
+# an idea for n2khab_data (+ reading function in n2khab):
+grts16_polygon_id %>% git2rdata::write_vc("grts16_polygon_id", sorting = "grts0_16")
+```
+
+```{r}
+grts16_polygon_id <- git2rdata::read_vc("grts16_polygon_id") %>% as_tibble
+# but perhaps still better to do this with type_grts16
+```
+
+
+```{r}
+type_grts16 <- 
+    hmt_occ %>% 
+    select(polygon_id, type, phab) %>% 
+    group_by(polygon_id, type) %>% 
+    summarise(phab = mean(phab)) %>% 
+    ungroup %>% 
+    inner_join(grts16_polygon_id, 
+               by = "polygon_id")
+```
+
+```{r fig.height=12, fig.width=7}
+count_16_in_3 <- 
+    type_grts16 %>% 
+    group_by(type, level3) %>% 
+    summarise(nrres16cells_per_level3cell = sum(phab) / 100)
+typelev_16_in_3 <- 
+    count_16_in_3 %>% 
+    summarise(prop0 = sum(nrres16cells_per_level3cell < 0.5) / n(),
+              prop1 = sum(nrres16cells_per_level3cell < 1.5) / n()) %>% 
+    arrange(prop1, prop0) %>% 
+    pull(type) %>% 
+    as.character
+p16 <- 
+    count_16_in_3 %>% 
+    ungroup %>% 
+    mutate(nrres16cells_per_level3cell = cut(nrres16cells_per_level3cell, 
+                                                c(0, 0.5, 0.75, 1.5, 2.5, 3.5, 7.5, 64, 256),
+                                                include.lowest = TRUE,
+                                                right = FALSE) %>% fct_rev,
+           type = factor(type, levels = typelev_16_in_3) %>% fct_rev
+           ) %>% 
+    ggplot(aes(x = type, fill = nrres16cells_per_level3cell)) +
+    geom_bar(position = "fill") +
+    coord_flip() +
+    labs(y = "Proportion of level3-cells",
+         title = "Centroid-based for res 16 m, level 3")
+```
+
+Een vergelijking van de verdeling van level3-cellen, volgens het aantal type-bevattende level0- resp. level '-1' cellen, toont een verbetering op het '-1' niveau die het midden houdt tussen centroïd- en celgebaseerde koppeling voor level0:
+
+```{r fig.height=12, fig.width=15}
+gridExtra::grid.arrange(p1, p16, nrow = 1)
+```
+
+```{r fig.height=12, fig.width=15, eval=FALSE}
+gridExtra::grid.arrange(p3, p16, nrow = 1)
+```
+
+We beschouwen deze winst als onvoldoende, gegeven de nadelen dat 16x16 m² centroïden andere punten zijn dan de centroïden van het meetnet biotische habitatkwaliteit, en dat dit de populatiegrootte sterk zou doen toenemen.
 
 ```{r results="hide"}
 # again use bbox & resolution of GRTSmh:
@@ -513,3 +654,5 @@ system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
 # system("g.region -p
 #         g.proj -j")
 ```
+
+
