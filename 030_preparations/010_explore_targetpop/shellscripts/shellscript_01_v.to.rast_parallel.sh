@@ -85,10 +85,10 @@ rbbsp)
 for type in "${types[@]}" ; do
 # echo "type LIKE '${type}'"
 if [ `pgrep -c v.to.rast` -lt 4 ] ; then
-       v.to.rast input=hmt_polpat output=phabs_${type} where="type LIKE '${type}'" \
+       v.to.rast input=hmt_polpat_${type} output=phabs_${type} \
        use=attr attribute_column=phab memory=800 --overwrite &
    else
-       v.to.rast input=hmt_polpat output=phabs_${type} where="type LIKE '${type}'" \
+       v.to.rast input=hmt_polpat_${type} output=phabs_${type} \
        use=attr attribute_column=phab memory=800 --overwrite
    fi
 done

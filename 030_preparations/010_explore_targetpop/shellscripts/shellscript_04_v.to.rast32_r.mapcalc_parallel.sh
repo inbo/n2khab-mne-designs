@@ -81,11 +81,19 @@ rbbsf
 rbbso
 rbbsp)
 
+# generating per-type-layer of polygons with phab attributes:
+for type in "${types[@]}" ; do
+# echo "type LIKE '${type}'"
+       v.extract input=hmt_polpat output=hmt_polpat_${type} where="type LIKE '${type}'" \
+       --overwrite
+done
+wait
+
 # rasterizing phab attribute for each type, at resolution 32 meters, plus making a zones raster of it:
 for type in "${types[@]}" ; do
 while [ `pgrep -c v.to.rast` -ge 4 ]; do sleep 1; done
        echo "Started rasterizing for type '${type}' ..."
-       v.to.rast input=hmt_polpat output=phab_${type} where="type LIKE '${type}'" \
+       v.to.rast input=hmt_polpat_${type} output=phab_${type} \
          use=attr attribute_column=phab memory=800 --overwrite &
 done
 wait
