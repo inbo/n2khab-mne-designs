@@ -364,34 +364,40 @@ Vergelijking van de verdeling van level3-cellen tussen centroïd- en celgebaseer
 typelev3 <- 
     count_0_in_3 %>% 
     summarise(prop0 = sum(nrlevel0cells_per_level3cell < 0.5) / n(),
-              prop1 = sum(nrlevel0cells_per_level3cell < 1.5) / n()) %>% 
+              prop1 = sum(nrlevel0cells_per_level3cell < 1) / n()) %>% 
     arrange(prop1, prop0) %>% 
     pull(type) %>% 
     as.character
-p1 <- 
+cut_0_in_3 <- function(x) {
+    cut(x, 
+        c(0, 0.5, 1, 1.5, 2.5, 3.5, 5.5, 7.5, 64),
+        include.lowest = TRUE,
+        right = FALSE) %>% 
+        fct_rev
+}
+count_0_in_3_class <- 
     count_0_in_3 %>% 
     ungroup %>% 
-    mutate(nrlevel0cells_per_level3cell_class = cut(nrlevel0cells_per_level3cell, 
-                                                c(0, 0.5, 0.75, 1.5, 2.5, 3.5, 5.5, 7.5, 64),
-                                                include.lowest = TRUE,
-                                                right = FALSE) %>% fct_rev,
+    mutate(nrlevel0cells_per_level3cell_class = 
+               cut_0_in_3(nrlevel0cells_per_level3cell),
            type = factor(type, levels = typelev3) %>% fct_rev
-           ) %>% 
+           )
+p1 <- 
+    count_0_in_3_class %>% 
     ggplot(aes(x = type, fill = nrlevel0cells_per_level3cell_class)) +
     geom_bar(position = "fill") +
     coord_flip() +
-    labs(y = "Proportion of level3-cells",
-         title = "Centroid-based, level 3")
-```
-
-```{r}
-# use bbox of level 3 (see read_GRTSmh_diffres(level=3)):
-# system("g.proj -c datumtrans=1 epsg=31370") # this was necessary when linkGRASS() overwrited this, is fixed now
-system("g.region w=22030 e=259086 s=153054 n=244190 res=256")
+    labs(y = "distribution of level3-cells",
+         title = "Centroid-based, level 3") +
+    theme(legend.position = "bottom")
 ```
 
 
 ```{r message=FALSE, results="hide"}
+# use bbox of level 3 (see read_GRTSmh_diffres(level=3)):
+# system("g.proj -c datumtrans=1 epsg=31370") # this was necessary when linkGRASS() overwrited this, is fixed now
+system("g.region w=22030 e=259086 s=153054 n=244190 res=256")
+
 sink(tempfile())
 for (i in 1:length(types_hmt)) {
     out <- execGRASS("r.stats",
@@ -436,17 +442,14 @@ typelev4 <-
     hmt_nrlevel0 %>% 
     group_by(type) %>% 
     summarise(prop0 = sum(.data$count[.data$nrlevel0 < 0.5]) / sum(count),
-              prop1 = sum(.data$count[.data$nrlevel0 < 1.5]) / sum(count)
+              prop1 = sum(.data$count[.data$nrlevel0 < 1]) / sum(count)
               ) %>% 
     arrange(prop1, prop0) %>% 
     pull(type) %>% 
     as.character
 p2 <- 
     hmt_nrlevel0 %>% 
-    mutate(nrlevel0cells_per_level3cell_class = cut(nrlevel0, 
-                                                c(0, 0.5, 0.75, 1.5, 2.5, 3.5, 5.5, 7.5, 64),
-                                                include.lowest = TRUE,
-                                                right = FALSE) %>% fct_rev,
+    mutate(nrlevel0cells_per_level3cell_class = cut_0_in_3(nrlevel0),
            type = factor(type, levels = typelev4) %>% fct_rev
            ) %>% 
     group_by(type, nrlevel0cells_per_level3cell_class) %>% 
@@ -454,8 +457,9 @@ p2 <-
     ggplot(aes(x = type, y = freq, fill = nrlevel0cells_per_level3cell_class)) +
     geom_col(position = "fill") +
     coord_flip() +
-    labs(y = "Proportion of level3-cells",
-         title = "Cell-based, level 3")
+    labs(y = "distribution of level3-cells",
+         title = "Cell-based, level 3") +
+    theme(legend.position = "bottom")
 ```
 
 ```{r fig.height=12, fig.width=15}
@@ -495,8 +499,9 @@ p3 <-
     ggplot(aes(x = type, fill = nrlevel0cells_per_level4cell_class)) +
     geom_bar(position = "fill") +
     coord_flip() +
-    labs(y = "Proportion of level4-cells",
-         title = "Centroid-based, level 4")
+    labs(y = "distribution of level4-cells",
+         title = "Centroid-based, level 4") +
+    theme(legend.position = "bottom")
 ```
 
 ```{r fig.height=12, fig.width=15}
@@ -505,6 +510,8 @@ gridExtra::grid.arrange(p1, p3, nrow = 1)
     
 Deze grafiek toont enige verbetering aan in de reductie van level4-cellen zonder level0-cel, maar beperkt.
 Dit komt doordat in meer dan de helft van de gevallen maar 0 of 1 level3-cellen per level4-cel beschikbaar zijn die effectief het type bevatten.
+
+We besluiten om (standaard) niet verder naar vervangende level0-cellen te zoeken op level4-niveau.
 
 ### Aantal 16 x 16 m² cellen binnen de level3-cellen van een type
 
@@ -632,8 +639,9 @@ p16 <-
     ggplot(aes(x = type, fill = nrres16cells_per_level3cell)) +
     geom_bar(position = "fill") +
     coord_flip() +
-    labs(y = "Proportion of level3-cells",
-         title = "Centroid-based for res 16 m, level 3")
+    labs(y = "distribution of level3-cells",
+         title = "Centroid-based for res 16 m, level 3") +
+    theme(legend.position = "bottom")
 ```
 
 Een vergelijking van de verdeling van level3-cellen, volgens het aantal type-bevattende level0- resp. level '-1' cellen, toont een verbetering op het '-1' niveau die het midden houdt tussen centroïd- en celgebaseerde koppeling voor level0:
@@ -647,6 +655,8 @@ gridExtra::grid.arrange(p3, p16, nrow = 1)
 ```
 
 We beschouwen deze winst als onvoldoende, gegeven de nadelen dat 16x16 m² centroïden andere punten zijn dan de centroïden van het meetnet biotische habitatkwaliteit, en dat dit de populatiegrootte sterk zou doen toenemen.
+
+Bijgevolg besluiten we om te kijken naar level0-cellen, binnen level3-cellen voor de vervanging.
 
 ```{r results="hide"}
 # again use bbox & resolution of GRTSmh:
