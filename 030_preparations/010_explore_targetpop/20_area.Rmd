@@ -195,7 +195,8 @@ hmt_occ_area <-
   hmt_occ %>% 
   select(polygon_id, type, certain, phab) %>% 
   inner_join(hmt_area, by = "polygon_id") %>% 
-  mutate(area = area * phab / 100,
+  rename(area_pol = area) %>% 
+  mutate(area = area_pol * phab / 100,
          phab_class = cut(phab, c(0, 5, 10, 25, 50, 75, 90, 95, 100), 
                           include.lowest = TRUE) %>% fct_rev)
 ```
@@ -483,7 +484,52 @@ hmt_occ_area %>%
 ```
 
 Logischerwijs zien we bij de oppervlaktegewogen benadering maar een klein overall aandeel van de kleine oppervlaktes.
-Echter, bij zo'n 10 à 15 types (bovenaan in de grafiek) is het oppervlakte-aandeel ervan nog steeds > 10% (en soms > 20%).
+Echter, bij zo'n 10 à 15 types (onderaan in de grafiek) is het oppervlakte-aandeel ervan nog steeds > 10% (en soms > 20%).
+
+We kunnen de totale oppervlakte van de types ook uitdrukken in eenheden van 1024 m², wat overeenkomt met een level0-cel (32 x 32 m²):
+
+```{r}
+install_conversion_constant("m^2", "cell0units", 1/1024)
+```
+
+
+```{r}
+type_areastats <- 
+  hmt_occ_area %>% 
+  group_by(type) %>% 
+  summarise(area_pol = sum(area_pol),
+            area = sum(area),
+            nr_polygons = n_distinct(polygon_id)) %>% 
+  mutate(mean_area_per_polygon = set_units(area, "m^2") / nr_polygons,
+         area_as_cells = area %>% set_units("cell0units"),
+         area_pol_as_cells = area_pol %>% set_units("cell0units"),
+         success_rate = (area_as_cells / area_pol_as_cells) %>% drop_units %>% round(2)) %>% 
+  select(1, 6, 7, 8, 4, 5, 6, 3, 2) %>% 
+  arrange(area)
+type_areastats %>% glimpse
+```
+
+De **success rate** is daarbij de gemiddelde kans om het type rastergebaseerd (via de centroïden van rastercellen) te treffen op terrein.
+Dit is berekend als de totale type-oppervlakte gedeeld door de totale oppervlakte van alle polygonen waar het type in voorkomt.
+
+```{r}
+p <- 
+  type_areastats %>% 
+  ggplot(aes(x = area_as_cells, 
+             y = success_rate,
+             label = type)) +
+  geom_point(colour = "grey50") +
+  geom_text(size = 2, vjust = -1) +
+  geom_hline(yintercept = 0.5, 
+             colour = "blue")
+ggplotly(p) %>% 
+  layout(yaxis = list(fixedrange = TRUE))
+```
+
+In de bovenstaande (interactieve) grafiek zien we dat de meest algemene types een grote success-rate zullen hebben.
+Buiten de meest algemene types zien we dat er geen duidelijk verband meer is en de spreiding van de success-rate is in dit gebied groot.
+
+### Onzekerheid over de type-identificatie
 
 Niet van elk type was bij de kartering (of bij omzetting van de BWK) even zeker dat het om het betreffende type gaat (gestapeld histogram):
 
