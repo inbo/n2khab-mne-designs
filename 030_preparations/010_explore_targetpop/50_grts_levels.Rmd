@@ -862,10 +862,17 @@ read_types(lang = "nl") %>%
 Inspectie op kaart toont aan dat de lage within-cell-cover van deze types vaak het gevolg is van een ruimtelijke verschijning met veel lijnvormige of kleine elementen.
 Uitzonderlijk is het een gevolg van consequent lage phab-waarden in polygonen.
 
+### Op zoek naar verdere type-eigenschappen voor de aanpak
 
-### Effect van het weglaten van polygonen met phab ≤ 10%
+We verkennen de relaties tussen:
 
-We onderzoeken de uitsluiting van polygonen met phab ≤ 10% voor die types waar het oppervlakte-aandeel met phab ≤ 10% kleiner is dan ca. 5% (in realiteit licht verschoven naar 4.5% om logisch samenhorende types niet uiteen te halen qua aanpak).
+- het oppervlakte-aandeel per type voor zijn occurrences in de polygonen met phab ≤ 10%: variabele `type_areaprop_phab10`
+- het aandeel level3-cellen zonder level0-cel (gedefinieerd als aantal level0-cellen < 1, i.e. rekening houdend met phab): variabele `type_level3prop_nolevel0avail`
+- de success-rate (zie paragraaf \@ref(opptypes-in-pol)): variabele `success_rate`
+- de totale oppervlakte van het type (uitgedrukt in eenheden van 1024 m² = level0-celoppervlakte): variabele `area_as_cells`
+- de selectie van types waarvan de level0-cellen met hoogstens 30% bedekking (binnen de cel) een oppervlakte-aandeel van minstens 55% van het type vertegenwoordigen: variabele `majority_level0coverlessthan0.3` (`TRUE` impliceert celgebaseerde koppeling).
+
+In de grafieken worden steeds de types weergegeven volgens een centroïdgebaseerde koppeling, met behoud van alle polygonen.
 
 De onderstaande interactieve grafiek toont:
 
@@ -916,6 +923,109 @@ p <-
     coord_fixed()
 plotly::ggplotly(p)
 ```
+
+Het valt hierbij op dat de meeste types met een problematische distributie van de level3-cellen (boven de stippellijn) een meer substantieel oppervlakte-aandeel (> 5%) hebben van occurrences in van polygonen met een phab-waarde > 10 (rechts van de verticale lijn) (en vice-versa).
+Behalve voor de celgebaseerde types zal dit niet op te lossen zijn, aangezien we deze types in hun geheel willen bekijken.
+
+We zien wel dat de meest problematische gevallen (bovenaan in bovenstaande grafiek) celgebaseerd zullen worden benaderd, zodat deze situaties alvast opgelost worden.
+
+Als we de succes-rate uitzetten in dezelfde grafiek, dan kunnen we zien dat deze maat duidelijk gecorreleerd is met de beide andere (onderling gecorreleerde) maten.
+
+```{r fig.width=8, fig.height=8}
+p5 <- 
+    type_stats %>% 
+    ggplot(aes(x = type_areaprop_phab10, 
+               y = type_level3prop_nolevel0avail, 
+               label = type,
+               extra = area_as_cells,
+               shape = majority_level0coverlessthan0.3,
+               colour = success_rate)) +
+    geom_point() +
+    geom_text(size = 2, vjust = -1) +
+    geom_vline(xintercept = 0.045, colour = "blue") +
+    # geom_vline(xintercept = 0.105, colour = "lightblue") +
+    geom_hline(yintercept = 0.33, 
+               colour = "blue",
+               linetype = "dotted") +
+    scale_colour_distiller(palette = "YlOrRd") +
+    coord_fixed()
+plotly::ggplotly(p5)
+```
+
+De type-oppervlakte volgt minder strak dit patroon:
+
+```{r fig.width=8, fig.height=8}
+p4 <- 
+    type_stats %>% 
+    ggplot(aes(x = type_areaprop_phab10, 
+               y = type_level3prop_nolevel0avail, 
+               label = type,
+               colour = drop_units(area_as_cells),
+               shape = majority_level0coverlessthan0.3,
+               extra = success_rate)) +
+    geom_point() +
+    geom_text(size = 2, vjust = -1) +
+    geom_vline(xintercept = 0.045, colour = "blue") +
+    # geom_vline(xintercept = 0.105, colour = "lightblue") +
+    geom_hline(yintercept = 0.33, 
+               colour = "blue",
+               linetype = "dotted") +
+    scale_colour_distiller(trans = "log", palette = "YlOrRd") +
+    coord_fixed()
+plotly::ggplotly(p4)
+```
+
+We zien inderdaad in volgende 2 grafieken dat area_cells minder goed gelinkt is met succes-rate en met de level3-celdistributie (de eerste grafiek is een verdere update van de grafiek in paragraaf \@ref(opptypes-in-pol)):
+
+```{r fig.width=8, fig.height=8}
+p3 <- 
+  type_stats %>% 
+  ggplot(aes(x = area_as_cells, 
+             y = success_rate,
+             label = type,
+             colour = type_areaprop_phab10 < 0.045,
+             shape = majority_level0coverlessthan0.3)) +
+  geom_point() +
+  geom_text(size = 2, vjust = -1) +
+  geom_hline(yintercept = 0.5, 
+             colour = "blue")
+ggplotly(p3) %>% 
+  layout(yaxis = list(fixedrange = TRUE))
+```
+
+
+
+```{r warning=FALSE}
+type_stats %>% 
+  ggplot(aes(y = type_level3prop_nolevel0avail, 
+             x = area_as_cells,
+             # label = type,
+             colour = type_areaprop_phab10 < 0.045,
+             shape = majority_level0coverlessthan0.3)) +
+  geom_point() +
+  scale_x_unit(limits = c(0, 5e3))
+```
+
+In de bovenstaande grafiek is trouwens opnieuw de minder gunstige level3-celdistributie, van types die veel oppervlakte hebben in polygonen met phab ≤ 10%, duidelijk zichtbaar.
+Ook is duidelijk dat dit aspect weinig samenhang vertoont met de type-oppervlakte.
+
+```{r eval=FALSE, include=FALSE}
+p2 <- 
+  type_stats %>% 
+  ggplot(aes(x = type_level3prop_nolevel0avail, 
+             y = success_rate,
+             label = type,
+             size = area_as_cells %>% drop_units,
+             colour = type_areaprop_phab10 < 0.045,
+             shape = majority_level0coverlessthan0.3)) +
+  geom_point()
+p2
+```
+
+
+### Effect van het weglaten van polygonen met phab ≤ 10%
+
+We onderzoeken het effect van de uitsluiting van polygonen met phab ≤ 10% voor die types waar het oppervlakte-aandeel met phab ≤ 10% kleiner is dan ca. 5% (in realiteit licht verschoven naar 4.5% om logisch samenhorende types niet uiteen te halen qua aanpak).
 
 De onderstaande grafiek toont de verandering in de distributie van level3-cellen bij toepassen van zowel de celgebaseerde koppeling bij een beperkt aantal types, als het weglaten van polygonen met phab ≤ 10% wanneer dit minder dan 4.5% van de type-oppervlakte beslaat.
 
