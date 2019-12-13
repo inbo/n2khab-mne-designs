@@ -483,7 +483,7 @@ count_0_in_4 <-
 typelev04 <- 
     count_0_in_4 %>% 
     summarise(prop0 = sum(nrlevel0cells_per_level4cell < 0.5) / n(),
-              prop1 = sum(nrlevel0cells_per_level4cell < 1.5) / n()) %>% 
+              prop1 = sum(nrlevel0cells_per_level4cell < 1) / n()) %>% 
     arrange(prop1, prop0) %>% 
     pull(type) %>% 
     as.character
@@ -491,7 +491,7 @@ p3 <-
     count_0_in_4 %>% 
     ungroup %>% 
     mutate(nrlevel0cells_per_level4cell_class = cut(nrlevel0cells_per_level4cell, 
-                                                c(0, 0.5, 0.75, 1.5, 2.5, 3.5, 7.5, 64, 256),
+                                                c(0, 0.5, 1, 1.5, 2.5, 3.5, 7.5, 64, 256),
                                                 include.lowest = TRUE,
                                                 right = FALSE) %>% fct_rev,
            type = factor(type, levels = typelev04) %>% fct_rev
@@ -713,7 +713,7 @@ plot_areaprop <-
     coord_flip() +
     labs(x = NULL, 
          y = "distribution of level0 cells",
-         title = "Expected type's areal proportion in level0 cells",
+         title = "Expected type's areal proportion within level0 cells",
          fill = "areal proportion within\na level0 cell") +
     theme(legend.position = "bottom")
 plot_areaprop
@@ -745,6 +745,10 @@ level0_areaprop_classes_area <-
          ) %>% 
     group_by(level0_areaprop, type) %>% 
     summarise(area = sum(area) %>% drop_units)
+```
+
+
+```{r fig.height=12, fig.width=7}
 plot_areaprop_area <- 
     level0_areaprop_classes_area %>% 
     ggplot(aes(x = type, y = area, fill = level0_areaprop)) +
@@ -753,7 +757,7 @@ plot_areaprop_area <-
     coord_flip() +
     labs(x = NULL, 
          y = "areal distribution",
-         title = "Expected type's areal proportion in level0 cells",
+         title = "Expected type's areal proportion within level0 cells",
          fill = "areal proportion within\na level0 cell") +
     theme(legend.position = "bottom")
 plot_areaprop_area
@@ -761,7 +765,7 @@ plot_areaprop_area
 
 <!-- Gesorteerd volgens areal proportion < 0.1: -->
 
-```{r fig.height=12, fig.width=7, eval=FALSE}
+```{r fig.height=12, fig.width=7, eval=FALSE, include=FALSE}
 typelev_areaprop0.1_area <- 
     hmt_freq_sub32_area %>% 
     group_by(type) %>%
@@ -828,8 +832,8 @@ Dezelfde grafiek, maar de rechterzijde oppervlaktegewogen:
 gridExtra::grid.arrange(p1m, plot_areaprop_area_m, nrow = 1)
 ```
 
-We beschouwen de oppervlaktegewogen versie als de belangrijkste om tot de volgende selectie van types te komen om celgebaseerd te selecteren:
-de types waarvan de level0-cellen met hoogstens 30% bedekking (binnen de cel) een oppervlakte-aandeel van minstens 55% ^[
+We beschouwen de oppervlaktegewogen versie als de belangrijkste om tot een keuze van types te komen om celgebaseerd te selecteren op terrein.
+We verkiezen een celgebaseerde selectie voor die types waarvan de level0-cellen met hoogstens 30% bedekking (binnen de cel) een oppervlakte-aandeel van minstens 55% ^[
 55%: licht bijgesteld t.o.v. 50% om geen verschillende aanpak te veroorzaken tussen subtypes van 6230.]
 van het type vertegenwoordigen.
 
@@ -856,6 +860,7 @@ read_types(lang = "nl") %>%
 ```
 
 Inspectie op kaart toont aan dat de lage within-cell-cover van deze types vaak het gevolg is van een ruimtelijke verschijning met veel lijnvormige of kleine elementen.
+Uitzonderlijk is het een gevolg van consequent lage phab-waarden in polygonen.
 
 
 ### Effect van het weglaten van polygonen met phab ≤ 10%
@@ -865,13 +870,12 @@ We onderzoeken de uitsluiting van polygonen met phab ≤ 10% voor die types waar
 De onderstaande interactieve grafiek toont:
 
 - elk type als een punt (alleen de types waarvoor `unresolved = FALSE`)
-- op de X-as het oppervlakte-aandeel per type van de polygonen met phab ≤ 10%, met een verticale lijn ter hoogte van 4.5%
-- op de Y-as het aandeel level3-cellen zonder level0-cel (aantal level0-cellen < 1), met een horizontale stippellijn ter hoogte van 1/3: boven de stippellijn staan de types die in de bovenstaande figuren waren opgenomen
+- op de X-as het oppervlakte-aandeel per type voor zijn occurrences in de polygonen met phab ≤ 10%, met een verticale lijn ter hoogte van 4.5%
+- op de Y-as het aandeel level3-cellen zonder level0-cel (aantal level0-cellen < 1), met een horizontale stippellijn ter hoogte van 1/3: boven de stippellijn is de selectie van types die in de eerdere figuren waren opgenomen
 - in het paars de types die worden weerhouden voor een celgebaseerde koppeling
 
-
-```{r fig.width=8, fig.height=8}
-p <- 
+```{r}
+type_stats <- 
     hmt_occ_area %>% 
     mutate(area = area %>% as.numeric) %>% 
     group_by(type) %>% 
@@ -884,13 +888,23 @@ p <-
     ) %>% 
     inner_join(types_areaprop0.3_area_0.5,
               by = "type") %>% 
+    inner_join(type_areastats,
+              by = "type") %>% 
     semi_join(types_mne_expanded %>% 
                   filter(!unresolved), 
-              by = "type") %>% 
+              by = "type")
+```
+
+
+```{r fig.width=8, fig.height=8}
+p <- 
+    type_stats %>% 
     ggplot(aes(x = type_areaprop_phab10, 
                y = type_level3prop_nolevel0avail, 
                label = type,
-               colour = majority_level0coverlessthan0.3)) +
+               colour = majority_level0coverlessthan0.3,
+               extra1 = area_as_cells,
+               extra2 = success_rate)) +
     geom_point() +
     geom_text(size = 2, vjust = -1) +
     geom_vline(xintercept = 0.045, colour = "blue") +
@@ -948,6 +962,7 @@ count_0_in_3_implement_phab10_0.05 <-
                       nrlevel0cells_nophab10_per_level3cell,
                       nrlevel0cells_per_level3cell)
            ) %>% 
+    select(-nrlevel0cells_nophab10_per_level3cell) %>% 
     filter(!phab10_below_0.05 | 
                (phab10_below_0.05 & nrlevel0cells_per_level3cell > 0)
            )
