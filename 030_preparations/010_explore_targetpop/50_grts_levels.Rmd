@@ -1098,6 +1098,31 @@ p_implement_phab10_0.05 <-
 gridExtra::grid.arrange(p1, p_implement_phab10_0.05, nrow = 1)
 ```
 
+We vergelijken specifiek de proportie van level3-cellen met minder dan 1 level0-cel:
+
+```{r fig.width=10}
+count_0_in_3 %>% 
+  summarise(type_level3prop_nolevel0avail = 
+              sum(nrlevel0cells_per_level3cell < 1) / n()) %>% 
+  mutate(approach = "reference") %>% 
+  bind_rows(
+    count_0_in_3_implement_phab10_0.05 %>% 
+      group_by(type) %>% 
+      summarise(type_level3prop_nolevel0avail = 
+              sum(nrlevel0cells_per_level3cell < 1) / n()) %>% 
+  mutate(approach = "omit phab≤10 &\nuse cell-based\nfor 7 types")
+  ) %>% 
+  mutate(type = factor(type, levels = typelev3)) %>% 
+  ggplot(aes(x = type, 
+             y = type_level3prop_nolevel0avail,
+             colour = approach,
+             group = approach)) + 
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+XXXXXX VERDER UPDATEN!
+
 We stellen vast dat voor diverse types de meer problematische level3-verdeling gemilderd wordt.
 De meer problematische level3-verdeling is anderzijds niet oplosbaar voor de types waar het oppervlakte-aandeel van het type in polygonen met phab ≤ 10% groter is.
 
