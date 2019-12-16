@@ -1121,6 +1121,48 @@ count_0_in_3 %>%
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
 ```
 
+Het effect op de success-rate:
+
+```{r fig.width=10}
+hmt_occ_area %>% 
+    group_by(type) %>% 
+    summarise(area_pol_phab_greaterthan_10 = sum(area_pol[.data$phab > 10]),
+            area_phab_greaterthan_10 = sum(area[.data$phab > 10]),
+            area_pol = sum(area_pol),
+            area = sum(area),
+            # nr_polygons = n_distinct(polygon_id)
+            ) %>% 
+    inner_join(type_stats %>% 
+                 mutate(keep_phab10 = type_areaprop_phab10 >= 0.045) %>% 
+                 select(type, keep_phab10),
+               by = "type"
+    ) %>% 
+    mutate(
+           # mean_area_per_polygon = set_units(area, "m^2") / nr_polygons,
+           # area_as_cells = area %>% set_units("cell0units"),
+           # area_pol_as_cells = area_pol %>% set_units("cell0units"),
+           success_rate = (area / area_pol) %>% drop_units %>% round(2),
+           success_rate_phab_greaterthan_10 = 
+             ifelse(
+               keep_phab10,
+               success_rate,
+               (area_phab_greaterthan_10 / area_pol_phab_greaterthan_10) %>% drop_units %>% round(2)
+             ),
+           type = factor(type, levels = typelevels_phab)
+           ) %>% 
+    pivot_longer(cols = contains("success"),
+                 names_to = "drop_phab≤10",
+                 values_to = "success_rate") %>% 
+    mutate(`drop_phab≤10` = `drop_phab≤10` == "success_rate_phab_greaterthan_10") %>% 
+    ggplot(aes(x = type, 
+             y = success_rate,
+             colour = `drop_phab≤10`,
+             group = `drop_phab≤10`)) + 
+    geom_line() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+
 XXXXXX VERDER UPDATEN!
 
 We stellen vast dat voor diverse types de meer problematische level3-verdeling gemilderd wordt.
