@@ -7,13 +7,21 @@ De centroïdmethode is toegepast in het meetnet biotische habitatkwaliteit.
 
 We kijken per type naar het effect op de trefkans (aanwezigheid van het type in een rastercel), op de juistheid van de oppervlakteschatting en op de populatiegrootte (i.e. aantal cellen).
 
-```{r results="hide"}
-# CREATE and link to a permanent GRASS folder
-# link2GI::linkGRASS7(hmt_pol, gisdbase = ".", location = "grts_join",
-#                     search_path = if (.Platform$OS.type == "unix") {
-#                       "/usr/bin"} else NULL,
-#                     use_home = TRUE)
+```{r}
+grass_grts_join <- file.exists("grts_join/PERMANENT/PROJ_INFO")
+```
 
+
+```{r results="hide", eval=!grass_grts_join}
+# CREATE and link to a permanent GRASS folder
+link2GI::linkGRASS7(hmt_pol, gisdbase = ".", location = "grts_join",
+                    search_path = if (.Platform$OS.type == "unix") {
+                      "/usr/bin"} else NULL,
+                    use_home = TRUE)
+```
+
+
+```{r results="hide", eval=grass_grts_join}
 # ONLY LINK to a permanent GRASS folder
 link2GI::linkGRASS7(gisdbase = ".", location = "grts_join", gisdbase_exist = TRUE,
                     search_path = if (.Platform$OS.type == "unix") {
@@ -22,27 +30,30 @@ link2GI::linkGRASS7(gisdbase = ".", location = "grts_join", gisdbase_exist = TRU
 # gmeta()
 ```
 
+```{r}
+stopifnot(file.exists("grts_join/PERMANENT/PROJ_INFO"))
+```
 
-```{r eval=FALSE}
+```{r eval=!grass_grts_join}
 hmt_polpat <- 
     hmt_pol %>% 
     inner_join(hmt_occ, by = "polygon_id") %>% 
     select(type, phab)
 ```
 
-```{r results="hide", eval=FALSE}
+```{r results="hide", eval=!grass_grts_join}
 read_admin_areas(dsn = "flanders") %>% 
     writeVECT("flanders",
               v.in.ogr_flags = c("overwrite", "o"))
 ```
 
-```{r results="hide", eval=FALSE}
+```{r results="hide", eval=!grass_grts_join}
 hmt_polpat %>% 
     writeVECT("hmt_polpat",
               v.in.ogr_flags = c("overwrite", "o"))
 ```
 
-```{r eval=FALSE}
+```{r eval=!grass_grts_join}
 # use bbox & resolution of GRTSmh:
 system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
 system("g.region -p
@@ -56,11 +67,11 @@ stopifnot(attr(reg, "resOut")[11] == "cells=21041043")
 ```
 
 ```{r eval=FALSE, include=FALSE}
-# hmt_occ$type %>% unique %>% sort %>% as.matrix() %>% cat(sep = "\n")
+hmt_occ$type %>% unique %>% sort %>% as.matrix() %>% cat(sep = "\n")
 ```
 
 
-```{r eval=FALSE}
+```{r results="hide", eval=!grass_grts_join}
 system("shellscripts/shellscript_04_v.to.rast32_r.mapcalc_parallel.sh")
 ```
 
@@ -75,36 +86,36 @@ Dit is berekend als de proportie van deelcellen (resolutie 3.2 m) waarvan het ce
 
 Dit is tevens de trefkans bij selectie op basis van 1 random punt in de rastercel.
 
-```{r eval=FALSE}
+```{r eval=!grass_grts_join}
 # use bbox of GRTSmh, 10-fold higher resolution:
 # system("g.proj -c datumtrans=1 epsg=31370") # this was necessary when linkGRASS() overwrited this, is fixed now
 system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=3.2")
 ```
 
 
-```{r eval=FALSE}
+```{r eval=!grass_grts_join}
 system("g.region -p
         g.proj -j")
 ```
 
-```{r results="hide", eval=FALSE}
+```{r results="hide", eval=!grass_grts_join}
 # rasterization of phab values per type, on a 10-fold resolution of GRTSmh
 system("shellscripts/shellscript_01_v.to.rast_parallel.sh")
 ```
 
 
-```{r eval=FALSE, echo=FALSE}
+```{r eval=!grass_grts_join, echo=FALSE}
 # use bbox & resolution of GRTSmh:
 system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
 system("g.region -p
         g.proj -j")
 ```
 
-```{r eval=FALSE}
+```{r eval=!grass_grts_join}
 system("shellscripts/shellscript_02_r.resamp.stats_parallel.sh")
 ```
 
-```{r eval=FALSE}
+```{r}
 # Explanation of the created layers in the GRASS database (location 'grts_join'):
 # 
 # - phabs_xxxx: phab-values of subcells (type xxxx), i.e. for centroid at resolution 3.2 m
