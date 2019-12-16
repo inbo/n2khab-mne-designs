@@ -418,9 +418,11 @@ for (i in 1:length(types_hmt)) {
         # divide by 100 to get phab as fraction
         # the sum statistic is the sum of phab *, so:
         mutate(phab_sum = sum / 100,
+               count = non_null_cells,
                type = types_hmt[i]) %>% 
         select(type,
-               phab_sum)
+               phab_sum,
+               count)
     
     if (i == 1) {
         hmt_popsize_centroid <- type_result
@@ -476,7 +478,8 @@ pop_size <-
     hmt_popsize_cells %>% 
     rename(cellbased = detprob_sum) %>% 
     inner_join(hmt_popsize_centroid %>% 
-                rename(centroidbased = phab_sum), 
+                select(type,
+                       centroidbased = phab_sum), 
                by = "type") %>% 
     pivot_longer(cols = 2:3,
                  names_to = "count_method",

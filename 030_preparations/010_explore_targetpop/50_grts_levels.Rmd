@@ -28,10 +28,6 @@ zullen we kijken naar relaties tussen **level0** en **level3**:
 
 Noot: in de onderstaande benadering zijn de level0-cellen steeds met polygonen gekoppeld _volgens de centroïd-methode_.
 
-## Hoe vaak worden de level0-cellen bezocht binnen een level3-cel?
-
-We willen weten hoe snel elke concrete level3 wordt herbezocht, bij het aflopen van alle level0-cellen van een type volgens de GRTS-rangschikking.
-
 ```{r include=FALSE}
 vc_polygon_id <- all(file.exists("grts_polygon_id.tsv", "grts_polygon_id.yml"))
 ```
@@ -92,6 +88,41 @@ type_grts <-
     inner_join(grts_polygon_id, 
                by = "polygon_id")
 ```
+
+
+## Aandachtspunt: de dekking door GRTSmaster_habitats
+
+We verifiëren of het GRTS-raster wel degelijk de volledige doelpopulatie afdekt.
+
+```{r}
+hmt_popsize_centroid %>% 
+    distinct(type,
+             nr_polygoncells = count) %>% 
+    inner_join(type_grts %>% 
+                   distinct(level0, type) %>% 
+                   count(type, name = "nr_grtscells"),
+               by = "type") %>% 
+    mutate(diff = nr_polygoncells - nr_grtscells,
+           diff_rel = diff / nr_polygoncells) %>% 
+    filter(diff != 0) %>% 
+    arrange(-diff_rel)
+```
+
+Voor ongeveer een kwart van de types is er een verschil, waarbij er cellen zijn van de doelpopulatie zonder GRTS-rangnummer.
+Het probleem is alleen substantieel voor het type 1140, waar dit om 7% van de populatie gaat.
+Voor de andere types is het verschil kleiner dan 0.4% en dus te verwaarlozen.
+Het blijkt voor 1140 te gaan om de kustlijn, die zeewaarts niet helemaal is afgedekt door het GRTS-raster.
+
+Bij visuele inspectie blijkt ook dat het GRTS-raster niet het volledige Vlaamse grondgebied opvult.
+Er blijken vooral smalle stroken langs de kust (o.m. in zee) te ontbreken.
+Ook enkele plaatsen in de Voerstreek zijn niet helemaal afgedekt.
+
+In principe zou een verdere opvulling (aanvulling) van het GRTS-raster een oplossing zijn voor deze problemen.
+Gezien het overwegend zeer marginale optreden van de problemen en het eerder complexe werk om een dgl. opvulling te programmeren zullen we dit aspect verder negeren.
+
+## Hoe vaak worden de level0-cellen bezocht binnen een level3-cel?
+
+We willen weten hoe snel elke concrete level3-cel wordt herbezocht, bij het aflopen van alle level0-cellen van een type volgens de GRTS-rangschikking.
 
 
 ```{r fig.width=8, fig.height=10, warning=FALSE}
