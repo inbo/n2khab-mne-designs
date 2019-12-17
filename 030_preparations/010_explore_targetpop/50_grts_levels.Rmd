@@ -707,14 +707,14 @@ Het gebruik van de celgebaseerde methode is binnen dezelfde context (oppervlakte
 Deze benadering is toegepast in het meetnet biotische habitatkwaliteit.
 Dit is enkel verantwoord indien dit overeenstemt met een heel beperkt oppervlakte-aandeel van het type in Vlaanderen.
 We onderzoeken voor deze toepassing de grens van 5% oppervlakte-aandeel.
-Het betekent dat voor deze types de locaties met phab ≤ 10% maar maximum 1/20 zouden bijdragen aan de totale uitspraak, terwijl zij op terrein relatief veel missers kunnen genereren op level3-niveau.
+Het betekent dat voor deze types de locaties met phab ≤ 10% maar maximum 1/20 zouden bijdragen aan de totale uitspraak, terwijl zij op terrein relatief veel missers kunnen genereren op level3- en level0-niveau.
 
 We onderzoeken daarom:
 
 - het oppervlaktegewogen aandeel van de verschillende level0-oppervlakteproporties per type, om een (beperkter) aantal (voor level 3 meer problematische) types te kunnen selecteren waarvoor een celgebaseerde benadering verantwoord is;
 - het bijkomende effect van het uitsluiten van polygonen met phab ≤ 10%, voor die types waar dit minder dan 5% van de totale oppervlakte behelst.
 
-### Vergelijking van distributie (per type) van level3-cellen met die van level0-oppervlakteproporties
+### Vergelijking van distributie (per type) van level3-cellen met die van level0-oppervlakteproporties {#level3-0-distr}
 
 Distributie van level0-cellen, gesorteerd volgens de within-level0-areal-proportion < 0.3:
 
@@ -1092,11 +1092,11 @@ type_stats %>%
              colour = type_areaprop_phab10 < 0.045,
              shape = majority_level0coverlessthan0.3)) +
   geom_point() +
-  scale_x_unit(limits = c(0, 5e3))
+  scale_x_unit(limits = c(0, 45e3))
 ```
 
 In de bovenstaande grafiek is trouwens opnieuw de minder gunstige level3-celdistributie, van types die veel oppervlakte hebben in polygonen met phab ≤ 10%, duidelijk zichtbaar.
-Ook is duidelijk dat dit aspect weinig samenhang vertoont met de type-oppervlakte.
+Ook is duidelijk dat types met een grote oppervlakte een gunstiger level3-celdistributie vertonen.
 
 ```{r eval=FALSE, include=FALSE}
 p2 <- 
@@ -1115,6 +1115,8 @@ p2
 ### Effect van het weglaten van polygonen met phab ≤ 10%
 
 We onderzoeken het effect van de uitsluiting van polygonen met phab ≤ 10% voor die types waar het oppervlakte-aandeel met phab ≤ 10% kleiner is dan ca. 5% (in realiteit licht verschoven naar 4.5% om logisch samenhorende types niet uiteen te halen qua aanpak).
+
+#### Effect op de distributie van level3-cellen
 
 De onderstaande grafiek toont de verandering in de distributie van level3-cellen bij toepassen van zowel de celgebaseerde koppeling bij een beperkt aantal types, als het weglaten van polygonen met phab ≤ 10% wanneer dit minder dan 4.5% van de type-oppervlakte beslaat.
 
@@ -1210,58 +1212,14 @@ count_0_in_3 %>%
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
 ```
 
-Het effect op de success-rate:
+Behalve voor de enkele celgebaseerde types aan de rechterkant van de grafiek en voor enkele specifieke types, is er geen drastische verbetering op het level3-niveau.
+Dat komt doordat we de weglating alleen maar toepassen waar phab ≤ 10% minder oppervlakte-aandeel (van het typetotaal) vertegenwoordigt.
+Aan de linkerkant van de grafiek is het relatieve effect wel groot, maar daar zitten we in het bereik van de level3-proportie die op zich al goed is (en waar een oplossing niet hoeft).
 
-```{r fig.width=10}
-hmt_occ_area %>% 
-    group_by(type) %>% 
-    summarise(area_pol_phab_greaterthan_10 = sum(area_pol[.data$phab > 10]),
-            area_phab_greaterthan_10 = sum(area[.data$phab > 10]),
-            area_pol = sum(area_pol),
-            area = sum(area),
-            # nr_polygons = n_distinct(polygon_id)
-            ) %>% 
-    inner_join(type_stats %>% 
-                 mutate(keep_phab10 = type_areaprop_phab10 >= 0.045) %>% 
-                 select(type, keep_phab10),
-               by = "type"
-    ) %>% 
-    mutate(
-           # mean_area_per_polygon = set_units(area, "m^2") / nr_polygons,
-           # area_as_cells = area %>% set_units("cell0units"),
-           # area_pol_as_cells = area_pol %>% set_units("cell0units"),
-           success_rate = (area / area_pol) %>% drop_units %>% round(2),
-           success_rate_phab_greaterthan_10 = 
-             ifelse(
-               keep_phab10,
-               success_rate,
-               (area_phab_greaterthan_10 / area_pol_phab_greaterthan_10) %>% drop_units %>% round(2)
-             ),
-           type = factor(type, levels = typelevels_phab)
-           ) %>% 
-    pivot_longer(cols = contains("success"),
-                 names_to = "drop_phab≤10",
-                 values_to = "success_rate") %>% 
-    mutate(`drop_phab≤10` = `drop_phab≤10` == "success_rate_phab_greaterthan_10") %>% 
-    ggplot(aes(x = type, 
-             y = success_rate,
-             colour = `drop_phab≤10`,
-             group = `drop_phab≤10`)) + 
-    geom_line() +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
-```
+De meer problematische level3-verdeling in de rechterkant van de grafiek is anderzijds niet oplosbaar voor de types waar het oppervlakte-aandeel van het type in polygonen met phab ≤ 10% groter is.
+Dit zijn de types waarvoor beide lijnen van de bovenstaande grafiek samenvallen.
 
-
-XXXXXX VERDER UPDATEN!
-
-We stellen vast dat voor diverse types de meer problematische level3-verdeling gemilderd wordt.
-De meer problematische level3-verdeling is anderzijds niet oplosbaar voor de types waar het oppervlakte-aandeel van het type in polygonen met phab ≤ 10% groter is.
-
-Een tussenliggende piste is om wel de celgebaseerde koppeling door te voeren bij enkele types zoals boven, maar geen polygonen met phab ≤ 10% te weren.
-Dit is ter verdere overweging.
-Waar de uitsluiting van polygonen met phab ≤ 10% wordt doorgevoerd, is in elk geval de synergie met het biotisch meetnet het grootst.
-
-```{r fig.height=12, fig.width=15, eval=FALSE}
+```{r fig.height=12, fig.width=15, eval=FALSE, include=FALSE}
 count_0_in_3_implement_phab10_0.1 <-
     count_0_in_3_implement %>%
     inner_join(phab10_decide, by = "type") %>%
@@ -1287,3 +1245,297 @@ p_implement_phab10_0.1 <-
     theme(legend.position = "bottom")
 gridExtra::grid.arrange(p1, p_implement_phab10_0.1, nrow = 1)
 ```
+
+
+#### Effect op de success-rate
+
+De success-rate is de verhouding tussen de reële oppervlakte van het type (phab-gecorrigeerd) en de totale oppervlakte van de polygonen waarin het voorkomt.
+Het is dus ook de gemiddelde trefkans op level0-niveau (met centroïd-gebaseerde koppeling):
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 <- 
+    hmt_occ_area %>% 
+    group_by(type) %>% 
+    summarise(area_pol_phab_greaterthan_10 = sum(area_pol[.data$phab > 10]),
+            area_phab_greaterthan_10 = sum(area[.data$phab > 10]),
+            nr_polygons_phab_greaterthan_10 = n_distinct(polygon_id[.data$phab > 10]),
+            area_pol = sum(area_pol),
+            area = sum(area),
+            nr_polygons = n_distinct(polygon_id)
+            ) %>% 
+    inner_join(type_stats %>% 
+                 mutate(keep_phab10 = type_areaprop_phab10 >= 0.045) %>% 
+                 select(type, keep_phab10),
+               by = "type"
+    ) %>% 
+    mutate(
+           mean_area_per_polygon = set_units(area, "m^2") / nr_polygons,
+           mean_area_per_polygon_phab_greaterthan_10 = 
+               ifelse(
+               keep_phab10,
+               mean_area_per_polygon,
+               set_units(area_phab_greaterthan_10, "m^2") / nr_polygons_phab_greaterthan_10
+               ),
+           area_as_cells = area %>% set_units("cell0units"),
+           area_as_cells_phab_greaterthan_10 = 
+               ifelse(
+               keep_phab10,
+               area_as_cells,
+               area_phab_greaterthan_10 %>% set_units("cell0units")
+               ) %>% set_units("cell0units"),
+           area_pol_as_cells = area_pol %>% set_units("cell0units"),
+           area_pol_as_cells_phab_greaterthan_10 = 
+               ifelse(
+               keep_phab10,
+               area_pol_as_cells,
+               area_pol_phab_greaterthan_10 %>% set_units("cell0units")
+               ) %>% set_units("cell0units"),
+           success_rate = (area / area_pol) %>% drop_units,
+           success_rate_phab_greaterthan_10 = 
+             ifelse(
+               keep_phab10,
+               success_rate,
+               (area_phab_greaterthan_10 / area_pol_phab_greaterthan_10) %>% drop_units
+             ),
+           type = factor(type, levels = typelevels_phab)
+           )
+```
+
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 %>% 
+    pivot_longer(cols = contains("success"),
+                 names_to = "drop_phab≤10",
+                 values_to = "success_rate") %>% 
+    mutate(`drop_phab≤10` =
+               factor(`drop_phab≤10` == "success_rate_phab_greaterthan_10",
+                      levels = c(TRUE, FALSE))
+           ) %>% 
+    ggplot(aes(x = type, 
+             y = success_rate,
+             colour = `drop_phab≤10`,
+             group = `drop_phab≤10`)) + 
+    geom_line() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+De types zijn gesorteerd volgens toenemende oppervlakteproportie (van de totale type-oppervlakte) waarvoor het type voorkomt in polygonen met een phab ≤ 10 (ook in grafieken van volgende paragrafen).
+Dit maakt dat rechts de success_rate lager is dan links.
+
+Van zodra deze proportie > 4.5% willen we die locaties niet laten vallen (beide lijnen vallen samen).
+De grafiek houdt er geen rekening mee dat voor 7 types aan de rechterkant een celgebaseerde benadering wordt gevolgd .
+
+Meer naar links zien we weinig effect.
+In het midden is het verschil wat groter. 
+
+#### Effect op de populatiegrootte
+
+Dit illustreert in wezen de regel die we toepassen om alleen polygonen met phab ≤ 10% te laten vallen wanneer dit minder dan 4.5% van de type-oppervlakte beslaat.
+Dus ze behouden heeft dan ook dit kleiner effect:
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 %>% 
+    mutate(popsize_reldiff = drop_units((area_as_cells - area_as_cells_phab_greaterthan_10) /
+               area_as_cells_phab_greaterthan_10) * 100) %>% 
+    ggplot(aes(x = type, 
+               y = popsize_reldiff)) + 
+    geom_col(fill = "white", colour = "grey60") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+    ylab("population size increase (%) by not dropping phab≤10")
+```
+
+#### Effect op de oppervlakte (het aantal cellen) van het steekproefkader
+
+Reeds uit Figuur \@ref(fig:typecover) was duidelijk dat het betrekken van phab≤10-polygonen tot een veel grotere bezoekbare oppervlakte leidt voor heel wat types, ook wanneer de hiermee corresponderende type-oppervlakte < 4.5%.
+Net op die locaties is de trefkans maximum 0.1, wat betekent dat in de meeste van deze gevallen een kartering op een hoger niveau (level 1, 2 of 3) nodig zou zijn.
+
+De polygoonoppervlakte uitgedrukt als aantal level0-celeenheden (1024 m²) levert de grootte van het steekproefkader (sampling frame) op.
+De onderstaande grafieken tonen het effect op de grootte van het steekproefkader.
+Bemerk dat aan de rechterzijde geen effect wordt getoond: hier is het aandeel van de type-occurrences in polygonen met phab ≤ 10% t.o.v. de totale type-oppervlakte groter dan 4.5%, dus alles wordt behouden ondanks de negatieve impact op level3-vervangsucces, succes-rate en polygoonoppervlakte.
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 %>% 
+    pivot_longer(cols = contains("area_pol_as_cells"),
+                 names_to = "drop_phab≤10",
+                 values_to = "area_pol_as_cells") %>% 
+    mutate(`drop_phab≤10` =
+               factor(`drop_phab≤10` == "area_pol_as_cells_phab_greaterthan_10",
+                      levels = c(TRUE, FALSE))
+           ) %>% 
+    ggplot(aes(x = type, 
+               y = area_pol_as_cells,
+               fill = `drop_phab≤10`,
+               group = `drop_phab≤10`)) + 
+    geom_col(position = "dodge") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+    scale_y_unit(name = "polygon_area_as_level0_cells") +
+    coord_cartesian(ylim = c(0, 65e3)) +
+    labs(title = "Sampling frame size")
+```
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 %>% 
+    mutate(polygonarea_reldiff = drop_units((area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10) /
+               area_pol_as_cells_phab_greaterthan_10) * 100) %>% 
+    ggplot(aes(x = type, 
+               y = polygonarea_reldiff)) + 
+    geom_col(fill = "white", colour = "grey60") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+    labs(title = "Sampling frame size: relative difference (%)",
+         y = "polygon area increase (%) by not dropping phab≤10")
+```
+
+```{r fig.width=10, eval=FALSE, include=FALSE}
+# note: a visually identical result is obtained by doing this based on the centroid-based list of level0-cells
+type_grts %>% 
+    group_by(type) %>% 
+    summarise(nr_cells_samplingframe = n(),
+              nr_cells_samplingframe_phab_greaterthan_10 = 
+                  sum(phab > 10)) %>% 
+    inner_join(type_stats %>% 
+                 mutate(keep_phab10 = type_areaprop_phab10 >= 0.045) %>% 
+                 select(type, keep_phab10),
+               by = "type"
+    ) %>% 
+    mutate(nr_cells_samplingframe_phab_greaterthan_10 = 
+               ifelse(keep_phab10,
+                      nr_cells_samplingframe,
+                      nr_cells_samplingframe_phab_greaterthan_10),
+           framesize_reldiff = (nr_cells_samplingframe - 
+                                    nr_cells_samplingframe_phab_greaterthan_10) / 
+               nr_cells_samplingframe_phab_greaterthan_10 * 100,
+           type = factor(type, levels = typelevels_phab)) %>% 
+    ggplot(aes(x = type, 
+               y = framesize_reldiff,
+               group = 1)) + 
+    geom_col(fill = "white", colour = "grey60") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+    ylab("sampling frame size increase (%) by not dropping phab≤10")
+```
+
+
+```{r fig.width=10, fig.height=7, warning=FALSE}
+type_areastats_implement_phab10_0.05 %>% 
+    mutate(polygonarea_diff = drop_units(area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10),
+           polygonarea_reldiff = drop_units((area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10) /
+               area_pol_as_cells_phab_greaterthan_10) * 100
+           ) %>% 
+    ggplot(aes(x = type, 
+               y = polygonarea_reldiff,
+               fill = polygonarea_diff,
+               label = polygonarea_diff %>% round(0))) + 
+    geom_col(colour = "grey60") +
+    geom_text(size = 3, 
+              hjust = -0.2,
+              angle = 90) +
+    scale_fill_viridis_c(option = "magma", 
+                         direction = -1,
+                         guide = "legend",
+                         breaks = seq(0, 7500, 500)) +
+    labs(title = "Sampling frame size: relative and absolute difference",
+         fill = "absolute polygon area increase\nas level0 cells units\n(continuous scale; see also labels)",
+         y = "polygon area increase (%) by not dropping phab≤10") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4),
+          legend.position = "bottom")
+```
+
+```{r fig.width=10, warning=FALSE}
+type_areastats_implement_phab10_0.05 %>% 
+    mutate(polygonarea_diff = area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10,
+           polygonarea_reldiff = drop_units((area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10) /
+               area_pol_as_cells_phab_greaterthan_10) * 100
+           ) %>% 
+    ggplot(aes(x = type, 
+               y = polygonarea_diff,
+               fill = polygonarea_reldiff,
+               label = polygonarea_diff %>% round(0))) + 
+    geom_col(colour = "grey60") +
+    geom_text(size = 3) +
+    scale_y_unit(name = "polygon_area_increase_as_level0_cells",
+                 trans = "log10") +
+    scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+    labs(title = "Sampling frame size: relative and absolute difference",
+         fill = "polygon area increase (%)\nby not dropping phab≤10") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4),
+          legend.position = "bottom")
+```
+
+We kunnen besluiten dat voor heel wat types een aanzienlijke toename zou optreden van level0-cellen, t.o.v. de situatie waarbij we de regel toepassen (en dus t.o.v. het biotisch meetnet).
+In minstens 9/10 van deze cellen zal een vervangprocedure op hoger hiërarchisch niveau (karteren van een cel van hogere orde) nodig zijn.
+(In 50-100% van de gevallen zal men ook een vervanger vinden, zodat dit tot een veel geringere overlap zou leiden met het biotisch meetnet.)
+Het betekent alleszins een aanzienlijk meerwerk voor deze types, waarbij die cellen maar voor maximum 5% van de uitspraak meespelen.
+
+Het is dus duidelijk dat de geringe winst op level3-niveau wordt overschaduwd door een grotere impact op level0-niveau.
+
+**Om deze redenen besluiten we**:
+
+- om de regel toe te passen van uitsluiting van polygonen met phab ≤ 10%, voor die types waar het oppervlakte-aandeel met phab ≤ 10% kleiner is dan ca. 5%
+- om een uitzondering op die regel toe te passen waar de relatieve toename van de polygoonoppervlakte (steekproefkader) ≤ 10%: ook daar de volledige doelpopulatie behouden, gezien de beperkte invloed van de interventie
+- daarnaast nog steeds de regel toe te passen om bepaalde types celgebaseerd te beschouwen (zie paragraaf \@ref(level3-0-distr)): de types waarvan de level0-cellen met hoogstens 30% bedekking (binnen de cel) een oppervlakte-aandeel van minstens 55% van het type vertegenwoordigen
+
+### Wegschrijven van de keuzes voor de respectievelijke types
+
+```{r}
+type_stats_complete <- 
+    type_stats %>% 
+    inner_join(type_areastats_implement_phab10_0.05 %>% 
+                   select(type,
+                          contains("greaterthan"),
+                          keep_phab10) %>% 
+                   mutate(type = factor(type, levels = 
+                                             levels(type_stats$type))),
+               by = "type"
+    ) %>% 
+    mutate(polygonarea_reldiff = drop_units((area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10) /
+               area_pol_as_cells_phab_greaterthan_10),
+           drop_phab10 = (type_areaprop_phab10 < 0.045) &
+               (polygonarea_reldiff > 0.1) &
+               !majority_level0coverlessthan0.3
+           ) %>% 
+    rename(approach_cellbased = majority_level0coverlessthan0.3) %>% 
+    select(type, 
+           drop_phab10, 
+           approach_cellbased, 
+           everything()) %>% 
+    select(-keep_phab10)
+type_stats_complete %>% glimpse
+```
+
+De eerste drie variabelen zijn nodig voor de verdere implementatie; de overige variabelen bevatten de eigenschappen.
+
+```{r}
+type_stats_complete %>% 
+    select(type,
+           drop_phab10,
+           approach_cellbased) %>% 
+    git2rdata::write_vc("type_approaches",
+                        sorting = "type")
+type_stats_complete %>% write_csv("type_stats_complete.csv")
+```
+
+Nadere inspectie:
+
+```{r}
+type_stats_complete %>% 
+    select(2:3) %>% 
+    table
+```
+
+```{r warning=FALSE, fig.width=10, fig.height=7}
+type_stats_complete %>% 
+    mutate(`approach_cellbased:drop_phab10` = str_c(approach_cellbased,drop_phab10,
+                                                    sep = ":")) %>% 
+  ggplot(aes(y = type_level3prop_nolevel0avail, 
+             x = area_as_cells,
+             # label = type,
+             colour = `approach_cellbased:drop_phab10`,
+             size = type_areaprop_phab10)) +
+  geom_point(alpha = 0.6) +
+  scale_x_unit(limits = c(0, 45e3))
+```
+
+Noot: in de bovenstaande grafiek betreffen de data op de assen de niet-ingeperkte doelpopulatie.
+
+
+
+

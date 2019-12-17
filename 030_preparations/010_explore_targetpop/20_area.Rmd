@@ -172,7 +172,7 @@ stream_length %>%
 
 ## Terrestrische types: trefkans in een polygoon en oppervlakte van types in een polygoon {#trefk-pol}
 
-### Aandachtspunt ivm steekproef(kader): verdeling van PHAB klassen
+### Aandachtspunt ivm steekproef(kader): verdeling van PHAB klassen {#phab}
 
 In het bewerkte, terrestrische deel van de habitatkaart (databron `habitatmap_terr`) komen types voor als fracties binnen 'polygonen'.
 Voor elke type is het procentueel oppervlakte-aandeel van de polygoon opgegeven via de variabele `phab`.
@@ -260,7 +260,8 @@ typelevels_phab <-
   arrange(area_prop10, area_prop50) %>% 
   .$type %>% 
   as.character
-hmt_occ_area %>% 
+plot_phab_typeareal <- 
+  hmt_occ_area %>% 
   mutate(area = area %>% as.numeric,
          type = factor(type, levels = rev(typelevels_phab))) %>% 
   ggplot(aes(x = type, y = area, fill = phab_class)) + 
@@ -270,6 +271,7 @@ hmt_occ_area %>%
   labs(y = "areal distribution",
        title = "Type's cover per polygon") +
   theme(legend.position = "bottom")
+plot_phab_typeareal
 ```
 
 Beschouwd per typeklasse:
@@ -341,6 +343,33 @@ Een alternatief is dus de polygoon te hanteren als basis voor uitwisseling, en d
 
 Een ander aspect van de hoge abundantie van kleine polygonen, is de wellicht frequent voorkomende situatie dat een gridcel maar voor een deel in de polygoon ligt.
 En vaker nog, dat een gridcel niet volledig bedekt is door het type in kwestie (gezien de phab-waarde van een type in een polygoon).
+
+In paragraaf \@ref(phab) werd de phab-klasseverdeling bekeken volgens de reële oppervlakteverdeling van het type.
+In het licht van het steekproefkader en het eraan gekoppelde terreinwerk is het ook nuttig om zicht te hebben op de phab-oppervlakteverdeling van de polygonen, vermits deze de terreinbezoeken aandrijven:
+
+```{r, fig.height=12, fig.width=7}
+plot_phab_polygonareal <- 
+  hmt_occ %>% 
+  select(polygon_id, type, certain, phab) %>% 
+  inner_join(hmt_area, by = "polygon_id") %>% 
+  mutate(area = area %>% as.numeric,
+         phab_class = cut(phab, c(0, 5, 10, 25, 50, 75, 90, 95, 100), 
+                          include.lowest = TRUE) %>% fct_rev,
+         type = factor(type, levels = rev(typelevels_phab))) %>% 
+  ggplot(aes(x = type, y = area, fill = phab_class)) + 
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(y = "polygon area distribution",
+       title = "Type's cover per polygon") +
+  theme(legend.position = "bottom")
+```
+
+```{r typecover, fig.height=12, fig.width=15, fig.caption="Verdeling van phab-klassen per type (% bedekking in polygoon). Links verdeling volgens geschatte type-oppervlakte (dus phab-gecorrigeerd), rechts volgens polygoonoppervlakte."}
+gridExtra::grid.arrange(plot_phab_typeareal, plot_phab_polygonareal, nrow = 1)
+```
+
+Het is duidelijk dat de polygonen met phab ≤ 10% voor heel wat extra bezoekbare (te bezoeken) oppervlakte zorgen, in verhouding tot de type-oppervlakte die ze vertegenwoordigen.
 
 ### Oppervlakte van types binnen polygonen {#opptypes-in-pol}
 
