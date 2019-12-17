@@ -750,7 +750,65 @@ plot_areaprop <-
 plot_areaprop
 ```
 
-Oppervlaktegewogen distributie van de level0-cellen, gesorteerd volgens de within-level0-areal-proportion < 0.3:
+Bemerk dat we in wezen via een centroïdgebaseerde methode niet meer de cellen zouden treffen waarvan het centroïd _buiten de polygoon_ valt (grafiek onder), dus de complete distributie zoals hierboven is meer een worst-case benadering.
+
+```{r fig.height=12, fig.width=7}
+typelev_areaprop0.3_centroid <- 
+    type_grts %>% 
+    group_by(type) %>% 
+    summarise(prop0.3 = sum(phab <= 30) / n()) %>% 
+    arrange(prop0.3) %>% 
+    pull(type) %>% 
+    as.character
+type_grts %>% 
+    mutate(level0_areaprop_centroid = cut(phab / 100, 
+                                breaks = seq(0, 1, 0.1), 
+                                include.lowest = TRUE) %>% 
+                            fct_rev,
+         type = factor(type, levels = typelev_areaprop0.3_centroid) %>% fct_rev
+         ) %>% 
+    count(type, level0_areaprop_centroid) %>% 
+    ggplot(aes(x = type, y = n, fill = level0_areaprop_centroid)) +
+    geom_col(position = "fill") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "distribution of centroid-based level0 cells",
+         title = "Expected type's areal proportion within centroid-based level0 cells",
+         fill = "areal proportion within\na (centroid) level0 cell") +
+    theme(legend.position = "bottom")
+```
+
+<!-- Gesorteerd volgens proportion < 0.1: -->
+
+```{r fig.height=12, fig.width=7, eval=FALSE, include=FALSE}
+typelev_areaprop0.1_centroid <- 
+    type_grts %>% 
+    group_by(type) %>% 
+    summarise(prop0.1 = sum(phab <= 10) / n()) %>% 
+    arrange(prop0.1) %>% 
+    pull(type) %>% 
+    as.character
+type_grts %>% 
+    mutate(level0_areaprop_centroid = cut(phab / 100, 
+                                breaks = seq(0, 1, 0.1), 
+                                include.lowest = TRUE) %>% 
+                            fct_rev,
+         type = factor(type, levels = typelev_areaprop0.1_centroid) %>% fct_rev
+         ) %>% 
+    count(type, level0_areaprop_centroid) %>% 
+    ggplot(aes(x = type, y = n, fill = level0_areaprop_centroid)) +
+    geom_col(position = "fill") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "distribution of centroid-based level0 cells",
+         title = "Expected type's areal proportion within centroid-based level0 cells",
+         fill = "areal proportion within\na (centroid) level0 cell") +
+    theme(legend.position = "bottom")
+```
+
+_Oppervlaktegewogen_ distributie van de level0-cellen, gesorteerd volgens de within-level0-areal-proportion < 0.3:
 
 ```{r fig.height=12, fig.width=7}
 cell_area <- 32^2 %>% set_units("m^2")
