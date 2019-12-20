@@ -1464,81 +1464,12 @@ type_areastats_implement_phab10_0.05 %>%
 ```
 
 We kunnen besluiten dat voor heel wat types een aanzienlijke toename zou optreden van level0-cellen, t.o.v. de situatie waarbij we de regel toepassen (en dus t.o.v. het biotisch meetnet).
-In minstens 9/10 van deze cellen zal een vervangprocedure op hoger hiërarchisch niveau (karteren van een cel van hogere orde) nodig zijn.
+In minstens 9/10 van deze cellen zou een vervangprocedure op hoger hiërarchisch niveau (karteren van een cel van hogere orde) nodig zijn, _indien de steekproefprocedure alle cellen van het steekproefkader gelijk weegt_.
 (In 50-100% van de gevallen zal men ook een vervanger vinden, zodat dit tot een veel geringere overlap zou leiden met het biotisch meetnet.)
 Het betekent alleszins een aanzienlijk meerwerk voor deze types, waarbij die cellen maar voor maximum 5% van de uitspraak meespelen.
 
-Het is dus duidelijk dat de geringe winst op level3-niveau wordt overschaduwd door een grotere impact op level0-niveau.
+Het is dus duidelijk dat de geringe winst op level3-niveau overschaduwd kan worden door een grotere impact op level0-niveau.
 
-**Om deze redenen besluiten we**:
-
-- om de regel toe te passen van uitsluiting van polygonen met phab ≤ 10%, voor die types waar het oppervlakte-aandeel met phab ≤ 10% kleiner is dan ca. 5%
-- om een uitzondering op die regel toe te passen waar de relatieve toename van de polygoonoppervlakte (steekproefkader) ≤ 10%: ook daar de volledige doelpopulatie behouden, gezien de beperkte invloed van de interventie
-- daarnaast nog steeds de regel toe te passen om bepaalde types celgebaseerd te beschouwen (zie paragraaf \@ref(level3-0-distr)): de types waarvan de level0-cellen met hoogstens 30% bedekking (binnen de cel) een oppervlakte-aandeel van minstens 55% van het type vertegenwoordigen
-
-### Wegschrijven van de keuzes voor de respectievelijke types
-
-```{r}
-type_stats_complete <- 
-    type_stats %>% 
-    inner_join(type_areastats_implement_phab10_0.05 %>% 
-                   select(type,
-                          contains("greaterthan"),
-                          keep_phab10) %>% 
-                   mutate(type = factor(type, levels = 
-                                             levels(type_stats$type))),
-               by = "type"
-    ) %>% 
-    mutate(polygonarea_reldiff = drop_units((area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10) /
-               area_pol_as_cells_phab_greaterthan_10),
-           drop_phab10 = (type_areaprop_phab10 < 0.045) &
-               (polygonarea_reldiff > 0.1) &
-               !majority_level0coverlessthan0.3
-           ) %>% 
-    rename(approach_cellbased = majority_level0coverlessthan0.3) %>% 
-    select(type, 
-           drop_phab10, 
-           approach_cellbased, 
-           everything()) %>% 
-    select(-keep_phab10)
-type_stats_complete %>% glimpse
-```
-
-De eerste drie variabelen zijn nodig voor de verdere implementatie; de overige variabelen bevatten de eigenschappen.
-
-```{r}
-type_stats_complete %>% 
-    select(type,
-           drop_phab10,
-           approach_cellbased) %>% 
-    git2rdata::write_vc("type_approaches",
-                        sorting = "type")
-type_stats_complete %>% write_csv("type_stats_complete.csv")
-```
-
-Nadere inspectie:
-
-```{r}
-type_stats_complete %>% 
-    select(2:3) %>% 
-    table
-```
-
-```{r warning=FALSE, fig.width=10, fig.height=7}
-type_stats_complete %>% 
-    mutate(`approach_cellbased:drop_phab10` = str_c(approach_cellbased,drop_phab10,
-                                                    sep = ":")) %>% 
-  ggplot(aes(y = type_level3prop_nolevel0avail, 
-             x = area_as_cells,
-             # label = type,
-             colour = `approach_cellbased:drop_phab10`,
-             size = type_areaprop_phab10)) +
-  geom_point(alpha = 0.6) +
-  scale_x_unit(limits = c(0, 45e3))
-```
-
-Noot: in de bovenstaande grafiek betreffen de data op de assen de niet-ingeperkte doelpopulatie.
-
-
+**Om deze reden onderzoeken we in het volgende hoofdstuk of we reeds bij de steekproeftrekking rekening kunnen houden met de phab-waarde.**
 
 
