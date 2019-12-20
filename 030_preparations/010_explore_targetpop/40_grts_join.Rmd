@@ -1,9 +1,10 @@
-# Wat zijn de implicaties van de koppelingswijze met het GRTS raster bij terrestrische types?
+# Wat zijn de implicaties van de koppelingswijze met het GRTS raster bij terrestrische types? {#koppeling}
 
 Voor de opbouw van het _steekproefkader_ kunnen de GRTS-rastercellen op twee manieren met de polygonen worden gekoppeld:
-    1. puntgebaseerd: op basis van het centroïd of een random punt in elke rastercel: de steekproefeenheid wordt alleen betrokken wanneer dit _punt_ overlapt met een polygoon met het type (op terrein: wanneer het punt _effectief_ overlapt met het type).
+
+1. puntgebaseerd: op basis van het centroïd of een random punt in elke rastercel: de steekproefeenheid wordt alleen betrokken wanneer dit _punt_ overlapt met een polygoon met het type (op terrein: wanneer het punt _effectief_ overlapt met het type).
 De centroïdmethode is toegepast in het meetnet biotische habitatkwaliteit.
-    1. celgebaseerd: de steekproefeenheid wordt betrokken wanneer de _rastercel_ overlapt met een polygoon met het type
+1. celgebaseerd: de steekproefeenheid wordt betrokken wanneer de _rastercel_ overlapt met een polygoon met het type
 
 We kijken per type naar het effect op de trefkans (aanwezigheid van het type in een rastercel), op de juistheid van de oppervlakteschatting en op de populatiegrootte (i.e. aantal cellen).
 
@@ -207,7 +208,7 @@ hmt_freq_sub32_dens %>%
 
 De grafiek voor alle types samen (waarin _elke cel_ een even grote rol speelt, dus niet elk type):
 
-```{r detprob-point}
+```{r detprob-point, fig.cap="Distributiefunctie van de oppervlakteproportie per level0-cel, dus van de trefkans bij een puntgebaseerde koppeling tussen polygonen en rastercellen. De figuur totaliseert alle cellen van alle types."}
 hmt_freq_sub32_dens %>% 
     mutate(weight = count / sum(count)) %>%
     ggplot(aes(x = areaprop, 
@@ -306,7 +307,7 @@ hmt_det_prob_dens %>%
         theme(panel.background = element_blank())
 ```
 
-```{r detprob-cell}
+```{r detprob-cell, fig.cap="Distributiefunctie van de maximale phab (als fractie) per cel bij een celgebaseerde koppeling tussen polygonen en rastercellen. Dit is nog een conservatieve benadering van de werkelijke trefkans (daarvoor zouden alle paarsgewijze kansen binnen de cel en het aandeel in de cel van de celoverlappende polygoon/polygonen betrokken moeten worden). De figuur totaliseert alle cellen van alle types."}
 hmt_det_prob_dens %>% 
     mutate(weight = count / sum(count)) %>%
     ggplot(aes(x = det_prob, 
@@ -326,7 +327,7 @@ hmt_det_prob_dens %>%
     xlim(1,0)
 ```
 
-```{r detprob-point-cell}
+```{r detprob-point-cell, fig.cap="Cumulatieve relatieve frequentie van de trefkans per cel voor punt- en voor celgebaseerde koppeling tussen polygonen en rastercellen (conservatief ingeschat voor celgebaseerd), beginnend bij cellen met kans 1 en afdalend naar kans 0. De figuur totaliseert alle cellen van alle types."}
 hmt_freq_sub32_dens %>% 
     arrange(desc(areaprop)) %>% 
     mutate(cum_relfreq = cumsum(count) / sum(count),
@@ -508,7 +509,7 @@ pop_size %>%
 De populatiegrootte volgens celgebaseerde koppeling is overwegend 50% tot 150% groter, afhankelijk van het type.
 Dit is goed te zien in de spreiding van de relatieve verschillen ((cellbased - centroidbased) / centroidbased * 100):
 
-```{r popsize-surplus, message=FALSE}
+```{r popsize-surplus, message=FALSE, fig.cap="Histogram van het relatieve verschil in populatiegrootte van een type, tussen de centroïd- en de celgebaseerde koppeling tussen polygonen en rastercellen. Betreft volgende formule: (cellbased - centroidbased) / centroidbased * 100."}
 pop_size %>% 
     pivot_wider(names_from = count_method,
                 values_from = population_size) %>% 
@@ -519,7 +520,7 @@ pop_size %>%
 
 Een grafiek over alle types heen benadrukt de grote variatie in populatiegrootte tussen types:
 
-```{r popsize-abs, fig.width=5, fig.height=5}
+```{r popsize-abs, fig.width=5, fig.height=5, fig.cap="Absolute populatiegroottes van types, bij de centroïd- en de celgebaseerde koppeling tussen polygonen en rastercellen."}
 pop_size %>% 
     ggplot(aes(x = count_method, y = population_size)) +
     geom_jitter(width = 0.1, alpha = 0.4) +
@@ -548,7 +549,7 @@ De geschatte totale oppervlakte van een type volgens een celgebaseerde koppeling
 
 De geschatte totale oppervlakte van een type volgens een centroïdgebaseerde koppeling, in verhouding tot de totale oppervlakte van het type op basis van de polygonen + phab-waarde, toont dat de concrete implementatie van de centroïdgebaseerde koppeling meestal een goede match oplevert met de reële oppervlakte:
 
-```{r popsize-centroid-rel, message=FALSE, warning=FALSE}
+```{r popsize-centroid-rel, message=FALSE, warning=FALSE, fig.cap="Histogram van de verhouding tussen de geschatte totale oppervlakte o.b.v. centroïden en o.b.v. de habitatkaart. Dus volgens formule area_centroid / area_vectorbased."}
 cell_area <- 32^2 %>% set_units("m^2") %>% set_units("ha")
 pop_size %>% 
     filter(count_method == "centroidbased") %>% 

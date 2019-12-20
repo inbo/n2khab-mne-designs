@@ -1,4 +1,4 @@
-# Relaties tussen verschillende hiërarchische GRTS-resoluties bij de terrestrische types
+# Relaties tussen verschillende hiërarchische GRTS-resoluties bij de terrestrische types {#levels}
 
 Een uitdaging voor de meetnetten natuurlijk milieu zijn de onbetrouwbaarheden in het terrestrische steekproefkader, dat gebaseerd zal worden op de databron `habitatmap_terr`:
 
@@ -27,6 +27,9 @@ zullen we kijken naar relaties tussen **level0** en **level3**:
 - hoeveel level3-cellen, en level0-cellen per level3-cel zijn er ter beschikking per type?
 
 Noot: in de onderstaande benadering zijn de level0-cellen steeds met polygonen gekoppeld _volgens de centroïd-methode_.
+
+UPDATE: in de onderstaande tekst wordt de bovenstaande filosofie gevolgd.
+Evenwel zal een van de hiermee gerelateerde vervangprocedures uiteindelijk getrapt worden geformuleerd; zie paragraaf \@ref(vervang).
 
 ```{r include=FALSE}
 vc_polygon_id <- all(file.exists("grts_polygon_id.tsv", "grts_polygon_id.yml"))
@@ -262,7 +265,7 @@ Analoog voor level4.
 
 Verdeling van het aantal level3-cellen per type (zonder rekening te houden met trefkans, i.e. level0-cellen worden meegeteld in de level3-cel wanneer hun centroïd in een polygoon valt _met_ het type):
 
-```{r level3-pertype, warning=FALSE}
+```{r level3-pertype, warning=FALSE, fig.cap="Histogram van het aantal level3-cellen (256x256 m²) die per type ter beschikking zijn."}
 type_grts %>% 
     distinct(level3, type) %>% 
     count(type,
@@ -698,10 +701,10 @@ system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
 
 ## Naar een praktische aanpak
 
-Er zijn een tweetal mogelijkheden om het dikwijls vrij grote aantal level3-cellen met minder dan 1 level0-cel te verhelpen, **voor specifieke types**:
+We beschouwen hier een tweetal mogelijkheden om het dikwijls vrij grote aantal level3-cellen met minder dan 1 level0-cel te verhelpen, **voor specifieke types**:
 
 - gebruik van de **celgebaseerde koppelingsmethode**.
-Normaal hanteren we de centroïdgebaseerde methode omdat we met de steekproef een correct beeld van de totale oppervlakte willen weergeven waarbij iedere steekproefeenheid hetzelfde gewicht kan krijgen in de inferentie (dus: minder bedekkende cellen moeten een overeenkomstig lagere selectiekans hebben).
+Normaal hanteren we de centroïdgebaseerde methode omdat we met de steekproef een correct beeld van de totale oppervlakte willen weergeven waarbij iedere steekproefeenheid hetzelfde gewicht kan krijgen in de inferentie (dus: minder bedekkende cellen moeten een overeenkomstig lagere celselectiekans hebben).
 Het gebruik van de celgebaseerde methode is binnen dezelfde context (oppervlaktevertegenwoordiging) maar verantwoord indien een groot deel van de type-oppervlakte bepaald wordt door laagbedekkende cellen (dwz doordat het type als kleine vlekken voorkomt of als smalle, langwerpige vlekken).
 - de **polygonen met phab ≤ 10% buiten de doelpopulatie houden**.
 Deze benadering is toegepast in het meetnet biotische habitatkwaliteit.
@@ -939,13 +942,13 @@ types_areaprop0.3_area_0.5 <-
 ```
 
 
-```{r}
+```{r cell-based-types}
 read_types(lang = "nl") %>% 
     select(type, type_name) %>% 
     semi_join(types_areaprop0.3_area_0.5 %>% 
                   filter(majority_level0coverlessthan0.3), 
               by = "type") %>% 
-    kable
+    kable(caption = "Types met een celgebaseerde koppeling bij het bepalen van de steekproefeenheid.")
 ```
 
 Inspectie op kaart toont aan dat de lage within-cell-cover van deze types vaak het gevolg is van een ruimtelijke verschijning met veel lijnvormige of kleine elementen.
