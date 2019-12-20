@@ -1,0 +1,355 @@
+# Consequenties voor de steekproefopzet {#design}
+
+De keuzes hieronder zijn verder te integreren in @vanderhaeghe_meetnetten_2018. XXXXXXXX
+
+## Spatiale opzet van de MNM: algemeen
+
+We volgen consequent de *GRTS-strategie* en gaan dus voor een aselecte, ruimtelijk gebalanceerde steekproef met voor elk type een duidelijke ruimtelijke definitie van de steekproefeenheid.
+Een aselecte strategie (d.w.z. met een randomisatieprocedure) is de enige manier om onvertekende schatters en voor Vlaanderen geldende betrouwbaarheidsintervallen en statistische toetsen te kunnen garanderen.
+Afwijkingen hierop richting 'judgment samples' of zonder duidelijke vaste definitie van de steekproefeenheid zouden leiden tot verlies van controle over de sampling weights.
+
+We gebruiken hetzelfde master **GRTS**-raster '`GRTSmaster_habitats`' als in het biotisch meetnet [@onkelinx_grts_2019, @westra_monitoring_2014], met als laagste eenheden cellen van 32 x 32 m², hier benoemd als level0-cellen.
+Afgeleide hogere hiërarchische GRTS-niveaus zijn te vinden in de `GRTSmh_brick` en `GRTSmh_diffres` databronnen [@vanderhaeghe_grtsmh_brick_2019; @vanderhaeghe_grtsmh_diffres_2019].
+
+Ongeacht hoe we voor een type zijn steekproefeenheden ruimtelijk definiëren (sample support: grootte, vorm en oriëntatie), kunnen we de GRTS-rangnummers gebruiken voor een ruimtelijk gebalanceerde selectie van deze eenheden.
+Belangrijk is wel om de topologische relatie vast te leggen tussen steekproefeenheid en GRTS-rastercel.
+
+Het opnemen van een _bestaande_ meetlocatie (bv. peilbuis) in een MNM-meetnet komt voor wanneer dit qua ruimtelijk geldigheidsbereik overlapt met de getrokken cel uit het GRTS-raster.
+
+Dit staat nog los van het feit dat we in een overgangsfase bestaande meetreeksen/meetinstallaties blijven hanteren (volgens een ruimtelijk gebalanceerde selectie); zie hoofdstuk 6 in @vanderhaeghe_meetnetten_2018 en cf. @wouters_ontwerp_2020.
+
+
+## De sample support: grootte, vorm en oriëntatie van de steekproefeenheid {#sample-support}
+
+De **steekproefeenheid** bakenen we af als volgt:
+
+- **voor (semi-)terrestrische types**: een GRTS-cel van 32 m x 32 m (level0-cel)
+    - Bemerk dat het type meestal _niet_ dekkend voorkomt binnen de steekproefeenheid.
+    We _vereisen_ dat het type voorkomt op het centroïd (het exacte middelpunt) van die cel om deel uit te maken van het steekproefkader, dit minstens in de mate (aandeel) die nodig is om bemeetbaar/bemonsterbaar te zijn. ^[
+    Merk op dat we deze voorwaarde zullen relaxen op basis van onzekerheden in het steekproefkader, maar wel volgens een methode die geen bias introduceert.
+    Zie paragraaf \@ref(vervang).
+    In elk geval is de centroïdmethode een vereiste voor een correcte verrastering tot een discrete populatie van cellen van de (momenteel maar deels beschikbare) polygonen die het type op de correcte locaties 100% dekkend weergeven.
+    Daarom blijft dit een belangrijk vertrekpunt.
+    ]
+    (Concreet worden op terrein dus eerst de punten (centroïden) getoetst op aanwezigheid van het type alvorens de cel af te bakenen en het type te bemeten/bemonsteren.) 
+    - In het _steekproefkader_ -- de totale set van geldige steekproefeenheden voor een type -- wordt het onregelmatig vlekkenpatroon dus _geabstraheerd_ tot level0-cellen waarin het type 'volledig dekkend' voorkomt.
+De voorwaarde van koppeling met het centroïd zorgt ervoor dat elke steekproefeenheid mag tellen als een volledig door het type bedekte cel en dus dat elke steekproefeenheid evenveel gewicht mag krijgen in het steekproefkader: de _kans_ dat een centroïd op een habitatvlek valt (celselectiekans) is immers gelijk aan de proportie van de habitatvlek in die cel.
+Hierdoor worden meer bedekkende cellen vaker geselecteerd dan minder bedekkende, wat leidt tot een correcte vertegenwoordiging van de totale oppervlakte van het type.
+(Noot: centroïdgebaseerde koppeling is tevens het principe dat wordt gevolgd bij een verrastering van polygonen).
+- **voor stilstaande wateren**: een volledige plas (met variabele oppervlakte).
+Bemerk dat het voorkomen van de habitattyperende levensgemeenschap in een deel van de plas ertoe leidt dat de volledige oppervlakte van de plas het habitattype is.
+- **voor stromende wateren, type 3260**: een segment van 100 m.
+De aanwezigheid van het type 3260 _binnen_ het segment is de voorwaarde voor een geldige steekproefeenheid.
+- **voor stromende wateren, type 7220**: een bron of een aan de bron gekoppeld segment (nader te bepalen) XXXXXX
+
+De koppelingswijze met het GRTS-raster, nodig om aan elke steekproefeenheid een uniek GRTS-rangnummer toe te kennen:
+
+- dit gebeurt voor de **meeste terrestrische types** op basis van de (effectieve) aanwezigheid van het type op het centroïd van een cel, zoals hierboven toegelicht
+- **enkele terrestrische types** komen _overwegend_ (voor > 55% van de totale Vlaamse oppervlakte) met een kleinere bedekking van de GRTS-cel (≤ 30%) voor: zie Tabel \@ref(tab:cell-based-types).
+Aangezien centroïdgebaseerde koppeling voor deze types daarom niet meer goed werkt (weinig treffers beschikbaar), benaderen we ze via een celgebaseerde koppeling: als de level0-cel het type _bevat_, dan komt de cel in aanmerking als steekproefeenheid.
+Dit betekent dat we voor deze types ervoor kiezen om de (minder grote) variatie in bedekking tussen cellen niet te laten spelen in de celselectiekans.
+Hierbij moet eveneens een minimum (nl. bemeetbare/bemonsterbare) oppervlakte aanwezig zijn, net als bij de centroïdgebaseerde types.
+- de types van **stilstaande wateren** krijgen in elke plas een random punt toegewezen.
+Het steekproefkader bestaat in wezen uit deze informatie (koppeling tussen plas en punt).
+Aan het punt wordt het GRTS-adres toegewezen van de cel waar het punt in valt.
+- type **3260** krijgt per segment een punt toegewezen, waaraan het GRTS-adres wordt toegewezen van de cel waar het punt in valt.
+- voor type **7220** is de basislaag om de steekproefeenheid te definiëren reeds een puntenlaag, zodat we deze punten kunnen gebruiken voor toewijzing van een GRTS-adres (dat van de cel waar het punt in valt).
+
+
+
+## Fijnstelling spatiale opzet i.v.m. het praktisch omgaan met onzekerheden in het steekproefkader {#vervang}
+
+Het steekproefkader wordt in eerste instantie afgeleid van de databronnen `habitatmap_terr`, `watersurfaces_hab`, `habitatstreams` en `habitatsprings`.
+Voor meer informatie over deze databronnen, zie de documentatie van het R-package [n2khab](https://github.com/inbo/n2khab) (vignette over data sources) en de daar gerefereerde Zenodo-collecties.
+
+Het steekproefkader voor de terrestrische types bevat een groot aandeel cellen waarover onzekerheid is over het reële optreden van het type (default: in het centroïd).
+Deze onzekerheid wordt vooral weerspiegeld door het phab-attribuut (Figuur \@ref(fig:typecover), rechterzijde); dit is het bedekkingspercentage van het type in de polygoon.
+Dit maakt dat een steekproeftrekking onvermijdelijk een aandeel cellen zal bevatten waarin het type niet optreedt.
+
+Ook voor de aquatische types, en voor terrestrische types met phab = 100%, is het mogelijk dat een type niet op een geselecteerde locatie voorkomt.
+Dit is bv. wegens ouderdom van de gebruikte informatie of omdat meerdere alternatieve types zijn aangeduid.
+
+**Verschillende stappen worden genomen om uit dit steekproefkader op een valide én praktisch haalbare manier een steekproef te kunnen bekomen en bemeten:**
+
+### Bij de steekproeftrekking
+
+- Specifiek voor de **centroïdgekoppelde terrestrische** types worden de phab-waarden gebruikt om cellen die vallen in polygonen met een phab < 100% met een celselectiekans te selecteren gelijk aan de phab-fractie.
+Dit betekent dat voor een willekeurige set van 10 cellen in het steekproefkader van een type, die op het centroïd een polygoon treffen met phab 10 (voor dat type), er gemiddeld 1 cel at random in aanmerking komt voor de GRTS-steekproef (binomiale trekking met π = 0.10).
+De binomiale trekking gebeurt cel per cel in de volgorde van de GRTS-rangnummers.
+    - Er is alleen een overdimensionering nodig inzoverre er onzekerheid bestaat over _het actuele optreden van het type in de gehele polygoon_, vermits een ruimtelijk gebalanceerde vervangprocedure wordt voorzien (zie verder).
+    - _Een **vervangprocedure** is bovendien essentieel_, en zou een nieuwe steekproefeenheid moeten opleveren in polygonen met (bemonsterbare oppervlakte van) het type.
+    Die nood is er omdat we dikwijls _niet_ het type zullen treffen in de binomiaal geselecteerde cel, in polygonen met lagere phab, terwijl we in de steekproeftrekking reeds de lagere celselectiekans lieten doorwerken en dus voor die cel wel een uitkomst _nodig_ hebben, tenzij zou blijken dat de _polygoon_ als zodanig het type toch niet bevat.
+    - Bemerk dat we tevens, in voorbereiding van de vervangprocedure op terrein (zie verder), aangrenzende polygonen met eenzelfde of met een licht verschillende phab-waarde _dissolven tot grotere polygonen_.
+    Deze oefening gebeurt dus apart per type.
+    We definiëren daartoe phab-klassen rond elk veelvoud van 5%: [0, 2.5], (2.5, 7.5], (7.5, 12.5], ..., (97.5, 100].
+    Veelvouden van 5% komen het vaakst voor, maar in het geheel komen heel wat meer waarden voor
+
+- Voor **alle andere types** wordt louter gekoppeld tussen enerzijds het GRTS-raster en anderzijds terrestrische polygonen of aquatische punten (die plassen, segmenten of bronnen vertegenwoordigen).
+
+### Bij het terreinbezoek
+
+Indien de getrokken steekproefeenheid effectief (op terrein) het type is (volgens de regels, vermeld bij 'sample support' (par. \@ref(sample-support))), dan wordt deze steekproefeenheid weerhouden en bemeten / bemonsterd.
+
+We onderscheiden **vier methoden** om een via de steekproef getrokken eenheid met _afwezigheid_ van het type te vervangen door een steekproefeenheid mét het type.
+Het is in wezen geen probleem om meerdere methoden te mixen binnen hetzelfde type, voor zover de methoden gemarkeerd zijn als 'toegelaten' voor het type.
+In alle gevallen streven ze compatibiliteit na met de GRTS-trekking, d.w.z. we bekomen een steekproef met een lage reeks GRTS-rangnummers.
+
+De methoden verschillen vooral in de minimaal vereiste mate waarmee ze het steekproefkader van extra informatie voorzien, i.e. het steekproefkader lokaal updaten van. 
+In het eerste geval gebeurt dit enkel ter hoogte van de vooraf geselecteerde steekproefeenheid ('type komt er niet voor'), in het laatste geval kan dit over een grotere cel gaan van een hiërarchisch hoger GRTS-niveau (bv. level3-cel = 256 m x 256 m).
+
+De vier methoden zijn:
+
+1. _**GRTS-toevoeging**_, toegelaten voor **alle types behalve de centroïdgekoppelde terrestrische**: 
+de steekproefeenheid vervalt en een nieuwe steekproefeenheid (met het volgend GRTS-rangnummer) wordt toegevoegd.
+Afhankelijk van het werk om één van de andere vervangprocedures te volgen, kan dit de meest aangewezen werkwijze zijn.
+Ze impliceert de meeste lange-afstandverplaatsingen en impliceert meer risico om per jaar niet aan het gewenste aantal eenheden te komen.
+Hier is dus steeds een overdimensionering nodig in functie van de overige (niet-phab gerelateerde) onzekerheden van het steekproefkader.
+1. _**polygon-constrained GRTS-verwisseling zonder translatie**_, toegelaten voor **alle terrestrische types en _verplicht_ voor de centroïdgekoppelde**: 
+de steekproefeenheid wordt verwisseld voor een andere steekproefeenheid in de polygoon die wel het type is.^[
+In feite nemen we dan aan dat die andere steekproefeenheid op de plaats lag van de eerste: we noteren wel het GRTS-rangnummer van de vervangeenheid, maar we blijven het koppelen aan het GRTS-rangnummer van de oorspronkelijke eenheid.
+]
+We gebruiken hierbij een gerandomiseerde en ruimtelijke gebalanceerde selectiestrategie: eerst worden alle steekproefeenheden getypeerd die gekoppeld zijn aan de polygoon (update steekproefkader) -- minstens voor het beoogde type.
+Vervolgens wordt deze geselecteerd met het laagste GRTS-rangnummer.
+1. _**polygon-constrained GRTS-verwisseling met translatie**_, toegelaten voor **alle centroïdgekoppelde terrestrische types** op voorwaarde dat de methode zonder translatie geen enkele vervanger opleverde: 
+als gevolg van de resolutie van het GRTS-raster komt het immers nog steeds voor dat geen enkele steekproefeenheid het type is, terwijl het type wel voorkomt in de polygoon en we daarom een steekproefeenheid nodig hebben.
+Op dat moment wordt het principe van de methode zonder translatie iteratief toegepast voor verschillende (systematisch gerandomiseerde) verschuivingen van het GRTS-raster (max. 16 m), net zolang tot dit een steekproefeenheid (32 m x 32 m) oplevert die het type is.
+1. _**level-constrained GRTS-verwisseling**_, toegelaten voor **alle types behalve de centroïdgekoppelde terrestrische**:
+deze methode garandeert geen vervanger, maar geeft wel een verhoogde kans om er lokaal één te vinden waarbij we vasthouden aan het GRTS-raster.
+In essentie wordt er in de ruimere omgeving gezocht naar een vervangende steekproefeenheid (van het GRTS-raster), los van polygonen (en zonder translatie) maar wel volgens een ruimtelijk gebalanceerd algoritme dat gebruik maakt van hiërarchisch hogere levels van het GRTS-raster (levels 1, 2 en 3, evt. level 4).
+Het algoritme wordt verder uitgelegd.
+Indien het algoritme geen vervanger oplevert, wordt alsnog overgegaan op de methode 'GRTS-toevoeging'.
+
+De eerste drie methoden hebben gemeen dat van een set eenheden het laagste rangnummer wordt gekozen dat nog niet voor bemonstering was geselecteerd en die wél het type zijn.
+**Bij methode 1 is deze set eenheden het volledige steekproefkader**, terwijl methoden 2 en 3 dit beperken binnen de polygoon waartoe de startcel behoorde, en waar het type aanwezig zou moeten zijn.
+
+Kortom zijn de volgende combinaties beschikbaar:
+
+|          | GRTS-toev.  | pol-constrained | pol-constrained + transl. | level-constrained |
+|:--------|:--------------:|:--------:|:--------:|:--------:|
+|aquatisch |      X      |            |            |  X |
+|terrestrisch, centroïd |            |      X      |      (X)      |  |
+|terrestrisch, cell-based |     X       |      X      |            |  X |
+
+#### Meer uitleg over de 'polygon-constrained' vervangmethoden
+
+De polygon-constrained vervangmethoden zijn verplicht voor de centroïdgekoppelde terrestrische types, vermits de phab-fractie van de polygoon al gebruikt was voor weging in het celselectieproces en we dus effectief een steekproefeenheid wensen die het type is, om geen vertekening te introduceren in de sampling weights.
+In essentie gebruikten we de polygon-constraint om de _phab-dissolved **polygoon**_ te selecteren (die volgens de basisinfo het type bevat), en hieruit volgens een aselecte, ruimtelijke gebalanceerde methode een _vervangende_ steekproefeenheid te halen die het type is.
+
+Bij dit vervangalgoritme wordt het voorkomen van het type in de polygoon in meer detail in kaart gebracht.
+Het is essentieel dat deze informatie doorstroomt naar het steekproefkader, zodat deze ook wordt bijgewerkt.
+Ook indien andere types worden aangetroffen, wordt deze informatie best meegenomen in het steekproefkader.
+
+Dit gebeurt als volgt -- dit is dus enkel indien de aanvankelijk getrokken steekproefeenheid _niet_ het type is:
+
+1. Het voorkomen van het type binnen de volledige contouren van de polygoon wordt terplekke in kaart gebracht.
+Men kan zich hierbij ten dele baseren op evidenties vanuit recente luchtfoto's en eventuele andere betrouwbare kaartbronnen: bv. open terreinen moeten niet specifiek bezocht worden als het om een bostype gaat.
+1. Het principe van centroïdkoppeling bepaalt welke steekproefeenheden van de polygoon het type zijn en dus in aanmerking komen.
+De praktische implementatie van dit algoritme kan op papier (afgedrukte cellen, centroïden en rangnummers), maar meer ideaal hiervoor is een geautomatiseerde, digitale werkwijze op terrein.
+1. Van deze cellen wordt deze met het laagste GRTS-rangnummer geselecteerd voor bemeting of bemonstering.
+1. Enkel indien geen enkele cel beschikbaar was in de vorige stap, wordt de methode _met translatie_ toegepast : voor opeenvolgende (systematisch gerandomiseerde) verschuivingen van het GRTS-raster (max. 16 m) wordt bekeken of er wél minstens één steekproefeenheid (32 m x 32 m) optreedt die het type is, dit net zolang tot er succes is.
+Voor dit verschoven raster gebeurt dan dezelfde benadering als bij de niet-verschuiving; het is dan ook belangrijk om een duidelijke regel te hebben hoe GRTS-adressen tussen het onverschoven en verschoven raster gemapt zijn.
+In alle gevallen gebeurt dus een denkbeeldige verwisseling van twee vierkanten van dezelfde grootte, zelfs als zij onderlinge overlap hebben.
+    - Het precieze algoritme van systematisch gerandomiseerde verschuivingen hangt ook af van de mogelijkheden op terrein:
+        - Op papier is er concreet nood aan een aantal extra centroïden, bv. deze van een 16 x 16 m² raster (1 niveau verdichting van het GRTS-raster) en een random volgorde om de verschillende hiermee corresponderende (diagonale) verschuivingen van het 32 x 32 m² raster te kunnen ordenen.
+        - Het meest efficiënt is dat dit voorgeprogrammeerd kan gebeuren: de karteerder karteert digitaal en een verschuivingsalgoritme doet de rest, met als uitkomst de ligging van de cel die bemeten of bemonsterd moet worden.
+    - In het zeldzame geval dat een polygoon meer dan één keer getrokken is in de steekproef, en waarbij minstens één keer met translatie wordt gewerkt, dan tellen vanaf de tweede celselectie alleen nog steekproefeenheden mee die _geen overlap_ vertonen met reeds daarvóór geselecteerde cellen.
+1. Pas indien de polygoon op deze manier geen (bemonsterbare) steekproefeenheid oplevert, en het type dus als afwezig beschouwd mag worden, laten we de oorspronkelijke steekproefeenheid vallen en passen bij uitzondering de gewone GRTS-toevoeging ofwel de level-constrained GRTS-verwisseling toe.
+
+
+#### Meer uitleg over de 'level-constrained' vervangmethode
+
+De level-constrained methode is beschikbaar voor alle types behalve de centroïdgekoppelde terrestrische.
+Deze methode gaat volgens een ruimtelijk gebalanceerde, aselecte methode op zoek naar een level0-steekproefeenheid, binnen de grotere, omvattende GRTS-cellen van hoger hiërarchisch niveau.
+In vergelijking met de polygon-constrained methode (zonder translatie) levert dit meestal een veel groter aantal potentiële steekproefeenheden op, omdat het beschouwde gebied groter is.
+
+In essentie selecteren we met deze methode de omvattende cel van een hogere orde, waarbinnen dan een procedure wordt gevold om alle nog niet eerder beoordeelde level0-cellen in een hiërarchisch gerandomiseerde volgorde te evalueren.
+Daarbij wordt de nabije omgeving van de oorspronkelijke level0-cel vooraan gezet.
+Door trapsgewijs te werken volgens de digits van de GRTS-adressen, hoeven niet ineens alle level0-cellen binnen de hogere-orde-cel gekarteerd te worden, zoals verder uitgelegd.
+
+Net zoals bij de polygon-constrained methode (zonder translatie) wordt de oorspronkelijke steekproefeenheid verwisseld voor een andere steekproefeenheid (alsof zij fysiek verwisseld waren), maar deze methode heeft wel de elegantie dat strikt de GRTS-benadering op het hogere niveau gevolgd wordt (waarbij 'grote cel behoort tot doelpopulatie' wordt gedefinieerd als 'grote cel bevat minstens één level0-cel die behoort tot doelpopulatie').
+
+Voor dit algoritme worden meer specifiek de (reverse) base-4 GRTS-celadressen gebruikt; voor meer info zie @stevens_spatially_2004.
+Voor een praktische introductie tot de methode, voer de volgende commando’s uit in R:
+
+```
+remotes::install_github("ThierryO/grts", build_vignettes = TRUE)
+vignette("intro", package = "GRTS")
+```
+
+Stel dat een geselecteerde level0-cel het reverse adres 0100100032223 heeft.
+De eerste digit, '0', identificeert de level0 cel binnen de omvattende level1-cel met adres 100100032223 (en met celgrootte 64 m), die in totaal 4 level0-cellen bevat (0, 1, 2, 3).
+Deze level1-cel is geïdentificeerd met de digit '1', binnen de omvattende level2-cel (met celgrootte 128 m en adres 00100032223), die in totaal 4 level1-cellen bevat (0, 1, 2, 3).
+Dit gaat zo hiërarchisch door tot level 12.
+Het `GRTSmaster_habitats` raster bevat dus impliciet al deze hogere-orde rasters [zie @vanderhaeghe_grtsmh_diffres_2019 voor de expliciete versies].
+
+Bij het vervangalgoritme wordt van level0-cellen beoordeeld of zij het type zijn.
+Het is essentieel dat deze informatie doorstroomt naar het steekproefkader, zodat deze wordt bijgewerkt.
+Ook indien andere types worden aangetroffen, wordt deze informatie best meegenomen in het steekproefkader.
+
+Voor plassen en waterloopsegmenten die als punten worden voorgesteld, komt de toets 'of de level0-cel het type is' neer op de vraag of deze cel _het punt bevat van de plas of het waterloopsegment dat het type is_!
+Voor celgekoppelde terrestrische types gaat het erom of de cel fysiek het type bevat in de nodige minimale (bemonsterbare) mate.
+Met andere woorden, volg de definitie van de steekproefeenheid in paragraaf \@ref(sample-support).
+
+Het hiërarchisch vervangalgoritme gaat als volgt, vertrekkend van de aanvankelijk getrokken steekproefeenheid (level0-cel):
+
+1. Bevat de **geselecteerde level0-cel (32 x 32 m²)** het type?
+    - Zoja, selecteer deze cel en bemeet/bemonster.
+    - Zoniet, selecteer de level1-cel waar de level0-cel toe behoort en ga naar de volgende stap.
+1. Beschouw de **geselecteerde level1-cel (64 x 64 m²)**, en selecteer daarbinnen _de 'volgende' level0-cel die nog niet eerder was geselecteerd_, dwz. in de volgorde van hun digits (0-1-2-3) en te beginnen bij 0.
+    - Indien er nog zo'n level0-cel beschikbaar is: ga naar stap 1.
+    - Zoniet (alle 4 level0-cellen passeerden stap 1): selecteer de level 2-cel waar de level1-cel toe behoort en ga naar de volgende stap.
+1. Beschouw de **geselecteerde level2-cel (128 x 128 m²)**, en selecteer daarbinnen _de 'volgende' level1-cel die nog niet eerder was geselecteerd_, dwz. in de volgorde van hun digits (0-1-2-3) en te beginnen bij 0.
+    - Indien er nog zo'n level1-cel beschikbaar is: ga naar de vorige stap.
+    - Zoniet (alle 4 level1-cellen passeerden de vorige stap): selecteer de level 3-cel waar de level2-cel toe behoort en ga naar de volgende stap.
+1. Beschouw de **geselecteerde level3-cel (256 x 256 m²)**, en selecteer daarbinnen _de 'volgende' level2-cel die nog niet eerder was geselecteerd_, dwz. in de volgorde van hun digits (0-1-2-3) en te beginnen bij 0.
+    - Indien er nog zo'n level2-cel beschikbaar is: ga naar de vorige stap.
+    - Zoniet (alle 4 level2-cellen passeerden de vorige stap):
+    we adviseren standaard om hier te stoppen en de 'GRTS-toevoeging' methode toe te passen, maar optioneel kan hetzelfde proces worden doorgetrokken naar nog een hoger niveau (level4-cel: 512 x 512 m), waarbij op dezelfde wijze de 4 level3-cellen doorlopen worden).
+    Dit kan nog een relevante volgende stap zijn voor ijl verspreide, maar goed vindbare types, bv. aquatische types.
+    
+
+Toegepast op het voorbeeldadres 021xxxxxxxxxxx -- we beschouwen hier alleen de eerste 3 digits -- zijn dit de 64 level0-cellen die achtereenvolgens bekeken worden in een level3-cel tot wanneer één het type is:
+
+| level0-adresvolgorde |
+|:--------------|
+|021 (oorspronkelijk geselecteerd) |
+|121|
+|221|
+|321|
+|001 (overstap naar level1-cel 0) |
+|101|
+|201|
+|301|
+|011 (overstap naar level1-cel 1) |
+|111|
+|211|
+|311|
+|031 (overstap naar level1-cel 3) |
+|131|
+|231|
+|331|
+||
+|000 (overstap naar level2-cel 0: level1-cel 0) |
+|100|
+|200|
+|300|
+|010 (overstap naar level1-cel 1) |
+|110|
+|210|
+|310|
+|020 (overstap naar level1-cel 2) |
+|120|
+|220|
+|320|
+|030 (overstap naar level1-cel 3) |
+|130|
+|230|
+|330|
+||
+|002 (overstap naar level2-cel 2: level1-cel 0) |
+|102|
+|202|
+|302|
+|012 (overstap naar level1-cel 1) |
+|112|
+|212|
+|312|
+|022 (overstap naar level1-cel 2) |
+|122|
+|222|
+|322|
+|032 (overstap naar level1-cel 3) |
+|132|
+|232|
+|332|
+||
+|003 (overstap naar level2-cel 3: level1-cel 0) |
+|103|
+|203|
+|303|
+|013 (overstap naar level1-cel 1) |
+|113|
+|213|
+|313|
+|023 (overstap naar level1-cel 2) |
+|123|
+|223|
+|323|
+|033 (overstap naar level1-cel 3) |
+|133|
+|233|
+|333|
+
+Ruimtelijk volgt deze werkwijze geclusterde celpatronen, zodat de verplaatsing te voet beperkt wordt.
+Op het einde is de volledige level3-cel met adres xxxxxxxxxx bekeken.
+
+Bemerk dus dat in bovenstaand voorbeeld de level1-cel met digit 2 overgeslagen wordt wanneer een volgende level1-cel bekeken wordt, aangezien dit de eerst bekeken level1-cel was.
+Analoog voor de level2-cel met digit 1.
+
+Voor een praktische toepassing kan het type (en eventuele andere types) dus best op een level1- of een level2-celniveau gekarteerd worden -- d.w.z. 1 zo'n grotere cel per keer, in de volgorde zoals de level1- of level2-cellen geselecteerd moeten worden.
+Na elke karteerstap kan het algoritme dan bepalen welke level0-cel geselecteerd wordt, indien er meer dan één beschikbaar is.
+
+Hoewel het algoritme volledig manueel toegepast kan worden op terrein, waarbij de base4-adressen van de level0-cellen beschikbaar moeten zijn, lijkt het het makkelijkst als de volgordes gedicteerd worden door een digitale toepassing die men bijheeft op terrein.
+
+Net zoals bij de polygon-constrained methode kan men zich voor de kartering ten dele baseren op evidenties vanuit recente luchtfoto's en eventuele andere betrouwbare kaartbronnen: bv. open terreinen moeten niet specifiek bezocht worden als het om een bostype gaat.
+
+
+## Populatiegrootte
+
+De populatiegrootte van een type is het aantal populatie-eenheden die effectief het type zijn (vanzelfsprekend gebonden aan de ruimtelijke definitie van een steekproefeenheid in paragraaf \@ref(sample-support)).
+
+Voor de centroïdgekoppelde terrestrische types is een benaderende rekenmethode het totaal te nemen van de phab-gecorrigeerde polygoonoppervlakte van een type, uitgedrukt in eenheden van 1024 m² (oppervlakte level0-cel).
+Dit werd in vorige hoofdstukken aangeduid met de variabele `area_as_cells`.
+Het is de verwachte waarde van het aantal level0-cellen, ongeacht de oorsprong (origin) van het GRTS-raster.
+
+Gegeven het feitelijke GRTS-raster kunnen we het nog correcter berekenen door elke cel mee te tellen als zijn phab-fractie (tussen 0 en 1), en hiervan de som te maken.
+
+Figuur \@ref(fig:popsize-centroid-rel) toont dat beide benaderingen voor de meeste types zeer dicht bij elkaar liggen.
+
+
+## Substructuur in de design {#substructuur}
+
+Waar verantwoordbaar, vermijden we in de MNM substructuur die verder gaat dan het onderscheid tussen types.
+Dit is omwille van flexibiliteit van de design (paragraaf \@ref(situering)).
+
+Substructuur zorgt voor verschillen in sampling weights tussen steekproefeenheden.
+Met name bij _monitoring_ wijzigt zo'n substructuur in de tijd en is substructuur dus zoveel mogelijk te vermijden [@overton_desirable_1996; @manly_sampling_2014].
+Door die wijzigingen in substructuur gaan sampling weights verschillend evolueren tussen punten en zouden er aldus onevenwichten in de design ontstaan.
+
+M.a.w. extern ontstane wijzigingen van strata of domeinen (bv. een punt komt in een ander stratum terecht) of veranderde definitie van strata leiden tot cross-stratum-specifieke sampling weights (oude strata x nieuwe strata).
+Dit compliceert inferenties en/of noopt tot bijwerken van de steekproef om (alleen in de nieuwe periode) de onevenwichten door oudere substructuur weg te werken.
+Daarnaast wordt ook poststratificatie gecompliceerder, want ook hier ontstaan cross-strata met automatisch minder data per cross-stratum.
+
+Er is één basisstratificatie in de MNM-meetnetten, namelijk volgens type.
+Dit laat toe om flexibel om te springen met de definitie van een typegroep, waarvoor uitspraken worden beoogd met een gewenste precisie en betrouwbaarheid.
+Het zijn deze kwaliteitscriteria die bepalend zullen zijn voor de steekproefgrootte per type (met lagere precisie per type).
+
+
+### Het domein 'SBZ-H-netwerk'
+
+Concreet toegepast op de MNM is het om bovenstaande redenen, in vergelijking met het biotisch meetnet, interessant om geen overbemonstering toe te passen in het **SBZ-H netwerk**.
+Er zal daardoor overall een gelijkaardige precisie ontstaan binnen en buiten het SBZ-H-netwerk _terrestrisch_ (want evenveel oppervlakte binnen als buiten), en zo'n 30% kleinere foutmarge binnen SBZ-H t.o.v. erbuiten voor _stilstaande wateren_ (want dubbel zoveel plassen binnen als buiten).
+Dit patroon varieert sterk per type: bepaalde types komen vooral voor binnen en andere vooral buiten SBZ-H.
+Het is op zich logisch dat de monitoringinspanning voor types die vooral buiten SBZ-H liggen, ook meer buiten SBZ is gesitueerd.
+Het SBZ-H netwerk zelf vertegenwoordigt slechts 7.7% van Vlaanderen, dus er is de facto reeds veel aandacht voor omdat er een verhoudingsgewijs groot oppervlakte-aandeel van de doelpopulatie binnen ligt.
+
+### Oppervlakteklassen van de stilstaande wateren
+
+Voor de stilstaande wateren is de steekproefeenheid de plas, ongeacht zijn grootte.
+De informatie op dit niveau (volgens plassen) is, ondanks de discrepantie met de (oppervlaktegewogen) G-IHD, voor het natuurbeleid veel meer functioneel om maatregelprogramma's op te maken.
+Dit geldt in het bijzonder voor de milieuproblematiek.
+
+Desalniettemin wil men daarnaast ook oppervlaktegewogen uitspraken doen, omdat dit de werkwijze voor de G-SVI is.
+De verdeling van plasoppervlakte-klassen volgens plaseenheden (Fig. \@ref(fig:watsurf-areaclasses-polygons)) is echter enorm verschillend van deze volgens oppervlakte-eenheden (Fig. \@ref(fig:watsurf-areaclasses-area)).
+Omdat een beperkt aantal heel grote plassen zo een grote invloed heeft op oppervlaktegewogen uitspraken, stratificeren we de betreffende types wel volgens een beperkt aantal **oppervlaktestrata** die de verdeling volgens oppervlakte-eenheden beter weerspiegelen:
+
+- < 1 ha
+- 1-50 ha
+- \> 50 ha
+
+In het andere geval zouden de grote plassen anders nauwelijks of niet met deze methode bemonsterd worden.
+Gezien het grote oppervlakte-aandeel zouden ook model-assisted methoden (met poststratificatie of een regression estimator) de grote onzekerheid niet voldoende oplossen.
+
+De drie oppervlaktestrata zijn een vereenvoudiging t.o.v. de 4 klassen in het biotisch meetnet.
+
+
