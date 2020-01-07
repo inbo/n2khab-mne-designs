@@ -119,8 +119,10 @@ In essentie wordt er in de ruimere omgeving gezocht naar een vervangende steekpr
 Het algoritme wordt verder uitgelegd.
 Indien het algoritme geen vervanger oplevert, wordt alsnog overgegaan op de methode 'GRTS-toevoeging'.
 
-De eerste drie methoden hebben gemeen dat van een set eenheden het laagste rangnummer wordt gekozen dat nog niet voor bemonstering was geselecteerd en die wél het type zijn.
-**Bij methode 1 is deze set eenheden het volledige steekproefkader**, terwijl methoden 2 en 3 dit beperken binnen de polygoon waartoe de startcel behoorde, en waar het type aanwezig zou moeten zijn.
+Alle methoden hebben gemeen dat van een set eenheden het laagste rangnummer wordt gekozen dat nog niet voor bemonstering was geselecteerd en die wél het type zijn.
+**Bij methode 1 is deze set eenheden het volledige steekproefkader**.
+In methoden 2 en 3 is de set eenheden beperkt tot de polygoon waartoe de startcel behoorde, en waar het type aanwezig zou moeten zijn.
+In methode 4 is deze set beperkt tot de level0-cellen in een GRTS-cel van hoger hiërarchisch niveau, die de originele level0-cel omvat.
 
 Kortom zijn de volgende combinaties beschikbaar:
 
@@ -160,14 +162,13 @@ Voor centroïdgekoppelde types wordt hierbij de celselectiekans (volgens phab) a
 #### Meer uitleg over de 'level-constrained' vervangmethode
 
 De level-constrained methode is beschikbaar voor alle types behalve de centroïdgekoppelde terrestrische.
-Deze methode gaat volgens een ruimtelijk gebalanceerde, aselecte methode op zoek naar een level0-steekproefeenheid, binnen de grotere, omvattende GRTS-cellen van hoger hiërarchisch niveau.
+Deze methode gaat volgens een ruimtelijk gebalanceerde, aselecte methode op zoek naar de level0-steekproefeenheid met het laagste GRTS-rangnummer binnen de grotere, omvattende GRTS-cel van hoger hiërarchisch niveau.
 In vergelijking met de polygon-constrained methode (zonder translatie) levert dit meestal een veel groter aantal potentiële steekproefeenheden op, omdat het beschouwde gebied groter is.
 
-In essentie selecteren we met deze methode de omvattende cel van een hogere orde, waarbinnen dan een procedure wordt gevold om alle nog niet eerder beoordeelde level0-cellen in een hiërarchisch gerandomiseerde volgorde te evalueren.
-Daarbij wordt de nabije omgeving van de oorspronkelijke level0-cel vooraan gezet.
-Door trapsgewijs te werken volgens de digits van de GRTS-adressen, hoeven niet ineens alle level0-cellen binnen de hogere-orde-cel gekarteerd te worden, zoals verder uitgelegd.
+In essentie selecteren we met deze methode de omvattende cel van een hogere orde, waarbinnen dan alle nog niet eerder beoordeelde level0-cellen worden geëvalueerd.
+Door trapsgewijs op te schalen (level1 - level2 - level3) wordt de nabije omgeving van de oorspronkelijke level0-cel vooraan gezet.
 
-Net zoals bij de polygon-constrained methode (zonder translatie) wordt de oorspronkelijke steekproefeenheid verwisseld voor een andere steekproefeenheid (alsof zij fysiek verwisseld waren), maar deze methode heeft wel de elegantie dat strikt de GRTS-benadering op het hogere niveau gevolgd wordt (waarbij 'grote cel behoort tot doelpopulatie' wordt gedefinieerd als 'grote cel bevat minstens één level0-cel die behoort tot doelpopulatie').
+Net zoals bij de polygon-constrained methode (zonder translatie) wordt de oorspronkelijke steekproefeenheid verwisseld voor een andere steekproefeenheid (alsof zij fysiek verwisseld waren), maar deze methode heeft wel de elegantie dat strikt de GRTS-benadering op het hogere niveau gevolgd blijft (waarbij 'grote cel behoort tot doelpopulatie' wordt gedefinieerd als 'grote cel bevat minstens één level0-cel die behoort tot doelpopulatie').
 
 Voor dit algoritme worden meer specifiek de (reverse) base-4 GRTS-celadressen gebruikt; voor meer info zie @stevens_spatially_2004.
 Voor een praktische introductie tot de methode, voer de volgende commando’s uit in R:
@@ -196,98 +197,19 @@ Het hiërarchisch vervangalgoritme gaat als volgt, vertrekkend van de aanvankeli
 1. Bevat de **geselecteerde level0-cel (32 x 32 m²)** het type?
     - Zoja, selecteer deze cel en bemeet/bemonster.
     - Zoniet, selecteer de level1-cel waar de level0-cel toe behoort en ga naar de volgende stap.
-1. Beschouw de **geselecteerde level1-cel (64 x 64 m²)**, en selecteer daarbinnen _de 'volgende' level0-cel die nog niet eerder was geselecteerd_, dwz. in de volgorde van hun digits (0-1-2-3) en te beginnen bij 0.
-    - Indien er nog zo'n level0-cel beschikbaar is: ga naar stap 1.
-    - Zoniet (alle 4 level0-cellen passeerden stap 1): selecteer de level 2-cel waar de level1-cel toe behoort en ga naar de volgende stap.
-1. Beschouw de **geselecteerde level2-cel (128 x 128 m²)**, en selecteer daarbinnen _de 'volgende' level1-cel die nog niet eerder was geselecteerd_, dwz. in de volgorde van hun digits (0-1-2-3) en te beginnen bij 0.
-    - Indien er nog zo'n level1-cel beschikbaar is: ga naar de vorige stap.
-    - Zoniet (alle 4 level1-cellen passeerden de vorige stap): selecteer de level 3-cel waar de level2-cel toe behoort en ga naar de volgende stap.
-1. Beschouw de **geselecteerde level3-cel (256 x 256 m²)**, en selecteer daarbinnen _de 'volgende' level2-cel die nog niet eerder was geselecteerd_, dwz. in de volgorde van hun digits (0-1-2-3) en te beginnen bij 0.
-    - Indien er nog zo'n level2-cel beschikbaar is: ga naar de vorige stap.
-    - Zoniet (alle 4 level2-cellen passeerden de vorige stap):
-    we adviseren standaard om hier te stoppen en de 'GRTS-toevoeging' methode toe te passen, maar optioneel kan hetzelfde proces worden doorgetrokken naar nog een hoger niveau (level4-cel: 512 x 512 m), waarbij op dezelfde wijze de 4 level3-cellen doorlopen worden).
+1. Beschouw de **geselecteerde level1-cel (64 x 64 m²)**, en selecteer daarbinnen _de 'volgende' level0-cel die nog niet eerder was geselecteerd_ en die wel het type is, d.w.z. in de volgorde van de GRTS-rangnummers.
+    - Indien er nog zo'n level0-cel beschikbaar is: selecteer deze cel en bemeet/bemonster.
+    - Zoniet (geen enkele level0-cel voldoet): selecteer de level 2-cel waar de level1-cel toe behoort en ga naar de volgende stap.
+1. Beschouw de **geselecteerde level2-cel (128 x 128 m²)**, en selecteer daarbinnen _de 'volgende' level0-cel die nog niet eerder was geselecteerd_ en die wel het type is, d.w.z. in de volgorde van de GRTS-rangnummers.
+    - Indien er nog zo'n level0-cel beschikbaar is: selecteer deze cel en bemeet/bemonster.
+    - Zoniet (geen enkele level0-cel voldoet): selecteer de level 3-cel waar de level2-cel toe behoort en ga naar de volgende stap.
+1. Beschouw de **geselecteerde level3-cel (256 x 256 m²)**, en selecteer daarbinnen _de 'volgende' level0-cel die nog niet eerder was geselecteerd_ en die wel het type is, d.w.z. in de volgorde van de GRTS-rangnummers.
+    - Indien er nog zo'n level0-cel beschikbaar is: selecteer deze cel en bemeet/bemonster.
+    - Zoniet (geen enkele level0-cel voldoet):
+    we adviseren standaard om hier te stoppen en de 'GRTS-toevoeging' methode toe te passen, maar optioneel kan hetzelfde proces worden doorgetrokken naar nog een hoger niveau (level4-cel: 512 x 512 m²), waarbij op dezelfde wijze de nog-niet-geselecteerde level0-cellen doorlopen worden).
     Dit kan nog een relevante volgende stap zijn voor ijl verspreide, maar goed vindbare types, bv. aquatische types.
-    
 
-Toegepast op het voorbeeldadres 021xxxxxxxxxxx -- we beschouwen hier alleen de eerste 3 digits -- zijn dit de 64 level0-cellen die achtereenvolgens bekeken worden in een level3-cel tot wanneer één het type is:
-
-| level0-adresvolgorde |
-|:--------------|
-|021 (oorspronkelijk geselecteerd) |
-|121|
-|221|
-|321|
-|001 (overstap naar level1-cel 0) |
-|101|
-|201|
-|301|
-|011 (overstap naar level1-cel 1) |
-|111|
-|211|
-|311|
-|031 (overstap naar level1-cel 3) |
-|131|
-|231|
-|331|
-||
-|000 (overstap naar level2-cel 0: level1-cel 0) |
-|100|
-|200|
-|300|
-|010 (overstap naar level1-cel 1) |
-|110|
-|210|
-|310|
-|020 (overstap naar level1-cel 2) |
-|120|
-|220|
-|320|
-|030 (overstap naar level1-cel 3) |
-|130|
-|230|
-|330|
-||
-|002 (overstap naar level2-cel 2: level1-cel 0) |
-|102|
-|202|
-|302|
-|012 (overstap naar level1-cel 1) |
-|112|
-|212|
-|312|
-|022 (overstap naar level1-cel 2) |
-|122|
-|222|
-|322|
-|032 (overstap naar level1-cel 3) |
-|132|
-|232|
-|332|
-||
-|003 (overstap naar level2-cel 3: level1-cel 0) |
-|103|
-|203|
-|303|
-|013 (overstap naar level1-cel 1) |
-|113|
-|213|
-|313|
-|023 (overstap naar level1-cel 2) |
-|123|
-|223|
-|323|
-|033 (overstap naar level1-cel 3) |
-|133|
-|233|
-|333|
-
-Ruimtelijk volgt deze werkwijze geclusterde celpatronen, zodat de verplaatsing te voet beperkt wordt.
-Op het einde is de volledige level3-cel met adres xxxxxxxxxx bekeken.
-
-Bemerk dus dat in bovenstaand voorbeeld de level1-cel met digit 2 overgeslagen wordt wanneer een volgende level1-cel bekeken wordt, aangezien dit de eerst bekeken level1-cel was.
-Analoog voor de level2-cel met digit 1.
-
-Voor een praktische toepassing kan het type (en eventuele andere types) dus best op een level1- of een level2-celniveau gekarteerd worden -- d.w.z. 1 zo'n grotere cel per keer, in de volgorde zoals de level1- of level2-cellen geselecteerd moeten worden.
+Voor een praktische toepassing kan het type (en eventuele andere types) dus best op level1-, level2- of level3-celniveau gekarteerd worden.
 Na elke karteerstap kan het algoritme dan bepalen welke level0-cel geselecteerd wordt, indien er meer dan één beschikbaar is.
 
 Hoewel het algoritme volledig manueel toegepast kan worden op terrein, waarbij de base4-adressen van de level0-cellen beschikbaar moeten zijn, lijkt het het makkelijkst als de volgordes gedicteerd worden door een digitale toepassing die men bijheeft op terrein.
