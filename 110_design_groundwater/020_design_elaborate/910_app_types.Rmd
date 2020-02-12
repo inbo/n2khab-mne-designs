@@ -1,52 +1,15 @@
 # (APPENDIX) Bijlagen {-}
 
-# Samenstelling van de typegroepen {#app:typegroups}
+# Overzichtstabel van types in de meetnetten van het grondwatercompartiment {#app:typegroups}
 
-```{r results='asis'}
-typegroups <- 
-    targetpop %>% 
-    inner_join(schemes, by = "scheme") %>% 
-    select(scheme, 
-           scheme_name, 
-           typegroup, 
-           typegroup_name, 
-           typeclass_name, 
-           type, 
-           type_name, 
-           type_shortname)
-
-for (i in unique(filter(typegroups, !is.na(typegroup))$scheme)) {
-    
-    typegroups_i <- 
-        typegroups %>% 
-        filter(scheme == i)
-    
-    scheme_name <- 
-        typegroups_i %>% 
-        distinct(scheme, scheme_name) %>% 
-        pull(scheme_name)
-    
-    cat("## ", as.character(scheme_name), " (", i, ")\n\n", sep = "")
-
-    for (j in (unique(typegroups_i$typegroup) %>% as.character %>% sort)) {
-        
-        typegroup_name <- 
-            typegroups_i %>% 
-            distinct(typegroup, typegroup_name) %>% 
-            filter(typegroup == j) %>% 
-            pull(typegroup_name)
-        
-        cat("### ", as.character(typegroup_name), " (", j, ")\n\n", sep = "")
-        
-        typegroups_i %>% 
-            filter(typegroup == j) %>% 
-            select(typeclass = typeclass_name,
-                   type,
-                   type_name, 
-                   type_shortname) %>% 
-            pandoc.table(split.table = Inf,
-                         justify = "left")
-}
-}
+```{r}
+targetpop %>% 
+    distinct(typeclass_name,
+             type,
+             type_name,
+             type_shortname) %>% 
+    arrange(typeclass_name,
+             type) %>% 
+    kable %>% 
+    kable_styling()
 ```
-

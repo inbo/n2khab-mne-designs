@@ -12,13 +12,16 @@ Dit komt omdat het type de milieuvariabelen bepaalt die worden geanalyseerd.
 ```{r schemes}
 schemes <- 
     read_schemes(lang = "nl") %>% 
-    filter(attribute_1 == "GW") %>% 
+    filter(attribute_1 == "GW",
+           programme == "MNE") %>% 
     select(scheme_type = tag_1_name, 
            scheme = scheme,
            scheme_name, 
-           spatial_restriction) %>% 
+           spatial_restriction,
+           attribute_2) %>% 
     arrange(scheme_type, scheme)
 schemes %>% 
+  select(-attribute_2) %>% 
   mutate(spatial_restriction = ifelse(is.na(spatial_restriction),
                                             "",
                                             spatial_restriction)) %>% 
@@ -26,8 +29,21 @@ schemes %>%
     kable_styling()
 ```
 
+De verklaring van de bijhorende milieudrukken is opgenomen in Tabel \@ref(tab:ep).
 
-De doelpopulaties van de verschillende meetnetten in het compartiment grondwater, zoals gedefinieerd door de samenstellende types, zijn weergegeven in Tabel \@ref(tab:targetpop).
+```{r ep, results='asis'}
+read_env_pressures(lang = "nl") %>% 
+  select(ep_code,
+         ep_abbrev, 
+         ep_name, 
+         explanation) %>% 
+  semi_join(schemes, by = c(ep_code = "attribute_2")) %>% 
+  select(-ep_code) %>% 
+  pandoc.table()
+```
+
+
+De types die de resp. doelpopulaties van de verschillende meetnetten in het compartiment grondwater definiëren, zijn weergegeven in Tabel \@ref(tab:targetpop).
 
 ```{r targetpop}
 targetpop <-
@@ -47,6 +63,8 @@ targetpop %>%
     scroll_box(height = "500px")
 ```
 
+De namen van de types zijn te vinden in Bijlage \@ref(app:types).
+
 Het aantal types per meetnet is te zien in Tabel \@ref(tab:nr-types).
 
 ```{r nr-types}
@@ -60,7 +78,7 @@ targetpop %>%
 Voor de meetnetten `GW_03.3` en `GW_05.1_terr` werden de types a priori gegroepeerd tot typegroepen.
 Het is op dit niveau dat een zekere informatiekwaliteit (precisie en betrouwbaarheid) wordt nagestreefd.
 De typegroepen zijn opgelijst in Tabel \@ref(tab:typegroups).
-Welke types tot welke typegroep behoren, is opgelijst in Bijlage \@ref(app:typegroups).
+Welke types tot welke typegroep behoren, is opgelijst in Tabel \@ref(tab:typegroups-ext).
 
 ```{r typegroups}
 targetpop %>% 
@@ -69,6 +87,23 @@ targetpop %>%
         name = "nr_types") %>% 
   kable(caption = "Het aantal types per typegroep.") %>% 
   kable_styling(full_width = FALSE)
+```
+
+```{r typegroups-ext}
+targetpop %>% 
+  filter(!is.na(typegroup)) %>% 
+  select(scheme, 
+         typegroup, 
+         typegroup_name,
+         typeclass_name, 
+         type) %>% 
+  arrange(scheme, 
+         typegroup, 
+         typegroup_name,
+         typeclass_name, 
+         type) %>% 
+  kable(caption = "De types per typegroep.") %>% 
+  scroll_box(height = "700px")
 ```
 
 
