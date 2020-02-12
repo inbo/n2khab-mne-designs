@@ -1,4 +1,123 @@
-# (PART) Selectie en verkenning van beschikbare data {-}
+# (PART) Data voor het ontwerp van de meetnetten {-}
+
+# Gegevens over de doelpopulaties van de meetnetten
+
+<!-- Expanderen van types per meetnet: -->
+<!-- Types die voorkomen in de geëxpandeerde lijst, met hun waterhuishoudingsklasse (`hydr_class`): -->
+<!-- De variabele `unresolved` is `TRUE` voor de extra types, toegevoegd door expansie van de lijst. -->
+<!-- Het betekent dat zulke types niet voorkomen in de definiërende typelijst van de doelpopulatie (als gevolg van hoofd- vs. subtypeniveau), maar dat polygonen met deze types in `habitatmap_terr` (geïnterpreteerde versie van het terrestrisch deel van de habitatkaart) vermoedelijk (of voor extra subtypes: zeker) _deel uitmaken_ van de doelpopulatie. -->
+<!-- Of een polygoon, met een hoofdtypecode waarvoor `unresolved == TRUE`, ook werkelijk deel uitmaakt van de doelpopulatie, zal op terrein moeten blijken. -->
+
+```{r}
+targetpop_expanded <-
+    targetpop %>%
+    group_by(scheme) %>%
+    expand_types %>%
+    ungroup
+types_expanded <-
+    targetpop_expanded %>%
+    distinct(type) %>%
+    inner_join(read_types() %>% select(type, hydr_class),
+               by = "type") %>%
+    arrange(type) %>%
+    mutate(unresolved = type %in% (types_expanded %>%
+                                    anti_join(targetpop,
+                                              by = "type") %>%
+                                    .$type))
+```
+
+<!-- De volgende types werden toegevoegd als gevolg van de expansie: -->
+
+```{r include=FALSE}
+types_expanded %>%
+    filter(unresolved) %>% 
+    inner_join(read_types() %>% select(type, typelevel),
+               by = "type") %>% 
+    select(type, typelevel) %>% 
+    kable(caption = "Toegevoegde typecodes om optimaal te koppelen met de geïnterpreteerde kaartlaag van terrestrische types `habitatmap_terr`") %>% 
+    kable_styling(full_width = FALSE)
+```
+
+<!-- Indien de polygonen van het toegevoegde hoofdtype weinig piëzometers bevatten, dan zullen we dit type terug verwijderen: het is immers niet duidelijk met welk subtype dit in de analyse meest overeenkomt. -->
+<!-- Daarnaast worden de toegevoegde subtypes terug omgezet naar het hoofdtype, na koppeling met de geïnterpreteerde kaartlaag van terrestrische types `habitatmap_terr`. -->
+
+<!-- We lezen de ruimtelijke data in van de terrestrische types (incl. 'semi-terrestrisch'), met uitsluiting van resterende aquatische types (binnen deze potentieel terrestrische polygonen). -->
+<!-- Na de beperking tot de types in `types_expanded` mergen we tevens de geëxpandeerde subtypes terug in hun hoofdtype, aangezien in de MNM op dat niveau wordt gewerkt bij die types. -->
+
+```{r}
+hmt <- read_habitatmap_terr(keep_aq_types = FALSE)
+hmt_occ <-
+    hmt$habitatmap_terr_types %>%
+    semi_join(types_expanded,
+              by = "type") %>%
+    mutate(type = recode(type,
+                         "rbbkam+" = "rbbkam",
+                         "rbbvos+" = "rbbvos",
+                         "rbbzil+" = "rbbzil",
+                         "9120_qb" = "9120",
+                         "5130_hei" = "5130",
+                         "5130_kalk" = "5130") %>%
+               as.character %>%
+               factor(levels = levels(types_expanded$type))
+           )
+hmt_pol <-
+    hmt$habitatmap_terr_polygons %>%
+    semi_join(hmt_occ, by = "polygon_id") %>% 
+    select(polygon_id)
+```
+
+<!-- - We doen hetzelfde voor de stilstaande wateren (d.w.z. aquatische types uitgezonderd 3260 en 7220): -->
+
+```{r}
+wsh <- read_watersurfaces_hab(interpreted = TRUE)
+wsh_occ <- 
+    wsh$watersurfaces_types %>% 
+    semi_join(types_expanded,
+              by = "type")
+wsh_pol <-
+    wsh$watersurfaces_polygons %>%
+    semi_join(wsh_occ, by = "polygon_id") %>% 
+    select(polygon_id)
+```
+
+<!-- - We lezen de spatiale data ook in voor types 3260 en 7220. -->
+
+```{r}
+habstream <- read_habitatstreams()
+habspring <- read_habitatsprings(filter_hab = TRUE) # bij joinen voor meetnetspecifieke toepassing: 
+                                                    # rekening houden met aquatische vs. semi-terrestrische locaties!
+```
+
+Op basis van de types in de doelpopulatie (paragraaf \@ref(meetnetten)) zijn verschillende spatiale datasets afgeleid voor het grondwatercompartiment, waar deze types voorkomen (behoudens onzekerheden in de databronnen):
+
+- polygonen van de geïnterpreteerde kaartlaag van terrestrische types;
+- polygonen van de geïnterpreteerde kaartlaag van types van stilstaande wateren;
+- waterlopen met type 3260;
+- punten met type 7220.
+
+Omdat we deze locaties willen gebruiken om bruikbare piëzometers te selecteren, wordt rond de terrestrische polygonen een buffer van 10 meter in rekening gebracht.
+Voor aquatische objecten en voor geheel type 7220 wordt een buffer van 20 meter gebruikt: grondwater wordt beschouwd in relatie tot het oppervlaktewater.
+Voor waterplassen wordt daarbij het watervlak zelf niet in rekening gebracht: hier worden dus ringen rond de plas gecreëerd.
+
+```{r}
+hmt_pol_buff <- st_buffer(hmt_pol, 10)
+```
+
+```{r}
+wsh_pol_union <- st_union(wsh_pol)
+wsh_pol_ring <- 
+    wsh_pol %>% 
+    st_buffer(20) %>% 
+    st_difference(wsh_pol_union) # takes a few minutes... Would go quicker with GRASS.
+# mapview::mapView(list(wsh_pol, wsh_pol_ring))
+```
+
+```{r}
+habstream_buff <- st_buffer(habstream, 20)
+habspring_buff <- st_buffer(habspring, 20)
+# mapview::mapView(list(habstream_buff, habspring_buff))
+```
+
 
 
 
