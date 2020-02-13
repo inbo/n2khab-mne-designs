@@ -1,6 +1,8 @@
 # (PART) Data voor het ontwerp van de meetnetten {-}
 
-# Gegevens over de doelpopulaties van de meetnetten
+# Spatiale data van de doelpopulaties van de meetnetten
+
+## Bufferpolygoonlagen voor selectie van piëzometers
 
 <!-- Expanderen van types per meetnet: -->
 <!-- Types die voorkomen in de geëxpandeerde lijst, met hun waterhuishoudingsklasse (`hydr_class`): -->
@@ -104,12 +106,12 @@ Voor waterplassen wordt daarbij het watervlak zelf niet in rekening gebracht: hi
 hmt_pol_buff <- st_buffer(hmt_pol, 10)
 ```
 
-```{r}
+```{r warning=FALSE}
 wsh_pol_union <- st_union(wsh_pol)
 wsh_pol_ring <- 
     wsh_pol %>% 
     st_buffer(20) %>% 
-    st_difference(wsh_pol_union) # takes a few minutes... Would go quicker with GRASS.
+    st_difference(wsh_pol_union)
 # mapview::mapView(list(wsh_pol, wsh_pol_ring))
 ```
 
@@ -119,6 +121,33 @@ habspring_buff <- st_buffer(habspring, 20)
 # mapview::mapView(list(habstream_buff, habspring_buff))
 ```
 
+Tabel \@ref(tab:buffer-area) geeft meer informatie over deze lagen.
+
+```{r buffer-area}
+tribble(~layer, ~surface_area, ~nr_features,
+        "Terrestrial types",
+        hmt_pol_buff %>% st_area %>% sum %>% set_units("ha") %>% round(2),
+        nrow(hmt_pol_buff),
+        "Lentic types",
+        wsh_pol_ring %>% st_area %>% sum %>% set_units("ha") %>% round(2),
+        nrow(wsh_pol_ring),
+        "Type 3260",
+        habstream_buff %>% st_area %>% sum %>% set_units("ha") %>% round(2),
+        nrow(habstream_buff),
+        "Type 7220",
+        habspring_buff %>% st_area %>% sum %>% set_units("ha") %>% round(2),
+        nrow(habspring_buff)
+) %>% 
+    kable(caption = "Oppervlakte en het aantal elementen van de bufferpolygoonlagen waarmee piëzometers worden geselecteerd.") %>% 
+    kable_styling(full_width = FALSE)
+```
+
+
+## Geschatte populatiegroottes
+
+Voor het schatten van de populatiegrootte van elk type in elk meetnet, wordt het voorkomen bij terrestrische types (voor 7220: het terrestrische deel) steeds ingeperkt volgens het optreden van ondiep grondwater.
+
+De populatiegroottes zijn relevant voor de gesimuleerde inferenties, nl. voor de toepassing van de finite-population-correction (FPC).
 
 
 
