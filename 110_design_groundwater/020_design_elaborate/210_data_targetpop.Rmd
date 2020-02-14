@@ -106,14 +106,24 @@ Voor waterplassen wordt daarbij het watervlak zelf niet in rekening gebracht: hi
 hmt_pol_buff <- st_buffer(hmt_pol, 10)
 ```
 
-```{r warning=FALSE}
+```{r warning=FALSE, eval=!file.exists("data/wsh_pol_ring.gpkg") | params$regenerate_binary_files}
 wsh_pol_union <- st_union(wsh_pol)
 wsh_pol_ring <- 
     wsh_pol %>% 
     st_buffer(20) %>% 
     st_difference(wsh_pol_union)
+wsh_pol_ring %>% 
+    st_write("data/wsh_pol_ring.gpkg")
+rm(wsh_pol_ring)
 # mapview::mapView(list(wsh_pol, wsh_pol_ring))
 ```
+
+```{r}
+wsh_pol_ring <- 
+    read_sf("data/wsh_pol_ring.gpkg",
+            crs = 31370)
+```
+
 
 ```{r}
 habstream_buff <- st_buffer(habstream, 20)
