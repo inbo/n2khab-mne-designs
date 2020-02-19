@@ -1,0 +1,110 @@
+# Datasets met primaire milieuvariabelen van de hoofdmeetnetten
+
+```{r}
+watina <- connect_watina()
+```
+
+<!-- xg3_extra locaties: filteren volgens beschikbaarheid van vg3 op minder dan 3 meter diep -->
+
+```{r message = FALSE, warning = FALSE, paged.print=FALSE}
+locs_terr_chem <- get_locs(watina, 
+                           mask = hmt_pol_buff, 
+                           buffer = 0, 
+                           loc_type = "P", 
+                           loc_validity = c("VLD", "ENT"))
+locs_terr_xg3_extra <- 
+    get_locs(watina, 
+             filterdepth_na = TRUE,
+             filterdepth_range = c(0, 10),
+             mask = hmt_pol_buff, 
+             buffer = 0, 
+             loc_type = "P", 
+             loc_validity = c("VLD", "ENT")) %>% 
+    anti_join(locs_terr_chem, by = "loc_code") %>% 
+    semi_join({.} %>% 
+                get_xg3(watina, 1989) %>% 
+                filter(vg3_lcl >= -3 | lg3_lcl >= -3 ) %>% 
+                distinct(loc_code) %>% 
+                collect,
+              by = "loc_code")
+```
+
+```{r warning = FALSE, paged.print=FALSE}
+locs_ws_chem <- get_locs(watina, 
+                     mask = wsh_pol_ring, 
+                     buffer = 0, 
+                     loc_type = "P", 
+                     loc_validity = c("VLD", "ENT"))
+locs_ws_xg3_extra <- 
+  get_locs(watina, 
+           filterdepth_na = TRUE,
+           filterdepth_range = c(0, 10),
+           mask = wsh_pol_ring, 
+           buffer = 0, 
+           loc_type = "P", 
+           loc_validity = c("VLD", "ENT")) %>% 
+  anti_join(locs_terr_chem, by = "loc_code") %>% 
+  semi_join({.} %>% 
+              get_xg3(watina, 1989) %>% 
+              filter(vg3_lcl >= -3 | lg3_lcl >= -3 ) %>% 
+              distinct(loc_code) %>% 
+              collect,
+            by = "loc_code")
+```
+
+
+```{r warning = FALSE, paged.print=FALSE}
+locs_streams_chem <- get_locs(watina, 
+                     mask = habstream_buff %>% select(type), 
+                     buffer = 0, 
+                     loc_type = "P", 
+                     loc_validity = c("VLD", "ENT"))
+locs_streams_xg3_extra <- 
+  get_locs(watina, 
+           filterdepth_na = TRUE,
+           filterdepth_range = c(0, 10),
+           mask = habstream_buff %>% select(type), 
+           buffer = 0, 
+           loc_type = "P", 
+           loc_validity = c("VLD", "ENT")) %>% 
+  anti_join(locs_streams_chem, by = "loc_code") %>% 
+  semi_join({.} %>% 
+              get_xg3(watina, 1989) %>% 
+              filter(vg3_lcl >= -3 | lg3_lcl >= -3 ) %>% 
+              distinct(loc_code) %>% 
+              collect,
+            by = "loc_code")
+```
+
+
+```{r warning = FALSE, paged.print=FALSE}
+locs_springs_chem <- get_locs(watina, 
+                     mask = habspring_buff %>% select(type), 
+                     buffer = 0, 
+                     loc_type = "P", 
+                     loc_validity = c("VLD", "ENT"))
+locs_springs_xg3_extra <- 
+  get_locs(watina, 
+           filterdepth_na = TRUE,
+           filterdepth_range = c(0, 10),
+           mask = habspring_buff %>% select(type), 
+           buffer = 0, 
+           loc_type = "P", 
+           loc_validity = c("VLD", "ENT")) %>% 
+  anti_join(locs_springs_chem, by = "loc_code") %>% 
+  semi_join({.} %>% 
+              get_xg3(watina, 1989) %>% 
+              filter(vg3_lcl >= -3 | lg3_lcl >= -3 ) %>% 
+              distinct(loc_code) %>% 
+              collect,
+            by = "loc_code")
+```
+
+
+
+
+
+
+
+## Verdeling volgens spatiale strata: bodemtextuur, ecoregio
+
