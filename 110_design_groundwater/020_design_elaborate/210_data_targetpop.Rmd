@@ -19,8 +19,6 @@ targetpop_expanded <-
 types_expanded <-
     targetpop_expanded %>%
     distinct(type) %>%
-    inner_join(read_types() %>% select(type, hydr_class),
-               by = "type") %>%
     arrange(type) %>%
     mutate(unresolved = type %in% (targetpop_expanded %>% 
                                        distinct(type) %>%
@@ -31,7 +29,7 @@ types_expanded <-
 
 <!-- De volgende types werden toegevoegd als gevolg van de expansie: -->
 
-```{r include=FALSE}
+```{r eval=FALSE, include=FALSE}
 types_expanded %>%
     filter(unresolved) %>% 
     inner_join(read_types() %>% select(type, typelevel),
@@ -113,15 +111,15 @@ wsh_pol_ring <-
     st_buffer(20) %>% 
     st_difference(wsh_pol_union)
 wsh_pol_ring %>% 
-    st_write("data/wsh_pol_ring.gpkg")
+    st_write("data/wsh_pol_ring.gpkg",
+             delete_dsn = TRUE)
 rm(wsh_pol_ring)
 # mapview::mapView(list(wsh_pol, wsh_pol_ring))
 ```
 
 ```{r}
 wsh_pol_ring <- 
-    read_sf("data/wsh_pol_ring.gpkg",
-            crs = 31370)
+    read_sf("data/wsh_pol_ring.gpkg")
 ```
 
 
