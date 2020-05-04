@@ -2,11 +2,22 @@ library(git2rdata)
 library(tidyverse)
 library(n2khab)
 library(sf)
+library(lubridate)
 rivulets_7220 <-
     read_habitatsprings(filter_hab = TRUE) %>%
     filter(type == "7220",
            system_type %in% c("rivulet",
                               "unknown"))
+
+loq <-
+    tribble(~date, ~loq_PO4, ~loq_NO3,
+            dmy("19/04/2011"), 	0.2, 0.2,
+            dmy("6/09/2011"), 	0.1, 0.1,
+            dmy("16/11/2011"), 	0.1, 0.1,
+            dmy("17/11/2011"), 	0.1, 0.1,
+            dmy("28/02/2012"), 	0.05, 0.1,
+            dmy("1/03/2012"), 	0.05, 0.1)
+
 riv7220_chem <-
     # de point_id attributen in onderstaande csv-file zullen we niet behouden,
     # want dat is beschikbaar in de authentieke 'habitatsprings' databron,
@@ -65,6 +76,13 @@ riv7220_chem <-
            lab_code = Labo_ID_db,
            11:last_col()) %>%
     rename(dist_to_source = AfstandBron) %>%
+    inner_join(loq, by = "date") %>%
+    # correcting non-constant N-P mass conversion:
+    mutate(loq_PO4_P = loq_PO4 * mean(PO4_P / PO4),
+           loq_NO3_N = loq_NO3 * mean(NO3_N / NO3),
+           PO4_P = mean(PO4_P / PO4) * PO4,
+           NO3_N = mean(NO3_N / NO3) * NO3) %>%
+    select(-PO4, -NO3, -NO2, -NH4, -SO4_S, -loq_PO4, -loq_NO3) %>%
     inner_join(rivulets_7220 %>%
                    st_drop_geometry %>%
                    select(point_id, unit_id), .,
@@ -85,22 +103,10 @@ riv7220_chem %>%
 # dus positie C of D t.ov.v. de bron (= point_id).
 # Eventueel positie 'B' toevoegen om voldoende data te bekomen.
 
-# check unieke rijen:
-riv7220_chem %>%
-    group_by(point_id, date, dist_to_source) %>%
-    summarise(nr_rel = n_distinct(releve_code)) %>%
-    filter(nr_rel > 1) %>%
-    inner_join(riv7220_chem) %>%
-    select(1:14, -unit_id, -nr_rel, -period)
-
-# voorbereiding ivm toekenning tijdsafhankelijke bepaalbaarheidsgrenzen:
-riv7220_chem %>%
-    # filter(!is.na(PO4)) %>%
-    count(date)
-
-riv7220_chem %>%
-    ggplot(aes(x = NO3)) +
-    geom_histogram()
+# De bepaalbaarheidsgrenzen variëren doorheen de tijd, zie variabelen loq_xxx
+# (LOQ = limit of quantification). In de brondataset zijn de waarden beneden LOQ
+# ingesteld op LOQ/2, wat niet ideaal is om mee te werken en dus beter anders
+# wordt aangepakt.
 
 # nog niet uitgevoerd:
 riv7220_chem %>% write_vc("riv7220_chem",
