@@ -97,11 +97,19 @@ riv7220_chem %>%
     select(dist_to_source, Kalktuf, Schaduw) %>%
     lapply(table)
 
-# dist_to_source: A (bron zelf),B (begin kalktufafzetting),C (midden tot einde kalktufafzetting) en D (na de kalktufafzetting)
+# dist_to_source: A (bron zelf),B (begin kalktufafzetting),C (midden tot einde
+# kalktufafzetting) en D (na de kalktufafzetting). Dit geldt binnen 1 point_id,
+# dus afhankelijkheid te voorzien.
 
 # We zijn meest geïnteresseerd in kwaliteit naar het einde van de habitatvlek toe,
 # dus positie C of D t.ov.v. de bron (= point_id).
 # Eventueel positie 'B' toevoegen om voldoende data te bekomen.
+
+# covariabelen kalktuf en schaduw: idd ordinaal met waarden 1 tem 5. De
+# hoeveelheid kalktuf werd ingeschat op het niveau van de vegetatieplot in 5
+# categoriën (1 = geen, 2 =  sporen, 3 =  weinig, 4 =  matig, 5 = veel). De
+# beschaduwing werd in 5 klasses in te schatten, met name 1 = geen schaduw, 2 =
+# weinig, 3 = matig, 4 = veel, 5 = volledig beschaduwd.
 
 # De bepaalbaarheidsgrenzen variëren doorheen de tijd, zie variabelen loq_xxx
 # (LOQ = limit of quantification). In de brondataset zijn de waarden beneden LOQ
