@@ -116,7 +116,7 @@ riv7220_chem %>%
 # ingesteld op LOQ/2, wat niet ideaal is om mee te werken en dus beter anders
 # wordt aangepakt.
 
-# nog niet uitgevoerd:
+# output dataset wegschrijven:
 riv7220_chem %>% write_vc("riv7220_chem",
                           root = "data/20_output/",
                           sorting = c("point_id",
