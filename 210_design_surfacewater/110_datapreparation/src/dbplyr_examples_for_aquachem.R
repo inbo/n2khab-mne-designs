@@ -59,7 +59,8 @@ lentic_chem_lazyqry <-
            unit = Unit,
            value_char = ResultFormatted,
            below_loq = IsBelowLOQ,
-           inferred = IsInferred
+           inferred = IsInferred,
+           sample_remark = FieldSampleRemark
            ) %>%
         mutate(loq = ifelse(below_loq == 1,
                             str_sub(value_char, 2, 100),
