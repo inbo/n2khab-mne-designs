@@ -15,7 +15,7 @@ tbl(aquachem, "DimUnit") %>% glimpse
 tbl(aquachem, "DimSample") %>% glimpse
 tbl(aquachem, "DimStatus") %>% glimpse
 
-# example without using dplyr verbs:
+# example without using dplyr verbs (Jo Loos):
 ############################################"
 example_string <- "SELECT fra.*
   , dwh.*
