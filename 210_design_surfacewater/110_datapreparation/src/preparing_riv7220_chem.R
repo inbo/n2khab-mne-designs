@@ -24,47 +24,7 @@ riv7220_chem <-
     # hierboven beperkt  tot de relevante locaties (rivulets_7220)
     read_csv2("data/10_input/habitatsprings_abio_v3.csv",
               col_types = cols(
-                  X1 = col_double(),
-                  Gebied = col_character(),
-                  Labo_ID_db = col_character(),
-                  Datum = col_date(format = "%d/%m/%Y"),
-                  VEGID_INBOVEG = col_character(),
-                  id_n2khab = col_double(),
-                  system_type = col_character(),
-                  habitattype = col_character(),
-                  sbz = col_double(),
-                  geometry = col_character(),
-                  AfstandBron = col_character(),
-                  Kalktuf = col_double(),
-                  Schaduw = col_double(),
-                  Periode = col_character(),
-                  pH_veld = col_character(), # problem
-                  pH_labo = col_double(),
-                  EC_veld_25grC = col_double(),
-                  EC_labo_25grC = col_double(),
-                  Buffercapaciteit_TAP = col_double(),
-                  Buffercapaciteit_TAM = col_double(),
-                  HCO3 = col_double(),
-                  CO3 = col_double(),
-                  OH = col_double(),
-                  SO4 = col_double(),
-                  Cl = col_double(),
-                  PO4 = col_double(),
-                  NO2 = col_double(),
-                  NO3 = col_double(),
-                  NH4 = col_double(),
-                  Ca = col_double(),
-                  K = col_double(),
-                  Mg = col_double(),
-                  Na = col_double(),
-                  Mn = col_character(), # problem
-                  Al = col_character(), # problem
-                  Fe = col_double(),
-                  SO4_S = col_double(),
-                  PO4_P = col_double(),
-                  NO2_N = col_double(),
-                  NO3_N = col_double(),
-                  NH4_N = col_double()
+                  Datum = col_date(format = "%d/%m/%Y")
               )) %>%
         mutate(Al = as.numeric(Al),
                Mn = as.numeric(Mn),
