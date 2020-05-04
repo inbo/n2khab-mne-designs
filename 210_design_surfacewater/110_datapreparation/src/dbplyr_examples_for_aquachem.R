@@ -56,7 +56,6 @@ lentic_chem_lazyqry <-
            type = HabtypeSel, # to be explained (and possibly handled in R): HabtypeVel
            ana_key = AnalysisKey, # for joining; will be dropped
            sample_key = SampleKey, # for joining; will be dropped
-           # comp_key = ComponentKey, # for joining; will be dropped
            variable = Component,
            value = ResultNumeric,
            unit = Unit,
@@ -81,10 +80,6 @@ lentic_chem_lazyqry <-
                       select(ana_key = AnalysisKey,
                              protocol = SAPcode),
                   by = "ana_key") %>%
-        # inner_join(tbl(aquachem, "DimComponent") %>%
-        #                select(ana_key = AnalysisKey,
-        #                       comp_key = ComponentKey,
-        #                       loq2 = LOQ)) %>%
         inner_join(tbl(aquachem, "DimWaterhabitat") %>%
                        select(loc_id = WaterhabitatKey,
                               loc_remark = Opmerking,
