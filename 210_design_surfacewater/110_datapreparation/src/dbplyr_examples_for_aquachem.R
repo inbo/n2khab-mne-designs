@@ -79,7 +79,7 @@ lentic_chem_lazyqry <-
                        select(loc_id = WaterhabitatKey,
                               loc_remark = Opmerking,
                               loc_keep = weerhouden,
-                              reason_loc_notkept = Reden_NW,
+                              loc_reason_notkept = Reden_NW,
                               x = INSIDE_X,
                               y = INSIDE_Y) %>%
                        mutate(loc_keep = ifelse(loc_keep == "ja",
@@ -91,7 +91,7 @@ lentic_chem_lazyqry <-
         select(loc_code,
                loc_remark,
                loc_keep,
-               reason_loc_notkept,
+               loc_reason_notkept,
                x,
                y,
                everything()
