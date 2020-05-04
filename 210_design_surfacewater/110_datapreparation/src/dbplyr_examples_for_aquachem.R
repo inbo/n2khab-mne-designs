@@ -12,6 +12,8 @@ tbl(aquachem, "DimWaterhabitat") %>% glimpse
 tbl(aquachem, "DimAnalysis") %>% glimpse
 tbl(aquachem, "DimComponent") %>% glimpse
 tbl(aquachem, "DimUnit") %>% glimpse
+tbl(aquachem, "DimSample") %>% glimpse
+tbl(aquachem, "DimStatus") %>% glimpse
 
 # example without using dplyr verbs:
 ############################################"
@@ -53,6 +55,7 @@ lentic_chem_lazyqry <-
            date = FieldSamplingDate,
            type = HabtypeSel, # to be explained (and possibly handled in R): HabtypeVel
            ana_key = AnalysisKey, # for joining; will be dropped
+           sample_key = SampleKey, # for joining; will be dropped
            # comp_key = ComponentKey, # for joining; will be dropped
            variable = Component,
            value = ResultNumeric,
@@ -67,6 +70,13 @@ lentic_chem_lazyqry <-
                             NA)) %>%
         mutate(loq = sql("CAST(loq AS float)"),
                date = sql("CAST(date AS date)")) %>%
+        semi_join(tbl(aquachem, "DimSample") %>%
+                      select(sample_key = SampleKey,
+                             sample_status = SampleStatus,
+                             sample_id = LabSampleID) %>%
+                      filter(sample_status == "A",
+                             str_sub(sample_id, 1, 1) != "D"),
+                  by = "sample_key") %>%
         inner_join(tbl(aquachem, "DimAnalysis") %>%
                       select(ana_key = AnalysisKey,
                              protocol = SAPcode),
@@ -87,13 +97,17 @@ lentic_chem_lazyqry <-
                                             0)) %>%
                        mutate(loc_keep = sql("CAST(loc_keep AS bit)")),
                    by = "loc_id") %>%
-        select(-value_char, -ana_key, -loc_id) %>%
-        select(loc_code,
+        select(-value_char, -ana_key, -loc_id, -sample_key) %>%
+        select(project,
+               loc_code,
                loc_remark,
+               type,
                loc_keep,
                loc_reason_notkept,
                x,
                y,
+               date,
+               sample_remark,
                everything()
                )
 
