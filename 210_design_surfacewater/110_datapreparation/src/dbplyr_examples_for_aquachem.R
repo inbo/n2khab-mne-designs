@@ -76,21 +76,21 @@ lentic_chem_lazyqry <-
         #                       loq2 = LOQ)) %>%
         inner_join(tbl(aquachem, "DimWaterhabitat") %>%
                        select(loc_id = WaterhabitatKey,
-                              remark = Opmerking,
-                              keep = weerhouden,
-                              reason_notkept = Reden_NW,
+                              loc_remark = Opmerking,
+                              loc_keep = weerhouden,
+                              reason_loc_notkept = Reden_NW,
                               x = INSIDE_X,
                               y = INSIDE_Y) %>%
-                       mutate(keep = ifelse(keep == "ja",
+                       mutate(loc_keep = ifelse(loc_keep == "ja",
                                             1,
                                             0)) %>%
-                       mutate(keep = sql("CAST(keep AS bit)")),
+                       mutate(loc_keep = sql("CAST(loc_keep AS bit)")),
                    by = "loc_id") %>%
         select(-value_char, -ana_key, -loc_id) %>%
         select(loc_code,
-               remark,
-               keep,
-               reason_notkept,
+               loc_remark,
+               loc_keep,
+               reason_loc_notkept,
                x,
                y,
                everything()
