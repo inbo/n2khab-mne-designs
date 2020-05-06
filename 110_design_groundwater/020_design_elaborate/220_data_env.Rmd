@@ -4,107 +4,103 @@
 watina <- connect_watina()
 ```
 
-<!-- xg3_extra locaties: filteren volgens beschikbaarheid van vg3 op minder dan 3 meter diep -->
+## Samenstellen van de datasets
 
-```{r message = FALSE, warning = FALSE, paged.print=FALSE}
-locs_terr_chem <- get_locs(watina, 
-                           mask = hmt_pol_buff, 
-                           buffer = 0, 
-                           loc_type = "P", 
-                           loc_validity = c("VLD", "ENT"))
-locs_terr_xg3_extra <- 
+```{r paged.print=FALSE}
+locs_terr <- 
+  get_locs(watina, 
+           filterdepth_range = c(0, 3),
+           filterdepth_guess = TRUE,
+           mask = hmt_pol_buff, 
+           join_mask = TRUE,
+           buffer = 0, 
+           loc_type = "P", 
+           loc_validity = c("VLD", "ENT"), 
+           collect = TRUE) %>% 
+  inner_join(hmt_occ %>% 
+               select(polygon_id, type) %>% 
+               filter(type != "8310"), 
+             # note however that no locations are available for 8310
+             by = "polygon_id") %>% 
+  select(-polygon_id) %>% 
+  mutate(target = "terrestrial") %>% 
+  bind_rows(
+    # this one appears to yield 0 locations:
     get_locs(watina, 
-             filterdepth_na = TRUE,
-             filterdepth_range = c(0, 10),
-             mask = hmt_pol_buff, 
+             filterdepth_range = c(0, 3),
+             filterdepth_guess = TRUE,
+             mask = habspring_buff %>% 
+                    filter(system_type %in% c("mire", "unknown")) %>% 
+                    select(type),
+             join_mask = TRUE,
              buffer = 0, 
              loc_type = "P", 
-             loc_validity = c("VLD", "ENT")) %>% 
-    anti_join(locs_terr_chem, by = "loc_code") %>% 
-    semi_join({.} %>% 
-                get_xg3(watina, 1989) %>% 
-                filter(vg3_lcl >= -3 | lg3_lcl >= -3 ) %>% 
-                distinct(loc_code) %>% 
-                collect,
-              by = "loc_code")
+             loc_validity = c("VLD", "ENT"), 
+             collect = TRUE) %>% 
+      mutate(target = "terrestrial")
+  )
 ```
 
-```{r warning = FALSE, paged.print=FALSE}
-locs_ws_chem <- get_locs(watina, 
-                     mask = wsh_pol_ring, 
-                     buffer = 0, 
-                     loc_type = "P", 
-                     loc_validity = c("VLD", "ENT"))
-locs_ws_xg3_extra <- 
+```{r paged.print=FALSE}
+locs_aq <- 
   get_locs(watina, 
-           filterdepth_na = TRUE,
-           filterdepth_range = c(0, 10),
+           filterdepth_range = c(0, 7),
+           filterdepth_guess = TRUE,
            mask = wsh_pol_ring, 
+           join_mask = TRUE,
            buffer = 0, 
            loc_type = "P", 
-           loc_validity = c("VLD", "ENT")) %>% 
-  anti_join(locs_terr_chem, by = "loc_code") %>% 
-  semi_join({.} %>% 
-              get_xg3(watina, 1989) %>% 
-              filter(vg3_lcl >= -3 | lg3_lcl >= -3 ) %>% 
-              distinct(loc_code) %>% 
-              collect,
-            by = "loc_code")
+           loc_validity = c("VLD", "ENT"), 
+           collect = TRUE) %>% 
+  inner_join(wsh_occ %>% select(polygon_id, type),
+             by = "polygon_id") %>% 
+  select(-polygon_id) %>% 
+  mutate(target = "aquatic") %>% 
+  bind_rows(
+    get_locs(watina, 
+             filterdepth_range = c(0, 7),
+             filterdepth_guess = TRUE,
+             mask = habstream_buff %>% select(type), 
+             join_mask = TRUE,
+             buffer = 0, 
+             loc_type = "P", 
+             loc_validity = c("VLD", "ENT"), 
+             collect = TRUE) %>% 
+      mutate(target = "aquatic")
+  ) %>% 
+  bind_rows(
+    # this one appears to yield 0 locations:
+    get_locs(watina, 
+             filterdepth_range = c(0, 7),
+             filterdepth_guess = TRUE,
+             mask = habspring_buff %>% 
+                    filter(system_type %in% c("rivulet", "unknown")) %>% 
+                    select(type),
+             join_mask = TRUE,
+             buffer = 0, 
+             loc_type = "P", 
+             loc_validity = c("VLD", "ENT"), 
+             collect = TRUE) %>% 
+      mutate(target = "aquatic")
+  )
+```
+
+```{r}
+locs_ext <- 
+  bind_rows(locs_terr, locs_aq)
+locs <- locs_ext %>% 
+  distinct(loc_code)
+```
+
+```{r}
+locs %>% 
+  get_xg3(startyear = )
 ```
 
 
-```{r warning = FALSE, paged.print=FALSE}
-locs_streams_chem <- get_locs(watina, 
-                     mask = habstream_buff %>% select(type), 
-                     buffer = 0, 
-                     loc_type = "P", 
-                     loc_validity = c("VLD", "ENT"))
-locs_streams_xg3_extra <- 
-  get_locs(watina, 
-           filterdepth_na = TRUE,
-           filterdepth_range = c(0, 10),
-           mask = habstream_buff %>% select(type), 
-           buffer = 0, 
-           loc_type = "P", 
-           loc_validity = c("VLD", "ENT")) %>% 
-  anti_join(locs_streams_chem, by = "loc_code") %>% 
-  semi_join({.} %>% 
-              get_xg3(watina, 1989) %>% 
-              filter(vg3_lcl >= -3 | lg3_lcl >= -3 ) %>% 
-              distinct(loc_code) %>% 
-              collect,
-            by = "loc_code")
-```
+## Verkenning van de data
 
+## Verdeling volgens de types van de doelpopulatie
 
-```{r warning = FALSE, paged.print=FALSE}
-locs_springs_chem <- get_locs(watina, 
-                     mask = habspring_buff %>% select(type), 
-                     buffer = 0, 
-                     loc_type = "P", 
-                     loc_validity = c("VLD", "ENT"))
-locs_springs_xg3_extra <- 
-  get_locs(watina, 
-           filterdepth_na = TRUE,
-           filterdepth_range = c(0, 10),
-           mask = habspring_buff %>% select(type), 
-           buffer = 0, 
-           loc_type = "P", 
-           loc_validity = c("VLD", "ENT")) %>% 
-  anti_join(locs_springs_chem, by = "loc_code") %>% 
-  semi_join({.} %>% 
-              get_xg3(watina, 1989) %>% 
-              filter(vg3_lcl >= -3 | lg3_lcl >= -3 ) %>% 
-              distinct(loc_code) %>% 
-              collect,
-            by = "loc_code")
-```
-
-
-
-
-
-
-
-## Verdeling volgens spatiale strata: bodemtextuur, ecoregio
+### Verdeling volgens bodemtextuur en ecoregio
 
