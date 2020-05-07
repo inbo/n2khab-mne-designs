@@ -59,7 +59,7 @@ lentic_chem_lazyqry <-
            variable = Component,
            value = ResultNumeric,
            unit = Unit,
-           value_char = ResultFormatted,
+           value_char = ResultFormatted, # to derive loq; will be dropped
            below_loq = IsBelowLOQ,
            above_loq = IsAboveLOQ,
            inferred = IsInferred,
