@@ -53,7 +53,7 @@ lentic_chem_lazyqry <-
            loc_code = CODE,
            project = meetnet,
            date = FieldSamplingDate,
-           type = HabtypeSel, # to be explained (and possibly handled in R): HabtypeVel
+           type = HabtypeVel,
            ana_key = AnalysisKey, # for joining; will be dropped
            sample_key = SampleKey, # for joining; will be dropped
            variable = Component,
