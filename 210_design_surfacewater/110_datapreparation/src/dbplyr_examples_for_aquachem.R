@@ -135,6 +135,35 @@ localdata <- my_selection %>% collect
 localdata
 
 
+
+# As of 8 May 2020, a much more up-to-date version of selected site
+# characteristics can be locally imported as follows:
+#############################################################################
+filepath <- ifelse(.Platform$OS.type == "unix",
+                   # PRJ_Macrofyten is supposed to be mounted:
+                   file.path("data/10_input/PRJ_Macrofyten",
+                             "habitats/MonitoringPlassen/GIS",
+                             "Kartering_waterhabitats.gdb"),
+                   file.path("Q:\Projects\PRJ_Macrofyten\habitats",
+                             "MonitoringPlassen\GIS",
+                             "Kartering_waterhabitats.gdb"))
+lentic_hab <- sf::st_read(filepath,
+                          layer = "Waterhabitats_meetnet",
+                          as_tibble = TRUE,
+                          stringsAsFactors = FALSE)
+lentic_hab %>%
+  st_drop_geometry %>%
+  select(loc_code = CODE,
+         loc_remark = Opmerking,
+         loc_keep = weerhouden,
+         loc_reason_notkept = Reden_NW,
+         type = HabtypeVel,
+         x = INSIDE_X,
+         y = INSIDE_Y) %>%
+  mutate(loc_keep = loc_keep == "ja")
+
+
+
 # There's also a DimPond table; this one needs a bit special handling because of
 # special variables. If the table is needed at all.
 ################################################################################
