@@ -161,7 +161,7 @@ lentic_chem_lazyqry %>% glimpse
 my_selection <-
     lentic_chem_lazyqry %>%
     filter(loc_code == "AN_MOL_004",
-           date == as.Date("2016-08-16"))
+           date == as.Date("2016-11-07"))
 
 class(my_selection)
 
