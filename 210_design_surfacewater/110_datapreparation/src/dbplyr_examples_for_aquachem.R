@@ -120,10 +120,8 @@ lentic_chem_lazyqry <-
                date = sql("CAST(date AS date)")) %>%
         semi_join(tbl(aquachem, "DimSample") %>%
                       select(sample_key = SampleKey,
-                             sample_status = SampleStatus,
-                             sample_id = LabSampleID) %>%
-                      filter(sample_status == "A",
-                             str_sub(sample_id, 1, 1) != "D"),
+                             sample_status = SampleStatus) %>%
+                      filter(sample_status == "A"),
                   by = "sample_key") %>%
         inner_join(tbl(aquachem, "DimAnalysis") %>%
                       select(ana_key = AnalysisKey,
