@@ -64,7 +64,8 @@ lentic_hab <- st_read(filepath,
                       layer = "Waterhabitats_meetnet",
                       as_tibble = TRUE,
                       stringsAsFactors = FALSE)
-lentic_hab %>%
+dim_waterhabitat_long <-
+  lentic_hab %>%
   st_drop_geometry %>%
   select(loc_code = CODE,
          loc_remark = Opmerking,
@@ -73,8 +74,23 @@ lentic_hab %>%
          type = HabtypeVel,
          x = INSIDE_X,
          y = INSIDE_Y) %>%
-  mutate(loc_keep = loc_keep == "ja")
+  mutate(loc_keep = loc_keep == "ja",
+         type = tolower(type)) %>%
+  separate(type,
+           into = str_c("type", 1:4),
+           sep = ";",
+           fill = "right") %>%
+  pivot_longer(cols = contains("type"),
+               names_to = "type_rank",
+               values_to = "type") %>%
+  # keeping type1 == NA, dropping other NA's:
+  filter(type_rank == "type1" | !is.na(type)) %>%
+  select(contains("loc_"), type, x, y)
 
+# copy as temporary table in Aquachem:
+copy_to(aquachem,
+        df = dim_waterhabitat_long,
+        name = "##dim_waterhabitat_long")
 ###############
 
 
