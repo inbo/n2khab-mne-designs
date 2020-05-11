@@ -139,6 +139,7 @@ localdata
 # As of 8 May 2020, a much more up-to-date version of selected site
 # characteristics can be locally imported as follows:
 #############################################################################
+library(sf)
 filepath <- ifelse(.Platform$OS.type == "unix",
                    # PRJ_Macrofyten is supposed to be mounted:
                    file.path("data/10_input/PRJ_Macrofyten",
@@ -147,10 +148,10 @@ filepath <- ifelse(.Platform$OS.type == "unix",
                    file.path("Q:\Projects\PRJ_Macrofyten\habitats",
                              "MonitoringPlassen\GIS",
                              "Kartering_waterhabitats.gdb"))
-lentic_hab <- sf::st_read(filepath,
-                          layer = "Waterhabitats_meetnet",
-                          as_tibble = TRUE,
-                          stringsAsFactors = FALSE)
+lentic_hab <- st_read(filepath,
+                      layer = "Waterhabitats_meetnet",
+                      as_tibble = TRUE,
+                      stringsAsFactors = FALSE)
 lentic_hab %>%
   st_drop_geometry %>%
   select(loc_code = CODE,
