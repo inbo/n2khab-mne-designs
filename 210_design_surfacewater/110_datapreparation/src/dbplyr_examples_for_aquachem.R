@@ -95,14 +95,13 @@ copy_to(aquachem,
 
 
 
-
+# This currently needs the temporary 'dim_waterhabitat_long' drop-in, see above:
 lentic_chem_lazyqry <-
     tbl(aquachem, "FactResultAqua") %>%
     select(loc_id = WaterhabitatKey, # for joining; will be dropped
            loc_code = CODE,
            project = meetnet,
            date = FieldSamplingDate,
-           type = HabtypeVel,
            ana_key = AnalysisKey, # for joining; will be dropped
            sample_key = SampleKey, # for joining; will be dropped
            variable = Component,
@@ -130,18 +129,8 @@ lentic_chem_lazyqry <-
                       select(ana_key = AnalysisKey,
                              protocol = SAPcode),
                   by = "ana_key") %>%
-        inner_join(tbl(aquachem, "DimWaterhabitat") %>%
-                       select(loc_id = WaterhabitatKey,
-                              loc_remark = Opmerking,
-                              loc_keep = weerhouden,
-                              loc_reason_notkept = Reden_NW,
-                              x = INSIDE_X,
-                              y = INSIDE_Y) %>%
-                       mutate(loc_keep = ifelse(loc_keep == "ja",
-                                            1,
-                                            0)) %>%
-                       mutate(loc_keep = sql("CAST(loc_keep AS bit)")),
-                   by = "loc_id") %>%
+        inner_join(tbl(aquachem, "##dim_waterhabitat_long"),
+                   by = "loc_code") %>%
         select(-value_char, -ana_key, -loc_id, -sample_key) %>%
         select(project,
                loc_code,
