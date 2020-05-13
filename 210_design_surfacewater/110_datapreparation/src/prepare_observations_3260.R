@@ -62,11 +62,6 @@ observations_3260 <-
                          names_to = "species_orig",
                          values_to = "species")
     ) %>%
-    # mutate(dates_orig = str_match(dates_orig, "(.+)_")[,2],
-    #        species_orig = str_match(species_orig, "(.+)_")[,2],
-    #        id_match = id == id2,
-    #        orig_match = dates_orig == species_orig) %>%
-    # filter(!id_match | !orig_match)  # for checking correct order!
     select(id, dates, species) %>%
     filter(!is.na(dates)) %>%
     # delete whitespaces:
