@@ -42,7 +42,8 @@ habstreams_full <- st_read(file_path,
 observations_3260_sf <-
     habstreams_full %>%
     select(id = OBJECTID,
-           name = naam)
+           name = naam) %>%
+    arrange(id)
 
 observations_3260 <-
     habstreams_full %>%
