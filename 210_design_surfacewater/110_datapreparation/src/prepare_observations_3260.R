@@ -87,8 +87,16 @@ observations_3260 <-
                 select(., contains("species")) %>%
                 unlist(use.names = FALSE)
             )} %>%
+    # recycling species that are valid for multiple dates:
+    separate(date,
+             into = str_c("date", 1:10),
+             sep = ",|en",
+             fill = "right") %>%
+    pivot_longer(cols = contains("date"),
+                 names_to = "date_rank",
+                 values_to = "date",
+                 values_drop_na = TRUE) %>%
     mutate(year = str_sub(date, 1, 4)) %>%
-    filter(!is.na(date)) %>%
     mutate(year = as.numeric(year),
            is_3260 = species != "-") %>%
     select(id, year, is_3260, species, date) %>%
