@@ -6,7 +6,9 @@ file_path <- file.path(tempdir(), "habstreams_full.gpkg")
 
 ###############################################################################
 # Preparatory work to obtain a single-file layer on (private) GDrive:
-# 1. manually export layer from (large) ESRI personal geodatabase as shapefile
+# 1. manually export line layer from latest (large) ESRI personal geodatabase
+#    as shapefile:
+#    PRJ_Macrofyten\habitats\HT3260_Habitatkaart\Habitatkaart\Habitatkaart_3260_v_1_7.mdb > Habitatkaart > line features: H3260_v1_7_versie2
 # 2. load it and write it as a GeoPackage + upload it to GDrive:
 #
 # habstreams_full <-
