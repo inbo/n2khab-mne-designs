@@ -104,5 +104,25 @@ observations_3260_y <-
 ## 3. write the results
 ####################################################
 
+### spatial object (git-ignored):
 
+linestrings_3260 %>%
+    st_write("data/20_output/linestrings_3260.gpkg")
+drive_upload(media = "data/20_output/linestrings_3260.gpkg",
+             path = as_id("1DW4VGaITvBdgf-iJ9fwjZDDrW1LZGy9G"))
 
+# can be read back in with:
+# filepath2 <- file.path(tempdir(), "linestrings_3260.gpkg")
+# drive_download(as_id("118j_Td_Xb0A9MVBG04QEACPuPXursUlp"),
+#                path = filepath2,
+#                overwrite = TRUE)
+# linestrings_3260 <- read_sf(filepath2)
+
+### observations_3260 (versioned in git):
+
+observations_3260 %>% write_tsv("data/20_output/observations_3260.tsv")
+
+# can be read back in with:
+# observations_3260 <- read_tsv("data/20_output/observations_3260.tsv")
+# note: observations_3260_y can be regenerated from observations_3260 as done
+# above
