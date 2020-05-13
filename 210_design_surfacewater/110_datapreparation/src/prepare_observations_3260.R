@@ -49,8 +49,57 @@ observations_3260 <-
     habstreams_full %>%
     st_drop_geometry %>%
     select(id = OBJECTID,
-           contains(c("datum", "Typ")))
-    # to be continued
+           contains("_datum")) %>%
+    pivot_longer(cols = contains("datum"),
+                 names_to = "dates_orig",
+                 values_to = "dates") %>%
+    bind_cols(
+        habstreams_full %>%
+            st_drop_geometry %>%
+            select(id2 = OBJECTID,
+                   contains("_Typ")) %>%
+            pivot_longer(cols = contains("Typ"),
+                         names_to = "species_orig",
+                         values_to = "species")
+    ) %>%
+    # mutate(dates_orig = str_match(dates_orig, "(.+)_")[,2],
+    #        species_orig = str_match(species_orig, "(.+)_")[,2],
+    #        id_match = id == id2,
+    #        orig_match = dates_orig == species_orig) %>%
+    # filter(!id_match | !orig_match)  # for checking correct order!
+    select(id, dates, species) %>%
+    filter(!is.na(dates)) %>%
+    # delete whitespaces:
+    mutate_at(vars(dates, species),
+              function(x) str_replace_all(x, " ", "")) %>%
+    separate(dates,
+             into = str_c("date", 1:10),
+             sep = "/",
+             fill = "right") %>%
+    separate(species,
+             into = str_c("species", 1:10),
+             sep = "/",
+             fill = "right") %>%
+    {tibble(id = rep(.$id, 10),
+            date =
+                select(., contains("date")) %>%
+                unlist(use.names = FALSE),
+            species =
+                select(., contains("species")) %>%
+                unlist(use.names = FALSE)
+            )} %>%
+    mutate(year = str_sub(date, 1, 4)) %>%
+    filter(!is.na(date)) %>%
+    mutate(year = as.numeric(year),
+           is_3260 = species != "-") %>%
+    select(id, year, is_3260, species, date) %>%
+    arrange(id, year, date, species)
+
+observations_3260_y <-
+    observations_3260 %>%
+    group_by(id, year) %>%
+    summarise(is_3260 = any(is_3260, na.rm = TRUE)) %>%
+    ungroup
 
 ## 3. write the results
 ####################################################
