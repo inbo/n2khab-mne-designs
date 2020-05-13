@@ -39,11 +39,15 @@ habstreams_full <- st_read(file_path,
 ## 2. split the data in spatial sf and long tibble
 ####################################################
 
+# spatial sf object:
+
 linestrings_3260 <-
     habstreams_full %>%
     select(id = OBJECTID,
            name = naam) %>%
     arrange(id)
+
+# long tibble (id = common identifier between both objects):
 
 observations_3260 <-
     habstreams_full %>%
@@ -90,6 +94,7 @@ observations_3260 <-
     select(id, year, is_3260, species, date) %>%
     arrange(id, year, date, species)
 
+# observations_3260 aggregated by year:
 observations_3260_y <-
     observations_3260 %>%
     group_by(id, year) %>%
