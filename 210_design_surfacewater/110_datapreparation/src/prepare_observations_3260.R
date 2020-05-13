@@ -39,7 +39,7 @@ habstreams_full <- st_read(file_path,
 ## 2. split the data in spatial sf and long tibble
 ####################################################
 
-observations_3260_sf <-
+linestrings_3260 <-
     habstreams_full %>%
     select(id = OBJECTID,
            name = naam) %>%
