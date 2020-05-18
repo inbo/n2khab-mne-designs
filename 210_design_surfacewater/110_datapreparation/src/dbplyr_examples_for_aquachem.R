@@ -15,31 +15,6 @@ tbl(aquachem, "DimUnit") %>% glimpse
 tbl(aquachem, "DimSample") %>% glimpse
 tbl(aquachem, "DimStatus") %>% glimpse
 
-# example without using dplyr verbs (Jo Loos):
-############################################"
-example_string <- "SELECT fra.*
-  , dwh.*
-  , da.AnalysisLabName
-, dc.Component
-, du.LimsUnit
-FROM dbo.FactResultAqua fra
-INNER JOIN dbo.DimWaterhabitat dwh ON dwh.WaterhabitatKey = fra.WaterhabitatKey
-INNER JOIN dbo.DimAnalysis da ON da.AnalysisKey = fra.AnalysisKey
-INNER JOIN dbo.DimComponent dc ON dc.ComponentKey = fra.ComponentKey
-INNER JOIN dbo.DimUnit du ON du.UnitKey = fra.UnitKey
-WHERE dwh.CODE = 'AN_MOL_004'
-AND fra.FieldSamplingDate = '2016-08-16'
-AND dc.Component not in ('Veldcode', 'Opmerking', 'Uitvoerder', 'Labo_ID', 'Datum bemonstering')"
-
-# Problem for tidy work in R is the duplicated occurrence of specific column names, as seen from:
-DBI::dbGetQuery(aquachem, example_string) %>% # this effectively downloads all results
-    colnames %>%
-    table %>%
-    .[. > 1] %>%
-    names # this gives the duplicated column names,
-          # which would cause an error when using tbl(),
-          # hence this query must be made more strict
-
 # Let's make a lazy query object, not restricted to one site, only retaining
 # essential information for analytical workflows. Also applying tidyverse-styled
 # column names, which prepares for functions & later package. This object can be
@@ -169,41 +144,3 @@ my_selection
 # 5. download query results as tibble
 localdata <- my_selection %>% collect
 localdata
-
-
-
-# There's also a DimPond table; this one needs a bit special handling because of
-# special variables. If the table is needed at all.
-################################################################################
-
-dimpond_sql <-      # (credits to Jo Loos)
-    "SELECT TOP (1000) [PondKey]
-,[datumhuishkenm]
-,[gebied]
-,[percinsbz]
-,[codesbz]
-,[naamsbz]
-,[codesbzdeelgeb]
-,[stroomgebied]
-,[bekken]
-,[deelbekken]
-,[GDB_ARCHIVE_OID]
-,[created_user]
-,[created_date]
-,[last_edited_user]
-,[last_edited_date]
-,[globalid]
-,[centroidx]
-,[centroidy]
-,[vhazone]
-,[codeplas]
-,[shape].STAsText() as shape_wkt
-FROM DimPond"
-
-# direct execution:
-DBI::dbGetQuery(aquachem, dimpond_sql) %>%
-    as_tibble
-
-# use in a lazy query:
-tbl(aquachem, sql(dimpond_sql)) %>% glimpse
-
