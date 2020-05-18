@@ -21,7 +21,7 @@ file_path <- file.path(tempdir(), "habstreams_full.gpkg")
 # drive_update(media = file_path,
 #              file = as_id("1siKWVAj9tCyE--0viJQr18PjZ8b8SfST"))
 #
-# The above steps are to be repeated (drive_update()) for subsequent versions.
+# The above steps are to be repeated for subsequent versions.
 # Only the result of the below script is written into the git repo.
 ################################################################################
 
@@ -41,7 +41,7 @@ habstreams_full <- st_read(file_path,
 
 # spatial sf object:
 
-linestrings_3260 <-
+lines_presabs_3260 <-
     habstreams_full %>%
     select(id = OBJECTID,
            name = naam) %>%
@@ -49,7 +49,7 @@ linestrings_3260 <-
 
 # long tibble (id = common identifier between both objects):
 
-observations_3260 <-
+presabs_3260 <-
     habstreams_full %>%
     st_drop_geometry %>%
     select(id = OBJECTID,
@@ -102,9 +102,9 @@ observations_3260 <-
     select(id, year, is_3260, species, date) %>%
     arrange(id, year, date, species)
 
-# observations_3260 aggregated by year:
-observations_3260_y <-
-    observations_3260 %>%
+# presabs_3260 aggregated by year:
+presabs_3260_y <-
+    presabs_3260 %>%
     group_by(id, year) %>%
     summarise(is_3260 = any(is_3260, na.rm = TRUE)) %>%
     ungroup
@@ -114,24 +114,24 @@ observations_3260_y <-
 
 ### spatial object (git-ignored):
 
-linestrings_3260 %>%
-    st_write("data/20_output/linestrings_3260.gpkg",
+lines_presabs_3260 %>%
+    st_write("data/20_output/lines_presabs_3260.gpkg",
              delete_dsn = TRUE)
-drive_update(media = "data/20_output/linestrings_3260.gpkg",
+drive_update(media = "data/20_output/lines_presabs_3260.gpkg",
              file = as_id("118j_Td_Xb0A9MVBG04QEACPuPXursUlp"))
 
 # can be read back in with:
-# filepath2 <- file.path(tempdir(), "linestrings_3260.gpkg")
+# filepath2 <- file.path(tempdir(), "lines_presabs_3260.gpkg")
 # drive_download(as_id("118j_Td_Xb0A9MVBG04QEACPuPXursUlp"),
 #                path = filepath2,
 #                overwrite = TRUE)
-# linestrings_3260 <- read_sf(filepath2)
+# lines_presabs_3260 <- read_sf(filepath2)
 
-### observations_3260 (versioned in git):
+### presabs_3260 (versioned in git):
 
-observations_3260 %>% write_tsv("data/20_output/observations_3260.tsv")
+presabs_3260 %>% write_tsv("data/20_output/presabs_3260.tsv")
 
 # can be read back in with:
-# observations_3260 <- read_tsv("data/20_output/observations_3260.tsv")
-# note: observations_3260_y can be regenerated from observations_3260 as done
+# presabs_3260 <- read_tsv("data/20_output/presabs_3260.tsv")
+# note: presabs_3260_y can be regenerated from presabs_3260 as done
 # above
