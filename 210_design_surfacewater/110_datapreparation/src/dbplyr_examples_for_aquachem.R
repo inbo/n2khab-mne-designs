@@ -93,16 +93,17 @@ lentic_chem_lazyqry <-
                             NA)) %>%
         mutate(loq = sql("CAST(loq AS float)"),
                date = sql("CAST(date AS date)")) %>%
-        semi_join(tbl(aquachem, "DimSample") %>%
+        semi_join(tbl(aquachem, "DimSample") %>%  # unneeded at a future time
                       select(sample_key = SampleKey,
                              sample_status = SampleStatus) %>%
                       filter(sample_status == "A"),
                   by = "sample_key") %>%
-        inner_join(tbl(aquachem, "DimAnalysis") %>%
+        inner_join(tbl(aquachem, "DimAnalysis") %>% # unneeded at a future time
                       select(ana_key = AnalysisKey,
                              protocol = SAPcode),
                   by = "ana_key") %>%
-        inner_join(tbl(aquachem, "##dim_waterhabitat_long"),
+        inner_join(tbl(aquachem, "##dim_waterhabitat_long"), # unneeded at a
+                                                             # future time
                    by = "loc_code") %>%
         select(-value_char, -ana_key, -loc_id, -sample_key) %>%
         select(project,
