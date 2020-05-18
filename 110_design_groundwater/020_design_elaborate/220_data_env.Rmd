@@ -1,10 +1,25 @@
 # Datasets met primaire milieuvariabelen van de hoofdmeetnetten
 
+We betrekken de beschikbare data van de periode **1989-2018**.
+Dit bestrijkt immers het overgrote deel van alle data in de Watina-databank, en zo vermijden we invloed van nog oudere data op analysen.
+De periode 1989-2018 bestrijkt precies 5 perioden van 6 jaar, gealigneerd volgens de periodiciteit van Natura 2000 monitoring.
+
+Bemerk dat dit voor de LG3- en HG3-variabelen betrekking heeft op de zg. hydrologische jaren, m.a.w. er is een verschuiving van 3 maand (het hydrologisch jaar start op 1 april).
+Met een temporele resolutie van zesjaarperioden in de monitoring hoeft deze verschuiving niet noodzakelijk problemen te geven voor de doelstellingen, maar we zouden het in de implementatie van de monitoring ook per kalenderjaar kunnen overwegen.
+Momenteel gebeuren de berekeningen in Watina per hydrologisch jaar.
+Het is een conventie om de (typisch) droogste en natste momenten van de jaarlijkse cycli in hun geheel binnen één jaarlijkse periode te kunnen evalueren.
+
 ```{r}
 watina <- connect_watina()
 ```
 
 ## Samenstellen van de datasets
+
+### Locaties
+
+We maken voor meetnet GW_05.1 een onderscheid tussen de meetlocaties voor de aquatische resp. de terrestrische types.
+Dit is relevant voor het onderscheid tussen de (sub)meetnetten GW_05.1_terr en GW_05.1_aq, aangezien andere responsvariabelen worden beschouwd.
+Voor het meetnet GW_03.3 is het onderscheid niet nodig.
 
 ```{r paged.print=FALSE}
 locs_terr <- 
@@ -92,15 +107,144 @@ locs <- locs_ext %>%
   distinct(loc_code)
 ```
 
+Volgende code-output geeft een indruk van de attributen van alle geselecteerde locaties; het aantal rijen betreft het aantal locaties:
+
 ```{r}
-locs %>% 
-  get_xg3(startyear = )
+locs_ext %>% 
+  select(-type, -target) %>% 
+  group_by(loc_code) %>% 
+  summarise_all(first) %>% 
+  glimpse
+# group_by() & summarise() instead of simply distinct(): this is because one
+# location had a different selected observation well for aquatic vs.
+# terrestrial, because of the different allowed filterdepth
 ```
+
+Het aantal beschikbare meetlocaties voor aquatische resp. terrestrische types (met onderlinge overlap) is weergegeven in Tabel \@ref(tab:nrlocs).
+
+```{r tab:nrlocs}
+locs_ext %>% 
+  select(-type) %>% 
+  distinct %>% 
+  count(target) %>% 
+  kable(caption = "Het aantal beschikbare meetlocaties voor aquatische resp. terrestrische types.") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+### Spatiale covariaten
+
+De (categorische) covariaten _bodemtextuur_ (in drie klassen: zwaar, licht, veen) en _ecoregio_ van de locaties worden toegevoegd als locatie-attributen.
+Zie paragraaf \@ref(spatiale-verdeling) voor motivatie.
+
+
+### LG3 en HG3 in meetnet GW_05.1_terr
+
+LG3 en HG3 worden in het meetnet GW_05.1_terr voorlopig nog berekend op basis van stijghoogtes.
+Omdat in dit meetnet idealiter met _grondwaterstanden_ wordt gewerkt, worden de jaarlijks geaggregeerde LG3- en HG3-waarden boven maaiveld 'afgetopt' tot maaiveldniveau, dus 0 meter t.o.v. maaiveld.
+Het zou beter zijn om dit te doen met de daggebaseerde meetwaarden (vóór aggregatie), maar dit dient nog in de Watina-databank te worden geïmplementeerd.
+
+
+```{r message=FALSE}
+xg3_terr <- 
+  locs_terr %>% 
+  get_xg3(watina, 
+          startyear = 1989,
+          endyear = 2018,
+          vert_crs = "local") %>% 
+  select(-vg3_lcl) %>% 
+  filter(!is.na(lg3_lcl) | !is.na(hg3_lcl)) %>% 
+  mutate(lg3_lcl = ifelse(lg3_lcl > 0, 0, lg3_lcl),
+         hg3_lcl = ifelse(hg3_lcl > 0, 0, hg3_lcl)
+         ) %>% 
+  arrange(loc_code, hydroyear) %>% 
+  collect()
+```
+
+Volgende code-output geeft een indruk van de data.
+Het aantal rijen betreft het aantal combinaties van locatie en (hydrologisch) jaar met beschikbare gegevens (voor de betrokken locaties):
+
+```{r paged.print=FALSE}
+glimpse(xg3_terr)
+```
+
+### LG3 en HG3 in meetnet GW_05.1_aq
+
+```{r message=FALSE}
+xg3_aq <- 
+  locs_aq %>% 
+  get_xg3(watina, 
+          startyear = 1989,
+          endyear = 2018,
+          vert_crs = "ostend") %>% 
+  select(-vg3_ost) %>% 
+  filter(!is.na(lg3_ost) | !is.na(hg3_ost)) %>% 
+  arrange(loc_code, hydroyear) %>% 
+  collect()
+```
+
+Volgende code-output geeft een indruk van de data.
+Het aantal rijen betreft het aantal combinaties van locatie en (hydrologisch) jaar met beschikbare gegevens (voor de betrokken locaties):
+
+```{r paged.print=FALSE}
+glimpse(xg3_aq)
+```
+
+### NO3, NH4 en PO4 in meetnet GW_03.3
+
+In enkele gevallen zijn van deze variabelen meerdere metingen beschikbaar op één dag.
+In die gevallen is het gemiddelde berekend.
+
+```{r message=FALSE}
+chem <- 
+  locs %>% 
+  get_chem(watina, 
+           startdate = "1/1/1989",
+           enddate = "31/12/2018",
+           conc_type = "mass",
+           en_range = c(-0.1, 0.1),
+           en_exclude_na = FALSE,
+           en_fecond_threshold = 0.0023) %>% 
+  # for the following variables, no (sensible) data are available yet from the
+  # datawarehouse. Further, elneutr will not be used:
+  select(-contains("lab"),
+         -loq,
+         -elneutr) %>% 
+  # currently, we will only process numerical data, hence further selection:
+  select(-units, -below_loq) %>% 
+  filter(chem_variable %in% c("N-NO3", "N-NH4", "P-PO4")) %>% 
+  mutate(chem_variable = case_when(chem_variable == "N-NO3" ~ "NO3",
+                                   chem_variable == "N-NH4" ~ "NH4",
+                                   chem_variable == "P-PO4" ~ "PO4")) %>% 
+  # a limited number of cases has several measurements on the same date:
+  group_by(loc_code, date, chem_variable) %>% 
+  summarise(value = mean(value, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  collect() %>% 
+  pivot_wider(names_from = chem_variable,
+              values_from = value) %>% 
+  arrange(loc_code, date)
+```
+
+Volgende code-output geeft een indruk van de data.
+Het aantal rijen betreft het aantal combinaties van locatie en datum met beschikbare gegevens (voor de betrokken locaties):
+
+```{r paged.print=FALSE}
+glimpse(chem)
+```
+
+### Samenstellen van de analysedatasets voor elk hoofdmeetnet
+
+Uitgaande van de voorgaande datasets van de milieuvariabelen gebeuren per hoofdmeetnet de volgende stappen:
+
+- toevoegen van de voor analyse relevante locatie-attributen;
+- beperken van de locaties tot de types die tot de meetnetspecifieke doelpopulatie behoren.
 
 
 ## Verkenning van de data
 
-## Verdeling volgens de types van de doelpopulatie
+### Verdeling van locaties volgens de types van de doelpopulatie
 
-### Verdeling volgens bodemtextuur en ecoregio
+### Verdeling van locaties volgens bodemtextuur en ecoregio
+
+### Spreiding van de meetwaarden
 
