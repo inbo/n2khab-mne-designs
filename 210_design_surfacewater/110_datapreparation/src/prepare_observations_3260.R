@@ -12,14 +12,14 @@ file_path <- file.path(tempdir(), "habstreams_full.gpkg")
 # 2. load it and write it as a GeoPackage + upload it to GDrive:
 #
 # habstreams_full <-
-#     st_read("data/10_input/binary/HT3260/2020-05-08_HT3260.shp",
+#     st_read("data/10_input/binary/HT3260/2020-05-18_HT3260.shp",
 #             crs = 31370,
 #             as_tibble = TRUE)
 #
 # habstreams_full %>% st_write(file_path)
 #
-# drive_upload(media = file_path,
-#              path = as_id("1DW4VGaITvBdgf-iJ9fwjZDDrW1LZGy9G"))
+# drive_update(media = file_path,
+#              file = as_id("1siKWVAj9tCyE--0viJQr18PjZ8b8SfST"))
 #
 # The above steps are to be repeated (drive_update()) for subsequent versions.
 # Only the result of the below script is written into the git repo.
@@ -115,9 +115,10 @@ observations_3260_y <-
 ### spatial object (git-ignored):
 
 linestrings_3260 %>%
-    st_write("data/20_output/linestrings_3260.gpkg")
-drive_upload(media = "data/20_output/linestrings_3260.gpkg",
-             path = as_id("1DW4VGaITvBdgf-iJ9fwjZDDrW1LZGy9G"))
+    st_write("data/20_output/linestrings_3260.gpkg",
+             delete_dsn = TRUE)
+drive_update(media = "data/20_output/linestrings_3260.gpkg",
+             file = as_id("118j_Td_Xb0A9MVBG04QEACPuPXursUlp"))
 
 # can be read back in with:
 # filepath2 <- file.path(tempdir(), "linestrings_3260.gpkg")
