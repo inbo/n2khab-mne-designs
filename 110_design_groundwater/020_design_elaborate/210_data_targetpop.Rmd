@@ -155,12 +155,123 @@ tribble(~layer, ~surface_area, ~nr_features,
 ```
 
 
-## Geschatte populatiegroottes
+## Geschatte spatiale populatiegroottes
 
-Voor het schatten van de populatiegrootte van elk type in elk meetnet, wordt het voorkomen bij terrestrische types steeds ingeperkt volgens het optreden van ondiep grondwater, behalve voor de '(bijna) overal grondwaterafhankelijke' types.
+We schatten de spatiale populatiegrootte van elk stratum in elk meetnet.
+Een stratum in een meetnet betreft een type, ofwel een combinatie type x oppervlaktestratum in het geval van stilstaande wateren.
+Hierbij wordt het voorkomen van terrestrische types steeds ingeperkt volgens het optreden van ondiep grondwater, behalve voor de '(bijna) overal grondwaterafhankelijke' types.
 
-De populatiegroottes zijn relevant voor de gesimuleerde inferenties, nl. voor de toepassing van de finite-population-correction (FPC).
+De spatiale populatiegroottes zijn relevant voor de gesimuleerde inferenties, nl. voor de toepassing van de correctie voor eindige populaties (finite-population-correction, FPC).
 
+```{r}
+# not yet applying the restriction by shallow_groundwater!!
+pop_size_terr <- 
+    read_vc("030_preparations/010_explore_targetpop/pop_size_terr", 
+            root = find_root(is_git_root)) %>% 
+    inner_join(
+        read_vc("030_preparations/010_explore_targetpop/type_approaches", 
+                root = find_root(is_git_root)),
+        by = "type") %>% 
+    filter(count_method == "cellbased" & approach_cellbased |
+               count_method == "centroidbased" & !approach_cellbased) %>% 
+    semi_join(targetpop, by = "type") %>% 
+    mutate(stratum = NA_character_,
+           population_size = round(population_size)) %>% 
+    select(type, stratum, population_size)
+pop_size_7220 <-
+    read_habitatsprings(units_7220 = TRUE) %>% 
+    st_drop_geometry %>% 
+    count(system_type) %>% 
+    pivot_wider(names_from = system_type,
+                values_from = n) %>% 
+    transmute(all = mire + rivulet + unknown,
+              terrestrial = mire + unknown,
+              aquatic = rivulet + unknown) %>% 
+    mutate(type = "7220" %>% factor(levels = levels(pop_size_terr$type))) %>% 
+    pivot_longer(cols = c("all", "terrestrial", "aquatic"),
+                 names_to = "stratum",
+                 values_to = "population_size")
+pop_size_3260 <- 
+    habstream %>% 
+    mutate(length = st_length(.) %>% drop_units(),
+           population_size = ceiling(length / 100)) %>% 
+    st_drop_geometry() %>% 
+    summarise(type = first(type),
+              stratum = first(NA_character_),
+              population_size = sum(population_size))
+pop_size_lentic <- 
+    wsh_pol %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    select(polygon_id, area) %>% 
+    mutate(stratum = 
+               area %>% 
+               cut(c(0, 1, 50, 150)) %>% 
+               as.character) %>% 
+    inner_join(wsh_occ, by = "polygon_id", .) %>% 
+    semi_join(targetpop, by = "type") %>% 
+    count(type, stratum, name = "population_size")
+```
+
+
+```{r}
+targetpop_stratumsize <- 
+    bind_rows(pop_size_terr,
+              pop_size_7220,
+              pop_size_3260,
+              pop_size_lentic) %>% 
+    inner_join(targetpop %>% 
+                   select(scheme, 
+                          type,
+                          contains("typegroup")), 
+               .,
+               by = "type") %>% 
+    filter(type != "7220" |
+               (type == "7220" & stratum == "all" & !str_detect(scheme, "aq|terr")) |
+               (type == "7220" & stratum == "aquatic" & str_detect(scheme, "aq")) | 
+               (type == "7220" & stratum == "terrestrial" & str_detect(scheme, "terr"))
+           )
+```
+
+Figuur \@ref(fig:stratumsize) toont de verdeling van populatiegroottes per meetnet.
+De waarden lopen zeer sterk uiteen tussen verschillende strata.
+Dit geldt voor alle meetnetten.
+
+(ref:stratumsize) Distributie van de populatiegrootte van de verschillende strata per meetnet.
+Een stratum in een meetnet betreft een type, ofwel een combinatie type x oppervlaktestratum in het geval van stilstaande wateren.
+
+```{r stratumsize, fig.cap = "(ref:stratumsize)"}
+targetpop_stratumsize %>% 
+    ggplot(aes(x = population_size)) +
+    geom_density(fill = "grey", colour = NA) +
+    scale_x_log10() +
+    facet_wrap(~scheme, scales = "free")
+```
+
+In Figuur \@ref(fig:fpc) is te zien dat de FPC-correctie een grote invloed kan uitoefenen op de steekproefgrootte.
+De correctiefactor hangt af van de populatiegrootte en de steekproefgrootte, berekend voor een oneindige populatie.
+In de figuur zien we bijvoorbeeld: als een steekproefgrootte wordt berekend van 50 eenheden, dan volstaat een steekproef van 25 eenheden (FPC = 0.50) indien de populatie zelf maar 50 eenheden groot is.
+
+
+(ref:fpc) Het effect op de eindige-populatie-correctie `FPC`, van de populatiegrootte en van de steekproefgrootte berekend voor oneindige populaties (`n_infinitepop`).
+
+```{r fpc, fig.cap = "(ref:fpc)"}
+expand.grid(n_infinitepop = c(10, seq(25, 200, 25)) %>% factor,
+            population_size = 10^seq(1, 5, 0.05)) %>% 
+    mutate(n_infpop = n_infinitepop %>% as.character %>%  as.integer,
+        n_finitepop = 
+               n_infpop * population_size / 
+               (population_size - 1 + n_infpop),
+           FPC = n_finitepop / n_infpop) %>% 
+    ggplot(aes(x = population_size, 
+               y = FPC, 
+               colour = n_infinitepop, group = n_infinitepop)) +
+    geom_line() + 
+    scale_x_log10(minor_breaks = 
+                      seq(10, 90, 10) * 
+                      matrix(10^(0:3), 9, 4, byrow = TRUE) %>% 
+                      as.vector)
+```
 
 ## Verdeling van types volgens bodemtextuur en ecoregio {#spatiale-verdeling}
 
