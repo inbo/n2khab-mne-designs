@@ -276,11 +276,152 @@ expand.grid(n_infinitepop = c(10, seq(25, 200, 25)) %>% factor,
                       as.vector)
 ```
 
-## Verdeling van types volgens bodemtextuur en ecoregio {#spatiale-verdeling}
+## Verdeling van types volgens bodemklasse en ecoregio {#spatiale-verdeling}
 
-We beschouwen de spatiale verdeling van de types volgens _bodemtextuur_ (in drie klassen: zwaar, licht, veen) en _ecoregio_: deze informatie is beschikbaar voor de gehele doelpopulatie en uit eerder modelwerk (Jansen, unpubl.) bleken deze variabelen een verklarende waarde te hebben voor één of meerdere van de beschouwde milieuvariabelen.
+
+```{r grass-setup2, include=FALSE, eval=!grass_exists}
+# CREATE and link to a permanent GRASS database
+link2GI::linkGRASS7(hmt_pol, 
+                    gisdbase = "data", 
+                    location = "grass_gw",
+                    search_path = if (.Platform$OS.type == "unix") {
+                      "/usr/bin"} else NULL,
+                    use_home = TRUE)
+```
+
+
+```{r grass-setup3, include=FALSE, eval=grass_exists}
+# LINK to a permanent GRASS database
+link2GI::linkGRASS7(gisdbase = "data", 
+                    location = "grass_gw", 
+                    gisdbase_exist = TRUE,
+                    search_path = if (.Platform$OS.type == "unix") {
+                      "/usr/bin"} else NULL,
+                    use_home = TRUE)
+```
+
+```{r include=FALSE}
+assertthat::assert_that(file.exists("data/grass_gw/PERMANENT/PROJ_INFO"),
+                        msg = "Please configure your GRASS setup first.")
+```
+
+```{r grass-misc, eval=FALSE}
+execGRASS("g.list", type = "vector", flags = "p")
+# opening GRASS manual:
+system("g.manual -i")
+# get argument to start grass CLI (grass --text XXXXX):
+system("g.gisenv get=GISDBASE,LOCATION_NAME,MAPSET sep='/'")
+# CRS info
+system("g.region -p
+        g.proj -j")
+gmeta()
+# launch GUI
+system("g.gui")
+```
+
+We beschouwen de spatiale verdeling van de types volgens _bodemklasse_ (drie klassen: zwaar, licht, veen) en _ecoregio_: deze informatie is beschikbaar voor de gehele doelpopulatie en uit eerder modelwerk (Jansen, unpubl.) bleken deze variabelen een verklarende waarde te hebben voor één of meerdere van de beschouwde milieuvariabelen.
 De spatiale verdeling zal immers relevant zijn voor de simulatie van realistische steekproeven.
 In de modellen zal steeds maar één van deze variabelen worden opgenomen (beperking van het aantal te schatten parameters), zodat we de interactie niet zullen onderzoeken.
+
+```{r}
+soilmap <- 
+    read_soilmap() %>% 
+    transmute(soilclass = case_when(
+        str_detect(bsm_mo_tex, "V") ~ "Peat",
+        str_detect(bsm_mo_tex, "^U") ~ "Heavy",
+        str_detect(bsm_mo_tex, "[SZPLX]") ~ "Light",
+        str_detect(bsm_mo_tex, ".+") ~ "Heavy",
+        TRUE ~ "Unknown") %>% 
+            factor)
+```
+
+```{r paged.print=FALSE, message=FALSE}
+ecoregions <-
+    read_ecoregions() %>% 
+    select(ecoregion = region_name) %>% 
+    group_by(ecoregion) %>% 
+    summarise
+```
+
+Voor type 7220 beschouwen we de verdeling over de spatiale covariaten volgens de populatie-eenheden, d.w.z. na eventuele samenvoeging van puntlocaties die tot dezelfde eenheid behoren.
+Eerst wordt daarbij wel de bodemklasse vastgesteld van de individuele puntlocaties.
+
+```{r paged.print=FALSE, message=FALSE}
+habspring_soil <- 
+    habspring %>% 
+    st_join(soilmap) %>% 
+    st_drop_geometry %>% 
+    group_by(unit_id) %>% 
+    arrange(soilclass) %>% 
+    summarise(soilclass = first(soilclass)) %>% 
+    inner_join(
+        read_habitatsprings(units_7220 = TRUE),
+        .,
+        by = "unit_id")
+```
+
+
+```{r include=FALSE, eval=!grass_exists}
+system.time(
+hmt_pol %>% 
+    rbind(wsh_pol_ring) %>% 
+    rbind(habstream_buff %>% 
+              as_tibble %>% 
+              magrittr::set_colnames(c(head(colnames(.), -1),
+                                       "geom")) %>% 
+              st_as_sf %>% 
+              st_cast("MULTIPOLYGON") %>% 
+              select(polygon_id = type)) %>% 
+    writeVECT("pol",
+              v.in.ogr_flags = c("overwrite", "o"))
+)
+```
+
+
+```{r include=FALSE, eval=!grass_exists}
+system.time(
+soilmap %>% 
+    writeVECT("soilmap",
+              v.in.ogr_flags = c("overwrite", "o"))
+)
+```
+
+```{r include=FALSE, eval=!grass_exists}
+system.time(
+execGRASS("v.overlay",
+          ainput = "pol",
+          operator = "and",
+          binput = "soilmap",
+          output = "pol_soil",
+          flags = "overwrite")
+)
+```
+
+```{r include=FALSE, eval=!grass_exists}
+system("v.out.ogr --overwrite input=pol_soil output=data/pol_soil.gpkg format=GPKG")
+```
+
+<!-- Exporting 243979 areas (may take some time)... -->
+<!--  100% -->
+<!-- WARNING: 8160 features without category were skipped. Features without -->
+<!--          category are written only when -c flag is given. -->
+<!-- v.out.ogr complete. 311473 features (Polygon type) written to <pol_soil> -->
+<!-- (GPKG format). -->
+
+```{r warning=FALSE, include=FALSE}
+assertthat::assert_that(file.exists("data/pol_soil.gpkg"))
+pol_soil <- 
+    read_sf("data/pol_soil.gpkg", crs = 31370) %>% 
+    select(polygon_id = a_polygon_id,
+           soilclass = b_soilclass) %>% 
+    mutate(soilclass = factor(soilclass))
+```
+
+```{r paged.print=FALSE}
+pol_soil %>%
+    st_drop_geometry %>% 
+    count(soilclass)
+```
 
 
 
