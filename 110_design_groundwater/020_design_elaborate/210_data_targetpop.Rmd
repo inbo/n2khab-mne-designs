@@ -330,7 +330,7 @@ gmeta()
 system("g.gui")
 ```
 
-We beschouwen de spatiale verdeling van de types volgens _bodemklasse_ (drie klassen: zwaar, licht, veen) en _ecoregio_: deze informatie is beschikbaar voor de gehele doelpopulatie en uit eerder modelwerk (Jansen, unpubl.) bleken deze variabelen een verklarende waarde te hebben voor één of meerdere van de beschouwde milieuvariabelen.
+We beschouwen de spatiale verdeling van de types volgens _bodemklasse_ (vier klassen: zwaar, licht, veen, ongekend) en _ecoregio_ (12 klassen): deze informatie is beschikbaar voor de gehele doelpopulatie en uit eerder modelwerk (Jansen, unpubl.) bleken deze variabelen een verklarende waarde te hebben voor één of meerdere van de beschouwde milieuvariabelen.
 De spatiale verdeling zal immers relevant zijn voor de simulatie van realistische steekproeven.
 In de modellen zal steeds maar één van deze variabelen worden opgenomen (beperking van het aantal te schatten parameters), zodat we de interactie niet zullen onderzoeken.
 
@@ -354,10 +354,6 @@ ecoregions <-
     summarise %>% 
     st_cast("MULTIPOLYGON")
 ```
-
-Voor type 7220 beschouwen we de verdeling over de categorieën van de spatiale covariaten volgens de populatie-eenheden, d.w.z. na eventuele samenvoeging van puntlocaties die tot dezelfde eenheid behoren.
-Eerst wordt daarvoor wel de waarde vastgesteld op de individuele puntlocaties, en daarna geaggregeerd.
-
 
 
 
@@ -467,6 +463,20 @@ pol_spfact <-
            soilclass = factor(soilclass))
 ```
 
+
+We berekenen de verdeling van de spatiale doelpopulatie van elk type over de spatiale factoren als volgt:
+
+- voor type 3260 worden de bufferpolygonen geïntersecteerd met deze van de spatiale factoren.
+Vervolgens wordt de oppervlakteproportie van elke klasse berekend op niveau Vlaanderen.
+- voor terrestrische types worden hun polygonen op analoge wijze geïntersecteerd;
+Bij de berekening, per type, van de oppervlakteproportie van elke klasse gebeurt een correctie volgens de `phab` waarde^[Dit betreft de geschatte fractie van de polygoon die door het type is ingenomen.] van elk type in elke polygoon;
+- voor types van stilstaande wateren: omdat elke plas een populatie-eenheid is ongeacht de oppervlakte, wordt eerst van elke plas de oppervlakteproportie van de klassen berekend ter hoogte van de bufferzone (ringvormig gebied).
+Deze waarden zijn te beschouwen als een gestandaardiseerde oppervlakte waarbij de waarde 1 overeenkomt met één populatie-eenheid.
+Op basis hiervan wordt, per type, de proportie van elke klasse berekend op niveau Vlaanderen;
+- voor type 7220 werken we puntgebaseerd, aangezien de punten zelf het beste de doelpopulatie vertegenwoordigen.
+We beschouwen de verdeling over de categorieën van de spatiale covariaten volgens de populatie-eenheden, d.w.z. na eventuele samenvoeging van puntlocaties die tot dezelfde eenheid behoren.
+Eerst wordt daarvoor wel de waarde vastgesteld op de individuele puntlocaties, en daarna geaggregeerd.
+
 ```{r paged.print=FALSE, message=FALSE}
 spfact_distr_terr <- 
     pol_spfact %>% 
@@ -569,9 +579,17 @@ targetpop_soilclass_distr <-
     join_targetpop
 ```
 
+De meeste ecoregio's bestrijken maar voor een beperkt aantal types een groter aandeel van hun doelpopulatie (Figuur \@ref(fig:ecoregion-types)).
+Er zijn dus grote verschillen tussen de ruimtelijke doelpopulaties van de types.
+De Ecoregio van de Kempen speelt dan weer voor heel wat types een grotere rol.
 
-```{r}
+(ref:ecoregion-types) Verdeling van types over ecoregio's.
+Elke observatie betreft een combinatie type x ecoregio.
+De horizontale as is het aandeel dat een ecoregio heeft in de doelpopulatie van een type; de weergegeven spreiding is over alle types heen.
+
+```{r ecoregion-types, fig.cap="(ref:ecoregion-types)"}
 targetpop_ecoregion_distr %>% 
+    # we only consider the "all" case for 7220:
     filter(stratum == "all" | is.na(stratum)) %>% 
     distinct(type, ecoregion, proportion) %>% 
     pivot_wider(names_from = ecoregion,
@@ -587,8 +605,17 @@ targetpop_ecoregion_distr %>%
     ylab("proportion of a type's target population")
 ```
 
-```{r}
+Lichte bodems bestrijken voor de meeste types een groter aandeel van de doelpopulatie (Figuur \@ref(fig:soilclass-types)).
+Veenbodems zijn daarentegen specifiek voor een beperkt aantal types.
+Van verschillende types blijkt de doelpopulatie in grote mate voor te komen op locaties met ongekende bodemklasse (de outliers in de klasse 'unknown').
+
+(ref:soilclass-types) Verdeling van types over bodemklassen.
+Elke observatie betreft een combinatie type x bodemklasse.
+De horizontale as is het aandeel dat een bodemklasse heeft in de doelpopulatie van een type; de weergegeven spreiding is over alle types heen.
+
+```{r soilclass-types, fig.cap="(ref:soilclass-types)"}
 targetpop_soilclass_distr %>% 
+    # we only consider the "all" case for 7220:
     filter(stratum == "all" | is.na(stratum)) %>% 
     distinct(type, soilclass, proportion) %>% 
     pivot_wider(names_from = soilclass,
@@ -604,7 +631,13 @@ targetpop_soilclass_distr %>%
     ylab("proportion of a type's target population")
 ```
 
-```{r message=FALSE, fig.width=7, fig.height=5}
+Beschouwen we de gezamenlijke doelpopulatie per meetnet, dan zijn de patronen vrij vergelijkbaar tussen de meetnetten (Figuren \@ref(fig:ecoregion-schemes) en \@ref(fig:soilclass-schemes)).
+Een uitzondering is meetnet GW_07.1, waar de betreffende types vooral voorkomen in de Ecoregio van de polders en de getijdenschelde, en vooral op zware bodems.
+
+(ref:ecoregion-schemes) Verdeling van gezamenlijke doelpopulatie per meetnet over de ecoregio's.
+Elk type heeft evenveel gewicht in de verdeling.
+
+```{r ecoregion-schemes, message=FALSE, fig.width=7, fig.height=5, fig.cap="(ref:ecoregion-schemes)"}
 targetpop_ecoregion_distr %>% 
     group_by(scheme, ecoregion) %>% 
     summarise(proportion = sum(proportion)) %>% 
@@ -622,7 +655,10 @@ targetpop_ecoregion_distr %>%
     coord_flip()
 ```
 
-```{r message=FALSE}
+(ref:soilclass-schemes) Verdeling van gezamenlijke doelpopulatie per meetnet over de bodemklassen.
+Elk type heeft evenveel gewicht in de verdeling.
+
+```{r soilclass-schemes, message=FALSE, fig.cap="(ref:soilclass-schemes)"}
 targetpop_soilclass_distr %>% 
     group_by(scheme, soilclass) %>% 
     summarise(proportion = sum(proportion)) %>% 
