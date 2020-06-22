@@ -225,11 +225,8 @@ pop_size_lentic <-
 
 
 ```{r}
-targetpop_stratumsize <- 
-    bind_rows(pop_size_terr,
-              pop_size_7220,
-              pop_size_3260,
-              pop_size_lentic) %>% 
+join_targetpop <- function(df) {
+    df  %>% 
     inner_join(targetpop %>% 
                    select(scheme, 
                           type,
@@ -241,6 +238,13 @@ targetpop_stratumsize <-
                (type == "7220" & stratum == "aquatic" & str_detect(scheme, "aq")) | 
                (type == "7220" & stratum == "terrestrial" & str_detect(scheme, "terr"))
            )
+}
+targetpop_stratumsize <- 
+    bind_rows(pop_size_terr,
+              pop_size_7220,
+              pop_size_3260,
+              pop_size_lentic) %>% 
+    join_targetpop
 ```
 
 Figuur \@ref(fig:stratumsize) toont de verdeling van populatiegroottes per meetnet.
@@ -551,16 +555,18 @@ spfact_distr <-
               spfact_distr_7220,
               spfact_distr_3260,
               spfact_distr_lentic)
-ecoregion_distr <- 
+targetpop_ecoregion_distr <- 
     spfact_distr %>% 
     group_by(type, stratum, ecoregion) %>% 
     summarise(proportion = sum(proportion)) %>% 
-    ungroup
-soilclass_distr <- 
+    ungroup %>% 
+    join_targetpop
+targetpop_soilclass_distr <- 
     spfact_distr %>% 
     group_by(type, stratum, soilclass) %>% 
     summarise(proportion = sum(proportion)) %>% 
-    ungroup
+    ungroup %>% 
+    join_targetpop
 ```
 
 
