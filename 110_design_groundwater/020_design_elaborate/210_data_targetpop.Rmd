@@ -570,6 +570,72 @@ targetpop_soilclass_distr <-
 ```
 
 
+```{r}
+targetpop_ecoregion_distr %>% 
+    filter(stratum == "all" | is.na(stratum)) %>% 
+    distinct(type, ecoregion, proportion) %>% 
+    pivot_wider(names_from = ecoregion,
+                values_from = proportion,
+                values_fill = 0) %>% 
+    pivot_longer(cols = contains("Ecoregio"),
+                 names_to = "ecoregion",
+                 values_to = "proportion") %>% 
+    mutate(ecoregion = factor(ecoregion) %>% fct_rev) %>% 
+    ggplot(aes(x = ecoregion, y = proportion)) +
+    geom_boxplot() +
+    coord_flip() +
+    ylab("proportion of a type's target population")
+```
 
+```{r}
+targetpop_soilclass_distr %>% 
+    filter(stratum == "all" | is.na(stratum)) %>% 
+    distinct(type, soilclass, proportion) %>% 
+    pivot_wider(names_from = soilclass,
+                values_from = proportion,
+                values_fill = 0) %>% 
+    pivot_longer(cols = c(heavy, light, peat, unknown),
+                 names_to = "soilclass",
+                 values_to = "proportion") %>% 
+    mutate(soilclass = factor(soilclass) %>% fct_rev) %>% 
+    ggplot(aes(x = soilclass, y = proportion)) +
+    geom_boxplot() +
+    coord_flip() +
+    ylab("proportion of a type's target population")
+```
+
+```{r message=FALSE, fig.width=7, fig.height=5}
+targetpop_ecoregion_distr %>% 
+    group_by(scheme, ecoregion) %>% 
+    summarise(proportion = sum(proportion)) %>% 
+    ungroup %>% 
+    mutate(ecoregion = fct_rev(ecoregion),
+           scheme = fct_rev(scheme)) %>% 
+    ggplot(aes(x = scheme, y = proportion, fill = ecoregion)) +
+    geom_col(position = "fill") +
+    scale_fill_discrete(limits = levels(targetpop_ecoregion_distr$ecoregion)) +
+    scale_y_continuous(position = "right") +
+    ylab("overall distribution of target population\n(each type has equal weight)") +
+    guides(fill = guide_legend(ncol = 2,
+                               title.position = "top")) +
+    theme(legend.position = "bottom") +
+    coord_flip()
+```
+
+```{r message=FALSE}
+targetpop_soilclass_distr %>% 
+    group_by(scheme, soilclass) %>% 
+    summarise(proportion = sum(proportion)) %>% 
+    ungroup %>% 
+    mutate(soilclass = fct_rev(soilclass),
+           scheme = fct_rev(scheme)) %>% 
+    ggplot(aes(x = scheme, y = proportion, fill = soilclass)) +
+    geom_col(position = "fill") +
+    scale_fill_discrete(limits = levels(targetpop_soilclass_distr$soilclass)) +
+    scale_y_continuous(position = "right") +
+    ylab("overall distribution of target population\n(each type has equal weight)") +
+    theme(legend.position = "bottom") +
+    coord_flip()
+```
 
 
