@@ -347,20 +347,23 @@ ecoregions <-
     read_ecoregions() %>% 
     select(ecoregion = region_name) %>% 
     group_by(ecoregion) %>% 
-    summarise
+    summarise %>% 
+    st_cast("MULTIPOLYGON")
 ```
 
 Voor type 7220 beschouwen we de verdeling over de categorieën van de spatiale covariaten volgens de populatie-eenheden, d.w.z. na eventuele samenvoeging van puntlocaties die tot dezelfde eenheid behoren.
 Eerst wordt daarvoor wel de waarde vastgesteld op de individuele puntlocaties, en daarna geaggregeerd.
 
 ```{r paged.print=FALSE, message=FALSE}
-habspring_soil <- 
+habspring_spfact <- 
     habspring %>% 
     st_join(soilmap) %>% 
+    st_join(ecoregions) %>% 
     st_drop_geometry %>% 
     group_by(unit_id) %>% 
     arrange(soilclass) %>% 
-    summarise(soilclass = first(soilclass)) %>% 
+    summarise(soilclass = first(soilclass),
+              ecoregion = first(ecoregion)) %>% 
     inner_join(
         habspring_units,
         .,
@@ -393,39 +396,89 @@ soilmap %>%
 )
 ```
 
+<!-- ----------------------------------------------------- -->
+<!-- 270552 input polygons -->
+<!-- Total area: 1.37435E+10 (276009 areas) -->
+<!-- Overlapping area: 0.0141306 (1707 areas) -->
+<!-- Area without category: 252717 (1528 areas) -->
+<!-- ----------------------------------------------------- -->
+<!-- WARNING: The output contains topological errors: -->
+<!--          Unable to calculate a centroid for 2221 areas -->
+<!-- The input could be cleaned by snapping vertices to each other. -->
+<!-- Estimated range of snapping threshold: [1e-10, 0.1] -->
+<!-- Try to import again, snapping with 1e-06: 'snap=1e-06' -->
+<!--     user   system  elapsed  -->
+<!--  376.185  125.341 1245.433  -->
+
 ```{r include=FALSE, eval=!grass_exists}
 system.time(
-execGRASS("v.overlay",
-          ainput = "pol",
-          operator = "and",
-          binput = "soilmap",
-          output = "pol_soil",
-          flags = "overwrite")
+ecoregions %>% 
+    writeVECT("ecoregions",
+              v.in.ogr_flags = c("overwrite", "o"))
 )
 ```
 
+<!-- ----------------------------------------------------- -->
+<!-- 61 input polygons -->
+<!-- Total area: 1.37501E+10 (123 areas) -->
+<!-- Overlapping area: 1309.97 (39 areas) -->
+<!-- Area without category: 30748.9 (27 areas) -->
+<!-- ----------------------------------------------------- -->
+<!-- 39 areas represent multiple (overlapping) features, because polygons -->
+<!-- overlap in input layer(s). Such areas are linked to more than 1 row in -->
+<!-- attribute table. The number of features for those areas is stored as -->
+<!-- category in layer 2 -->
+<!-- ----------------------------------------------------- -->
+<!-- If overlapping is not desired, the input data can be cleaned by snapping -->
+<!-- vertices to each other. -->
+<!-- Estimated range of snapping threshold: [1e-10, 0.1] -->
+<!--    user  system elapsed  -->
+<!--   0.449   0.897   2.798  -->
+
 ```{r include=FALSE, eval=!grass_exists}
-system("v.out.ogr --overwrite input=pol_soil output=data/pol_soil.gpkg format=GPKG")
+system.time(
+system("v.overlay --overwrite ainput=pol operator=and binput=ecoregions output=pol_ecoregion")
+)
 ```
 
-<!-- Exporting 243979 areas (may take some time)... -->
+<!--    user  system elapsed  -->
+<!--  70.014  37.018 115.327  -->
+
+```{r include=FALSE, eval=!grass_exists}
+system.time(
+system("v.overlay --overwrite ainput=pol_ecoregion operator=and binput=soilmap output=pol_spfact")
+)
+```
+
+<!-- WARNING: Number of duplicate centroids: 81 -->
+<!-- v.overlay complete. -->
+<!--    user  system elapsed  -->
+<!-- 272.537  70.569 397.391 -->
+
+```{r include=FALSE, eval=!grass_exists}
+system("v.out.ogr --overwrite input=pol_spfact output=data/pol_spfact.gpkg format=GPKG")
+```
+
+<!-- Exporting 245758 areas (may take some time)... -->
 <!--  100% -->
-<!-- WARNING: 8160 features without category were skipped. Features without -->
+<!-- WARNING: 8159 features without category were skipped. Features without -->
 <!--          category are written only when -c flag is given. -->
-<!-- v.out.ogr complete. 311473 features (Polygon type) written to <pol_soil> -->
+<!-- v.out.ogr complete. 313362 features (Polygon type) written to <pol_spfact> -->
 <!-- (GPKG format). -->
 
-```{r warning=FALSE, include=FALSE}
-assertthat::assert_that(file.exists("data/pol_soil.gpkg"))
-pol_soil <- 
-    read_sf("data/pol_soil.gpkg", crs = 31370) %>% 
-    select(polygon_id = a_polygon_id,
+```{r paged.print=FALSE, warning=FALSE, include=FALSE}
+assertthat::assert_that(file.exists("data/pol_spfact.gpkg"))
+pol_spfact <- 
+    read_sf("data/pol_spfact.gpkg", crs = 31370) %>% 
+    select(polygon_id = a_a_polygon_id,
+           ecoregion = a_b_ecoregion,
            soilclass = b_soilclass) %>% 
-    mutate(soilclass = factor(soilclass))
+    mutate(ecoregion = factor(ecoregion),
+           soilclass = factor(soilclass))
 ```
 
 ```{r paged.print=FALSE}
-pol_soil %>%
+pol_spfact %>%
     st_drop_geometry %>% 
     count(soilclass)
 ```
