@@ -159,7 +159,14 @@ tribble(~layer, ~surface_area, ~nr_features,
 
 We schatten de spatiale populatiegrootte van elk stratum in elk meetnet.
 Een stratum in een meetnet betreft een type, ofwel een combinatie type x oppervlaktestratum in het geval van stilstaande wateren.
-Hierbij wordt het voorkomen van terrestrische types steeds ingeperkt volgens het optreden van ondiep grondwater, behalve voor de '(bijna) overal grondwaterafhankelijke' types.
+
+Bij deze schatting wordt het voorkomen van terrestrische types steeds ingeperkt volgens het optreden van ondiep grondwater, behalve voor de '(bijna) overal grondwaterafhankelijke' types.
+Voorts wordt het type 7220 ingeperkt tot de moerassystemen (inclusief systeemtype 'ongekend') voor meetnet GW_05.1_terr en tot de beeksystemen (inclusief systeemtype 'ongekend') voor meetnet GW_05.1_aq.
+
+```{r}
+habspring_units <- read_habitatsprings(units_7220 = TRUE)
+```
+
 
 De spatiale populatiegroottes zijn relevant voor de gesimuleerde inferenties, nl. voor de toepassing van de correctie voor eindige populaties (finite-population-correction, FPC).
 Daarbij merken we op dat we voor de steekproefsimulaties abstractie zullen maken van het onderscheid tussen oppervlaktestrata van de stilstaande wateren.
@@ -182,7 +189,7 @@ pop_size_terr <-
            population_size = round(population_size)) %>% 
     select(type, stratum, population_size)
 pop_size_7220 <-
-    read_habitatsprings(units_7220 = TRUE) %>% 
+    habspring_units %>% 
     st_drop_geometry %>% 
     count(system_type) %>% 
     pivot_wider(names_from = system_type,
@@ -343,8 +350,8 @@ ecoregions <-
     summarise
 ```
 
-Voor type 7220 beschouwen we de verdeling over de spatiale covariaten volgens de populatie-eenheden, d.w.z. na eventuele samenvoeging van puntlocaties die tot dezelfde eenheid behoren.
-Eerst wordt daarbij wel de bodemklasse vastgesteld van de individuele puntlocaties.
+Voor type 7220 beschouwen we de verdeling over de categorieën van de spatiale covariaten volgens de populatie-eenheden, d.w.z. na eventuele samenvoeging van puntlocaties die tot dezelfde eenheid behoren.
+Eerst wordt daarvoor wel de waarde vastgesteld op de individuele puntlocaties, en daarna geaggregeerd.
 
 ```{r paged.print=FALSE, message=FALSE}
 habspring_soil <- 
@@ -355,7 +362,7 @@ habspring_soil <-
     arrange(soilclass) %>% 
     summarise(soilclass = first(soilclass)) %>% 
     inner_join(
-        read_habitatsprings(units_7220 = TRUE),
+        habspring_units,
         .,
         by = "unit_id")
 ```
