@@ -354,21 +354,7 @@ ecoregions <-
 Voor type 7220 beschouwen we de verdeling over de categorieën van de spatiale covariaten volgens de populatie-eenheden, d.w.z. na eventuele samenvoeging van puntlocaties die tot dezelfde eenheid behoren.
 Eerst wordt daarvoor wel de waarde vastgesteld op de individuele puntlocaties, en daarna geaggregeerd.
 
-```{r paged.print=FALSE, message=FALSE}
-habspring_spfact <- 
-    habspring %>% 
-    st_join(soilmap) %>% 
-    st_join(ecoregions) %>% 
-    st_drop_geometry %>% 
-    group_by(unit_id) %>% 
-    arrange(soilclass) %>% 
-    summarise(soilclass = first(soilclass),
-              ecoregion = first(ecoregion)) %>% 
-    inner_join(
-        habspring_units,
-        .,
-        by = "unit_id")
-```
+
 
 
 ```{r include=FALSE, eval=!grass_exists}
@@ -477,11 +463,107 @@ pol_spfact <-
            soilclass = factor(soilclass))
 ```
 
-```{r paged.print=FALSE}
-pol_spfact %>%
+```{r paged.print=FALSE, message=FALSE}
+spfact_distr_terr <- 
+    pol_spfact %>% 
+    semi_join(hmt_pol %>% st_drop_geometry,
+              by = "polygon_id") %>% 
+    mutate(area = st_area(.)) %>% 
     st_drop_geometry %>% 
-    count(soilclass)
+    inner_join(hmt_occ %>% distinct(polygon_id, type, phab),
+               .,
+               by = "polygon_id") %>% 
+    mutate(area = area * phab / 100) %>% 
+    group_by(type, ecoregion, soilclass) %>% 
+    summarise(area = sum(area)) %>% 
+    group_by(type) %>% 
+    mutate(proportion = (area / sum(area)) %>% drop_units, 
+           stratum = NA_character_) %>% 
+    ungroup %>% 
+    select(type, stratum, ecoregion, soilclass, proportion)
+spfact_distr_7220 <- 
+    habspring %>% 
+    st_join(soilmap) %>% 
+    st_join(ecoregions) %>% 
+    st_drop_geometry %>% 
+    group_by(unit_id) %>% 
+    arrange(soilclass) %>% 
+    summarise(soilclass = first(soilclass),
+              ecoregion = first(ecoregion)) %>% 
+    inner_join(
+        habspring_units %>% st_drop_geometry,
+        .,
+        by = "unit_id") %>% 
+    select(system_type, soilclass, ecoregion) %>% 
+    mutate(all = system_type %in% c("mire", "rivulet", "unknown"),
+           terrestrial = system_type %in% c("mire", "unknown"),
+           aquatic = system_type %in% c("rivulet", "unknown"),
+           type = "7220" %>% factor(levels = levels(spdistr_terr$type))) %>% 
+    pivot_longer(cols = c("all", "terrestrial", "aquatic"),
+                 names_to = "stratum",
+                 values_to = "valid") %>% 
+    filter(valid) %>% 
+    group_by(type, stratum, ecoregion, soilclass) %>% 
+    summarise(n = n()) %>% 
+    group_by(type, stratum) %>% 
+    mutate(proportion = (n / sum(n))) %>% 
+    ungroup %>% 
+    select(type, stratum, ecoregion, soilclass, proportion)
+spfact_distr_3260 <- 
+    pol_spfact %>% 
+    filter(polygon_id == "3260") %>% 
+    mutate(area = st_area(.)) %>% 
+    st_drop_geometry %>% 
+    mutate(type = "3260" %>% factor(levels = levels(spdistr_terr$type))) %>% 
+    group_by(type, ecoregion, soilclass) %>% 
+    summarise(area = sum(area)) %>% 
+    ungroup %>% 
+    mutate(proportion = (area / sum(area)) %>% drop_units, 
+           stratum = NA_character_) %>% 
+    select(type, stratum, ecoregion, soilclass, proportion)
+spfact_distr_lentic <- 
+    pol_spfact %>% 
+    semi_join(wsh_pol %>% st_drop_geometry,
+              by = "polygon_id") %>% 
+    mutate(area = st_area(.)) %>% # this is area within rings!
+    st_drop_geometry %>% 
+    inner_join(wsh_occ %>% distinct(polygon_id, type),
+               .,
+               by = "polygon_id") %>% 
+    group_by(type, polygon_id, ecoregion, soilclass) %>% 
+    summarise(area = sum(area)) %>% 
+    group_by(type, polygon_id) %>% 
+    mutate(proportion_in_pol = (area / sum(area)) %>% drop_units) %>% 
+    group_by(type, ecoregion, soilclass) %>% 
+    summarise(proportions_in_pol = sum(proportion_in_pol)) %>% 
+    ungroup %>% 
+    group_by(type) %>% 
+    mutate(proportion = (proportions_in_pol / sum(proportions_in_pol)), 
+           stratum = NA_character_) %>% 
+    ungroup %>% 
+    select(type, stratum, ecoregion, soilclass, proportion)
 ```
+
+
+```{r paged.print=FALSE, message=FALSE}
+spfact_distr <- 
+    bind_rows(spfact_distr_terr,
+              spfact_distr_7220,
+              spfact_distr_3260,
+              spfact_distr_lentic)
+ecoregion_distr <- 
+    spfact_distr %>% 
+    group_by(type, stratum, ecoregion) %>% 
+    summarise(proportion = sum(proportion)) %>% 
+    ungroup
+soilclass_distr <- 
+    spfact_distr %>% 
+    group_by(type, stratum, soilclass) %>% 
+    summarise(proportion = sum(proportion)) %>% 
+    ungroup
+```
+
+
 
 
 
