@@ -136,10 +136,60 @@ locs_ext %>%
   kable_styling(full_width = FALSE)
 ```
 
-### Spatiale covariaten
+### Extra locatie-attributen voor de modellering
 
-De (categorische) covariaten _bodemtextuur_ (in drie klassen: zwaar, licht, veen) en _ecoregio_ van de locaties worden toegevoegd als locatie-attributen.
+#### Spatiale clusters van piëzometers
+
+Een numerieke variabele `cluster_id` wordt toegevoegd, die voor twee locaties dezelfde waarde krijgt wanneer beide locaties op hoogstens 2 meter van elkaar zijn verwijderd.
+De eenheden die zo op een hoger ruimtelijk niveau ontstaan, noemen we _piëzometerclusters_.
+
+```{r paged.print=FALSE}
+locs_ext <- 
+  locs_ext %>% 
+  distinct(loc_code, x, y) %>% 
+  cluster_locs(max_dist = 2) %>% 
+  select(-x, -y) %>% 
+  inner_join(locs_ext, ., by = "loc_code")
+```
+
+
+#### Spatiale covariaten
+
+De (categorische) covariaten _soilclass_ en _ecoregion_ van de locaties worden toegevoegd als locatie-attributen.
 Zie paragraaf \@ref(spatiale-verdeling) voor motivatie.
+
+```{r paged.print=FALSE, warning=FALSE}
+locs_ext <-
+  locs_ext %>% 
+  distinct(loc_code, x, y) %>%
+  as_points(remove = TRUE) %>% 
+  st_join(soilmap) %>% 
+  st_join(ecoregions) %>% 
+  st_drop_geometry %>% 
+  # solving NA values:
+  replace_na(list(soilclass = "unknown", 
+                  # due to a shortcoming in the ecoregions data source:
+                  ecoregion = "Ecoregio van de kustduinen")) %>% 
+  inner_join(locs_ext, ., by = "loc_code")
+```
+
+```{r}
+locs_terr <- 
+  locs_ext %>% 
+  filter(target == "terrestrial")
+locs_aq <- 
+  locs_ext %>% 
+  filter(target == "aquatic")
+```
+
+De aan de dataset toegevoegde kolommen zien er uit als volgt:
+
+```{r}
+locs_ext %>% 
+  distinct(loc_code, cluster_id, soilclass, ecoregion) %>%
+  select(-loc_code) %>% 
+  glimpse
+```
 
 
 ### LG3 en HG3 in meetnet GW_05.1_terr
