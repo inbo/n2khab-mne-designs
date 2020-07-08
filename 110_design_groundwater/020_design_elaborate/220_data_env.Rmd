@@ -403,11 +403,111 @@ glimpse(chem)
 
 ### Samenstellen van de analysedatasets voor elk hoofdmeetnet
 
-Uitgaande van de voorgaande datasets van de milieuvariabelen gebeuren per hoofdmeetnet de volgende stappen:
+Uitgaande van de datasets van de locaties en de milieuvariabelen wordt per hoofdmeetnet een dataset samengesteld voor analyse, door:
 
-- toevoegen van de voor analyse relevante locatie-attributen;
-- beperken van de locaties tot de types die tot de meetnetspecifieke doelpopulatie behoren.
-- cluster-id toevoegen van locaties voor elk hoofdmeetnet
+- de locaties te beperken tot de types die tot de meetnetspecifieke doelpopulatie behoren;
+- de data van de locaties en de milieuvariabelen te combineren;
+- een aantal afgeleide tijdsvariabelen toe te voegen;
+- enkel de locatie-attributen te weerhouden die relevant zijn voor analyse.
+
+```{r paged.print=FALSE}
+gw51t <- 
+  xg3_terr %>% 
+  mutate(sixyear = factor(floor((hydroyear - 1989) / 6 + 1))) %>% 
+  inner_join(
+    locs_terr %>% 
+      filter(type %in% subset(targetpop,
+                              scheme == "GW_05.1_terr")$type) %>% 
+      select(loc_code, 
+             cluster_id, 
+             x, 
+             y, 
+             type,
+             soilclass,
+             ecoregion),
+    by = "loc_code"
+  ) %>% 
+  relocate(sixyear, .after = hydroyear)
+```
+
+Datastructuur voor meetnet `GW_05.1_terr`:
+
+```{r}
+glimpse(gw51t)
+```
+
+
+```{r paged.print=FALSE}
+gw51a <- 
+  xg3_aq %>% 
+  mutate(sixyear = factor(floor((hydroyear - 1989) / 6 + 1))) %>% 
+  inner_join(
+    locs_aq %>% 
+      filter(type %in% subset(targetpop,
+                              scheme == "GW_05.1_aq")$type) %>% 
+      select(loc_code, 
+             cluster_id, 
+             x, 
+             y, 
+             type,
+             soilclass,
+             ecoregion),
+    by = "loc_code"
+  ) %>% 
+  relocate(sixyear, .after = hydroyear)
+```
+
+Datastructuur voor meetnet `GW_05.1_aq`:
+
+```{r}
+glimpse(gw51a)
+```
+
+```{r paged.print=FALSE}
+gw33 <- 
+  chem %>% 
+  mutate(year = year(date),
+         month = month(date),
+         sixyear = factor(floor((year - 1989) / 6 + 1))) %>% 
+  inner_join(
+    locs_ext %>% 
+      filter(type %in% subset(targetpop,
+                              scheme == "GW_03.3")$type) %>% 
+      select(loc_code, 
+             cluster_id, 
+             x, 
+             y, 
+             type,
+             soilclass,
+             ecoregion),
+    by = "loc_code"
+  ) %>% 
+  relocate(year, month, sixyear, .after = date)
+```
+
+Datastructuur voor meetnet `GW_03.3`:
+
+```{r}
+glimpse(gw33)
+```
+
+```{r}
+gw51t %>% 
+  write_vc(file = "gw51t",
+           root = datapath,
+           optimize = TRUE,
+           sorting = c("loc_code", "hydroyear", "type"))
+gw51a %>% 
+  write_vc(file = "gw51a",
+           root = datapath,
+           optimize = TRUE,
+           sorting = c("loc_code", "hydroyear", "type"))
+gw33 %>% 
+  write_vc(file = "gw33",
+           root = datapath,
+           optimize = TRUE,
+           sorting = c("loc_code", "date", "type"))
+```
 
 
 ## Verkenning van de data
