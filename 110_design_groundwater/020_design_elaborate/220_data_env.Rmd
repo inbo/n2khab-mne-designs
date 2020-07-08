@@ -157,12 +157,58 @@ locs_ext %>%
   kable_styling(full_width = FALSE)
 ```
 
+De bovenstaande locaties betreffen steeds piëzometers.
+Voor type 7220 (kalktufbronnen) zijn er nauwelijks piëzometers, maar er zijn wel chemische data beschikbaar van het oppervlaktewater aan de bron, wat we kunnen beschouwen als grondwaterkwaliteit.
+Deze locaties worden daarom toegevoegd voor het ontwerp van hoofdmeetnet GW_03.3.
+
+```{r paged.print=FALSE, message=FALSE, warning=FALSE}
+habspring_chem <- 
+  file.path(gitroot,
+          "210_design_surfacewater/110_datapreparation", 
+          "data/10_input/habitatsprings_abio_v3.csv") %>% 
+  read_csv2(col_types = cols(
+    Datum = col_date(format = "%d/%m/%Y")
+  )) %>% 
+  select(point_id = id_n2khab,
+         date = Datum,
+         dist_to_source = AfstandBron,
+         matches("PO4|NH4|NO3")) %>%
+  filter(dist_to_source == "A") %>% 
+  # correcting non-constant N-P mass conversion:
+  mutate(PO4_P = mean(PO4_P / PO4) * PO4,
+         NO3_N = mean(NO3_N / NO3) * NO3,
+         loc_code = str_c("ht7220_", 
+                          point_id %>% str_pad(2, pad = "0"))) %>%
+  select(-matches("(PO4|NH4|NO3)$"),
+         -dist_to_source,
+         -point_id) %>% 
+  rename(PO4 = PO4_P,
+         NO3 = NO3_N,
+         NH4 = NH4_N) %>% 
+  relocate(loc_code)
+```
+
+```{r paged.print=FALSE}
+locs_7220 <-
+  habspring %>% 
+  mutate(loc_code = str_c("ht7220_", 
+                          point_id %>% str_pad(2, pad = "0"))) %>% 
+  semi_join(habspring_chem, by = "loc_code") %>% 
+  mutate(x = st_coordinates(.)[, "X"],
+         y = st_coordinates(.)[, "Y"]) %>% 
+  select(loc_code, unit_id, system_type, type, x, y) %>% 
+  st_drop_geometry
+```
+
+Het gaat voor type 7220 om data van `r locs_7220 %>% filter(system_type == "mire") %>% nrow` moeraslocatie (terrestrisch) en `r locs_7220 %>% filter(system_type == "rivulet") %>% nrow` beeklocaties (aquatisch).
+
+
 ### Extra locatie-attributen voor de modellering
 
-#### Spatiale clusters van piëzometers
+#### Spatiale clusters van locaties
 
 Een numerieke variabele `cluster_id` wordt toegevoegd, die voor twee locaties dezelfde waarde krijgt wanneer beide locaties op hoogstens 2 meter van elkaar zijn verwijderd.
-De eenheden die zo op een hoger ruimtelijk niveau ontstaan, noemen we _piëzometerclusters_.
+De eenheden die zo op een hoger ruimtelijk niveau ontstaan, noemen we _locatieclusters_.
 
 ```{r paged.print=FALSE}
 locs_ext <- 
@@ -171,6 +217,22 @@ locs_ext <-
   cluster_locs(max_dist = 2) %>% 
   select(-x, -y) %>% 
   inner_join(locs_ext, ., by = "loc_code")
+```
+
+Voor de apart toegevoegde locaties van type 7220 wordt een andere regel gehanteerd:
+wanneer twee puntlocaties tot dezelfde populatie-eenheid horen (bronnen die behoren tot hetzelfde systeem), dan krijgen zij een gelijke waarde voor `cluster_id`, ongeacht hun onderlinge afstand.
+Hierdoor kan de chemische verwantschap tussen verschillende deellocaties in rekening worden gebracht.
+
+```{r paged.print=FALSE}
+locs_ext <- 
+  locs_ext %>% 
+  bind_rows(
+    locs_7220 %>% 
+      mutate(cluster_id = as.integer(unit_id) + 1e4L,
+             target = factor("extra locations 7220")) %>% 
+      select(-unit_id,
+             -system_type)
+  )
 ```
 
 
@@ -195,6 +257,9 @@ locs_ext <-
 ```
 
 ```{r}
+# the below objects are only used for GW_05.1_xxx, so there's no need to include the
+# extra 7220 locations, which are only useful to GW_03.3 (for which below objects are
+# not used).
 locs_terr <- 
   locs_ext %>% 
   filter(target == "terrestrial")
@@ -298,7 +363,8 @@ chem <-
   collect() %>% 
   pivot_wider(names_from = chem_variable,
               values_from = value) %>% 
-  arrange(loc_code, date)
+  arrange(loc_code, date) %>% 
+  bind_rows(habspring_chem)
 ```
 
 Volgende code-output geeft een indruk van de data.
