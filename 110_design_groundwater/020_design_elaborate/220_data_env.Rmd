@@ -258,7 +258,6 @@ locs_ext <-
   )
 ```
 
-
 #### Spatiale covariaten
 
 De (categorische) covariaten _soilclass_ en _ecoregion_ van de locaties worden toegevoegd als locatie-attributen.
@@ -279,6 +278,29 @@ locs_ext <-
   inner_join(locs_ext, ., by = "loc_code")
 ```
 
+De aan de dataset toegevoegde kolommen zien er uit als volgt:
+
+```{r}
+locs_ext %>% 
+  distinct(loc_code, cluster_id, soilclass, ecoregion) %>%
+  select(-loc_code) %>% 
+  glimpse
+```
+
+
+
+```{r}
+locs_ext <- 
+  locs_ext %>% 
+  select(loc_code, x, y, type:last_col())
+locs_ext %>% 
+  write_vc(file = "locs_ext",
+           root = datapath,
+           optimize = TRUE,
+           sorting = c("loc_code", "type", "target"))
+```
+
+
 ```{r}
 # the below objects are only used for GW_05.1_xxx, so there's no need to include the
 # extra 7220 locations, which are only useful to GW_03.3 (for which below objects are
@@ -289,15 +311,6 @@ locs_terr <-
 locs_aq <- 
   locs_ext %>% 
   filter(target == "aquatic")
-```
-
-De aan de dataset toegevoegde kolommen zien er uit als volgt:
-
-```{r}
-locs_ext %>% 
-  distinct(loc_code, cluster_id, soilclass, ecoregion) %>%
-  select(-loc_code) %>% 
-  glimpse
 ```
 
 
