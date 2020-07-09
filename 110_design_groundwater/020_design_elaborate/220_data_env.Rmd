@@ -21,7 +21,7 @@ Met een temporele resolutie van zesjaarperioden in de monitoring hoeft deze vers
 Momenteel gebeuren de berekeningen in Watina per hydrologisch jaar.
 Het is namelijk de gewoonte om de (typisch) droogste en natste momenten van de jaarlijkse cycli in hun geheel binnen één jaarlijkse periode te kunnen evalueren.
 
-```{r}
+```{r eval=params$connect_watina}
 watina <- connect_watina()
 ```
 
@@ -38,7 +38,7 @@ Merk op dat we in dit stadium nog alle locaties selecteren:
 1. die gekoppeld zijn aan een type uit de doelpopulatie van minstens één meetnet in het compartiment grondwater (dus zowel hoofd- als secundaire meetnetten);
 1. waarbij we er nog geen rekening mee houden of van deze locaties geschikte data voorhanden zijn voor de beoogde hoofdmeetnetten.
 
-```{r paged.print=FALSE}
+```{r paged.print=FALSE, eval=params$connect_watina}
 locs_terr <- 
   get_locs(watina, 
            filterdepth_range = c(0, 3),
@@ -95,14 +95,14 @@ locs_terr <-
 <!-- ``` -->
 
 
-```{r}
+```{r eval=params$connect_watina}
 # Dropping lines with type == "91E0", as explained in markdown comments above
 locs_terr <- 
   locs_terr %>% 
   filter(type != "91E0")
 ```
 
-```{r paged.print=FALSE}
+```{r paged.print=FALSE, eval=params$connect_watina}
 locs_aq <- 
   get_locs(watina, 
            filterdepth_range = c(0, maxdepth_aq),
@@ -149,16 +149,41 @@ locs_aq <-
   distinct()
 ```
 
+```{r eval=params$connect_watina}
+locs_terr %>% 
+  select(loc_code, x, y, type, target) %>%
+  write_vc(file = "locs_terr",
+           root = datapath,
+           optimize = TRUE,
+           sorting = c("loc_code", "type", "target"))
+locs_aq %>% 
+  select(loc_code, x, y, type, target) %>%
+  write_vc(file = "locs_aq",
+           root = datapath,
+           optimize = TRUE,
+           sorting = c("loc_code", "type", "target"))
+```
+
+```{r}
+locs_terr <- 
+  read_vc("locs_terr",
+           root = datapath)
+locs_aq <- 
+  read_vc("locs_aq",
+           root = datapath)
+```
+
 ```{r}
 locs_ext <- 
-  bind_rows(locs_terr, locs_aq)
+  bind_rows(locs_terr, locs_aq) %>% 
+  as_tibble
 locs <- locs_ext %>% 
   distinct(loc_code)
 ```
 
 Volgende code-output geeft een indruk van de attributen van alle geselecteerde locaties; het aantal rijen betreft het aantal locaties:
 
-```{r}
+```{r eval=params$connect_watina}
 locs_ext %>% 
   select(-type, -target) %>% 
   group_by(loc_code) %>% 
@@ -234,6 +259,7 @@ Een numerieke variabele `cluster_id` wordt toegevoegd, die voor twee locaties de
 De eenheden die zo op een hoger ruimtelijk niveau ontstaan, noemen we _locatieclusters_.
 
 ```{r paged.print=FALSE}
+set.seed(123456)
 locs_ext <- 
   locs_ext %>% 
   distinct(loc_code, x, y) %>% 
@@ -290,9 +316,6 @@ locs_ext %>%
 
 
 ```{r}
-locs_ext <- 
-  locs_ext %>% 
-  select(loc_code, x, y, type:last_col())
 locs_ext %>% 
   write_vc(file = "locs_ext",
            root = datapath,
@@ -321,7 +344,7 @@ Omdat in dit meetnet idealiter met _grondwaterstanden_ wordt gewerkt, worden de 
 Het zou beter zijn om dit te doen met de daggebaseerde meetwaarden (vóór aggregatie), maar dit dient nog in de Watina-databank te worden geïmplementeerd.
 
 
-```{r message=FALSE}
+```{r message=FALSE, eval=params$connect_watina}
 xg3_terr <- 
   locs_terr %>% 
   get_xg3(watina, 
@@ -337,6 +360,20 @@ xg3_terr <-
   collect()
 ```
 
+```{r eval=params$connect_watina}
+xg3_terr %>% 
+  write_vc(file = "xg3_terr",
+           root = datapath,
+           optimize = TRUE,
+           sorting = c("loc_code", "hydroyear"))
+```
+
+```{r}
+xg3_terr <- 
+  read_vc("xg3_terr",
+           root = datapath)
+```
+
 Volgende code-output geeft een indruk van de data.
 Het aantal rijen betreft het aantal combinaties van locatie en (hydrologisch) jaar met beschikbare gegevens (voor de betrokken locaties):
 
@@ -346,17 +383,9 @@ glimpse(xg3_terr)
 
 De variabelen `lg3_lcl` en `hg3_lcl` betreffen respectievelijk LG3 en HG3 t.o.v. maaiveld, uitgedrukt in meter, waarbij negatieve waarden corresponderen met waarden onder maaiveld.
 
-```{r}
-xg3_terr %>% 
-  write_vc(file = "xg3_terr",
-           root = datapath,
-           optimize = TRUE,
-           sorting = c("loc_code", "hydroyear"))
-```
-
 ### LG3 en HG3 in meetnet GW_05.1_aq
 
-```{r message=FALSE}
+```{r message=FALSE, eval=params$connect_watina}
 xg3_aq <- 
   locs_aq %>% 
   get_xg3(watina, 
@@ -369,6 +398,20 @@ xg3_aq <-
   collect()
 ```
 
+```{r eval=params$connect_watina}
+xg3_aq %>% 
+  write_vc(file = "xg3_aq",
+           root = datapath,
+           optimize = TRUE,
+           sorting = c("loc_code", "hydroyear"))
+```
+
+```{r}
+xg3_aq <- 
+  read_vc("xg3_aq",
+           root = datapath)
+```
+
 Volgende code-output geeft een indruk van de data.
 Het aantal rijen betreft het aantal combinaties van locatie en (hydrologisch) jaar met beschikbare gegevens (voor de betrokken locaties):
 
@@ -378,20 +421,12 @@ glimpse(xg3_aq)
 
 De variabelen `lg3_ost` en `hg3_ost` betreffen respectievelijk LG3 en HG3 in meter TAW (verticaal coördinaatreferentiesysteem 'Ostend height'; EPSG-code [5710](https://epsg.io/5710)).
 
-```{r}
-xg3_aq %>% 
-  write_vc(file = "xg3_aq",
-           root = datapath,
-           optimize = TRUE,
-           sorting = c("loc_code", "hydroyear"))
-```
-
 ### NO3, NH4 en PO4 in meetnet GW_03.3
 
 In enkele gevallen zijn van deze variabelen meerdere metingen beschikbaar op één dag.
 In die gevallen is het daggemiddelde berekend.
 
-```{r message=FALSE}
+```{r message=FALSE, eval=params$connect_watina}
 chem <- 
   locs %>% 
   get_chem(watina, 
@@ -423,19 +458,25 @@ chem <-
   bind_rows(habspring_chem)
 ```
 
-Volgende code-output geeft een indruk van de data.
-Het aantal rijen betreft het aantal combinaties van locatie en datum met beschikbare gegevens (voor de betrokken locaties):
-
-```{r paged.print=FALSE}
-glimpse(chem)
-```
-
-```{r}
+```{r eval=params$connect_watina}
 chem %>% 
   write_vc(file = "chem",
            root = datapath,
            optimize = TRUE,
            sorting = c("loc_code", "date"))
+```
+
+```{r}
+chem <- 
+  read_vc("chem",
+           root = datapath)
+```
+
+Volgende code-output geeft een indruk van de data.
+Het aantal rijen betreft het aantal combinaties van locatie en datum met beschikbare gegevens (voor de betrokken locaties):
+
+```{r paged.print=FALSE}
+glimpse(chem)
 ```
 
 ### Samenstellen van de analysedatasets voor elk hoofdmeetnet
