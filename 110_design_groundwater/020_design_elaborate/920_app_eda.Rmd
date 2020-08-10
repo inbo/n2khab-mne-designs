@@ -11,9 +11,46 @@
 
 <!-- functions that can be repeated for different data sets? Arguments like data, response, vars ? -->
 
+```{r}
+datasets <- 
+    tibble(data = list(gw51t, gw51a, gw33),
+           response = list(vars(lg3_lcl, hg3_lcl),
+                           vars(lg3_ost, hg3_ost),
+                           vars(NO3, NH4, PO4)),
+           var_cont = list(vars(hydroyear, x, y),
+                           vars(hydroyear, x, y),
+                           vars(date, year, month, x, y)),
+           var_cat = list(vars(loc_code, 
+                               sixyear, 
+                               cluster_id, 
+                               type, 
+                               soilclass, 
+                               ecoregion)) %>% rep(3)
+    )
+```
+
+
 ## Responsvariabelen
 
 ### Outliers
+
+```{r warning=FALSE}
+datasets$data %>% 
+    walk2(datasets$response,
+          function(df, var) {
+              df2 <- select(df, !!!var)
+              colnames(df2) %>% 
+                  walk(function(cname) {
+                      tibble(df2[[cname]]) %>% 
+                          magrittr::set_colnames(cname) %>% 
+                          arrange(.data[[cname]]) %>% 
+                          mutate(id = seq_along(.data[[cname]])) %>%
+                          {ggplot(., aes(x = .data[[cname]], y = id)) +
+                                  geom_point(size = 0.5, alpha = 0.7)} %>% 
+                          print
+                  })
+          })
+```
 
 
 ### Nullen
