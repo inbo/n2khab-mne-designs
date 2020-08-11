@@ -38,7 +38,7 @@ datasets <-
 
 ### Outliers
 
-```{r warning=FALSE}
+```{r warning=FALSE, results="asis"}
 names(datasets$data) %>% 
     walk(function(dfname) {
         datasets %>% 
@@ -49,14 +49,29 @@ names(datasets$data) %>%
                 df2 <- select(df, !!!var)
                 colnames(df2) %>%
                     walk(function(cname) {
-                        tibble(df2[[cname]]) %>%
+                        p <- 
+                            tibble(df2[[cname]]) %>%
                             magrittr::set_colnames(cname) %>%
                             arrange(.data[[cname]]) %>%
                             mutate(id = seq_along(.data[[cname]])) %>%
-                            {ggplot(., aes(x = .data[[cname]], y = id)) +
+                            ggplot(., aes(x = .data[[cname]], y = id)) +
                                     geom_point(size = 0.5, alpha = 0.7) +
-                                    labs(title = dfname2)} %>%
-                            print
+                                    labs(title = dfname2)
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = c(paste("```{r cleveland-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                                   "fig.cap = 'Cleveland dotplot voor {{cname}}",
+                                                   "in meetnet {{dfname2}}.',",
+                                                   "out.width='70%',",
+                                                   "warning=FALSE}"), 
+                                             "print(p)",
+                                             "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
                     })
             }) 
     })
