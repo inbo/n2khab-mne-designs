@@ -93,7 +93,70 @@ names(datasets$data) %>%
 
 ### Nullen
 
+```{r warning=FALSE, results="asis"}
+cut_zero <- 
+    function(x, cuts) {
+        fct_c(if (length(x[x < 0]) > 0) {
+                     cut_interval(x[x < 0], n = cuts, closed = "left")
+                  } else factor(),
+              x[x == 0] %>% factor,
+              if (length(x[x > 0]) > 0) {
+                     cut_interval(x[x > 0], n = cuts, closed = "right")
+                  } else factor()
+              )
+    }
 
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$response[[1]]
+                df2 <- select(df, !!!var)
+                colnames(df2) %>%
+                    walk(function(cname) {
+                        p <- 
+                            df2 %>%
+                            select(.data[[cname]]) %>% 
+                            drop_na %>%
+                            mutate_all(cut_zero, cuts = 4) %>%
+                            group_by(.data[[cname]]) %>% 
+                            mutate(newlabel = str_c(as.character(.data[[cname]]),
+                                                    "\nn=",
+                                                    n())
+                            ) %>% 
+                            ungroup %>% 
+                            transmute_at(1,
+                                      .funs = ~plyr::mapvalues(.,
+                                                               from = unique(.),
+                                                               to = unique(.data$newlabel))
+                                      ) %>% 
+                            ggplot(., aes(x = .data[[cname]])) +
+                                    geom_bar(fill = "white", colour = "grey50") +
+                                    labs(title = dfname2)
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = c(paste("```{r barplot-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                                   "fig.cap = 'Staafdiagram voor {{cname}}",
+                                                   "in meetnet {{dfname2}}. De waarde nul, indien",
+                                                   "aanwezig, is altijd vertegenwoordigd door een",
+                                                   "aparte staaf. Klassebreedtes voor negatieve",
+                                                   "waarden wijken af van die voor positieve.',",
+                                                   "out.width='70%',",
+                                                   "warning=FALSE}"), 
+                                             "print(p)",
+                                             "")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+                    })
+            }) 
+    })
+```
 
 
 ## Covariaten
@@ -114,4 +177,6 @@ names(datasets$data) %>%
 
 ## Databeschikbaarheid voor interacties
 
-
+<!-- meest zinvolle interacties: -->
+<!-- - time x soilclass -->
+<!-- - time x type -->
