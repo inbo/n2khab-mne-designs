@@ -51,7 +51,7 @@ datasets <-
 
 ### Outliers
 
-```{r warning=FALSE, results="asis"}
+```{r cleveland-untransformed, warning=FALSE, results="asis"}
 names(datasets$data) %>% 
     walk(function(dfname) {
         datasets %>% 
@@ -90,6 +90,50 @@ names(datasets$data) %>%
     })
 ```
 
+```{r cleveland-logaxis-03-3, warning=FALSE, results="asis"}
+"GW_03.3" %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$response[[1]]
+                df2 <- 
+                  select(df, !!!var)
+                colnames(df2) %>%
+                    walk(function(cname) {
+                        p <- 
+                            df2 %>%
+                            select(.data[[cname]]) %>%
+                            arrange(.data[[cname]]) %>%
+                            mutate(id = seq_along(.data[[cname]])) %>%
+                            ggplot(., aes(x = .data[[cname]], y = id)) +
+                                    geom_point(size = 0.5, alpha = 0.7) +
+                                    scale_x_log10(minor_breaks = 
+                                                    seq(10, 90, 10) * 
+                                                    matrix(10^(-4:3), 9, 8, byrow = TRUE) %>% 
+                                                    as.vector) +
+                                    labs(title = dfname2)
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = 
+                                      c(paste("```{r cleveland-log-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                              "fig.cap = 'Cleveland dotplot voor {{cname}}",
+                                              "in meetnet {{dfname2}}. X-as in de log-schaal.',",
+                                              "out.width='70%',",
+                                              "warning=FALSE}"), 
+                                        "print(p)",
+                                        "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+                    })
+            }) 
+    })
+```
 
 ### Nullen
 
