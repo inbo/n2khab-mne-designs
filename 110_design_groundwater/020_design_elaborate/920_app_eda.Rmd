@@ -220,8 +220,118 @@ names(datasets$data) %>%
 
 ### Outliers in continue covariaten
 
+```{r contcov-cleveland-untransformed, warning=FALSE, results="asis"}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$var_cont[[1]]
+                df2 <- select(df, !!!var)
+                colnames(df2) %>%
+                    walk(function(cname) {
+                        p <- 
+                            df2 %>%
+                            select(.data[[cname]]) %>%
+                            drop_na %>% 
+                            arrange(.data[[cname]]) %>%
+                            mutate(id = seq_along(.data[[cname]])) %>%
+                            ggplot(., aes(x = .data[[cname]], y = id)) +
+                                    geom_point(size = 0.5, alpha = 0.7) +
+                                    labs(title = dfname2)
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = c(paste("```{r cleveland-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                                   "fig.cap = 'Cleveland dotplot voor {{cname}}",
+                                                   "in meetnet {{dfname2}}.',",
+                                                   "out.width='70%',",
+                                                   "warning=FALSE}"), 
+                                             "print(p)",
+                                             "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+                    })
+            }) 
+    })
+```
 
 ### Balancering van categorische covariaten
+
+```{r catcov-barplot, results="asis", fig.width=7, fig.height=6}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$var_cat[[1]]
+                df2 <- select(df, !!!var)
+                colnames(df2) %>%
+                    walk(function(cname) {
+                        p <- 
+                            df2 %>%
+                            select(.data[[cname]]) %>%
+                            drop_na %>% 
+                            {if (cname %in% c("type", "ecoregion", "loc_code")) {
+                              ggplot(., aes(x = .data[[cname]])) +
+                                geom_bar(fill = "white", colour = "grey50") +
+                                labs(title = dfname2) +
+                                theme(axis.text.x = element_text(angle = 90,
+                                                                 vjust = 0.4,
+                                                                 hjust = 1))
+                            } else {
+                              ggplot(., aes(x = .data[[cname]])) +
+                                geom_bar(fill = "white", colour = "grey50") +
+                                labs(title = dfname2)
+                            }
+                            }
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = c(paste("```{r barplot-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                                   "fig.cap = 'Staafdiagram van alle unieke waarden",
+                                                   "van {{cname}} in meetnet {{dfname2}}.',",
+                                                   "out.width='70%', fig.width=7, fig.height=6"), 
+                                             "print(p)",
+                                             "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+                    })
+            }) 
+    })
+```
+
+Sommige types van de resp. doelpopulaties zijn _niet_ in de datasets vertegenwoordigd (Tabel \@ref(tab:missing-types)).
+We zien dat dit vooral optreedt bij GW_05.1_terr, niet bij GW_05.1_aq, en beperkt bij GW_03.3.
+
+```{r missing-types}
+datasets %>% 
+  mutate(scheme = 
+           names(data) %>% 
+           factor(levels = levels(targetpop$scheme)),
+         missing_types =
+           data %>% 
+           map2(scheme, function(df, scheme2) {
+             targetpop %>% 
+               filter(scheme == scheme2) %>% 
+               select(type) %>% 
+               anti_join(df %>% distinct(type), by = "type")
+           })
+         ) %>% 
+  select(scheme, missing_types) %>% 
+  unnest(cols = c(scheme, missing_types)) %>% 
+  kable(caption = "De types die niet zijn vertegenwoordigd in de analysedatasets (1 meetnet ('scheme') komt overeen met 1 analysedataset).") %>% 
+  kable_styling(full_width = FALSE) %>% 
+  collapse_rows(columns = 1, valign = "top")
+```
 
 
 ### Collineariteit
