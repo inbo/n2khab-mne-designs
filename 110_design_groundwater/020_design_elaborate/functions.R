@@ -12,8 +12,10 @@ corvif <- function(dataz) {
     dataz   <- data.frame(fooy=1 + rnorm(nrow(dataz)) ,dataz)
     lm_mod  <- lm(form,dataz)
 
-    cat("\n\nVariance inflation factors\n\n")
-    print(myvif(lm_mod))
+    myvif(lm_mod) %>%
+        tibble::rownames_to_column("covariate") %>%
+        dplyr::rename(vif = GVIF) %>%
+        dplyr::as_tibble()
 }
 
 #Support function for corvif. Will not be called by the user
@@ -50,6 +52,6 @@ myvif <- function(mod) {
     } else {
         result[, 3] <- result[, 1]^(1/(2 * result[, 2]))
     }
-    invisible(result)
+    return(result)
 }
 #END VIF FUNCTIONS
