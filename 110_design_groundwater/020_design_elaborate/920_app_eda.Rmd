@@ -293,16 +293,23 @@ names(datasets$data) %>%
                         if (interactive()) print(p) else {
                         dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
                         cname_hyphen <- str_replace_all(cname, "_", "-")
-                        knit_expand(text = c(paste("```{r barplot-{{dfname_hyphen}}-{{cname_hyphen}},",
-                                                   "fig.cap = 'Staafdiagram van alle unieke waarden",
-                                                   "van {{cname}} in meetnet {{dfname2}}.',",
-                                                   "out.width='70%', fig.width=7, fig.height=6}"), 
-                                             "print(p)",
-                                             "```")) %>% 
-                            {knit_child(text = ., 
-                                        quiet = TRUE,
-                                        envir =  environment())} %>% 
-                            cat(sep = '\n')
+                        knit_expand(text = 
+                                      c(
+                                        if (colnames(df2)[1] == cname) {
+                                          paste("####",
+                                                dfname2,
+                                                "\n\n")
+                                        },
+                                        paste("```{r barplot-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                              "fig.cap = 'Staafdiagram van alle unieke waarden",
+                                              "van {{cname}} in meetnet {{dfname2}}.',",
+                                              "out.width='70%', fig.width=7, fig.height=6}"), 
+                                        "print(p)",
+                                        "```")) %>% 
+                          {knit_child(text = ., 
+                                      quiet = TRUE,
+                                      envir =  environment())} %>% 
+                          cat(sep = '\n')
                         }
                     })
             }) 
