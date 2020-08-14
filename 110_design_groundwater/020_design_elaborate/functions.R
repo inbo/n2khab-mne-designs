@@ -12,10 +12,14 @@ corvif <- function(dataz) {
     dataz   <- data.frame(fooy=1 + rnorm(nrow(dataz)) ,dataz)
     lm_mod  <- lm(form,dataz)
 
-    myvif(lm_mod) %>%
-        tibble::rownames_to_column("covariate") %>%
-        dplyr::rename(vif = GVIF) %>%
-        dplyr::as_tibble()
+    vif <- myvif(lm_mod)
+    covariates <- rownames(vif)
+    vif %>%
+        dplyr::as_tibble() %>%
+        dplyr::select(last_col()) %>%
+        dplyr::mutate(covariate = covariates) %>%
+        dplyr::rename(vif = 1) %>%
+        dplyr::select(2, 1)
 }
 
 #Support function for corvif. Will not be called by the user
