@@ -151,6 +151,28 @@ names(datasets$data) %>%
 ### Nullen
 
 ```{r resp-zeroes, warning=FALSE, results="asis"}
+names(datasets$data) %>% 
+    map_dfr(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$response[[1]]
+                select(df, !!!var) %>% 
+                  summarise_all(~sum(.==0, na.rm = TRUE)) %>% 
+                  pivot_longer(names_to = "variable",
+                               values_to = "count_zero",
+                               cols = everything()) %>% 
+                  mutate(scheme = dfname2) %>% 
+                  relocate(scheme)
+            }) 
+    }) %>% 
+  kable(caption = "Het aantal nullen per responsvariabele in elke analysedataset (1 meetnet ('scheme') komt overeen met 1 analysedataset).") %>% 
+  kable_styling(full_width = FALSE) %>% 
+  collapse_rows(columns = 1, valign = "top")
+```
+
+```{r resp-zeroes-plot, warning=FALSE, results="asis"}
 cut_zero <- 
     function(x, cuts) {
         fct_c(if (length(x[x < 0]) > 0) {
