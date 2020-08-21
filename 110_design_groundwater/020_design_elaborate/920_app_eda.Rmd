@@ -423,9 +423,122 @@ datasets %>%
 ```
 
 
-## Patronen en outliers in de relaties tussen variabelen, inclusief tijd en ruimte
+## Patronen en outliers in de relaties tussen variabelen
 
-<!-- acf & variogram is hier ook een optie -->
+<!-- acf & variogram is hier ook een optie, maar eerder relevant voor residuals -->
+
+
+```{r}
+soilclass_codes <- 
+  datasets$data[[1]] %>% 
+  pull(soilclass) %>%
+  levels %>% 
+  setNames(str_sub(., end = 2))
+ecoregion_codes <- 
+  datasets$data[[1]] %>% 
+  pull(ecoregion) %>%
+  levels %>% 
+  setNames(as.character(1:length(.)))
+```
+
+
+```{r pairplot, results="asis", message=FALSE, warning=FALSE, fig.width=14, fig.height=12}
+# "GW_03.3" %>% 
+names(datasets$data) %>%
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                response <-  x$response[[1]]
+                df2 <- 
+                  select(df, !!!response, everything()) %>% 
+                  {if (dfname2 == "GW_03.3") {
+                    mutate_at(.,
+                              c("no3", "nh4", "po4"),
+                              ~ifelse(. == 0, -3, log10(.))
+                              )
+                  } else .} %>% 
+                  # plotting not feasible for factors with numerous levels,
+                  # and relations are less relevant for random factors which we include
+                  # by design
+                  select(-loc_code, -cluster_id, -type) %>% 
+                  mutate(soilclass = fct_recode(soilclass, !!!soilclass_codes),
+                         ecoregion = fct_recode(ecoregion, !!!ecoregion_codes))
+                  p1 <- 
+                    ggpairs(df2,
+                            progress = FALSE) %>% 
+                    {map(1:.$ncol, function(i) getPlot(., i, i))} %>% 
+                    {arrangeGrob(grobs = .)}
+                  p2 <- ggpairs(df2 %>% 
+                                
+                                # XXXXXXXXXXXXXXXXXXXXXXXXX
+                                # DROPPING 'date' MUST BE UNDONE (i.e. drop following step) WHEN 
+                                # https://github.com/ggobi/ggally/issues/383 IS SOLVED!
+                                {if (dfname2 == "GW_03.3") {
+                                  select(., -date)
+                                } else .},
+                                
+                                showStrips = TRUE,
+                                upper = list(continuous = 
+                                               wrap("cor", 
+                                                    method = "kendall",
+                                                    use = "pairwise.complete.obs")),
+                                lower = list(continuous = 
+                                               wrap("points", 
+                                                    size = 0.4,
+                                                    alpha = 0.35)),
+                                
+                                # XXXXXXXXXXXXXXXXXXXXXXXXX
+                                # Regarding diagonal axis label colour:
+                                # KEEP AN EYE ON: https://github.com/ggobi/ggally/issues/381
+                                # AND https://github.com/ggobi/ggally/issues/382
+                                # Only after fixing the first, axisLabels = "internal"
+                                # can be re-enabled
+                                
+                                diag = list(discrete = wrap("diagAxis",
+                                                              labelSize = 8,
+                                                              colour = "black"),
+                                            continuous = wrap("diagAxis",
+                                                              labelSize = 8,
+                                                              colour = "black")),
+                                # axisLabels = "internal",
+                                progress = FALSE)
+                  if (interactive()) {
+                    grid::grid.newpage()
+                    grid::grid.draw(p1)
+                    print(p2)
+                    } else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        
+                        knit_expand("_920_pairplots.Rmd") %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        
+                        }
+
+            }) 
+    })
+```
+
+
+```{r codes-soilclass}
+soilclass_codes %>% 
+  as_tibble(rownames="code") %>% 
+  kable(caption = "Codes voor afkorting van de variabele 'soilclass'.") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+
+```{r codes-ecoregion}
+ecoregion_codes %>% 
+  as_tibble(rownames="code") %>% 
+  kable(caption = "Codes voor afkorting van de variabele 'ecoregion'.") %>% 
+  kable_styling(full_width = FALSE)
+```
+
 
 
 ## Collineariteit tussen covariaten
