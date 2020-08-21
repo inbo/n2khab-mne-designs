@@ -206,7 +206,7 @@ names(datasets$data) %>%
 
 ### Nullen
 
-```{r resp-zeroes, warning=FALSE, results="asis"}
+```{r resp-zeroes, message=FALSE, warning=FALSE, results="asis"}
 names(datasets$data) %>% 
     map_dfr(function(dfname) {
         datasets %>% 
@@ -215,15 +215,18 @@ names(datasets$data) %>%
                 df <- x$data[[1]]
                 var <-  x$response[[1]]
                 select(df, !!!var) %>% 
-                  summarise_all(~sum(.==0, na.rm = TRUE)) %>% 
-                  pivot_longer(names_to = "variable",
-                               values_to = "count_zero",
-                               cols = everything()) %>% 
-                  mutate(scheme = dfname2) %>% 
+                  pivot_longer(cols = everything(),
+                               names_to = "variable") %>% 
+                  group_by(variable) %>% 
+                  summarise(zero_count = sum(value == 0, na.rm = TRUE),
+                            zero_proportion = 
+                              (sum(value == 0, na.rm = TRUE) / n()) %>% 
+                              round(3)) %>% 
+                  mutate(scheme = dfname2) %>%
                   relocate(scheme)
             }) 
     }) %>% 
-  kable(caption = "Het aantal nullen per responsvariabele in elke analysedataset (1 meetnet ('scheme') komt overeen met 1 analysedataset).") %>% 
+  kable(caption = "Het aantal en het aandeel nullen per responsvariabele in elke analysedataset (1 meetnet ('scheme') komt overeen met 1 analysedataset).") %>% 
   kable_styling(full_width = FALSE) %>% 
   collapse_rows(columns = 1, valign = "top")
 ```
