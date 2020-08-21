@@ -148,6 +148,62 @@ names(datasets$data) %>%
     })
 ```
 
+```{r resp-pairplot, warning=FALSE, results="asis"}
+names(datasets$data) %>%
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                response <-  x$response[[1]]
+                df2 <- 
+                  select(df, !!!response) %>% 
+                  {if (dfname2 == "GW_03.3") {
+                    mutate_at(.,
+                              c("no3", "nh4", "po4"),
+                              ~ifelse(. == 0, -3, log10(.))
+                              )
+                  } else .}
+                  p <- ggpairs(df2,
+                                showStrips = TRUE,
+                                upper = list(continuous = 
+                                               wrap("cor",
+                                                    method = "kendall",
+                                                    use = "pairwise.complete.obs")),
+                                lower = list(continuous = 
+                                               wrap("points", 
+                                                    size = 0.3,
+                                                    alpha = 0.4)),
+                                progress = FALSE)
+                  if (interactive()) {
+                    print(p)
+                    } else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        
+                        knit_expand(text = 
+                c(paste("```{r resp-pairplot-{{dfname_hyphen}},",
+                        "fig.cap = 'Distributie van en relatie tussen responsvariabelen",
+                        "in meetnet {{dfname2}}.",
+                        ifelse(dfname2 == "GW_03.3",
+                               paste("Voor dit meetnet zijn de",
+                                     "responsvariabelen log-getransformeerd.'"), "'"),
+                        ", fig.width= 8, fig.height = 8,",
+                        " message=FALSE, warning=FALSE",
+                        "}"),
+                  "print(p)",
+                  "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        
+                        }
+
+            }) 
+    })
+```
+
+
 ### Nullen
 
 ```{r resp-zeroes, warning=FALSE, results="asis"}
