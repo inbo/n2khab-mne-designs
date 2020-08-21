@@ -576,6 +576,39 @@ names(datasets$data) %>%
     })
 ```
 
+```{r corvif-03-3, results="asis"}
+"GW_03.3" %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var_cont <-  x$var_cont[[1]]
+                var_cat <-  x$var_cat[[1]]
+                vif <- 
+                  select(df, !!!var_cont, !!!var_cat) %>% 
+                  # calculation not feasible for factors with numerous levels,
+                  # and VIFs are less relevant for random factors which we include
+                  # by design
+                  select(-loc_code, -cluster_id, -date) %>% 
+                  corvif
+                if (interactive()) print(vif) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        knit_expand(text = c("```{r corvif-nodate-{{dfname_hyphen}}}",
+                                             "kable(vif,",
+                                             "caption = 'Variance inflation factors (vif) in meetnet {{dfname2}}, na weglating van de datumvariabele.') %>% ",
+                                             "kable_styling(full_width = FALSE)",
+                                             "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+
+            }) 
+    })
+```
+
 
 ## Databeschikbaarheid voor interacties
 
