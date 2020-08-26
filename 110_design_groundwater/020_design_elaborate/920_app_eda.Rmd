@@ -763,9 +763,6 @@ names(datasets$data) %>%
 ```
 
 ```{r interaction-loc2, results="asis", warning=FALSE, fig.height=8, fig.width=6}
-provinces <- 
-  read_admin_areas(dsn = "provinces") %>% 
-  select(province = name)
 plots <- 
   datasets %>% 
   mutate(
@@ -773,11 +770,9 @@ plots <-
     df = 
       map(data, function(x) {
         x %>% 
-      select(matches("^year|hydroyear"), loc_code, x, y) %>% 
-      distinct %>%
-      as_points() %>%
-      st_join(provinces) %>%
-      st_drop_geometry()  }),
+      select(matches("^year|hydroyear"), loc_code) %>% 
+      distinct
+        }),
     firstvarname = map(df, function(x) colnames(x)[1]),
     loc_levels =
       map2(df, firstvarname, function(x, fstname) {
@@ -798,7 +793,7 @@ plots <-
     loc_levels =
       map2(df, loc_levels, function(x, y) {
       if (
-        (filter(x, loc_code == y[1]) %>% pull(1) %>% min) >
+        (filter(x, loc_code == y[1]) %>% pull(1) %>% min) <
           (filter(x, loc_code == tail(y, 1)) %>% pull(1) %>% max)) {
         rev(y)
           } else y
@@ -822,8 +817,7 @@ plots <-
                      legend.position = "bottom")
              return(p)
            }),
-    plot1 = map(baseplot, ~. + geom_tile(fill = "#843860")),
-    plot2 = map(baseplot, ~. + geom_tile(aes(fill = province)))
+    plot1 = map(baseplot, ~. + geom_tile(fill = "#843860"))
     )
 
 walk2(plots$plot1, plots$scheme, function(p, dfname2) {
@@ -851,7 +845,55 @@ walk2(plots$plot1, plots$scheme, function(p, dfname2) {
 )
 ```
 
-<!-- toevoegen: interactie met spatiaal (provincie / ecoregio) op bovenstaande plot -->
+Reeds in de pairplots waren patronen te zien in de relatie tussen tijds- en ruimtevariabelen.
+De volgende figuren brengen dit nader in beeld.
+
+```{r interaction-provinces, results="asis", warning=FALSE, message=FALSE}
+provinces <- 
+  read_admin_areas(dsn = "provinces") %>% 
+  select(province = name)
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                p <- 
+                  df %>% 
+                  select(matches("^year|hydroyear"), loc_code, x, y) %>% 
+                  distinct %>%
+                  as_points(remove = TRUE) %>%
+                  st_join(provinces) %>%
+                  st_drop_geometry() %>% 
+                  ggplot(aes(x = .data[[names(.)[1]]],
+                             fill = province)) +
+                  geom_bar(position = "fill") +
+                  # exceptional cases are located just outside Flanders; we do
+                  # not show these with a legend key:
+                  scale_fill_discrete(na.translate = FALSE) +
+                  scale_x_continuous(breaks = seq(1989, 2019, 6)) +
+                  labs(title = dfname2, y = "proportion of locations")
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-provinces-{{dfname_hyphen}},",
+                                        "fig.cap = 'De relatieve verdeling van locaties over provincies doorheen de tijd",
+                                        "voor meetnet {{dfname2}}.'",
+                                        "out.width='70%',",
+                                        "fig.height=6, fig.width=5,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
 
 
 ### Interacties met de variabele type
