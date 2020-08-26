@@ -670,8 +670,173 @@ datasets %>%
 <!-- Voor GW_03.3: -->
 <!-- De sterke correlatie tussen jaar, datum en zesjaarperiode maakt dat de combinatie van 2 of meer van deze variabelen in een model interpretatieproblemen kan geven. -->
 
-## Databeschikbaarheid voor interacties
+## Databeschikbaarheid voor interacties tussen covariaten
 
 <!-- meest zinvolle interacties: -->
 <!-- - time x soilclass -->
 <!-- - time x type -->
+<!-- time x loc_code -->
+
+### Interacties los van de variabele `type`
+
+We kunnen verwachten dat trends verschillen volgens bodemklasse: zijn er genoeg data om de interactie te bekijken tussen jaar en bodemklasse?
+
+```{r interaction-soilclass, results="asis", warning=FALSE, fig.height=6, fig.width=5}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                p <- 
+                  df %>% 
+                  select(-type) %>% 
+                  distinct %>% 
+                  select(matches("^year|hydroyear"), soilclass) %>% 
+                  ggplot(aes(x = .data[[names(.)[1]]])) +
+                  geom_histogram(fill = "white", colour = "grey50", 
+                                 stat = "count") +
+                  facet_grid(soilclass ~ .) +
+                  labs(title = dfname2)
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  cname_hyphen <- str_replace_all(cname, "_", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-soilclass-{{dfname_hyphen}},",
+                                        "fig.cap = 'De vertegenwoordiging van jaren per bodemklasse",
+                                        "voor meetnet {{dfname2}}. Elke locatie",
+                                        "telt één keer mee in een jaar.',",
+                                        "out.width='70%',",
+                                        "fig.height=6, fig.width=5,",
+                                        "warning=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
+
+
+```{r interaction-loc, results="asis", warning=FALSE, message=FALSE}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                p <- 
+                  df %>% 
+                  select(matches("^year|hydroyear"), loc_code) %>% 
+                  distinct %>% 
+                  group_by(loc_code) %>% 
+                  summarise(years = n()) %>% 
+                  ggplot(aes(x = years)) +
+                  geom_bar(fill = "white", colour = "grey50") +
+                  labs(title = dfname2)
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  cname_hyphen <- str_replace_all(cname, "_", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-loc-{{dfname_hyphen}},",
+                                        "fig.cap = 'De verdeling van het aantal jaren (met data) per locatie",
+                                        "voor meetnet {{dfname2}}.",
+                                        "De Y-as is het aantal locaties.',",
+                                        "out.width='70%',",
+                                        "fig.height=6, fig.width=5,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
+```{r interaction-loc2, results="asis", warning=FALSE, fig.height=8, fig.width=6}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                df2 <- 
+                  df %>% 
+                  select(matches("^year|hydroyear"), loc_code) %>% 
+                  distinct
+                loc_levels <- 
+                  df2 %>% 
+                  mutate(value = 1) %>% 
+                  arrange(.data[[names(.)[1]]]) %>% 
+                  pivot_wider(id_cols = loc_code,
+                              names_from = .data[[names(.)[1]]],
+                              values_from = value,
+                              values_fill = 0) %>% 
+                  column_to_rownames("loc_code") %>% 
+                  cca %>% 
+                  scores %>% 
+                  {.$sites[,"CA1"]} %>% 
+                  sort %>% 
+                  names
+                if ((filter(df2, loc_code == loc_levels[1]) %>% pull(1) %>% min) <
+                    (filter(df2, loc_code == tail(loc_levels, 1)) %>% pull(1) %>% max)) {
+                  loc_levels <- rev(loc_levels)
+                    }
+                p <- 
+                  df2 %>% 
+                  mutate(loc_code = factor(loc_code, levels = loc_levels)) %>% 
+                  ggplot(aes(x = .data[[names(.)[1]]], y= loc_code)) +
+                  geom_tile(fill = "#843860") +
+                  labs(title = dfname2, y = paste(length(loc_levels), "locations")) +
+                  scale_x_continuous(breaks = (sixybr <- seq(1989, 2019, 6)),
+                                     sec.axis = sec_axis(~ ., breaks = sixybr)) +
+                  theme(axis.text.y = element_blank(),
+                        panel.background = element_blank(),
+                        panel.grid = element_blank(),
+                        axis.ticks.y = element_blank(),
+                        panel.border = element_rect(colour = "grey50", 
+                                                    fill = NA))
+                
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  cname_hyphen <- str_replace_all(cname, "_", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-loc2-{{dfname_hyphen}},",
+                                        "fig.cap = 'De vertegenwoordigde jaren per locatie",
+                                        "voor meetnet {{dfname2}}.",
+                                        "Elk gekleurd lijnstukje staat voor een combinatie",
+                                        "locatie x jaar met data.",
+                                        "De dikte van de smalste lijnen toont",
+                                        "welke hoogte elke locatie",
+                                        "in de grafiek inneemt.',",
+                                        "out.width='70%',",
+                                        "fig.height=8, fig.width=6,",
+                                        "warning=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            }) 
+    })
+```
+
+<!-- toevoegen: interactie met spatiaal (provincie / ecoregio) op bovenstaande plot -->
+
+
+### Interacties met de variabele type
+
+<!-- Het gaat er hier om in welk mate de verschillende types doorheen de tijd vertegenwoordigd zijn -->
+
+
