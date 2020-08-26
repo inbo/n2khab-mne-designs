@@ -763,73 +763,92 @@ names(datasets$data) %>%
 ```
 
 ```{r interaction-loc2, results="asis", warning=FALSE, fig.height=8, fig.width=6}
-names(datasets$data) %>% 
-    walk(function(dfname) {
-        datasets %>% 
-            filter(names(data) == dfname) %>% 
-            (function(x, dfname2 = dfname) {
-                df <- x$data[[1]]
-                df2 <- 
-                  df %>% 
-                  select(matches("^year|hydroyear"), loc_code) %>% 
-                  distinct
-                loc_levels <- 
-                  df2 %>% 
-                  mutate(value = 1) %>% 
-                  arrange(.data[[names(.)[1]]]) %>% 
-                  pivot_wider(id_cols = loc_code,
-                              names_from = .data[[names(.)[1]]],
-                              values_from = value,
-                              values_fill = 0) %>% 
-                  column_to_rownames("loc_code") %>% 
-                  cca %>% 
-                  scores %>% 
-                  {.$sites[,"CA1"]} %>% 
-                  sort %>% 
-                  names
-                if ((filter(df2, loc_code == loc_levels[1]) %>% pull(1) %>% min) <
-                    (filter(df2, loc_code == tail(loc_levels, 1)) %>% pull(1) %>% max)) {
-                  loc_levels <- rev(loc_levels)
-                    }
-                p <- 
-                  df2 %>% 
-                  mutate(loc_code = factor(loc_code, levels = loc_levels)) %>% 
-                  ggplot(aes(x = .data[[names(.)[1]]], y= loc_code)) +
-                  geom_tile(fill = "#843860") +
-                  labs(title = dfname2, y = paste(length(loc_levels), "locations")) +
-                  scale_x_continuous(breaks = (sixybr <- seq(1989, 2019, 6)),
-                                     sec.axis = sec_axis(~ ., breaks = sixybr)) +
-                  theme(axis.text.y = element_blank(),
-                        panel.background = element_blank(),
-                        panel.grid = element_blank(),
-                        axis.ticks.y = element_blank(),
-                        panel.border = element_rect(colour = "grey50", 
-                                                    fill = NA))
-                
-                if (interactive()) print(p) else {
-                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
-                  cname_hyphen <- str_replace_all(cname, "_", "-")
-                  knit_expand(text = 
-                                c(paste("```{r interaction-loc2-{{dfname_hyphen}},",
-                                        "fig.cap = 'De vertegenwoordigde jaren per locatie",
-                                        "voor meetnet {{dfname2}}.",
-                                        "Elk gekleurd lijnstukje staat voor een combinatie",
-                                        "locatie x jaar met data.",
-                                        "De dikte van de smalste lijnen toont",
-                                        "welke hoogte elke locatie",
-                                        "in de grafiek inneemt.',",
-                                        "out.width='70%',",
-                                        "fig.height=8, fig.width=6,",
-                                        "warning=FALSE}"), 
-                                  "print(p)",
-                                  "```")) %>% 
-                    {knit_child(text = ., 
-                                quiet = TRUE,
-                                envir =  environment())} %>% 
-                    cat(sep = '\n')
-                }
-            }) 
-    })
+provinces <- 
+  read_admin_areas(dsn = "provinces") %>% 
+  select(province = name)
+plots <- 
+  datasets %>% 
+  mutate(
+    scheme = names(data),
+    df = 
+      map(data, function(x) {
+        x %>% 
+      select(matches("^year|hydroyear"), loc_code, x, y) %>% 
+      distinct %>%
+      as_points() %>%
+      st_join(provinces) %>%
+      st_drop_geometry()  }),
+    firstvarname = map(df, function(x) colnames(x)[1]),
+    loc_levels =
+      map2(df, firstvarname, function(x, fstname) {
+        x %>%
+      mutate(value = 1) %>%
+      arrange(all_of(fstname)) %>%
+      pivot_wider(id_cols = loc_code,
+                  names_from = all_of(fstname),
+                  values_from = value,
+                  values_fill = 0) %>%
+      column_to_rownames("loc_code") %>%
+      cca %>%
+      scores %>%
+      {.$sites[,"CA1"]} %>%
+      sort %>%
+      names
+      }),
+    loc_levels =
+      map2(df, loc_levels, function(x, y) {
+      if (
+        (filter(x, loc_code == y[1]) %>% pull(1) %>% min) >
+          (filter(x, loc_code == tail(y, 1)) %>% pull(1) %>% max)) {
+        rev(y)
+          } else y
+        }),
+    baseplot =
+      pmap(list(df, firstvarname, scheme, loc_levels),
+           function(df2, fstname, dfname2, loc_lev) {
+             p <-
+               df2 %>%
+               mutate(loc_code = factor(loc_code, levels = loc_lev)) %>%
+               ggplot(aes_string(x = fstname, y = "loc_code")) +
+               labs(title = dfname2, y = paste(length(loc_lev), "locations")) +
+               scale_x_continuous(breaks = (sixybr <- seq(1989, 2019, 6)),
+                                  sec.axis = sec_axis(~ ., breaks = sixybr)) +
+               theme(axis.text.y = element_blank(),
+                     panel.background = element_blank(),
+                     panel.grid = element_blank(),
+                     axis.ticks.y = element_blank(),
+                     panel.border = element_rect(colour = "grey50",
+                                                 fill = NA),
+                     legend.position = "bottom")
+             return(p)
+           }),
+    plot1 = map(baseplot, ~. + geom_tile(fill = "#843860")),
+    plot2 = map(baseplot, ~. + geom_tile(aes(fill = province)))
+    )
+
+walk2(plots$plot1, plots$scheme, function(p, dfname2) {
+  if (interactive()) print(p) else {
+    dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+    knit_expand(text = 
+                  c(paste("```{r interaction-loc2-{{dfname_hyphen}},",
+                          "fig.cap = 'De vertegenwoordigde jaren per locatie",
+                          "voor meetnet {{dfname2}}.",
+                          "Elk gekleurd lijnstukje staat voor een combinatie",
+                          "locatie x jaar met data.",
+                          "De dikte van de smalste lijnen toont",
+                          "welke hoogte elke locatie",
+                          "in de grafiek inneemt.',",
+                          "out.width='70%',",
+                          "fig.height=8, fig.width=6,",
+                          "warning=FALSE}"), 
+                    "print(p)",
+                    "```")) %>% 
+      {knit_child(text = ., 
+                  quiet = TRUE,
+                  envir =  environment())} %>% 
+      cat(sep = '\n')
+  }}
+)
 ```
 
 <!-- toevoegen: interactie met spatiaal (provincie / ecoregio) op bovenstaande plot -->
