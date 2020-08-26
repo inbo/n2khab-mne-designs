@@ -910,6 +910,64 @@ names(datasets$data) %>%
     })
 ```
 
+De volgende figuren geven gelijkaardige info weer op kaart.
+
+```{r interaction-space-time, results="asis", warning=FALSE, message=FALSE,fig.width=12, fig.height=5}
+fstyear <- 
+  datasets %>% 
+  mutate(year = map(data, ~select(., year = matches("^year|hydroyear")))) %>% 
+  select(year) %>% 
+  unnest(cols = c(year)) %>% 
+  pull(year) %>% 
+  min
+years_complete <- function(x) {n() / (max(x) - fstyear + 1)}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                p <- 
+                  df %>% 
+                  select(matches("^year|hydroyear"), x, y) %>% 
+                  distinct %>% 
+                  group_by(x, y) %>% 
+                  summarise_all(list(last_datayear = max, 
+                                     coverage_since_start = years_complete)) %>% 
+                  ungroup %>% 
+                  as_points(remove = FALSE) %>% 
+                  ggplot() +
+                  geom_sf(data = provinces, colour = "grey70") +
+                  geom_sf(aes(colour = last_datayear,
+                              size = coverage_since_start)) +
+                  scale_colour_viridis_c(option = "B", direction = -1,
+                                         breaks = sixybr) +
+                  scale_size_continuous(range = c(0.5, 4),
+                                        limits = c(NA, 1),
+                                        breaks = seq(0.2, 1, 0.2)) +
+                  coord_sf(datum = st_crs(31370)) +
+                  labs(title = dfname2) +
+                  theme_bw() +
+                  theme(panel.grid = element_blank())
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-space-time-{{dfname_hyphen}},",
+                                        "fig.cap = 'Temporele kenmerken van locaties in relatie tot de ruimtelijke ligging",
+                                        "voor meetnet {{dfname2}}.'",
+                                        "fig.width=12, fig.height=5,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
 
 
 ### Interacties met de variabele type
