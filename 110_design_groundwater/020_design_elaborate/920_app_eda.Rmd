@@ -975,6 +975,61 @@ names(datasets$data) %>%
     })
 ```
 
+```{r}
+make_sixyrlabels <- 
+  function(x) {
+    str_c(
+      (as.numeric(x) - 1) * 6 + 1989,
+      "-\n",
+      (as.numeric(x) - 1) * 6 + 1994
+    )
+  }
+```
+
+<!-- We kunnen zien dat in GW_03.3 de maanden april tot juli in de meest recente periode veel minder werden bemetenn dan vroeger. In 1995-2000 zien we dat de maanden april en mei veel minder werden bemeten. De meetinspanning in de periode oktober tot november kreeg een groter aandeel doorheen de tijd.  -->
+
+```{r interaction-month-03-3, results="asis", warning=FALSE, message=FALSE}
+"GW_03.3" %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                p <- 
+                  df %>% 
+                  select(loc_code, sixyear, month) %>% 
+                  mutate(month = factor(month, 
+                                        levels = 1:12,
+                                        labels = month.abb),
+                         sixyear = fct_relabel(sixyear, make_sixyrlabels)
+                         ) %>% 
+                  ggplot(aes(x = sixyear,
+                             fill = month)) +
+                  geom_bar(position = "fill") +
+                  labs(title = dfname2, 
+                       y = "proportion of measurements",
+                       x = "sixyear period")
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-month-{{dfname_hyphen}},",
+                                        "fig.cap = 'De relatieve verdeling van metingen over de maanden doorheen de tijd",
+                                        "voor meetnet {{dfname2}}.',",
+                                        "out.width='70%',",
+                                        "fig.height=4, fig.width=5,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
 
 ### Interacties met de variabele type
 
