@@ -1036,6 +1036,88 @@ make_sixyrlabels <-
 
 ### Interacties met de variabele type
 
-<!-- Het gaat er hier om in welk mate de verschillende types doorheen de tijd vertegenwoordigd zijn -->
+<!-- Het gaat er hier om in welke mate voor de verschillende types de tijdsspanne goed vertegenwoordigd is -->
+
+```{r interaction-type, results="asis", warning=FALSE, message=FALSE, fig.height=8, fig.width=6}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- 
+                  x$data[[1]] %>% 
+                  select(matches("^year|hydroyear"), loc_code, type) %>% 
+                  distinct %>% 
+                  group_by(type,
+                           .data[[names(.)[1]]]) %>% 
+                  summarise(n_locs = n()) %>% 
+                  mutate(year_representation = n_locs / max(n_locs)) %>% 
+                  ungroup
+                # we will also show zeroes for the missing types:
+                missing_types <- 
+                  targetpop %>% 
+                  filter(as.character(scheme) == dfname2) %>% 
+                  anti_join(df %>% distinct(type), by = "type") %>% 
+                  pull(type)
+                fstyear <- df[,2] %>% min
+                df2 <- 
+                  df %>% 
+                  select(1:2) %>% 
+                  bind_rows(tibble(type = missing_types, 
+                                   num = fstyear) %>% 
+                              magrittr::set_colnames(colnames(df)[1:2])) %>% 
+                  expand(nesting(type), 
+                         full_seq(.data[[names(.)[2]]], 1)) %>% 
+                  magrittr::set_colnames(colnames(df)[1:2]) %>% 
+                  left_join(df, by = c("type", colnames(df)[2])) %>% 
+                  replace_na(list(n_locs = 0,
+                                  year_representation = 0))
+                type_levels <-
+                  df2 %>%
+                  mutate(year_representation = year_representation + 0.1) %>% 
+                  pivot_wider(id_cols = type,
+                              names_from = .data[[names(.)[2]]],
+                              values_from = year_representation,
+                              values_fill = 0) %>%
+                  column_to_rownames("type") %>%
+                  cca %>%
+                  scores %>%
+                  {.$sites[,"CA1"]} %>%
+                  sort %>%
+                  names
+                if ((filter(df2, type == type_levels[1]) %>% pull(2) %>% min) <
+                    (filter(df2, type == tail(type_levels, 1)) %>% pull(2) %>% max)) {
+                  type_levels <- rev(type_levels)
+                    }
+                p <-
+                  df2 %>% 
+                  mutate(type = factor(type, levels = type_levels)) %>%
+                  ggplot(aes(x = .data[[names(.)[2]]], 
+                             y= type,
+                             fill = year_representation)) +
+                  geom_tile() +
+                  scale_fill_gradient(low = "white", high = "#843860") +
+                  scale_x_continuous(breaks = (sixybr <- seq(1989, 2019, 6)),
+                                     sec.axis = sec_axis(~ ., breaks = sixybr)) +
+                  coord_fixed() +
+                  labs(title = dfname2,
+                       fill = "relative number\nof locations\nper year") +
+                  theme(panel.background = element_blank(),
+                        panel.grid = element_blank(),
+                        axis.ticks.y = element_blank(),
+                        panel.border = element_rect(colour = "grey50", 
+                                                    fill = NA))
+                
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand("_920_interaction-type.Rmd") %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            }) 
+    })
+```
 
 
