@@ -3,6 +3,7 @@
 #From:
     #Mixed effects models and extensions in ecology with R. (2009).
     #Zuur, AF, Ieno, EN, Walker, N, Saveliev, AA, and Smith, GM. Springer.
+#Modified by @florisvdh
 
 corvif <- function(dataz) {
     dataz <- as.data.frame(dataz)
