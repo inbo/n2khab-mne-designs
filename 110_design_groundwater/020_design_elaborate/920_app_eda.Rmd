@@ -428,6 +428,8 @@ datasets %>%
 
 <!-- acf & variogram is hier ook een optie, maar eerder relevant voor residuals -->
 
+### Variabelen met een niet te hoog aantal categorieën (indien categorisch)
+
 
 ```{r}
 soilclass_codes <- 
@@ -538,6 +540,76 @@ soilclass_codes %>%
 ecoregion_codes %>% 
   as_tibble(rownames="code") %>% 
   kable(caption = "Codes voor afkorting van de variabele 'ecoregion'.") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+### Range van elke responsvariabele per locatie
+
+```{r resp-loc, warning=FALSE, results="asis", message=FALSE, fig.width=6, fig.height=7}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$response[[1]]
+                p <- 
+                  select(df, loc_code, !!!var) %>% 
+                  pivot_longer(cols = -loc_code,
+                               names_to = "variable",
+                               values_to = "value") %>% 
+                  group_by(loc_code, variable) %>% 
+                  summarise(range = 
+                              max(value, na.rm = TRUE) - 
+                              min(value, na.rm = TRUE)) %>% 
+                  ungroup %>% 
+                  ggplot(aes(x = range)) +
+                  geom_histogram(fill = "white", colour = "grey50") +
+                  scale_y_log10(minor_breaks =
+                                  1:9 *
+                                  matrix(10^(0:4), 9, 5, byrow = TRUE)) +
+                  labs(title = dfname2) +
+                  facet_wrap(~variable, ncol = 1) +
+                  theme(axis.line.x = element_blank())
+
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste(
+                                  "```{r resp-loc-{{dfname_hyphen}},",
+                                  "fig.cap = 'Histogram van de locatiespecifieke range van elke responsvariabele",
+                                  "in meetnet {{dfname2}}.",
+                                  "De Y-as is in de log-schaal.',",
+                                  "out.width='70%',",
+                                  "warning=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            })
+    }) 
+```
+
+In Tabel \@ref(tab:nh4-range) zijn de grote schommelingen van NH4 in meetnet GW_03.3 nader onderzocht.
+Afgaande op de waarden van de andere responsvariabelen, blijken de schommelingen te kunnen kloppen.
+Dit komt overeen met het ontbreken van outliers in Figuur \@ref(fig:resp-pairplot-gw-03-3).
+
+```{r nh4-range, message=FALSE, warning=FALSE}
+gw33 %>% 
+  select(loc_code, nh4) %>% 
+  group_by(loc_code) %>% 
+  summarise(range = 
+              max(nh4, na.rm = TRUE) - 
+              min(nh4, na.rm = TRUE)) %>% 
+  filter(range > 50) %>% 
+  inner_join(gw33 %>% 
+               select(loc_code:no3,
+                      -year, -month, -sixyear),
+             by = "loc_code") %>% 
+  kable(caption = "Nader onderzoek van sterk schommelende waarden voor NH4, in meetnet GW_03.3.") %>% 
   kable_styling(full_width = FALSE)
 ```
 
