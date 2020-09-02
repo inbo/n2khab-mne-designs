@@ -1267,3 +1267,69 @@ names(datasets$data) %>%
 ```
 
 
+```{r interaction-type-ecoregion-diff, results="asis", warning=FALSE, message=FALSE, fig.width=8, fig.height=15}
+targetpop_ecoregion_distr_expanded <- 
+  targetpop_ecoregion_distr %>% 
+  expand(nesting(scheme, type), ecoregion) %>% 
+  left_join(targetpop_ecoregion_distr %>% 
+              select(scheme, type, ecoregion, proportion)) %>% 
+  replace_na(list(proportion = 0))
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- 
+                  x$data[[1]] %>% 
+                  distinct(type, ecoregion, loc_code) %>% 
+                  count(type, ecoregion) %>% 
+                  group_by(type) %>% 
+                  mutate(proportion = n / sum(n)) %>% 
+                  ungroup %>% 
+                  select(-n)
+                p <- 
+                  df %>% 
+                  expand(nesting(type),
+                         ecoregion) %>% 
+                  left_join(df, by = c("type", "ecoregion")) %>% 
+                  replace_na(list(proportion = 0)) %>% 
+                  inner_join(targetpop_ecoregion_distr_expanded %>% 
+                               rename(proportion_target = proportion) %>% 
+                               filter(scheme == dfname2) %>% 
+                               select(-scheme),
+                             by = c("type", "ecoregion")) %>% 
+                  mutate(proportion_diff = proportion - proportion_target,
+                         direction = ifelse(proportion_diff >= 0, "pos", "neg")) %>% 
+                  ggplot(aes(x = ecoregion, 
+                             y = proportion_diff, 
+                             fill = direction)) +
+                  geom_col() +
+                  scale_fill_manual(values = c(pos = "chartreuse4", neg = "red"),
+                                    guide = FALSE) +
+                  ylim(-1, 1) +
+                  labs(title = dfname2,
+                       y = "difference in proportion (dataset - targetpopulation)") +
+                  facet_wrap(~type, ncol = 5) +
+                  theme(axis.text.x = element_text(angle = 90, 
+                                                   hjust = 1, 
+                                                   vjust = 0.4))
+                         
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-type-ecoregion-diff-{{dfname_hyphen}},",
+                                        "fig.cap = 'Verschil in de verdeling van types over ecoregio's, tussen de dataset voor meetnet {{dfname2}} en de overeenkomstige doelpopulatie (zie paragraaf \\@ref(spatiale-verdeling)). Desgevallend ontbreken de types van de doelpopulatie die niet voorkomen in de dataset.',",
+                                        "fig.width=8, fig.height=8+n_distinct(df$type)/5,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>%
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            }) 
+    })
+```
+
+
