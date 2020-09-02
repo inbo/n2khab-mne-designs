@@ -1200,52 +1200,8 @@ names(datasets$data) %>%
 ```
 
 
-```{r interaction-type-soilclass, results="asis", warning=FALSE, message=FALSE}
-names(datasets$data) %>% 
-    walk(function(dfname) {
-        datasets %>% 
-            filter(names(data) == dfname) %>% 
-            (function(x, dfname2 = dfname) {
-                df <- 
-                  x$data[[1]] %>% 
-                  distinct(type, soilclass, loc_code) %>% 
-                  count(type, soilclass) %>% 
-                  group_by(type) %>% 
-                  mutate(proportion = n / sum(n)) %>% 
-                  ungroup %>% 
-                  select(-n)
-                p <- 
-                  df %>% 
-                  expand(nesting(type),
-                         nesting(soilclass)) %>% 
-                  left_join(df, by = c("type", "soilclass")) %>% 
-                  replace_na(list(proportion = 0)) %>% 
-                  mutate(soilclass = factor(soilclass) %>% fct_rev) %>% 
-                  ggplot(aes(x = soilclass, y = proportion)) +
-                  geom_boxplot() +
-                  coord_flip() +
-                  labs(title = dfname2,
-                       y = "proportion of a type's locations")
-                         
-                if (interactive()) print(p) else {
-                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
-                  knit_expand(text = 
-                                c(paste("```{r interaction-type-soilclass-{{dfname_hyphen}},",
-                                        "fig.cap = 'Verdeling van types over bodemklassen, in de dataset voor meetnet {{dfname2}}. De horizontale as is het aandeel dat een bodemklasse heeft in de meetlocaties van een type (één observatie per type). De weergegeven spreiding per bodemklasse omvat telkens alle types uit de dataset. Deze figuur is te vergelijken met Figuur \\@ref(fig:soilclass-types).',",
-                                        "out.width='70%',",
-                                        "warning=FALSE, message=FALSE}"), 
-                                  "print(p)",
-                                  "```")) %>%
-                    {knit_child(text = ., 
-                                quiet = TRUE,
-                                envir =  environment())} %>% 
-                    cat(sep = '\n')
-                }
-            }) 
-    })
-```
 
-```{r interaction-type-soilclass-detail, results="asis", warning=FALSE, message=FALSE, fig.width=8, fig.height=9}
+```{r interaction-type-soilclass-diff, results="asis", warning=FALSE, message=FALSE, fig.width=8, fig.height=9}
 targetpop_soilclass_distr_expanded <- 
   targetpop_soilclass_distr %>% 
   expand(nesting(scheme, type), soilclass) %>% 
@@ -1295,7 +1251,7 @@ names(datasets$data) %>%
                 if (interactive()) print(p) else {
                   dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
                   knit_expand(text = 
-                                c(paste("```{r interaction-type-soilclass-detail-{{dfname_hyphen}},",
+                                c(paste("```{r interaction-type-soilclass-diff-{{dfname_hyphen}},",
                                         "fig.cap = 'Verschil in de verdeling van types over bodemklassen, tussen de dataset voor meetnet {{dfname2}} en de overeenkomstige doelpopulatie (zie paragraaf \\@ref(spatiale-verdeling)). Desgevallend ontbreken de types van de doelpopulatie die niet voorkomen in de dataset.',",
                                         "fig.width=8, fig.height=9,",
                                         "warning=FALSE, message=FALSE}"), 
