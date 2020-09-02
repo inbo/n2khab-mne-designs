@@ -944,6 +944,48 @@ walk2(plots$plot1, plots$scheme, function(p, dfname2) {
 )
 ```
 
+
+```{r interaction-loc3, results="asis", warning=FALSE, message=FALSE}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                p <- 
+                  x$data[[1]] %>% 
+                  select(matches("^year|hydroyear"), loc_code) %>% 
+                  distinct %>% 
+                  group_by(loc_code) %>% 
+                  summarise(timerange = 
+                              max(.data[[names(.)[1]]], na.rm = TRUE) - 
+                              min(.data[[names(.)[1]]], na.rm = TRUE) + 1) %>% 
+                  ggplot(aes(x = timerange)) +
+                  geom_histogram(fill = "white", colour = "grey50",
+                                 binwidth = 2) +
+                  labs(title = dfname2, x = "timerange (y)")
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-loc3-{{dfname_hyphen}},",
+                                        "fig.cap = 'De verdeling van de tijdsspanne per locatie",
+                                        "voor meetnet {{dfname2}}.",
+                                        "De tijdsspanne is de duur (in jaar) van het",
+                                        "eerste tot en met het laatste datajaar.',",
+                                        "out.width='70%',",
+                                        "fig.height=4, fig.width=5,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
 Reeds in de pairplots waren patronen te zien in de relatie tussen tijds- en ruimtevariabelen.
 De volgende figuren brengen dit nader in beeld.
 
