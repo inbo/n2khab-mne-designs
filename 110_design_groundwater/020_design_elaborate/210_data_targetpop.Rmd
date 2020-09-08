@@ -109,14 +109,14 @@ Voor type 7220 wordt een straal van 40 meter gebruikt omdat de locaties slechts 
 hmt_pol_buff <- st_buffer(hmt_pol, 10)
 ```
 
-```{r warning=FALSE, eval=!file.exists("data/wsh_pol_ring.gpkg") | params$regenerate_binary_files}
+```{r warning=FALSE, eval=!file.exists("data/binary/wsh_pol_ring.gpkg") | params$regenerate_binary_files}
 wsh_pol_union <- st_union(wsh_pol)
 wsh_pol_ring <- 
     wsh_pol %>% 
     st_buffer(30) %>% 
     st_difference(wsh_pol_union)
 wsh_pol_ring %>% 
-    st_write("data/wsh_pol_ring.gpkg",
+    st_write("data/binary/wsh_pol_ring.gpkg",
              delete_dsn = TRUE)
 rm(wsh_pol_ring)
 # mapview::mapView(list(wsh_pol, wsh_pol_ring))
@@ -124,7 +124,7 @@ rm(wsh_pol_ring)
 
 ```{r}
 wsh_pol_ring <- 
-    read_sf("data/wsh_pol_ring.gpkg") %>% 
+    read_sf("data/binary/wsh_pol_ring.gpkg") %>% 
     mutate(polygon_id = factor(polygon_id))
 ```
 
@@ -435,7 +435,7 @@ system("v.overlay --overwrite ainput=pol_ecoregion operator=and binput=soilmap o
 <!-- 272.537  70.569 397.391 -->
 
 ```{r include=FALSE, eval=!grass_exists}
-system("v.out.ogr --overwrite input=pol_spfact output=data/pol_spfact.gpkg format=GPKG")
+system("v.out.ogr --overwrite input=pol_spfact output=data/binary/pol_spfact.gpkg format=GPKG")
 ```
 
 <!-- Exporting 245758 areas (may take some time)... -->
@@ -446,9 +446,9 @@ system("v.out.ogr --overwrite input=pol_spfact output=data/pol_spfact.gpkg forma
 <!-- (GPKG format). -->
 
 ```{r paged.print=FALSE, warning=FALSE, include=FALSE}
-assertthat::assert_that(file.exists("data/pol_spfact.gpkg"))
+assertthat::assert_that(file.exists("data/binary/pol_spfact.gpkg"))
 pol_spfact <- 
-    read_sf("data/pol_spfact.gpkg", crs = 31370) %>% 
+    read_sf("data/binary/pol_spfact.gpkg", crs = 31370) %>% 
     select(polygon_id = a_a_polygon_id,
            ecoregion = a_b_ecoregion,
            soilclass = b_soilclass) %>% 
