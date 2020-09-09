@@ -18,6 +18,7 @@ params:
   regenerate_binary_files: FALSE
   connect_watina: FALSE
   compile_analysisdata: TRUE
+  commit_nonpublic: TRUE
 output:
   bookdown::pdf_book:
     base_format: INBOmd::inbo_rapport
@@ -73,6 +74,28 @@ library(vegan)
 uitvoer <- knitr::opts_knit$get("rmarkdown.pandoc.to")
 gitroot <- find_root(is_git_root)
 projroot <- find_root(has_file("design_elaborate.Rproj"))
+
+################################################################################
+#WARNING: this project needs access to a git repository with non-public data. It
+#is a clone of inbo/n2khab-mne-nonpublicdata and the clone needs to sit NEXT to
+#the current git repository, and must be named 'n2khab-mne-nonpublicdata'.
+#Branch 'master' must track the remote branch 'master'. Please arrange all this
+#beforehand, because the code does not setup this clone.
+#For the code to run, you must be connected to the internet.
+
+nonpublicrepo <- repository(file.path(gitroot, 
+                                      "..", 
+                                      "n2khab-mne-nonpublicdata"))
+if (git2r::repository_head(nonpublicrepo)$name != "master") {
+  git2r::checkout(nonpublicrepo, "master")
+}
+out <- git2r::pull(nonpublicrepo)
+if (out$conflicts) {
+  stop("Please first fix merge conflicts in n2khab-mne-nonpublicdata,",
+       " then try againn.")
+}
+################################################################################
+
 opts_chunk$set(
   echo = FALSE,
   dpi = 300,

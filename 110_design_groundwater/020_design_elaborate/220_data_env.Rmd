@@ -155,26 +155,64 @@ locs_terr %>%
   # distinct(): normally not needed; 
   # however duplicates (by mistake in Watina) sometimes do occur
   distinct %>% 
-  write_vc(file = "locs_terr",
-           root = datapath,
+  write_vc(file = "design_gw/locs_terr",
+           root = nonpublicrepo,
            optimize = TRUE,
            sorting = c("loc_code", "type", "target"))
 locs_aq %>% 
   select(loc_code, x, y, type, target) %>%
-  write_vc(file = "locs_aq",
-           root = datapath,
+  write_vc(file = "design_gw/locs_aq",
+           root = nonpublicrepo,
            optimize = TRUE,
            sorting = c("loc_code", "type", "target"))
 ```
 
+```{r push-watinalocs, eval=params$connect_watina & params$commit_nonpublic, include=FALSE}
+if (length(status(nonpublicrepo)$unstaged) > 0) {
+  currentutc <- now("UTC")
+  newtag <- str_c("watinalocs-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
+  out <- try(commit(nonpublicrepo,
+                    message = paste("design_gw: updated watinalocs at",
+                                    currentutc,
+                                    "UTC"),
+                    all = TRUE))
+  if (inherits(out, "try-error")) {
+    warning("watinalocs changed but not committed succesfully.")
+  } else {
+    message("watinalocs changed and committed with tag '",
+            newtag, "'.")
+    git2r::tag(nonpublicrepo, newtag)
+    
+    out <- try(git2r::push(nonpublicrepo))
+    if (inherits(out, "try-error")) {
+      warning("Could not push commit to non-public data repository.")
+    } else {
+      message("watinalocs pushed to non-public data repository.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo, 
+                           refspec = str_c("refs/tags/", newtag)))
+    if (inherits(out, "try-error")) {
+      warning("Could not push TAG to non-public data repository.")
+    } else {
+      message("Tag '", 
+              newtag,
+              "' pushed to non-public data repository.")
+    }
+    
+  }
+}
+```
+
+
 ```{r}
 locs_terr <- 
-  read_vc("locs_terr",
-           root = datapath) %>% 
+  read_vc("design_gw/locs_terr",
+           root = nonpublicrepo) %>% 
   as_tibble
 locs_aq <- 
-  read_vc("locs_aq",
-           root = datapath) %>% 
+  read_vc("design_gw/locs_aq",
+           root = nonpublicrepo) %>% 
   as_tibble
 ```
 
@@ -325,10 +363,48 @@ locs_ext %>%
 
 ```{r include=FALSE}
 locs_ext %>% 
-  write_vc(file = "locs_ext",
-           root = datapath,
+  write_vc(file = "design_gw/locs_ext",
+           root = nonpublicrepo,
            optimize = TRUE,
            sorting = c("loc_code", "type", "target"))
+```
+
+
+```{r push-extlocs, eval=params$connect_watina & params$commit_nonpublic, include=FALSE}
+if (length(status(nonpublicrepo)$unstaged) > 0) {
+  currentutc <- now("UTC")
+  newtag <- str_c("extlocs-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
+  out <- try(commit(nonpublicrepo,
+                    message = paste("design_gw: updated extlocs at",
+                                    currentutc,
+                                    "UTC"),
+                    all = TRUE))
+  if (inherits(out, "try-error")) {
+    warning("extlocs changed but not committed succesfully.")
+  } else {
+    message("extlocs changed and committed with tag '",
+            newtag, "'.")
+    git2r::tag(nonpublicrepo, newtag)
+    
+    out <- try(git2r::push(nonpublicrepo))
+    if (inherits(out, "try-error")) {
+      warning("Could not push commit to non-public data repository.")
+    } else {
+      message("extlocs pushed to non-public data repository.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo, 
+                           refspec = str_c("refs/tags/", newtag)))
+    if (inherits(out, "try-error")) {
+      warning("Could not push TAG to non-public data repository.")
+    } else {
+      message("Tag '", 
+              newtag,
+              "' pushed to non-public data repository.")
+    }
+    
+  }
+}
 ```
 
 
@@ -370,16 +446,16 @@ xg3_terr <-
 
 ```{r eval=params$connect_watina, include=FALSE}
 xg3_terr %>% 
-  write_vc(file = "xg3_terr",
-           root = datapath,
+  write_vc(file = "design_gw/xg3_terr",
+           root = nonpublicrepo,
            optimize = TRUE,
            sorting = c("loc_code", "hydroyear"))
 ```
 
 ```{r}
 xg3_terr <- 
-  read_vc("xg3_terr",
-           root = datapath) %>% 
+  read_vc("design_gw/xg3_terr",
+           root = nonpublicrepo) %>% 
   as_tibble
 ```
 
@@ -409,16 +485,16 @@ xg3_aq <-
 
 ```{r eval=params$connect_watina, include=FALSE}
 xg3_aq %>% 
-  write_vc(file = "xg3_aq",
-           root = datapath,
+  write_vc(file = "design_gw/xg3_aq",
+           root = nonpublicrepo,
            optimize = TRUE,
            sorting = c("loc_code", "hydroyear"))
 ```
 
 ```{r}
 xg3_aq <- 
-  read_vc("xg3_aq",
-           root = datapath) %>% 
+  read_vc("design_gw/xg3_aq",
+           root = nonpublicrepo) %>% 
   as_tibble
 ```
 
@@ -470,16 +546,54 @@ chem <-
 
 ```{r eval=params$connect_watina, include=FALSE}
 chem %>% 
-  write_vc(file = "chem",
-           root = datapath,
+  write_vc(file = "design_gw/chem",
+           root = nonpublicrepo,
            optimize = TRUE,
            sorting = c("loc_code", "date"))
 ```
 
+```{r push-watinadata, eval=params$connect_watina & params$commit_nonpublic, include=FALSE}
+if (length(status(nonpublicrepo)$unstaged) > 0) {
+  currentutc <- now("UTC")
+  newtag <- str_c("watinadata-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
+  out <- try(commit(nonpublicrepo,
+                    message = paste("design_gw: updated watinadata from",
+                                    currentutc,
+                                    "UTC"),
+                    all = TRUE))
+  if (inherits(out, "try-error")) {
+    warning("watinadata changed but not committed succesfully.")
+  } else {
+    message("watinadata changed and committed with tag '",
+            newtag, "'.")
+    git2r::tag(nonpublicrepo, newtag)
+    
+    out <- try(git2r::push(nonpublicrepo))
+    if (inherits(out, "try-error")) {
+      warning("Could not push commit to non-public data repository.")
+    } else {
+      message("gwanalysisdata pushed to non-public data repository.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo, 
+                           refspec = str_c("refs/tags/", newtag)))
+    if (inherits(out, "try-error")) {
+      warning("Could not push TAG to non-public data repository.")
+    } else {
+      message("Tag '", 
+              newtag,
+              "' pushed to non-public data repository.")
+    }
+    
+  }
+}
+```
+
+
 ```{r}
 chem <- 
-  read_vc("chem",
-           root = datapath) %>% 
+  read_vc("design_gw/chem",
+           root = nonpublicrepo) %>% 
   as_tibble
 ```
 
@@ -589,34 +703,72 @@ glimpse(gw33)
 
 ```{r include=FALSE, eval=params$compile_analysisdata}
 gw51t %>% 
-  write_vc(file = "gw51t",
-           root = datapath,
+  write_vc(file = "design_gw/gw51t",
+           root = nonpublicrepo,
            optimize = TRUE,
            sorting = c("loc_code", "hydroyear", "type"))
 gw51a %>% 
-  write_vc(file = "gw51a",
-           root = datapath,
+  write_vc(file = "design_gw/gw51a",
+           root = nonpublicrepo,
            optimize = TRUE,
            sorting = c("loc_code", "hydroyear", "type"))
 gw33 %>% 
-  write_vc(file = "gw33",
-           root = datapath,
+  write_vc(file = "design_gw/gw33",
+           root = nonpublicrepo,
            optimize = TRUE,
            sorting = c("loc_code", "date", "type"))
 ```
 
+
+```{r push-gwanalysisdata, eval=params$compile_analysisdata & params$commit_nonpublic, include=FALSE}
+if (length(status(nonpublicrepo)$unstaged) > 0) {
+  currentutc <- now("UTC")
+  newtag <- str_c("gwanalysisdata-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
+  out <- try(commit(nonpublicrepo,
+                    message = paste("design_gw: updated gwanalysisdata from",
+                                    currentutc,
+                                    "UTC"),
+                    all = TRUE))
+  if (inherits(out, "try-error")) {
+    warning("gwanalysisdata changed but not committed succesfully.")
+  } else {
+    message("gwanalysisdata changed and committed with tag '",
+            newtag, "'.")
+    git2r::tag(nonpublicrepo, newtag)
+    
+    out <- try(git2r::push(nonpublicrepo))
+    if (inherits(out, "try-error")) {
+      warning("Could not push commit to non-public data repository.")
+    } else {
+      message("gwanalysisdata pushed to non-public data repository.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo, 
+                           refspec = str_c("refs/tags/", newtag)))
+    if (inherits(out, "try-error")) {
+      warning("Could not push TAG to non-public data repository.")
+    } else {
+      message("Tag '", 
+              newtag,
+              "' pushed to non-public data repository.")
+    }
+    
+  }
+}
+```
+
 ```{r read-analysisdata}
 gw51t <- 
-  read_vc("gw51t",
-           root = datapath) %>% 
+  read_vc("design_gw/gw51t",
+           root = nonpublicrepo) %>% 
   as_tibble
 gw51a <- 
-  read_vc("gw51a",
-           root = datapath) %>% 
+  read_vc("design_gw/gw51a",
+           root = nonpublicrepo) %>% 
   as_tibble
 gw33 <- 
-  read_vc("gw33",
-           root = datapath) %>% 
+  read_vc("design_gw/gw33",
+           root = nonpublicrepo) %>% 
   as_tibble
 ```
 
