@@ -60,3 +60,32 @@ myvif <- function(mod) {
     return(result)
 }
 #END VIF FUNCTIONS
+
+
+################################################################################
+
+# Functions used to retrieve file metadata
+
+get_latest_filecommit <- function(filepath) {
+    system(paste0("git log -n 1 --pretty=format:'%H (%ai)' -- '",
+                  filepath, "'"),
+           intern = TRUE)
+}
+
+get_vc_datahash <- function(datafile) {
+    file_extension <- substr(datafile, nchar(datafile) - 3, 1000000L)
+
+    if (substr(file_extension, 1, 1) != ".") {
+        datafile <- paste0(datafile, ".yml")
+    } else {
+        if (file_extension != ".yml") {
+        stop("You must provide a vc-data object name or the yml file name.")
+        }
+    }
+
+    yaml::read_yaml(datafile) %>%
+    .$..generic %>%
+    .$data_hash
+}
+
+
