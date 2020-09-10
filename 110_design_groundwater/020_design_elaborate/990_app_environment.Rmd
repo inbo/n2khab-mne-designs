@@ -24,13 +24,19 @@ pander::pandoc.table(caption = "(\\#tab:sessioninfo)Geladen R packages",
 ## Code versie
 
 ```{r results = "asis", echo=FALSE}
+gitstate <- status(thisrepo)
 code_labels <- 
     c(code_commithash =
           system("git log -n 1 --pretty=format:'`%H`'",
                  intern = TRUE),
-      code_datetime = 
+      commit_datetime = 
           system("git log -n 1 --pretty=format:'%ai'",
-                 intern = TRUE)
+                 intern = TRUE),
+      `clean state (unmodified)?` = 
+          gitstate$unstaged %>% 
+          str_detect("\\.(R(md)?|sh)$") %>% 
+          {!any(.)} %>% 
+          enclose("`")
     )
 sprintf("- **%s**: %s\n", names(code_labels), code_labels) %>%
   cat(sep = "")
@@ -45,7 +51,7 @@ data_labels <-
     c(watinalocs_tag = metadata$watinalocs_tag %>% enclose("`"),
       locs_7220_latest_commit = 
           file.path(datapath, "10_input/locs_7220.yml") %>% 
-          get_latest_filecommit,
+          get_latest_filecommit(gitroot, gitstate),
       locs_7220_datahash = 
           file.path(datapath, "10_input/locs_7220.yml") %>% 
           get_vc_datahash %>% enclose("`"),

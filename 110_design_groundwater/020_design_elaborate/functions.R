@@ -66,10 +66,17 @@ myvif <- function(mod) {
 
 # Functions used to retrieve file metadata
 
-get_latest_filecommit <- function(filepath) {
-    system(paste0("git log -n 1 --pretty=format:'`%H` (%ai)' -- '",
-                  filepath, "'"),
+get_latest_filecommit <- function(filepath, reporoot, repostatus) {
+    label <-
+        system(paste0("git log -n 1 --pretty=format:'`%H` (%ai)' -- '",
+                      filepath, "'"),
            intern = TRUE)
+    gitpath <- fs::path_rel(filepath, reporoot)
+    if (gitpath %in% repostatus$unstaged) {
+        paste("UNCOMMITTED! Modified relative to latest file commit:",
+              label) %>%
+            return
+    } else return(label)
 }
 
 get_vc_datahash <- function(datafile) {
