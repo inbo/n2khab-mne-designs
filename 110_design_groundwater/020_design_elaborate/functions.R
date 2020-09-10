@@ -67,7 +67,7 @@ myvif <- function(mod) {
 # Functions used to retrieve file metadata
 
 get_latest_filecommit <- function(filepath) {
-    system(paste0("git log -n 1 --pretty=format:'%H (%ai)' -- '",
+    system(paste0("git log -n 1 --pretty=format:'`%H` (%ai)' -- '",
                   filepath, "'"),
            intern = TRUE)
 }
@@ -88,4 +88,4 @@ get_vc_datahash <- function(datafile) {
     .$data_hash
 }
 
-
+enclose <- function(x, y) paste0(y, x, y)
