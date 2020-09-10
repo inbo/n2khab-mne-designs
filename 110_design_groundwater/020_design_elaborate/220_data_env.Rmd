@@ -169,21 +169,36 @@ locs_aq %>%
            sorting = c("loc_code", "type", "target"))
 ```
 
-```{r push-watinalocs, eval=params$connect_watina & params$commit_nonpublic, include=FALSE}
-if (length(status(nonpublicrepo)$unstaged) > 0) {
+```{r}
+watinalocs_clean <- 
+  status(nonpublicrepo)$unstaged %>% 
+  unlist %>% 
+  str_detect("design_gw/locs_(terr|aq)\\..+") %>% 
+  {!any(.)}
+```
+
+```{r push-watinalocs, eval=params$connect_watina & params$commit_nonpublic}
+if (!watinalocs_clean) {
   currentutc <- now("UTC")
   newtag <- str_c("watinalocs-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
-  out <- try(commit(nonpublicrepo,
+  out_add <- try(git2r::add(nonpublicrepo, "design_gw/locs_[at][qe]*"))
+  out_commit <- try(commit(nonpublicrepo,
                     message = paste("design_gw: updated watinalocs at",
                                     currentutc,
-                                    "UTC"),
-                    all = TRUE))
-  if (inherits(out, "try-error")) {
+                                    "UTC")
+                    ))
+  if (inherits(out_add, "try-error") | inherits(out_commit, "try-error")) {
     warning("watinalocs changed but not committed succesfully.")
   } else {
+    
+    watinalocs_clean <- TRUE
+    git2r::tag(nonpublicrepo, newtag)
     message("watinalocs changed and committed with tag '",
             newtag, "'.")
-    git2r::tag(nonpublicrepo, newtag)
+
+    if (length(status(nonpublicrepo)$unstaged) > 0) {
+      warning("Non-public data left with unstaged changes.")
+    }
     
     out <- try(git2r::push(nonpublicrepo))
     if (inherits(out, "try-error")) {
@@ -204,6 +219,29 @@ if (length(status(nonpublicrepo)$unstaged) > 0) {
     
   }
 }
+```
+
+```{r}
+watinalocs_tag <- 
+  git2r::tags(nonpublicrepo) %>% 
+  names %>% 
+  str_subset("^watinalocs") %>% 
+  sort(decreasing = TRUE) %>% 
+  .[1]
+if (exists("newtag")) {
+  stopifnot(watinalocs_tag == newtag)
+  rm(newtag)
+}
+metadata <- yaml::read_yaml(file.path(datapath, "nonpublic/metadata.yml"))
+if (watinalocs_clean) {
+  metadata$watinalocs_tag <- watinalocs_tag
+} else {
+  metadata$watinalocs_tag <- 
+    paste("UNTAGGED! State modified since tag", watinalocs_tag)
+}
+yaml::write_yaml(metadata,
+                 file.path(datapath, "nonpublic/metadata.yml")
+)
 ```
 
 
@@ -384,21 +422,36 @@ locs_ext %>%
 ```
 
 
-```{r push-extlocs, eval=params$connect_watina & params$commit_nonpublic, include=FALSE}
-if (length(status(nonpublicrepo)$unstaged) > 0) {
+```{r}
+extlocs_clean <- 
+  status(nonpublicrepo)$unstaged %>% 
+  unlist %>% 
+  str_detect("design_gw/locs_ext\\..+") %>% 
+  {!any(.)}
+```
+
+```{r push-extlocs, eval=params$commit_nonpublic}
+if (!extlocs_clean) {
   currentutc <- now("UTC")
   newtag <- str_c("extlocs-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
-  out <- try(commit(nonpublicrepo,
+  out_add <- try(git2r::add(nonpublicrepo, "design_gw/locs_ext*"))
+  out_commit <- try(commit(nonpublicrepo,
                     message = paste("design_gw: updated extlocs at",
                                     currentutc,
-                                    "UTC"),
-                    all = TRUE))
-  if (inherits(out, "try-error")) {
+                                    "UTC")
+                    ))
+  if (inherits(out_add, "try-error") | inherits(out_commit, "try-error")) {
     warning("extlocs changed but not committed succesfully.")
   } else {
+    
+    extlocs_clean <- TRUE
+    git2r::tag(nonpublicrepo, newtag)
     message("extlocs changed and committed with tag '",
             newtag, "'.")
-    git2r::tag(nonpublicrepo, newtag)
+
+    if (length(status(nonpublicrepo)$unstaged) > 0) {
+      warning("Non-public data left with unstaged changes.")
+    }
     
     out <- try(git2r::push(nonpublicrepo))
     if (inherits(out, "try-error")) {
@@ -419,6 +472,29 @@ if (length(status(nonpublicrepo)$unstaged) > 0) {
     
   }
 }
+```
+
+```{r}
+extlocs_tag <- 
+  git2r::tags(nonpublicrepo) %>% 
+  names %>% 
+  str_subset("^extlocs") %>% 
+  sort(decreasing = TRUE) %>% 
+  .[1]
+if (exists("newtag")) {
+  stopifnot(extlocs_tag == newtag)
+  rm(newtag)
+}
+metadata <- yaml::read_yaml(file.path(datapath, "nonpublic/metadata.yml"))
+if (extlocs_clean) {
+  metadata$extlocs_tag <- extlocs_tag
+} else {
+  metadata$extlocs_tag <- 
+    paste("UNTAGGED! State modified since tag", extlocs_tag)
+}
+yaml::write_yaml(metadata,
+                 file.path(datapath, "nonpublic/metadata.yml")
+)
 ```
 
 
@@ -569,27 +645,45 @@ chem %>%
            sorting = c("loc_code", "date"))
 ```
 
-```{r push-watinadata, eval=params$connect_watina & params$commit_nonpublic, include=FALSE}
-if (length(status(nonpublicrepo)$unstaged) > 0) {
+```{r}
+watinadata_clean <- 
+  status(nonpublicrepo)$unstaged %>% 
+  unlist %>% 
+  str_detect("^locs_") %>% 
+  {!any(.)}
+```
+
+
+```{r push-watinadata, eval=params$connect_watina & params$commit_nonpublic}
+if (!watinadata_clean) {
   currentutc <- now("UTC")
   newtag <- str_c("watinadata-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
-  out <- try(commit(nonpublicrepo,
+  out_add <- try(git2r::add(nonpublicrepo,
+                            c("design_gw/xg3_[at][qe]*",
+                              "design_gw/chem.*")))
+  out_commit <- try(commit(nonpublicrepo,
                     message = paste("design_gw: updated watinadata at",
                                     currentutc,
-                                    "UTC"),
-                    all = TRUE))
-  if (inherits(out, "try-error")) {
+                                    "UTC")
+                    ))
+  if (inherits(out_add, "try-error") | inherits(out_commit, "try-error")) {
     warning("watinadata changed but not committed succesfully.")
   } else {
+    
+    watinadata_clean <- TRUE
+    git2r::tag(nonpublicrepo, newtag)
     message("watinadata changed and committed with tag '",
             newtag, "'.")
-    git2r::tag(nonpublicrepo, newtag)
+    
+    if (length(status(nonpublicrepo)$unstaged) > 0) {
+      warning("Non-public data left with unstaged changes.")
+    }
     
     out <- try(git2r::push(nonpublicrepo))
     if (inherits(out, "try-error")) {
       warning("Could not push commit to non-public data repository.")
     } else {
-      message("gwanalysisdata pushed to non-public data repository.")
+      message("watinadata pushed to non-public data repository.")
     }
     
     out <- try(git2r::push(nonpublicrepo, 
@@ -604,6 +698,29 @@ if (length(status(nonpublicrepo)$unstaged) > 0) {
     
   }
 }
+```
+
+```{r}
+watinadata_tag <- 
+  git2r::tags(nonpublicrepo) %>% 
+  names %>% 
+  str_subset("^watinadata") %>% 
+  sort(decreasing = TRUE) %>% 
+  .[1]
+if (exists(newtag)) {
+  stopifnot(watinadata_tag == newtag)
+  rm(newtag)
+}
+metadata <- yaml::read_yaml(file.path(datapath, "nonpublic/metadata.yml"))
+if (watinadata_clean) {
+  metadata$watinadata_tag <- watinadata_tag
+} else {
+  metadata$watinadata_tag <- 
+    paste("UNTAGGED! State modified since tag", watinadata_tag)
+}
+yaml::write_yaml(metadata,
+                 file.path(datapath, "nonpublic/metadata.yml")
+)
 ```
 
 
@@ -739,22 +856,36 @@ gw33 %>%
            sorting = c("loc_code", "date", "type"))
 ```
 
+```{r}
+gwanalysisdata_clean <- 
+  status(nonpublicrepo)$unstaged %>% 
+  unlist %>% 
+  str_detect("^gw") %>% 
+  {!any(.)}
+```
 
-```{r push-gwanalysisdata, eval=params$compile_analysisdata & params$commit_nonpublic, include=FALSE}
-if (length(status(nonpublicrepo)$unstaged) > 0) {
+```{r push-gwanalysisdata, eval=params$compile_analysisdata & params$commit_nonpublic}
+if (!gwanalysisdata_clean) {
   currentutc <- now("UTC")
   newtag <- str_c("gwanalysisdata-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
-  out <- try(commit(nonpublicrepo,
+  out_add <- try(git2r::add(nonpublicrepo, "design_gw/gw*"))
+  out_commit <- try(commit(nonpublicrepo,
                     message = paste("design_gw: updated gwanalysisdata at",
                                     currentutc,
-                                    "UTC"),
-                    all = TRUE))
-  if (inherits(out, "try-error")) {
+                                    "UTC")
+                    ))
+  if (inherits(out_add, "try-error") | inherits(out_commit, "try-error")) {
     warning("gwanalysisdata changed but not committed succesfully.")
   } else {
+    
+    gwanalysisdata_clean <- TRUE
+    git2r::tag(nonpublicrepo, newtag)
     message("gwanalysisdata changed and committed with tag '",
             newtag, "'.")
-    git2r::tag(nonpublicrepo, newtag)
+    
+    if (length(status(nonpublicrepo)$unstaged) > 0) {
+      warning("Non-public data left with unstaged changes.")
+    }
     
     out <- try(git2r::push(nonpublicrepo))
     if (inherits(out, "try-error")) {
@@ -775,6 +906,29 @@ if (length(status(nonpublicrepo)$unstaged) > 0) {
     
   }
 }
+```
+
+```{r}
+gwanalysisdata_tag <- 
+  git2r::tags(nonpublicrepo) %>% 
+  names %>% 
+  str_subset("^gwanalysisdata") %>% 
+  sort(decreasing = TRUE) %>% 
+  .[1]
+if (exists(newtag)) {
+  stopifnot(gwanalysisdata_tag == newtag)
+  rm(newtag)
+}
+metadata <- yaml::read_yaml(file.path(datapath, "nonpublic/metadata.yml"))
+if (gwanalysisdata_clean) {
+  metadata$gwanalysisdata_tag <- gwanalysisdata_tag
+} else {
+  metadata$gwanalysisdata_tag <- 
+    paste("UNTAGGED! State modified since tag", gwanalysisdata_tag)
+}
+yaml::write_yaml(metadata,
+                 file.path(datapath, "nonpublic/metadata.yml")
+)
 ```
 
 ```{r read-analysisdata}
