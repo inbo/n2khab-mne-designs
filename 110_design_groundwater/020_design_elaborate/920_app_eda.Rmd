@@ -543,6 +543,88 @@ ecoregion_codes %>%
   kable_styling(full_width = FALSE)
 ```
 
+### Jitter plots responsvariabele t.a.v. de meeste categorische variabelen
+
+We bekijken in meer detail de spreiding van responsvariabelen i.f.v. categorische variabelen die geen extreem hoog aantal categorieën hebben.
+
+```{r jitter-resp-cat, warning=FALSE, results="asis"}
+names(datasets$data) %>% 
+    walk(function(dfname) {
+        datasets %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- 
+                  x$data[[1]] %>% 
+                  mutate(ecoregion = fct_recode(ecoregion, !!!ecoregion_codes))
+                var <-  x$response[[1]]
+                var_cat <- x$var_cat[[1]]
+                # display not feasible for factors with numerous levels
+                var_cat_cond <- lapply(var_cat, 
+                                       function(x) {
+                                         quo_name(x) %in% c("loc_code",
+                                                            "cluster_id")}
+                                       )
+                var_cat <- var_cat[!unlist(var_cat_cond)]
+                crossing(var, 
+                         var_cat) %>% 
+                    {walk2(pull(., 1), pull(., 2),
+                          function(resp, varcat) {
+                        p <-
+                            df %>%
+                            select({{resp}}, {{varcat}}) %>%
+                            drop_na %>%
+                            ggplot(aes(x = .data[[names(.)[2]]],
+                                       y = .data[[names(.)[1]]])) +
+                                    geom_jitter(alpha = 0.1, 
+                                                height = 0,
+                                                width = 0.2) +
+                                    labs(title = dfname2) +
+                            theme_bw()
+                        if (quo_name(varcat) == "type") {
+                          p <- 
+                            p +
+                            theme(axis.text.x = element_text(angle = 90,
+                                                             hjust = 1,
+                                                             vjust = 0.4))
+                        }
+                        if (dfname2 == "GW_03.3") {
+                          p <- 
+                            p +
+                            scale_y_log10()
+                        }
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        respname_hyphen <- str_replace_all(quo_name(resp), "_", "-")
+                        catname_hyphen <- str_replace_all(quo_name(varcat), "_", "-")
+                        knit_expand(text = c(
+                          if (quo_name(var_cat[[1]]) == quo_name(varcat)) {
+                                          paste0("#### ",
+                                                dfname2,
+                                                ": ",
+                                                quo_name(resp),
+                                                "\n\n")
+                          },
+                          paste("```{r jitter-{{dfname_hyphen}}-{{respname_hyphen}}-{{catname_hyphen}},",
+                                "fig.cap = 'Jitter plot voor {{quo_name(resp)}} i.f.v. {{quo_name(varcat)}}",
+                                "in meetnet {{dfname2}}.",
+                                ifelse(dfname2 == "GW_03.3",
+                                       paste("In deze grafiek is de",
+                                             "Y-as log-getransformeerd.',"), "',"),
+                                "out.width='70%',",
+                                "warning = FALSE}"),
+                          "print(p)",
+                          "```")) %>%
+                          {knit_child(text = .,
+                                      quiet = TRUE,
+                                      envir =  environment())} %>%
+                          cat(sep = '\n')
+                        }
+                    })}
+            }) 
+    })
+```
+
+
 ### Range van elke responsvariabele per locatie
 
 ```{r resp-loc, warning=FALSE, results="asis", message=FALSE, fig.width=6, fig.height=7}
