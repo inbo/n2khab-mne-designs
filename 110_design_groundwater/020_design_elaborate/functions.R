@@ -109,3 +109,14 @@ get_vc_datahash <- function(datafile) {
 }
 
 enclose <- function(x, y) paste0(y, x, y)
+
+
+
+################################################################################
+
+# Functions used to aid model building
+
+
+invsqrt <- function(x) 1 / sqrt(x)
+
+
