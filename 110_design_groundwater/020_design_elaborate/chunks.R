@@ -35,3 +35,18 @@ gw51a <-
 gw33 <-
     gw33 %>%
     mutate_if(is.factor, droplevels)
+
+## ---- envdata-standardize-year
+
+gw51t <-
+    gw51t %>%
+    mutate(hydroyear_std = hydroyear - min(hydroyear))
+gw51a <-
+    gw51a %>%
+    mutate(hydroyear_std = hydroyear - min(hydroyear))
+gw33 <-
+    gw33 %>%
+    mutate(year_std = year - min(year))
+
+
+
