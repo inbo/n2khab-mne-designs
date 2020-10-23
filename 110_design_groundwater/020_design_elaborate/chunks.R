@@ -19,3 +19,19 @@ gw51a <-
     select(-hg3_first) %>%
     relocate(lg3_std, hg3_std, .before = cluster_id) %>%
     ungroup
+
+
+# Data modifications for modelling purposes:
+##################################################################
+
+## ---- envdata-dropfactorlevels
+
+gw51t <-
+    gw51t %>%
+    mutate_if(is.factor, droplevels)
+gw51a <-
+    gw51a %>%
+    mutate_if(is.factor, droplevels)
+gw33 <-
+    gw33 %>%
+    mutate_if(is.factor, droplevels)
