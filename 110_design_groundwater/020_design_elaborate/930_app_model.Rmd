@@ -35,3 +35,44 @@ gw33 <-
 ```
 
 
+## GW_05.1_aq
+
+```{r}
+Maq1 <- inla(lg3_std ~ hydroyear + type + soilclass + 
+               f(loc_code,
+                model = "iid") + 
+               f(cluster_id,
+                model = "iid"),
+            data = gw51a,
+            control.compute = list(waic = TRUE))
+summary(Maq1)
+Maq1$summary.hyperpar
+margs <- Maq1$marginals.hyperpar
+lapply(margs, function(marg) c(stdev = inla.emarginal(invsqrt, marg)))
+walk2(margs, names(margs), function(marg, hyperpar) {
+  inla.tmarginal(fun = invsqrt, marg) %>% 
+  as_tibble %>%  
+  qplot(data = ., x = x, y = y, geom = "line", 
+        xlab = expression(sigma),
+        main = str_replace(hyperpar, "Precision", "Standard deviation")) %>% 
+    print
+})
+```
+
+```{r}
+gw51a %>% 
+  mutate(fitted = Maq1$summary.fitted.values$mean) %>% 
+  ggplot(aes(x = lg3_std, y = fitted)) + geom_point() + coord_equal()
+```
+
+
+```{r}
+Maq2 <- inla(lg3_std ~ type + 
+               f(loc_code,
+                model = "iid") + 
+               f(cluster_id,
+                model = "iid"),
+            data = gw51a,
+            control.compute = list(waic = TRUE))
+summary(Maq2)
+```
