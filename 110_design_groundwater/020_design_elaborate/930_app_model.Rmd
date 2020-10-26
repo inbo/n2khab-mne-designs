@@ -66,16 +66,26 @@ walk2(precmargs, names(precmargs), function(marg, hyperpar) {
 
 ### Modeldiagnose
 
+```{r}
+Maq1_diagn <- 
+  gw51a %>% 
+  mutate(fitted = Maq1$summary.fitted.values$mean,
+         resid = fitted - lg3_std,
+         resid_std = resid / inla.emarginal(invsqrt, precmargs[["Precision for the Gaussian observations"]]))
+```
+
+
+#### Modelfit
+
 ```{r fitted-obs}
-gw51a %>% 
-  mutate(fitted = Maq1$summary.fitted.values$mean) %>% 
+Maq1_diagn %>% 
   ggplot(aes(x = lg3_std, y = fitted)) + geom_point() + geom_abline(colour = "red") + coord_equal()
 ```
 
+#### Residuele analyse
+
 ```{r resid-fitted, message=FALSE}
-gw51a %>% 
-  mutate(fitted = Maq1$summary.fitted.values$mean,
-         resid = fitted - lg3_std) %>% 
+Maq1_diagn %>% 
   ggplot(aes(x = fitted, y = resid)) + 
   geom_point() +
   geom_smooth()
@@ -84,16 +94,13 @@ gw51a %>%
 Normale verdeling redelijk OK.
 
 ```{r}
-gw51a %>% 
-  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std,
-         resid_std = resid / inla.emarginal(invsqrt, precmargs[["Precision for the Gaussian observations"]])) %>% 
+Maq1_diagn %>% 
   ggplot(aes(sample = resid_std)) + geom_qq() + geom_abline() + coord_equal()
 ```
 
 
 ```{r message=FALSE}
-gw51a %>% 
-  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std) %>% 
+Maq1_diagn %>% 
   ggplot(aes(x = resid)) + geom_histogram(fill = "white", colour = "grey70")
 ```
 
@@ -103,8 +110,7 @@ We kunnen heterogeniteit en tijdsafhankelijkheid vaststellen:
 ```{r resid-covar, message=FALSE}
 vars(hydroyear_std, type, soilclass) %>% 
   walk(function(quosvar) {
-gw51a %>% 
-  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std) %>% 
+Maq1_diagn %>% 
   {ggplot(data = ., aes(x = {{quosvar}}, y = resid)) + 
   geom_point() +
   geom_smooth()} %>% 
@@ -115,8 +121,7 @@ gw51a %>%
 De tijdsafhankelijkheid treedt ook duidelijk op per locatie (selectie van locaties)
 
 ```{r message=FALSE, fig.height=12, fig.width=8}
-gw51a %>% 
-  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std) %>% 
+Maq1_diagn %>% 
   semi_join(
     gw51a %>% count(loc_code) %>% filter(n >= 8),
     by = "loc_code") %>% 
@@ -127,9 +132,8 @@ gw51a %>%
 ```
 Geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
 
-```{r}
-gw51a %>% 
-  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std) %>% 
+```{r warning=FALSE}
+Maq1_diagn %>% 
   {gstat::variogram(resid ~ x + y, data = as_points(., warn_dupl = FALSE))} %>% 
   plot
 ```
@@ -140,8 +144,7 @@ gw51a %>%
 ```
 
 ```{r}
-gw51a %>% 
-  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std) %>% 
+Maq1_diagn %>% 
   as_points(warn_dupl = FALSE) %>% 
   ggplot() +
   geom_sf(data = provinces, fill = "grey70") +
