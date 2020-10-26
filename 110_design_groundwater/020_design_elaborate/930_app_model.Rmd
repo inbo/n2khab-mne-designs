@@ -47,7 +47,9 @@ Maq1 <- inla(lg3_std ~ hydroyear_std + type + soilclass +
             control.compute = list(waic = TRUE))
 # summary(Maq1)
 # names(Maq1)
-Maq1$summary.fixed %>% select(mean, matches("025|975"))
+Maq1$summary.fixed %>% 
+  select(mean, matches("025|975")) %>% 
+  cbind(ci_excludes_zero = .$`0.025quant` > 0 | .$`0.975quant` < 0)
 Maq1$summary.hyperpar %>% select(mean, matches("025|975"))
 Maq1$waic$waic
 precmargs <- Maq1$marginals.hyperpar
@@ -57,17 +59,72 @@ walk2(precmargs, names(precmargs), function(marg, hyperpar) {
   as_tibble %>%  
   qplot(data = ., x = x, y = y, geom = "line", 
         xlab = expression(sigma),
-        main = str_replace(hyperpar, "Precision", "Distribution of standard deviation")) %>% 
+        main = str_replace(hyperpar, "Precision", "Posterior distribution of standard deviation")) %>% 
     print
 })
 ```
 
-```{r}
+### Modeldiagnose
+
+```{r fitted-obs}
 gw51a %>% 
   mutate(fitted = Maq1$summary.fitted.values$mean) %>% 
-  ggplot(aes(x = lg3_std, y = fitted)) + geom_point() + coord_equal()
+  ggplot(aes(x = lg3_std, y = fitted)) + geom_point() + geom_abline(colour = "red") + coord_equal()
 ```
 
+```{r resid-fitted, message=FALSE}
+gw51a %>% 
+  mutate(fitted = Maq1$summary.fitted.values$mean,
+         resid = fitted - lg3_std) %>% 
+  ggplot(aes(x = fitted, y = resid)) + 
+  geom_point() +
+  geom_smooth()
+```
+
+Normale verdeling redelijk OK.
+
+```{r}
+gw51a %>% 
+  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std,
+         resid_std = resid / inla.emarginal(invsqrt, precmargs[["Precision for the Gaussian observations"]])) %>% 
+  ggplot(aes(sample = resid_std)) + geom_qq() + geom_abline() + coord_equal()
+```
+
+
+```{r message=FALSE}
+gw51a %>% 
+  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std) %>% 
+  ggplot(aes(x = resid)) + geom_histogram(fill = "white", colour = "grey70")
+```
+
+
+We kunnen heterogeniteit en tijdsafhankelijkheid vaststellen:
+
+```{r resid-covar, message=FALSE}
+vars(hydroyear_std, type, soilclass) %>% 
+  walk(function(quosvar) {
+gw51a %>% 
+  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std) %>% 
+  {ggplot(data = ., aes(x = {{quosvar}}, y = resid)) + 
+  geom_point() +
+  geom_smooth()} %>% 
+      print
+  })
+```
+
+De tijdsafhankelijkheid treedt ook duidelijk op per locatie (selectie van locaties)
+
+```{r message=FALSE, fig.height=12, fig.width=8}
+gw51a %>% 
+  mutate(resid = Maq1$summary.fitted.values$mean - lg3_std) %>% 
+  semi_join(
+    gw51a %>% count(loc_code) %>% filter(n >= 8),
+    by = "loc_code") %>% 
+  ggplot(aes(x = hydroyear_std, y = resid)) + 
+  geom_point() +
+  geom_line() +
+  facet_wrap(~loc_code)
+```
 
 
 ```{r}
