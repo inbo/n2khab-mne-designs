@@ -162,12 +162,11 @@ Maq1_diagn %>%
 
 #### Analyse van random effecten
 
+##### `loc_code`
+
 ```{r message=FALSE}
-Maq1$marginals.random$loc_code %>% 
-  lapply(inla.emarginal, fun = function(x) x) %>% 
-  unlist %>% 
-  tibble(ranef = .,
-         ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for loc_code"]])) %>% 
+tibble(ranef = Maq1$summary.random$loc_code$mean,
+       ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for loc_code"]])) %>% 
   (function(df) {
     p <- 
       df %>% 
@@ -176,6 +175,84 @@ Maq1$marginals.random$loc_code %>%
       df %>% 
       ggplot(aes(x = ranef_std)) + geom_histogram(fill = "white", colour = "grey70")
     print(p); print(q)
+  })
+```
+
+```{r}
+Maq1_diagn <- 
+  Maq1_diagn %>% 
+  inner_join(Maq1$summary.random$loc_code %>% 
+               select(loc_code = ID, 
+                      ranef_loc = mean) %>% 
+               mutate(loc_code = factor(loc_code, 
+                                        levels = levels(Maq1_diagn$loc_code))), 
+             by = "loc_code")
+```
+
+Het groot aantal niveaus van het random effect neemt een groot deel van de variatie van fitted in beslag:
+
+```{r ranef-loc-fitted, message=FALSE}
+Maq1_diagn %>% 
+  ggplot(aes(x = fitted, y = ranef_loc)) + 
+  geom_point() +
+  geom_smooth()
+```
+
+```{r ranef-loc-covar, message=FALSE}
+vars(hydroyear_std, type, soilclass) %>% 
+  walk(function(quosvar) {
+Maq1_diagn %>% 
+  {ggplot(data = ., aes(x = {{quosvar}}, y = ranef_loc)) + 
+  geom_point() +
+  geom_smooth()} %>% 
+      print
+  })
+```
+
+##### `cluster_id`
+
+```{r message=FALSE}
+tibble(ranef = Maq1$summary.random$cluster_id$mean,
+       ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for cluster_id"]])) %>% 
+  (function(df) {
+    p <- 
+      df %>% 
+      ggplot(aes(sample = ranef_std)) + geom_qq() + geom_abline() + coord_equal()
+    q <-
+      df %>% 
+      ggplot(aes(x = ranef_std)) + geom_histogram(fill = "white", colour = "grey70")
+    print(p); print(q)
+  })
+```
+
+```{r}
+Maq1_diagn <- 
+  Maq1_diagn %>% 
+  inner_join(Maq1$summary.random$cluster_id %>% 
+               select(cluster_id = ID, 
+                      ranef_clus = mean) %>% 
+               mutate(cluster_id = factor(cluster_id, 
+                                          levels = levels(Maq1_diagn$cluster_id))), 
+             by = "cluster_id")
+```
+
+Het groot aantal niveaus van het random effect neemt een groot deel van de variatie van fitted in beslag:
+
+```{r ranef-clus-fitted, message=FALSE}
+Maq1_diagn %>% 
+  ggplot(aes(x = fitted, y = ranef_clus)) + 
+  geom_point() +
+  geom_smooth()
+```
+
+```{r ranef-clus-covar, message=FALSE}
+vars(hydroyear_std, type, soilclass) %>% 
+  walk(function(quosvar) {
+Maq1_diagn %>% 
+  {ggplot(data = ., aes(x = {{quosvar}}, y = ranef_clus)) + 
+  geom_point() +
+  geom_smooth()} %>% 
+      print
   })
 ```
 
