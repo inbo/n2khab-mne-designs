@@ -37,7 +37,7 @@ gw33 <-
 
 ## GW_05.1_aq
 
-```{r}
+```{r paged.print=FALSE}
 Maq1 <- inla(lg3_std ~ hydroyear_std + type + soilclass + 
                f(loc_code,
                 model = "iid") + 
@@ -45,16 +45,19 @@ Maq1 <- inla(lg3_std ~ hydroyear_std + type + soilclass +
                 model = "iid"),
             data = gw51a,
             control.compute = list(waic = TRUE))
-summary(Maq1)
-Maq1$summary.hyperpar
-margs <- Maq1$marginals.hyperpar
-lapply(margs, function(marg) c(stdev = inla.emarginal(invsqrt, marg)))
-walk2(margs, names(margs), function(marg, hyperpar) {
+# summary(Maq1)
+# names(Maq1)
+Maq1$summary.fixed %>% select(mean, matches("025|975"))
+Maq1$summary.hyperpar %>% select(mean, matches("025|975"))
+Maq1$waic$waic
+precmargs <- Maq1$marginals.hyperpar
+lapply(precmargs, function(marg) c(stdev = inla.emarginal(invsqrt, marg)))
+walk2(precmargs, names(precmargs), function(marg, hyperpar) {
   inla.tmarginal(fun = invsqrt, marg) %>% 
   as_tibble %>%  
   qplot(data = ., x = x, y = y, geom = "line", 
         xlab = expression(sigma),
-        main = str_replace(hyperpar, "Precision", "Standard deviation")) %>% 
+        main = str_replace(hyperpar, "Precision", "Distribution of standard deviation")) %>% 
     print
 })
 ```
