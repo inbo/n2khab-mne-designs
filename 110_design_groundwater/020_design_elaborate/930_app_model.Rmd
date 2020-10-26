@@ -160,6 +160,26 @@ Maq1_diagn %>%
 ```
 
 
+#### Analyse van random effecten
+
+```{r message=FALSE}
+Maq1$marginals.random$loc_code %>% 
+  lapply(inla.emarginal, fun = function(x) x) %>% 
+  unlist %>% 
+  tibble(ranef = .,
+         ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for loc_code"]])) %>% 
+  (function(df) {
+    p <- 
+      df %>% 
+      ggplot(aes(sample = ranef_std)) + geom_qq() + geom_abline() + coord_equal()
+    q <-
+      df %>% 
+      ggplot(aes(x = ranef_std)) + geom_histogram(fill = "white", colour = "grey70")
+    print(p); print(q)
+  })
+```
+
+
 
 ```{r}
 Maq2 <- inla(lg3_std ~ type + 
