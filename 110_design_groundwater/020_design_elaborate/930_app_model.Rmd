@@ -37,6 +37,8 @@ gw33 <-
 
 ## GW_05.1_aq
 
+Model summary:
+
 ```{r paged.print=FALSE}
 Maq1 <- inla(lg3_std ~ -1 + hydroyear_std + type + soilclass + 
                f(loc_code,
@@ -48,12 +50,46 @@ Maq1 <- inla(lg3_std ~ -1 + hydroyear_std + type + soilclass +
 # summary(Maq1)
 # names(Maq1)
 Maq1$summary.fixed %>% 
-  select(mean, matches("025|975")) %>% 
+  select(mean, sd, matches("025|975")) %>% 
+  round(3) %>% 
   cbind(ci_excludes_zero = .$`0.025quant` > 0 | .$`0.975quant` < 0)
-Maq1$summary.hyperpar %>% select(mean, matches("025|975"))
-Maq1$waic$waic
+cat("\n")
+Maq1$summary.hyperpar %>% select(mean, sd, matches("025|975")) %>% round(3)
+cat("\nWAIC:", Maq1$waic$waic)
+```
+
+Posterior density plots voor fixed parameters:
+
+```{r}
+fixedmargs <- Maq1$marginals.fixed
+walk2(fixedmargs, names(fixedmargs), function(marg, par) {
+  (marg %>% 
+     inla.smarginal %>% 
+     as_tibble %>%  
+     ggplot(aes(x = x, y = y)) + geom_line() +
+     labs(x = par, y = "density")) %>% 
+    print
+})
+```
+
+
+Resultaten hyperparameters, getransformeerd tot standaardafwijkingen:
+
+```{r paged.print=FALSE}
 precmargs <- Maq1$marginals.hyperpar
-lapply(precmargs, function(marg) c(stdev = inla.emarginal(invsqrt, marg)))
+walk2(precmargs, names(precmargs), function(marg, hyperpar) {
+  str_replace(hyperpar, "Precision", 
+              "Posterior expected standard deviation") %>% 
+    cat("\n")
+  print(inla.emarginal(invsqrt, marg))
+  })
+walk2(precmargs, names(precmargs), function(marg, hyperpar) {
+  str_replace(hyperpar, "Precision", 
+              "Posterior standard deviation summary") %>% 
+    cat("\n")
+  inla.tmarginal(invsqrt, marg) %>% inla.zmarginal
+  cat("\n")
+  })
 walk2(precmargs, names(precmargs), function(marg, hyperpar) {
   inla.tmarginal(fun = invsqrt, marg) %>% 
   as_tibble %>%  
