@@ -43,10 +43,9 @@ Aantal beschikbare observaties per stratum:
 table(gw51a$type)
 ```
 
+Model:
 
-Model summary:
-
-```{r paged.print=FALSE}
+```{r echo=TRUE}
 Maq1 <- inla(lg3_std ~ -1 + hydroyear_std + type + soilclass + 
                f(loc_code,
                 model = "iid") + 
@@ -54,6 +53,11 @@ Maq1 <- inla(lg3_std ~ -1 + hydroyear_std + type + soilclass +
                 model = "iid"),
             data = gw51a,
             control.compute = list(waic = TRUE))
+```
+
+Model summary:
+
+```{r paged.print=FALSE}
 # summary(Maq1)
 # names(Maq1)
 Maq1$summary.fixed %>% 
@@ -67,7 +71,7 @@ cat("\nWAIC:", Maq1$waic$waic)
 
 Posterior density plots voor fixed parameters:
 
-```{r}
+```{r out.width='70%'}
 fixedmargs <- Maq1$marginals.fixed
 walk2(fixedmargs, names(fixedmargs), function(marg, par) {
   (marg %>% 
@@ -82,13 +86,13 @@ walk2(fixedmargs, names(fixedmargs), function(marg, par) {
 
 Resultaten hyperparameters, getransformeerd tot standaardafwijkingen:
 
-```{r paged.print=FALSE}
+```{r paged.print=FALSE, out.width='70%'}
 precmargs <- Maq1$marginals.hyperpar
 walk2(precmargs, names(precmargs), function(marg, hyperpar) {
   str_replace(hyperpar, "Precision", 
               "Posterior expected standard deviation") %>% 
-    cat("\n")
-  print(inla.emarginal(invsqrt, marg))
+    cat(":\n")
+  cat(inla.emarginal(invsqrt, marg), "\n")
   })
 walk2(precmargs, names(precmargs), function(marg, hyperpar) {
   str_replace(hyperpar, "Precision", 
@@ -120,14 +124,14 @@ Maq1_diagn <-
 
 #### Modelfit
 
-```{r fitted-obs}
+```{r fitted-obs, out.width='70%'}
 Maq1_diagn %>% 
   ggplot(aes(x = lg3_std, y = fitted)) + geom_point() + geom_abline(colour = "red") + coord_equal()
 ```
 
 #### Residuele analyse
 
-```{r resid-fitted, message=FALSE}
+```{r resid-fitted, message=FALSE, out.width='70%'}
 Maq1_diagn %>% 
   ggplot(aes(x = fitted, y = resid)) + 
   geom_point() +
@@ -136,13 +140,13 @@ Maq1_diagn %>%
 
 Normale verdeling redelijk OK.
 
-```{r}
+```{r out.width='70%'}
 Maq1_diagn %>% 
   ggplot(aes(sample = resid_std)) + geom_qq() + geom_abline() + coord_equal()
 ```
 
 
-```{r message=FALSE}
+```{r message=FALSE, out.width='70%'}
 Maq1_diagn %>% 
   ggplot(aes(x = resid)) + geom_histogram(fill = "white", colour = "grey70")
 ```
@@ -150,7 +154,7 @@ Maq1_diagn %>%
 
 We kunnen heterogeniteit en tijdsafhankelijkheid vaststellen:
 
-```{r resid-covar, message=FALSE}
+```{r resid-covar, message=FALSE, out.width='70%'}
 vars(hydroyear_std, type, soilclass) %>% 
   walk(function(quosvar) {
 Maq1_diagn %>% 
@@ -175,7 +179,7 @@ Maq1_diagn %>%
 ```
 Geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
 
-```{r warning=FALSE}
+```{r warning=FALSE, out.width='70%'}
 Maq1_diagn %>% 
   {gstat::variogram(resid ~ x + y, data = as_points(., warn_dupl = FALSE))} %>% 
   plot
@@ -210,7 +214,7 @@ Maq1_diagn %>%
 
 ##### `loc_code`
 
-```{r message=FALSE}
+```{r message=FALSE, out.width='70%'}
 tibble(ranef = Maq1$summary.random$loc_code$mean,
        ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for loc_code"]])) %>% 
   (function(df) {
@@ -237,14 +241,14 @@ Maq1_diagn <-
 
 Het groot aantal niveaus van het random effect neemt een groot deel van de variatie van fitted in beslag:
 
-```{r ranef-loc-fitted, message=FALSE}
+```{r ranef-loc-fitted, message=FALSE, out.width='70%'}
 Maq1_diagn %>% 
   ggplot(aes(x = fitted, y = ranef_loc)) + 
   geom_point() +
   geom_smooth()
 ```
 
-```{r ranef-loc-covar, message=FALSE}
+```{r ranef-loc-covar, message=FALSE, out.width='70%'}
 vars(hydroyear_std, type, soilclass) %>% 
   walk(function(quosvar) {
 Maq1_diagn %>% 
@@ -257,7 +261,7 @@ Maq1_diagn %>%
 
 ##### `cluster_id`
 
-```{r message=FALSE}
+```{r message=FALSE, out.width='70%'}
 tibble(ranef = Maq1$summary.random$cluster_id$mean,
        ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for cluster_id"]])) %>% 
   (function(df) {
@@ -284,14 +288,14 @@ Maq1_diagn <-
 
 Het groot aantal niveaus van het random effect neemt een groot deel van de variatie van fitted in beslag:
 
-```{r ranef-clus-fitted, message=FALSE}
+```{r ranef-clus-fitted, message=FALSE, out.width='70%'}
 Maq1_diagn %>% 
   ggplot(aes(x = fitted, y = ranef_clus)) + 
   geom_point() +
   geom_smooth()
 ```
 
-```{r ranef-clus-covar, message=FALSE}
+```{r ranef-clus-covar, message=FALSE, out.width='70%'}
 vars(hydroyear_std, type, soilclass) %>% 
   walk(function(quosvar) {
 Maq1_diagn %>% 
