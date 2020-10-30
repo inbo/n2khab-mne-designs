@@ -40,13 +40,13 @@ gw33 <-
 
 gw51t <-
     gw51t %>%
-    mutate(hydroyear_std = hydroyear - min(hydroyear))
+    mutate(hydroyear_std = hydroyear - 1989)
 gw51a <-
     gw51a %>%
-    mutate(hydroyear_std = hydroyear - min(hydroyear))
+    mutate(hydroyear_std = hydroyear - 1989)
 gw33 <-
     gw33 %>%
-    mutate(year_std = year - min(year))
+    mutate(year_std = year - 1989)
 
 
 
