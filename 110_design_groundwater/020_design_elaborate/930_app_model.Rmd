@@ -41,19 +41,61 @@ Aantal beschikbare observaties per stratum:
 
 ```{r}
 table(gw51a$type)
+# table(gw51a$type:gw51a$soilclass) # more heterogeneity can be incorporated if temporal autocorrelation + temporal smoother (+ spatial autocorrelation) don't solve things
 ```
+
+```{r}
+respvar <- "lg3_std"
+strata <- gw51a$type %>% unique %>% sort
+gw51a_strataplit <- 
+  gw51a %>% 
+  cbind(matrix(data = NA_real_,
+               nrow = nrow(.),
+               ncol = length(strata),
+               dimnames = list(NULL, str_c("type_", strata)))) %>% 
+  as_tibble
+for (stratum in strata) {
+  gw51a_strataplit[[str_c("type_", stratum)]] <- 
+    ifelse(gw51a_strataplit$type == stratum, 
+           gw51a_strataplit[[respvar]],
+           NA_real_)
+}
+resp_matrix <- 
+  gw51a_strataplit %>% 
+  select(contains("type_")) %>% 
+  as.matrix
+covariates <- 
+  gw51a_strataplit %>% 
+  select(!contains("type_"))
+```
+
 
 Model:
 
 ```{r echo=TRUE}
-Maq1 <- inla(lg3_std ~ -1 + hydroyear_std + type + soilclass + 
+Maq1 <- inla(Y ~ -1 + hydroyear_std + type + soilclass + 
                f(loc_code,
                 model = "iid") + 
                f(cluster_id,
                 model = "iid"),
-            data = gw51a,
+             family = rep("gaussian", length(strata)),
+            data = list(Y = resp_matrix,
+                        hydroyear_std = covariates$hydroyear_std,
+                        type = covariates$type,
+                        soilclass = covariates$soilclass,
+                        loc_code = covariates$loc_code,
+                        cluster_id = covariates$cluster_id),
             control.compute = list(waic = TRUE))
 ```
+
+```{r}
+hypernames <- rownames(Maq1$summary.hyperpar)
+rownames(Maq1$summary.hyperpar)[str_detect(hypernames, "Gaussian")] <- 
+  str_c("Stratum ", strata, ": Precision of residuals")
+names(Maq1$marginals.hyperpar)[str_detect(hypernames, "Gaussian")] <- 
+  str_c("Stratum ", strata, ": Precision of residuals")
+```
+
 
 Model summary:
 
@@ -114,11 +156,16 @@ walk2(precmargs, names(precmargs), function(marg, hyperpar) {
 ### Modeldiagnose
 
 ```{r}
+sd_res_glob <- 
+  map_dbl(precmargs, ~inla.emarginal(invsqrt, .)) %>% 
+  .[str_detect(names(.), "residuals")] %>% 
+  set_names(strata)
 Maq1_diagn <- 
   gw51a %>% 
   mutate(fitted = Maq1$summary.fitted.values$mean,
          resid = fitted - lg3_std,
-         resid_std = resid / inla.emarginal(invsqrt, precmargs[["Precision for the Gaussian observations"]]))
+         sd_res = sd_res_glob[type],
+         resid_std = resid / sd_res)
 ```
 
 
@@ -133,7 +180,7 @@ Maq1_diagn %>%
 
 ```{r resid-fitted, message=FALSE, out.width='70%'}
 Maq1_diagn %>% 
-  ggplot(aes(x = fitted, y = resid)) + 
+  ggplot(aes(x = fitted, y = resid_std)) + 
   geom_point() +
   geom_smooth()
 ```
@@ -148,17 +195,17 @@ Maq1_diagn %>%
 
 ```{r message=FALSE, out.width='70%'}
 Maq1_diagn %>% 
-  ggplot(aes(x = resid)) + geom_histogram(fill = "white", colour = "grey70")
+  ggplot(aes(x = resid_std)) + geom_histogram(fill = "white", colour = "grey70")
 ```
 
-
-We kunnen heterogeniteit en tijdsafhankelijkheid vaststellen:
+De residuele heterogeniteit is beperkt dankzij de stratumafhankelijke residuele hyperparameter.
+We kunnen wel tijdsafhankelijkheid vaststellen:
 
 ```{r resid-covar, message=FALSE, out.width='70%'}
 vars(hydroyear_std, type, soilclass) %>% 
   walk(function(quosvar) {
 Maq1_diagn %>% 
-  {ggplot(data = ., aes(x = {{quosvar}}, y = resid)) + 
+  {ggplot(data = ., aes(x = {{quosvar}}, y = resid_std)) + 
   geom_point() +
   geom_smooth()} %>% 
       print
@@ -172,7 +219,7 @@ Maq1_diagn %>%
   semi_join(
     gw51a %>% count(loc_code) %>% filter(n >= 8),
     by = "loc_code") %>% 
-  ggplot(aes(x = hydroyear_std, y = resid)) + 
+  ggplot(aes(x = hydroyear_std, y = resid_std)) + 
   geom_point() +
   geom_line() +
   facet_wrap(~loc_code)
@@ -181,7 +228,7 @@ Geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te los
 
 ```{r warning=FALSE, out.width='70%'}
 Maq1_diagn %>% 
-  {gstat::variogram(resid ~ x + y, data = as_points(., warn_dupl = FALSE))} %>% 
+  {gstat::variogram(resid_std ~ x + y, data = as_points(., warn_dupl = FALSE))} %>% 
   plot
 ```
 
@@ -198,7 +245,7 @@ Maq1_diagn %>%
   as_points(warn_dupl = FALSE) %>% 
   ggplot() +
   geom_sf(data = provinces, fill = "grey70") +
-  geom_sf(aes(colour = resid)) +
+  geom_sf(aes(colour = resid_std)) +
   scale_colour_gradientn(colours = rainbow(10)) +
   # scale_color_distiller(palette = "RdYlGn") +
   # scale_colour_viridis_c(option = "D", direction = -1) +
