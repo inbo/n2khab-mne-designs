@@ -73,7 +73,9 @@ covariates <-
 Model:
 
 ```{r echo=TRUE}
-Maq1 <- inla(Y ~ -1 + hydroyear_std + type + soilclass + 
+Maq1 <- inla(Y ~ -1 + type + soilclass + 
+               f(hydroyear_std, 
+                 model = "rw1") +
                f(loc_code,
                  model = "iid") + 
                f(cluster_id,
@@ -199,7 +201,7 @@ Maq1_diagn %>%
 ```
 
 De residuele heterogeniteit is beperkt dankzij de stratumafhankelijke residuele hyperparameter.
-We kunnen wel tijdsafhankelijkheid vaststellen:
+Door temporele autocorrelatie in het model te specifiëren is de overall tijdsafhankelijkheid verdwenen.
 
 ```{r resid-covar, message=FALSE, out.width='70%'}
 vars(hydroyear_std, type, soilclass) %>% 
@@ -212,7 +214,22 @@ Maq1_diagn %>%
   })
 ```
 
-De tijdsafhankelijkheid treedt ook duidelijk op per locatie (selectie van locaties).
+Gemodelleerd tijdseffect:
+
+<!-- te overwegen: interactie met bv. ecoregio -->
+
+```{r}
+Maq1$summary.random$hydroyear_std %>% 
+  ggplot(aes(x = ID)) +
+  geom_ribbon(aes(ymin = `0.025quant`,
+                  ymax = `0.975quant`),
+              alpha = 0.2) +
+  geom_line(aes(y = mean), colour = "blue") +
+  labs(x = "hydroyear_std", y = "posterior mean effect")
+```
+
+
+Tijdsafhankelijkheid komt nog altijd voor op locatieniveau (selectie van locaties).
 Omdat we naar de residuen kijken, zijn de grafieken opgesplitst volgens locatie x type.
 
 ```{r message=FALSE, fig.height=12, fig.width=8}
@@ -226,7 +243,8 @@ Maq1_diagn %>%
   facet_wrap(~loc_code + type)
 ```
 
-De autocorrelatie blijkt duidelijk, bv. voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven) - elke kleur (staafje) komt overeen met 1 tijdsreeks:
+Ondanks de integratie van een overall smoother volgens de tijd blijft nog heel wat autocorrelatie over op het lokale niveau - hieronder voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven).
+Elke kleur (staafje) komt overeen met 1 tijdsreeks.
 
 ```{r fig.width=7, fig.height=12, out.width='80%'}
 Maq1_diagn %>% 
