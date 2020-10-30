@@ -212,18 +212,51 @@ Maq1_diagn %>%
   })
 ```
 
-De tijdsafhankelijkheid treedt ook duidelijk op per locatie (selectie van locaties)
+De tijdsafhankelijkheid treedt ook duidelijk op per locatie (selectie van locaties).
+Omdat we naar de residuen kijken, zijn de grafieken opgesplitst volgens locatie x type.
 
 ```{r message=FALSE, fig.height=12, fig.width=8}
 Maq1_diagn %>% 
   semi_join(
-    gw51a %>% count(loc_code) %>% filter(n >= 8),
-    by = "loc_code") %>% 
+    gw51a %>% count(loc_code, type) %>% filter(n >= 8),
+    by = c("loc_code", "type")) %>% 
   ggplot(aes(x = hydroyear_std, y = resid_std)) + 
   geom_point() +
   geom_line() +
-  facet_wrap(~loc_code)
+  facet_wrap(~loc_code + type)
 ```
+
+De autocorrelatie blijkt duidelijk, bv. voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven) - elke kleur (staafje) komt overeen met 1 tijdsreeks:
+
+```{r fig.width=7, fig.height=12, out.width='80%'}
+Maq1_diagn %>% 
+  semi_join(
+    gw51a %>% count(loc_code, type) %>% filter(n >= 10),
+    by = c("loc_code", "type")) %>% 
+  pivot_wider(id_cols = hydroyear_std,
+              names_from = c(loc_code, type),
+              values_from = resid_std) %>% 
+  arrange(hydroyear_std) %>% 
+  select(-hydroyear_std) %>% 
+  map2_df(names(.), function (x, name) {
+    result <- acf(x, na.action = na.pass, plot = FALSE)
+    tibble(locxtype = name,
+           lag = result$lag[,1,1],
+           acf = result$acf[,1,1])
+  }) %>% 
+  filter(lag > 0, lag < 7) %>% 
+  ggplot(aes(x = lag, y = acf, group = locxtype, fill = locxtype)) +
+  geom_col(position = "dodge") +
+  scale_x_continuous(guide = "none") +
+  ylab("timeseries autocorrelation") +
+  coord_flip() +
+  facet_wrap(~lag, scales = "free_y", ncol = 1, labeller = "label_both") +
+  theme(legend.position="none",
+        axis.title.y = element_blank(),
+        panel.grid.major.y = element_blank(), 
+        panel.grid.minor.y = element_blank())
+```
+
 Geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
 
 ```{r warning=FALSE, out.width='70%'}
