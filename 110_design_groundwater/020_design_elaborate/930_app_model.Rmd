@@ -78,14 +78,18 @@ covariates <-
 Model:
 
 ```{r echo=TRUE}
+rw_pcprec <- list(theta = list(
+                     prior = "pc.prec",
+                     param = c(1, 0.05)))
 Maq1 <- inla(Y ~ -1 + type + soilclass + 
+               # smooth trend
                f(hydroyear_std, 
                  model = "rw2",
-                 hyper = 
-                   list(theta = list(
-                     prior = "pc.prec",
-                     param = c(0.005, 0.01)))
-                 ) +
+                 hyper = rw_pcprec) +
+               # remaining year-to-year autocorrelation
+               f(hydroyear_std_cp1, 
+                 model = "rw1",
+                 hyper = rw_pcprec) +
                f(loc_code,
                  model = "iid") + 
                f(cluster_id,
@@ -93,6 +97,7 @@ Maq1 <- inla(Y ~ -1 + type + soilclass +
              family = rep("gaussian", length(strata)),
              data = list(Y = resp_matrix,
                          hydroyear_std = covariates$hydroyear_std,
+                         hydroyear_std_cp1 = covariates$hydroyear_std,
                          type = covariates$type,
                          soilclass = covariates$soilclass,
                          loc_code = covariates$loc_code,
@@ -143,6 +148,16 @@ Gemodelleerd tijdseffect:
 
 ```{r out.width='70%'}
 Maq1$summary.random$hydroyear_std %>% 
+  ggplot(aes(x = ID)) +
+  geom_ribbon(aes(ymin = `0.025quant`,
+                  ymax = `0.975quant`),
+              alpha = 0.2) +
+  geom_line(aes(y = mean), colour = "blue") +
+  labs(x = "hydroyear_std", y = "posterior mean effect")
+```
+
+```{r out.width='70%'}
+Maq1$summary.random$hydroyear_std_cp1 %>% 
   ggplot(aes(x = ID)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
