@@ -1,5 +1,10 @@
 # Modelbouw {#app:models}
 
+```{r}
+inla.setOption(scale.model.default = TRUE)
+```
+
+
 ```{r eval=!("read-analysisdata" %in% knitr::all_labels())}
 gw51t <- 
   read_vc("design_gw/gw51t",
@@ -75,7 +80,12 @@ Model:
 ```{r echo=TRUE}
 Maq1 <- inla(Y ~ -1 + type + soilclass + 
                f(hydroyear_std, 
-                 model = "rw1") +
+                 model = "rw2",
+                 hyper = 
+                   list(theta = list(
+                     prior = "pc.prec",
+                     param = c(0.005, 0.01)))
+                 ) +
                f(loc_code,
                  model = "iid") + 
                f(cluster_id,
