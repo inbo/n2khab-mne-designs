@@ -133,25 +133,32 @@ rw2_sub <-
           strata_ts,
           ", model = 'rw2', hyper = rw_pcprec)", collapse = " + ") %>% 
     str2lang
+rw1_sub <-
+    str_c("f(hydroyear_std_rw1_",
+          strata_ts,
+          ", type_", 
+          strata_ts,
+          ", model = 'rw1', hyper = rw_pcprec)", collapse = " + ") %>% 
+    str2lang
 modformula <- 
   substitute(Y ~ -1 + type + soilclass + 
                # smooth trend per stratum:
                stratumsmoothers +
                # remaining short-term temporal variation
                # (capture remaining autocorrelation):
-               f(hydroyear_std_short, 
-                 model = "rw1",
-                 hyper = rw_pcprec) +
+               stratum_rw1 +
                f(loc_code,
                  model = "iid") + 
                f(cluster_id,
                  model = "iid"),
-             list(stratumsmoothers = rw2_sub))
+             list(stratumsmoothers = rw2_sub,
+                  stratum_rw1 = rw1_sub))
 moddata <-
   splice(Y = resp_matrix,
          map(set_names(strata_ts, str_c("hydroyear_std_type_", strata_ts)), 
              ~covariates$hydroyear_std),
-         hydroyear_std_short = covariates$hydroyear_std,
+         map(set_names(strata_ts, str_c("hydroyear_std_rw1_", strata_ts)), 
+             ~covariates$hydroyear_std),
          type = covariates$type,
          map(set_names(strata_ts, str_c("type_", strata_ts)), 
              ~as.numeric(covariates$type == .)),
@@ -233,13 +240,18 @@ M1$summary.random[str_detect(names(M1$summary.random),
 ```
 
 ```{r out.width='70%'}
-M1$summary.random$hydroyear_std_short %>% 
+M1$summary.random[str_detect(names(M1$summary.random), 
+                              "hydroyear_std_rw1_")] %>% 
+  map_dfr(~select(., ID, mean, matches("025|975")),
+          .id = "stratum") %>% 
   ggplot(aes(x = ID)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
               alpha = 0.2) +
   geom_line(aes(y = mean), colour = "blue") +
-  labs(x = "hydroyear_std", y = "posterior mean effect")
+  ylim(-2, 2) +
+  labs(x = "hydroyear_std", y = "posterior mean effect") + 
+  facet_wrap(~stratum)
 ```
 
 Resultaten hyperparameters, getransformeerd tot standaardafwijkingen:
