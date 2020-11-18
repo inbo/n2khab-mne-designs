@@ -54,6 +54,37 @@ table(dataset$type)
 # table(dataset$type:dataset$soilclass) # more heterogeneity can be incorporated if temporal autocorrelation + temporal smoother (+ spatial autocorrelation) don't solve things
 ```
 
+Distributie van het aantal jaren in locatiespecifieke tijdsreeksen, volgens de strata:
+
+```{r}
+ts_summaries <- 
+  dataset %>% 
+  count(type, loc_code, name = "nyears") %>% 
+  group_by(type) %>% 
+  nest() %>% 
+  mutate(nrlocs = map(data, nrow),
+         summary = map(data, 
+                       function(x) {
+                         summary(x$nyears) %>% 
+                           enframe %>% 
+                           pivot_wider %>% 
+                           janitor::clean_names() %>% 
+                           rename(q1 = x1st_qu, q3 = x3rd_qu)
+                         })) %>% 
+  select(-data) %>% 
+  unnest(cols = nrlocs:summary) %>% 
+  ungroup
+ts_summaries
+```
+
+```{r}
+strata_ts <- 
+  ts_summaries %>% 
+  filter(median >= 3) %>% 
+  pull(type)
+```
+
+
 ```{r}
 respvar <- "lg3_std"
 strata <- dataset$type %>% unique %>% sort
@@ -80,35 +111,59 @@ covariates <-
 ```
 
 
-Model:
-
-```{r echo=TRUE}
+```{r}
 rw_pcprec <- list(theta = list(
                      prior = "pc.prec",
                      param = c(1, 0.05)))
-M1 <- inla(Y ~ -1 + type + soilclass + 
-               # smooth trend
-               f(hydroyear_std, 
-                 model = "rw2",
-                 hyper = rw_pcprec) +
-               # remaining year-to-year autocorrelation
-               f(hydroyear_std_cp1, 
+rw2_sub <-
+    str_c("f(hydroyear_std_type_",
+          strata_ts,
+          ", type_", 
+          strata_ts,
+          ", model = 'rw2', hyper = rw_pcprec)", collapse = " + ") %>% 
+    str2lang
+modformula <- 
+  substitute(Y ~ -1 + type + soilclass + 
+               # smooth trend per stratum:
+               stratumsmoothers +
+               # remaining short-term temporal variation
+               # (capture remaining autocorrelation):
+               f(hydroyear_std_short, 
                  model = "rw1",
                  hyper = rw_pcprec) +
                f(loc_code,
                  model = "iid") + 
                f(cluster_id,
                  model = "iid"),
+             list(stratumsmoothers = rw2_sub))
+moddata <-
+  splice(Y = resp_matrix,
+         map(set_names(strata_ts, str_c("hydroyear_std_type_", strata_ts)), 
+             ~covariates$hydroyear_std),
+         hydroyear_std_short = covariates$hydroyear_std,
+         type = covariates$type,
+         map(set_names(strata_ts, str_c("type_", strata_ts)), 
+             ~as.numeric(covariates$type == .)),
+         soilclass = covariates$soilclass,
+         loc_code = covariates$loc_code,
+         cluster_id = covariates$cluster_id)
+```
+
+
+```{r}
+M1 <- inla(modformula,
              family = rep("gaussian", length(strata)),
-             data = list(Y = resp_matrix,
-                         hydroyear_std = covariates$hydroyear_std,
-                         hydroyear_std_cp1 = covariates$hydroyear_std,
-                         type = covariates$type,
-                         soilclass = covariates$soilclass,
-                         loc_code = covariates$loc_code,
-                         cluster_id = covariates$cluster_id),
+             data = moddata,
              control.compute = list(waic = TRUE))
 ```
+
+INLA formule en likelihood family:
+
+```{r echo=TRUE}
+M1$.args$formula
+cbind(colnames(resp_matrix), M1$.args$family)
+```
+
 
 ```{r}
 hypernames <- rownames(M1$summary.hyperpar)
@@ -151,18 +206,23 @@ Gemodelleerd tijdseffect:
 
 <!-- te overwegen: interactie met bv. ecoregio -->
 
-```{r out.width='70%'}
-M1$summary.random$hydroyear_std %>% 
+```{r out.width='70%', fig.height=6, fig.width=6}
+M1$summary.random[str_detect(names(M1$summary.random), 
+                              "hydroyear_std_type_")] %>% 
+  map_dfr(~select(., ID, mean, matches("025|975")),
+          .id = "stratum") %>% 
   ggplot(aes(x = ID)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
               alpha = 0.2) +
   geom_line(aes(y = mean), colour = "blue") +
-  labs(x = "hydroyear_std", y = "posterior mean effect")
+  ylim(-2, 2) +
+  labs(x = "hydroyear_std", y = "posterior mean effect") + 
+  facet_wrap(~stratum)
 ```
 
 ```{r out.width='70%'}
-M1$summary.random$hydroyear_std_cp1 %>% 
+M1$summary.random$hydroyear_std_short %>% 
   ggplot(aes(x = ID)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
