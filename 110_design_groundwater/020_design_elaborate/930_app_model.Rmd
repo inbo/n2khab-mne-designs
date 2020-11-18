@@ -42,35 +42,40 @@ gw33 <-
 
 ## GW_05.1_aq
 
+```{r}
+dataset <- gw51a
+```
+
+
 Aantal beschikbare observaties per stratum:
 
 ```{r}
-table(gw51a$type)
-# table(gw51a$type:gw51a$soilclass) # more heterogeneity can be incorporated if temporal autocorrelation + temporal smoother (+ spatial autocorrelation) don't solve things
+table(dataset$type)
+# table(dataset$type:dataset$soilclass) # more heterogeneity can be incorporated if temporal autocorrelation + temporal smoother (+ spatial autocorrelation) don't solve things
 ```
 
 ```{r}
 respvar <- "lg3_std"
-strata <- gw51a$type %>% unique %>% sort
-gw51a_stratasplit <- 
-  gw51a %>% 
+strata <- dataset$type %>% unique %>% sort
+stratasplit <- 
+  dataset %>% 
   cbind(matrix(data = NA_real_,
                nrow = nrow(.),
                ncol = length(strata),
                dimnames = list(NULL, str_c("type_", strata)))) %>% 
   as_tibble
 for (stratum in strata) {
-  gw51a_stratasplit[[str_c("type_", stratum)]] <- 
-    ifelse(gw51a_stratasplit$type == stratum, 
-           gw51a_stratasplit[[respvar]],
+  stratasplit[[str_c("type_", stratum)]] <- 
+    ifelse(stratasplit$type == stratum, 
+           stratasplit[[respvar]],
            NA_real_)
 }
 resp_matrix <- 
-  gw51a_stratasplit %>% 
+  stratasplit %>% 
   select(contains("type_")) %>% 
   as.matrix
 covariates <- 
-  gw51a_stratasplit %>% 
+  stratasplit %>% 
   select(!contains("type_"))
 ```
 
@@ -81,7 +86,7 @@ Model:
 rw_pcprec <- list(theta = list(
                      prior = "pc.prec",
                      param = c(1, 0.05)))
-Maq1 <- inla(Y ~ -1 + type + soilclass + 
+M1 <- inla(Y ~ -1 + type + soilclass + 
                # smooth trend
                f(hydroyear_std, 
                  model = "rw2",
@@ -106,10 +111,10 @@ Maq1 <- inla(Y ~ -1 + type + soilclass +
 ```
 
 ```{r}
-hypernames <- rownames(Maq1$summary.hyperpar)
-rownames(Maq1$summary.hyperpar)[str_detect(hypernames, "Gaussian")] <- 
+hypernames <- rownames(M1$summary.hyperpar)
+rownames(M1$summary.hyperpar)[str_detect(hypernames, "Gaussian")] <- 
   str_c("Stratum ", strata, ": Precision of residuals")
-names(Maq1$marginals.hyperpar)[str_detect(hypernames, "Gaussian")] <- 
+names(M1$marginals.hyperpar)[str_detect(hypernames, "Gaussian")] <- 
   str_c("Stratum ", strata, ": Precision of residuals")
 ```
 
@@ -117,21 +122,21 @@ names(Maq1$marginals.hyperpar)[str_detect(hypernames, "Gaussian")] <-
 Model summary:
 
 ```{r paged.print=FALSE}
-# summary(Maq1)
-# names(Maq1)
-Maq1$summary.fixed %>% 
+# summary(M1)
+# names(M1)
+M1$summary.fixed %>% 
   select(mean, sd, matches("025|975")) %>% 
   round(3) %>% 
   cbind(ci_excludes_zero = .$`0.025quant` > 0 | .$`0.975quant` < 0)
 cat("\n")
-Maq1$summary.hyperpar %>% select(mean, sd, matches("025|975")) %>% round(3)
-cat("\nWAIC:", Maq1$waic$waic)
+M1$summary.hyperpar %>% select(mean, sd, matches("025|975")) %>% round(3)
+cat("\nWAIC:", M1$waic$waic)
 ```
 
 Posterior density plots voor fixed parameters:
 
 ```{r out.width='70%'}
-fixedmargs <- Maq1$marginals.fixed
+fixedmargs <- M1$marginals.fixed
 walk2(fixedmargs, names(fixedmargs), function(marg, par) {
   (marg %>% 
      inla.smarginal %>% 
@@ -147,7 +152,7 @@ Gemodelleerd tijdseffect:
 <!-- te overwegen: interactie met bv. ecoregio -->
 
 ```{r out.width='70%'}
-Maq1$summary.random$hydroyear_std %>% 
+M1$summary.random$hydroyear_std %>% 
   ggplot(aes(x = ID)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
@@ -157,7 +162,7 @@ Maq1$summary.random$hydroyear_std %>%
 ```
 
 ```{r out.width='70%'}
-Maq1$summary.random$hydroyear_std_cp1 %>% 
+M1$summary.random$hydroyear_std_cp1 %>% 
   ggplot(aes(x = ID)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
@@ -169,7 +174,7 @@ Maq1$summary.random$hydroyear_std_cp1 %>%
 Resultaten hyperparameters, getransformeerd tot standaardafwijkingen:
 
 ```{r paged.print=FALSE, out.width='70%'}
-precmargs <- Maq1$marginals.hyperpar
+precmargs <- M1$marginals.hyperpar
 walk2(precmargs, names(precmargs), function(marg, hyperpar) {
   str_replace(hyperpar, "Precision", 
               "Posterior expected standard deviation") %>% 
@@ -200,9 +205,9 @@ sd_res_glob <-
   map_dbl(precmargs, ~inla.emarginal(invsqrt, .)) %>% 
   .[str_detect(names(.), "residuals")] %>% 
   set_names(strata)
-Maq1_diagn <- 
-  gw51a %>% 
-  mutate(fitted = Maq1$summary.fitted.values$mean,
+M1_diagn <- 
+  dataset %>% 
+  mutate(fitted = M1$summary.fitted.values$mean,
          resid = fitted - lg3_std,
          sd_res = sd_res_glob[type],
          resid_std = resid / sd_res)
@@ -212,14 +217,14 @@ Maq1_diagn <-
 #### Modelfit
 
 ```{r fitted-obs, out.width='70%'}
-Maq1_diagn %>% 
+M1_diagn %>% 
   ggplot(aes(x = lg3_std, y = fitted)) + geom_point() + geom_abline(colour = "red") + coord_equal()
 ```
 
 #### Residuele analyse
 
 ```{r resid-fitted, message=FALSE, out.width='70%'}
-Maq1_diagn %>% 
+M1_diagn %>% 
   ggplot(aes(x = fitted, y = resid_std)) + 
   geom_point() +
   geom_smooth()
@@ -228,13 +233,13 @@ Maq1_diagn %>%
 Normale verdeling redelijk OK.
 
 ```{r out.width='70%'}
-Maq1_diagn %>% 
+M1_diagn %>% 
   ggplot(aes(sample = resid_std)) + geom_qq() + geom_abline() + coord_equal()
 ```
 
 
 ```{r message=FALSE, out.width='70%'}
-Maq1_diagn %>% 
+M1_diagn %>% 
   ggplot(aes(x = resid_std)) + geom_histogram(fill = "white", colour = "grey70")
 ```
 
@@ -244,7 +249,7 @@ Door temporele autocorrelatie in het model te specifiëren is de overall tijdsaf
 ```{r resid-covar, message=FALSE, out.width='70%'}
 vars(hydroyear_std, type, soilclass) %>% 
   walk(function(quosvar) {
-Maq1_diagn %>% 
+M1_diagn %>% 
   {ggplot(data = ., aes(x = {{quosvar}}, y = resid_std)) + 
   geom_point() +
   geom_smooth()} %>% 
@@ -255,9 +260,9 @@ Tijdsafhankelijkheid komt nog altijd voor op locatieniveau (selectie van locatie
 Omdat we naar de residuen kijken, zijn de grafieken opgesplitst volgens locatie x type.
 
 ```{r message=FALSE, fig.height=12, fig.width=8}
-Maq1_diagn %>% 
+M1_diagn %>% 
   semi_join(
-    gw51a %>% count(loc_code, type) %>% filter(n >= 8),
+    dataset %>% count(loc_code, type) %>% filter(n >= 8),
     by = c("loc_code", "type")) %>% 
   ggplot(aes(x = hydroyear_std, y = resid_std)) + 
   geom_point() +
@@ -269,9 +274,9 @@ Ondanks de integratie van een overall smoother volgens de tijd blijft nog heel w
 Elke kleur (staafje) komt overeen met 1 tijdsreeks.
 
 ```{r fig.width=7, fig.height=12, out.width='80%'}
-Maq1_diagn %>% 
+M1_diagn %>% 
   semi_join(
-    gw51a %>% count(loc_code, type) %>% filter(n >= 10),
+    dataset %>% count(loc_code, type) %>% filter(n >= 10),
     by = c("loc_code", "type")) %>% 
   pivot_wider(id_cols = hydroyear_std,
               names_from = c(loc_code, type),
@@ -300,7 +305,7 @@ Maq1_diagn %>%
 Geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
 
 ```{r warning=FALSE, out.width='70%'}
-Maq1_diagn %>% 
+M1_diagn %>% 
   {gstat::variogram(resid_std ~ x + y, data = as_points(., warn_dupl = FALSE))} %>% 
   plot
 ```
@@ -314,7 +319,7 @@ provinces <-
 ```
 
 ```{r}
-Maq1_diagn %>% 
+M1_diagn %>% 
   as_points(warn_dupl = FALSE) %>% 
   ggplot() +
   geom_sf(data = provinces, fill = "grey70") +
@@ -335,19 +340,19 @@ Maq1_diagn %>%
 Omdat `loc_code` en `cluster_id` sterk gecorreleerd zijn, beoordelen we de resp. random effecten ten opzichte van de gefitte waarde met de beide random effecten ervan afgetrokken.
 
 ```{r}
-Maq1_diagn <- 
-  Maq1_diagn %>% 
-  inner_join(Maq1$summary.random$loc_code %>% 
+M1_diagn <- 
+  M1_diagn %>% 
+  inner_join(M1$summary.random$loc_code %>% 
                select(loc_code = ID, 
                       ranef_loc = mean) %>% 
                mutate(loc_code = factor(loc_code, 
-                                        levels = levels(Maq1_diagn$loc_code))), 
+                                        levels = levels(M1_diagn$loc_code))), 
              by = "loc_code") %>% 
-  inner_join(Maq1$summary.random$cluster_id %>% 
+  inner_join(M1$summary.random$cluster_id %>% 
                select(cluster_id = ID, 
                       ranef_clus = mean) %>% 
                mutate(cluster_id = factor(cluster_id, 
-                                          levels = levels(Maq1_diagn$cluster_id))), 
+                                          levels = levels(M1_diagn$cluster_id))), 
              by = "cluster_id") %>% 
   mutate(fitted_without_ranef = fitted - ranef_loc - ranef_clus)
 ```
@@ -357,7 +362,7 @@ Maq1_diagn <-
 ##### `loc_code`
 
 ```{r message=FALSE, out.width='70%'}
-tibble(ranef = Maq1$summary.random$loc_code$mean,
+tibble(ranef = M1$summary.random$loc_code$mean,
        ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for loc_code"]])) %>% 
   (function(df) {
     p <- 
@@ -373,7 +378,7 @@ tibble(ranef = Maq1$summary.random$loc_code$mean,
 De variatie van het random effect is behoorlijk homogeen.
 
 ```{r ranef-loc-fitted, message=FALSE, out.width='70%'}
-Maq1_diagn %>% 
+M1_diagn %>% 
   ggplot(aes(x = fitted_without_ranef, y = ranef_loc)) + 
   geom_point() +
   geom_smooth()
@@ -382,7 +387,7 @@ Maq1_diagn %>%
 ```{r ranef-loc-covar, message=FALSE, out.width='70%'}
 vars(hydroyear_std, type, soilclass) %>% 
   walk(function(quosvar) {
-Maq1_diagn %>% 
+M1_diagn %>% 
   {ggplot(data = ., aes(x = {{quosvar}}, y = ranef_loc)) + 
   geom_point() +
   geom_smooth()} %>% 
@@ -393,7 +398,7 @@ Maq1_diagn %>%
 ##### `cluster_id`
 
 ```{r message=FALSE, out.width='70%'}
-tibble(ranef = Maq1$summary.random$cluster_id$mean,
+tibble(ranef = M1$summary.random$cluster_id$mean,
        ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for cluster_id"]])) %>% 
   (function(df) {
     p <- 
@@ -409,7 +414,7 @@ tibble(ranef = Maq1$summary.random$cluster_id$mean,
 De variatie van het random effect is behoorlijk homogeen.
 
 ```{r ranef-clus-fitted, message=FALSE, out.width='70%'}
-Maq1_diagn %>% 
+M1_diagn %>% 
   ggplot(aes(x = fitted_without_ranef, y = ranef_clus)) + 
   geom_point() +
   geom_smooth()
@@ -418,7 +423,7 @@ Maq1_diagn %>%
 ```{r ranef-clus-covar, message=FALSE, out.width='70%'}
 vars(hydroyear_std, type, soilclass) %>% 
   walk(function(quosvar) {
-Maq1_diagn %>% 
+M1_diagn %>% 
   {ggplot(data = ., aes(x = {{quosvar}}, y = ranef_clus)) + 
   geom_point() +
   geom_smooth()} %>% 
