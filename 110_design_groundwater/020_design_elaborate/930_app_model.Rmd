@@ -54,6 +54,16 @@ table(dataset$type)
 # table(dataset$type:dataset$soilclass) # more heterogeneity can be incorporated if temporal autocorrelation + temporal smoother (+ spatial autocorrelation) don't solve things
 ```
 
+```{r}
+dataset <- 
+    dataset %>% 
+    filter(type %in% (dataset %>% 
+                          count(type) %>% 
+                          filter(n > 180) %>% 
+                          pull(type))) %>% 
+    mutate_if(is.factor, droplevels)
+```
+
 Distributie van het aantal jaren in locatiespecifieke tijdsreeksen, volgens de strata:
 
 ```{r}
@@ -112,9 +122,10 @@ covariates <-
 
 
 ```{r}
-rw_pcprec <- list(theta = list(
-                     prior = "pc.prec",
-                     param = c(1, 0.05)))
+# rw_pcprec <- list(theta = list(
+#                      prior = "pc.prec",
+#                      param = c(1, 0.05)))
+rw_pcprec <- NULL
 rw2_sub <-
     str_c("f(hydroyear_std_type_",
           strata_ts,
@@ -206,7 +217,7 @@ Gemodelleerd tijdseffect:
 
 <!-- te overwegen: interactie met bv. ecoregio -->
 
-```{r out.width='70%', fig.height=6, fig.width=6}
+```{r out.width='70%'}
 M1$summary.random[str_detect(names(M1$summary.random), 
                               "hydroyear_std_type_")] %>% 
   map_dfr(~select(., ID, mean, matches("025|975")),
