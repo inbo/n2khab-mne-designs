@@ -370,7 +370,8 @@ Ondanks de integratie van een overall smoother volgens de tijd blijft nog heel w
 Elke kleur (staafje) komt overeen met 1 tijdsreeks.
 
 ```{r fig.width=7, fig.height=12, out.width='80%'}
-M1_diagn %>% 
+lagcorr <- 
+  M1_diagn %>% 
   semi_join(
     dataset %>% count(loc_code, type) %>% filter(n >= 10),
     by = c("loc_code", "type")) %>% 
@@ -378,6 +379,9 @@ M1_diagn %>%
               names_from = c(loc_code, type),
               values_from = resid_std) %>% 
   arrange(hydroyear_std) %>% 
+  left_join(tidyr::expand(., hydroyear_std = full_seq(hydroyear_std, 1)),
+            .,
+            by = "hydroyear_std") %>% 
   select(-hydroyear_std) %>% 
   map2_df(names(.), function (x, name) {
     result <- acf(x, na.action = na.pass, plot = FALSE)
@@ -385,7 +389,9 @@ M1_diagn %>%
            lag = result$lag[,1,1],
            acf = result$acf[,1,1])
   }) %>% 
-  filter(lag > 0, lag < 7) %>% 
+  filter(lag > 0, lag < 7)
+
+lagcorr %>% 
   ggplot(aes(x = lag, y = acf, group = locxtype, fill = locxtype)) +
   geom_col(position = "dodge") +
   scale_x_continuous(guide = "none") +
