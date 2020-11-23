@@ -460,6 +460,33 @@ lagcorr %>%
         panel.grid.minor.y = element_blank())
 ```
 
+```{r}
+lagcorr_spatial <- 
+  lagcorr %>% 
+  separate(locxtype, c("loc_code", "type"), "_", extra = "merge") %>% 
+  mutate(loc_code = factor(loc_code, levels = levels(dataset$loc_code)),
+         type = factor(type, levels = levels(dataset$type))) %>% 
+  inner_join(dataset %>% distinct(loc_code, type, soilclass, ecoregion), 
+             by = c("loc_code", "type"))
+```
+
+```{r out.width='70%'}
+lagcorr_spatial %>% 
+  ggplot(aes(x = soilclass, y = acf)) + 
+  geom_boxplot() +
+  facet_wrap(~lag, labeller = "label_both")
+```
+
+```{r fig.height=7, fig.width=5, out.width='60%'}
+lagcorr_spatial %>% 
+  ggplot(aes(x = ecoregion, y = acf)) + 
+  geom_boxplot() +
+  facet_wrap(~lag, labeller = "label_both") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+We stellen een duidelijke relatie vast tussen de residuele autocorrelatie en de bodemklasse.
+
 Geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
 
 ```{r warning=FALSE, out.width='70%'}
