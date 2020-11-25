@@ -301,78 +301,6 @@ M1_diagn <-
 ```
 
 
-#### Modelfit
-
-```{r fitted-obs, out.width='70%'}
-M1_diagn %>% 
-  ggplot(aes(x = lg3_std, y = fitted)) + 
-  geom_point(size = 0.3) + 
-  geom_abline(colour = "red") + 
-  coord_equal()
-```
-
-```{r}
-cat("RMSE:", M1_diagn$resid^2 %>% mean %>% sqrt %>% round(3))
-```
-
-(Noot: RMSE penaliseert de modelcomplexiteit niet; DIC en WAIC geven daarom overall een beter beeld voor robuuste modelselectie)
-
-```{r fitted-obs, out.width='70%', fig.width=7, fig.height=6}
-M1_diagn %>% 
-  ggplot(aes(x = lg3_std, y = fitted)) + 
-  geom_point(size = 0.3) + 
-  geom_abline(colour = "grey70") + 
-  coord_equal() +
-  facet_wrap(~type)
-```
-
-Voor waarnemingen met een onbetrouwbare CPO-berekening kunnen we de fit niet evalueren:
-
-```{r out.width='70%'}
-M1_diagn %>% 
-  filter(cpo_failed) %>% 
-  ggplot(aes(x = lg3_std, y = fitted, fill = type)) + 
-  geom_abline(colour = "grey70") + 
-  geom_point(shape = 21) + 
-  coord_equal()
-```
-
-De verdeling van de fit van observaties op basis van de CPO (kansdichtheidswaarde van de observatie volgens een leave-one-out model):
-
-```{r message=FALSE, out.width='70%'}
-M1_diagn %>% 
-  filter(!cpo_failed) %>% 
-  ggplot(aes(x = cpo)) +
-  geom_histogram(fill = "white", colour = "grey70", boundary = 0)
-```
-
-Hier zien we een brede verdeling, waarbij een meerderheid van de waarden niet zeer klein is.
-
-De verdeling van de fit van observaties op basis van de posterior predictive p-value (kans op waarden kleiner dan de geobserveerde waarde op basis van de posterior foutdistributie volgens het model):
-
-```{r message=FALSE, out.width='70%'}
-M1_diagn %>% 
-  filter(!cpo_failed) %>% 
-  ggplot(aes(x = postpred_pval)) +
-  geom_histogram(fill = "white", colour = "grey70", binwidth = 0.1, boundary = 0)
-```
-
-Het optreden van veel nullen en enen, i.p.v. een centrale modus, betekent dat de meeste observaties onwaarschijnlijk zijn volgens het model, en het model er dus niet in slaagt deze goed te voorspellen.
-
-De absolute afwijking is echter voldoende klein om het model te kunnen hanteren.
-Onderstaande figuur demonstreert hoezeer het model de waarneming vlakbij de eerste bissectrice verwacht (i.e. met p-waarde rond 0.5).
-
-```{r out.width='70%'}
-M1_diagn %>% 
-  filter(!cpo_failed) %>% 
-  ggplot(aes(x = lg3_std, y = fitted, colour = postpred_pval)) + 
-  geom_abline(colour = "black") + 
-  geom_point(size = 0.3) + 
-  coord_equal() +
-  scale_colour_viridis_c(option = "C", direction = -1) +
-  theme(panel.background = element_rect(fill = "grey50"))
-```
-
 #### Residuele analyse
 
 ```{r resid-fitted, message=FALSE, out.width='70%'}
@@ -619,5 +547,97 @@ M1_diagn %>%
       print
   })
 ```
+
+
+### Modelevaluatie
+
+We beschouwen de modelfit op verschillende manieren.
+
+#### Fitted vs. observed
+
+```{r fitted-obs, out.width='70%'}
+M1_diagn %>% 
+  ggplot(aes(x = lg3_std, y = fitted)) + 
+  geom_point(size = 0.3) + 
+  geom_abline(colour = "red") + 
+  coord_equal()
+```
+
+```{r fitted-obs, out.width='70%', fig.width=7, fig.height=6}
+M1_diagn %>% 
+  ggplot(aes(x = lg3_std, y = fitted)) + 
+  geom_point(size = 0.3) + 
+  geom_abline(colour = "grey70") + 
+  coord_equal() +
+  facet_wrap(~type)
+```
+
+#### RMSE
+
+Dit betreft de vierkantswortel van de gemiddelde kwadratische afwijking.
+Het is vooral bruikbaar voor distributies die een constante variantie veronderstellen, zoals de gaussiaanse.
+
+```{r}
+cat("RMSE:", M1_diagn$resid^2 %>% mean %>% sqrt %>% round(3))
+```
+
+(Noot: RMSE penaliseert de modelcomplexiteit niet; DIC en WAIC geven daarom overall een beter beeld voor robuuste modelselectie)
+
+#### CPO
+
+Voor waarnemingen met een onbetrouwbare CPO-berekening kunnen we de fit niet evalueren:
+
+```{r out.width='70%'}
+M1_diagn %>% 
+  filter(cpo_failed) %>% 
+  ggplot(aes(x = lg3_std, y = fitted, fill = type)) + 
+  geom_abline(colour = "grey70") + 
+  geom_point(shape = 21) + 
+  coord_equal()
+```
+
+De verdeling van de fit van observaties op basis van de CPO (kansdichtheidswaarde van de observatie volgens een leave-one-out model):
+
+```{r message=FALSE, out.width='70%'}
+M1_diagn %>% 
+  filter(!cpo_failed) %>% 
+  ggplot(aes(x = cpo)) +
+  geom_histogram(fill = "white", colour = "grey70", boundary = 0)
+```
+
+Hier zien we een brede verdeling, waarbij een meerderheid van de waarden niet zeer klein is.
+
+#### Posterior predictive p-value
+
+De verdeling van de fit van observaties op basis van de posterior predictive p-value (kans op waarden kleiner dan de geobserveerde waarde op basis van de posterior foutdistributie volgens het model):
+
+```{r message=FALSE, out.width='70%'}
+M1_diagn %>% 
+  filter(!cpo_failed) %>% 
+  ggplot(aes(x = postpred_pval)) +
+  geom_histogram(fill = "white", colour = "grey70", binwidth = 0.1, boundary = 0)
+```
+
+Het optreden van veel nullen en enen, i.p.v. een centrale modus, betekent dat de meeste observaties onwaarschijnlijk zijn volgens het model, en het model er dus niet in slaagt deze goed te voorspellen.
+
+De absolute afwijking is echter voldoende klein om het model te kunnen hanteren.
+Onderstaande figuur demonstreert hoezeer het model de waarneming vlakbij de eerste bissectrice verwacht (i.e. met p-waarde rond 0.5).
+
+```{r out.width='70%'}
+M1_diagn %>% 
+  filter(!cpo_failed) %>% 
+  ggplot(aes(x = lg3_std, y = fitted, colour = postpred_pval)) + 
+  geom_abline(colour = "black") + 
+  geom_point(size = 0.3) + 
+  coord_equal() +
+  scale_colour_viridis_c(option = "C", direction = -1) +
+  theme(panel.background = element_rect(fill = "grey50"))
+```
+
+#### Simulaties
+
+
+
+
 
 
