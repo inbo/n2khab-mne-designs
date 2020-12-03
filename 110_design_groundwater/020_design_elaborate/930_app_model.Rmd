@@ -167,7 +167,8 @@ M1 <- inla(modformula,
              data = moddata,
              control.compute = list(waic = TRUE, 
                                     dic = TRUE,
-                                    cpo = TRUE))
+                                    cpo = TRUE,
+                                    config = TRUE))
 )
 ```
 
@@ -640,6 +641,72 @@ M1_diagn %>%
 
 #### Simulaties
 
+```{r}
+set.seed(123456)
+nsim <- 1000
+# the below code is preferred over 'n=1000' because otherwise
+# the sampled hyperparameter values remain constant among posterior samples
+simdata <- map(1:nsim, ~(inla.posterior.sample(n = 1, result = M1))[[1]])
+```
+
+```{r}
+set.seed(123456)
+nrobs <- nrow(dataset)
+nrstrata <- length(strata)
+evaluation <- 
+  map(simdata, ~.$latent[1:nrobs]) %>% 
+  do.call(cbind, .) %>% 
+  as_tibble %>% 
+  mutate(obs = 1:nrobs) %>% 
+  # adding type and observed responses to the sampled latent values:
+  bind_cols(select(dataset, type, .data[[respvar]])) %>% 
+  relocate(obs, type, .data[[respvar]]) %>% 
+  pivot_longer(cols = c(-type, -obs, -.data[[respvar]]),
+               names_to = "sample",
+               values_to = "latent_sim") %>% 
+  # joining the sampled values of latent with the sampled residual precision (stratum-specific):
+  left_join(map(simdata, ~.$hyper[1:nrstrata]) %>% 
+              do.call(cbind, .) %>% 
+              as_tibble %>% 
+              mutate(type = strata) %>% 
+              relocate(type) %>% 
+              pivot_longer(cols = -type,
+               names_to = "sample",
+               values_to = "precision_sim") %>% 
+              mutate(sd_sim = 1 / sqrt(precision_sim), .keep = "unused"),
+            by = c("type", "sample")) %>% 
+  # simulating response values (nsim per observation) by sampling from a normal distribution (which is different for each row); actually it's unneeded here as we will use the p-values and corresponding quantile that we determine for each normal distribution:
+  mutate(response_sim = rnorm(mean = latent_sim, sd = sd_sim, n = nsim * nrobs),
+         pval = pnorm(q = .data[[respvar]], mean = latent_sim, sd = sd_sim),
+         z = qnorm(pval)) %>% 
+  group_by(obs, type) %>% 
+  summarise(pval_avg = mean(pval),
+            z_avg = mean(z),
+            .groups = "drop")
+```
+
+Voor elke observatie is, op basis van zijn covariaatwaarden en op basis van 1000 gesimuleerde waarden voor de fixed en random parameters (incl. random walks) op basis van hun posterior distributies, een gemiddelde waarde bepaald van de standaard normale kwantielfunctie.
+Met andere woorden: `z_avg` geeft aan met welke z-waarde de observatie gemiddeld overeenstemt, gegeven de 1000 gesimuleerde responsen (voor dezelfde covariaatwaarden als de observatie) met telkens een gesimuleerde foutdistributie.
+
+De onderstaande figuren vergelijken de geobserveerde verdeling van `z_avg` (histogram voor alle observaties) met de verwachte verdeling volgens de standaard normale verdeling (volle lijn).
+
+```{r}
+z_distr <- tibble(quant = seq(-5, 5, 0.05)) %>% mutate(dens = dnorm(quant))
+ggplot(evaluation, aes(x = z_avg)) +
+  geom_histogram(aes(y = stat(density)),
+                 fill = "skyblue3", boundary = 0, binwidth = 0.1) +
+  geom_line(data = z_distr, aes(x = quant, y = dens), alpha = 0.4)
+```
+
+```{r}
+ggplot(evaluation, aes(x = z_avg)) +
+  geom_histogram(aes(y = stat(density)),
+                 fill = "skyblue3", boundary = 0, binwidth = 0.1) +
+  geom_line(data = z_distr, aes(x = quant, y = dens), alpha = 0.4) +
+  facet_wrap(~type, scales = "free_y")
+```
+
+Het blijkt dat het model de geobserveerde waarden goed ondersteunt: vaker dan verwacht volgens de normale foutverdeling, liggen de geobserveerde waarden nabij de gesimuleerde waarde.
 
 
 
