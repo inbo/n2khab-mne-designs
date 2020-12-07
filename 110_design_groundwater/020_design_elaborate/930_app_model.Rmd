@@ -418,10 +418,27 @@ We stellen een duidelijke relatie vast tussen de residuele autocorrelatie en de 
 
 Geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
 
-```{r warning=FALSE, out.width='70%'}
-M1_diagn %>% 
-  {gstat::variogram(resid_std ~ x + y, data = as_points(., warn_dupl = FALSE))} %>% 
-  plot
+<!-- verschillende waarden voor width + cutoff uitgeprobeerd, maar geen duidelijke spatiale autocorrelatie-->
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <- 
+  M1_diagn %>% 
+  {gstat::variogram(resid_std ~ x + y, 
+                    data = as_points(., warn_dupl = FALSE),
+                    width = 20,
+                    cutoff = 1400)}
+vg %>% 
+  rename(semivariance = gamma,
+         distance = dist) %>% 
+  ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
+  # geom_line(size = 0.5, colour = "grey80") +
+  geom_smooth(colour = "grey70", se = FALSE) +
+  geom_point(size = 3, shape = 21) +
+  scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
+  geom_text(vjust = -1, size = 3, colour = "grey30") +
+  theme_bw() +
+  theme(legend.position = "bottom",
+        legend.key.width = unit(0.08, "npc"))
 ```
 
 
