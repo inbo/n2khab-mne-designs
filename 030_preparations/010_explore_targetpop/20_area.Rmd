@@ -265,12 +265,19 @@ execGRASS("v.overlay",
 execGRASS("g.list", type = "vector", flags = "p")
 ```
 
+
+```{r warning=FALSE, results="hide", eval=!file.exists("hmtsac_pol.gpkg")}
+# writing GPKG permanently, because the step takes too long if it is to 
+# be done each time in a temporary way (by calling readVECT)
+execGRASS("v.out.ogr",
+          input = "hmtsac_pol",
+          output = file.path(projroot, "hmtsac_pol.gpkg"),
+          format = "GPKG")
+```
+
 ```{r warning=FALSE, results="hide"}
 hmtsac_pol <- 
-  readVECT("hmtsac_pol") %>% 
-  st_set_crs(31370) %>% 
-  as_tibble %>% 
-  st_as_sf %>% 
+  read_sf("hmtsac_pol.gpkg") %>% 
   filter(!is.na(a_cat)) %>% 
   mutate(in_sac = !is.na(b_cat),
          polygon_id = factor(a_polygon_id, 

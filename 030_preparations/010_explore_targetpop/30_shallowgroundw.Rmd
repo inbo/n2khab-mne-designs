@@ -98,10 +98,14 @@ system("v.db.renamecolumn map=shallow_obliggwdep column=a_cat,shallow_gw
 system("db.columns table=shallow_obliggwdep")
 ```
 
-```{r eval=FALSE}
-system("v.out.ogr input=shallow_obliggwdep output=shallow_obliggwdep.gpkg")
+```{r warning=FALSE, results="hide", eval=!file.exists("shallow_obliggwdep.gpkg")}
+# writing GPKG permanently, because the step takes too long if it is to 
+# be done each time in a temporary way (by calling readVECT)
+execGRASS("v.out.ogr",
+          input = "shallow_obliggwdep",
+          output = file.path(projroot, "shallow_obliggwdep.gpkg"),
+          format = "GPKG")
 ```
-
 
 ```{r eval = FALSE, warning=FALSE, results="hide"}
 # launching GRASS GUI interface:
@@ -110,10 +114,7 @@ execGRASS("g.gui")
 
 ```{r warning=FALSE, results="hide"}
 shallow_obliggwdep <-
-    readVECT("shallow_obliggwdep") %>% 
-    st_set_crs(31370) %>% 
-    as_tibble %>% 
-    st_as_sf %>% 
+    read_sf("shallow_obliggwdep.gpkg") %>% 
     mutate(shallow_gw = !is.na(shallow_gw)) %>% 
     select(polygon_id,
            shallow_gw)
