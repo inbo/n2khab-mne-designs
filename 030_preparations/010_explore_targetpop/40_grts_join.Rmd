@@ -10,24 +10,22 @@ We kijken per type naar het effect op de trefkans (aanwezigheid van het type in 
 
 ```{r}
 grass_grts_join <- file.exists("grts_join/PERMANENT/PROJ_INFO")
+if (!dir.exists("grts_join")) dir.create("grts_join")
 ```
 
 
-```{r results="hide", eval=!grass_grts_join}
-# CREATE and link to a permanent GRASS folder
-link2GI::linkGRASS7(hmt_pol, gisdbase = ".", location = "grts_join",
-                    search_path = if (.Platform$OS.type == "unix") {
-                      "/usr/bin"} else NULL,
-                    use_home = TRUE)
-```
-
-
-```{r results="hide", eval=grass_grts_join}
-# ONLY LINK to a permanent GRASS folder
-link2GI::linkGRASS7(gisdbase = ".", location = "grts_join", gisdbase_exist = TRUE,
-                    search_path = if (.Platform$OS.type == "unix") {
-                      "/usr/bin"} else NULL,
-                    use_home = TRUE)
+```{r results="hide"}
+# CREATE OR LINK to a permanent GRASS location
+initGRASS(gisBase = link2GI::findGRASS()[1, 1],
+          gisDbase = ".",
+          home = "grts_join",
+          location = "grts_join",
+          mapset = "PERMANENT", 
+          override = TRUE)
+if (!grass_grts_join) {
+    execGRASS("g.proj", c("c", "quiet"), 
+              epsg = 31370)
+}
 # gmeta()
 ```
 
