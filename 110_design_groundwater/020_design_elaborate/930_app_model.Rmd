@@ -293,9 +293,7 @@ M1_diagn <-
          sd_res = sd_res_glob[type],
          resid_std = resid / sd_res,
          cpo = M1$cpo$cpo,
-         cpo_failed = M1$cpo$failure >= 0.2,
-         postpred_pval = map2_dbl(lg3_std, fittedmargs, 
-                                  ~inla.pmarginal(q = .x, marginal = .y))
+         cpo_failed = M1$cpo$failure >= 0.2
   )
 ```
 
@@ -625,34 +623,6 @@ M1_diagn %>%
 
 Hier zien we een brede verdeling, waarbij een meerderheid van de waarden niet zeer klein is.
 
-#### Posterior predictive p-value
-
-De posterior predictive p-value van een observatie is de kans op waarden kleiner dan de geobserveerde waarde op basis van de posterior foutdistributie volgens het model.
-
-De verdeling van de fit van observaties op basis van de posterior predictive p-value:
-
-```{r message=FALSE, out.width='70%'}
-M1_diagn %>% 
-  filter(!cpo_failed) %>% 
-  ggplot(aes(x = postpred_pval)) +
-  geom_histogram(fill = "white", colour = "grey70", binwidth = 0.1, boundary = 0)
-```
-
-Het optreden van veel nullen en enen, i.p.v. een centrale modus, betekent dat de meeste observaties onwaarschijnlijk zijn volgens het model, en het model deze observaties niet goed ondersteunt.
-
-De absolute afwijking is echter voldoende klein om het model te kunnen hanteren.
-Onderstaande figuur demonstreert hoezeer het model de waarneming vlakbij de eerste bissectrice verwacht (i.e. met p-waarde rond 0.5).
-
-```{r out.width='70%'}
-M1_diagn %>% 
-  filter(!cpo_failed) %>% 
-  ggplot(aes(x = lg3_std, y = fitted, colour = postpred_pval)) + 
-  geom_abline(colour = "black") + 
-  geom_point(size = 0.3) + 
-  coord_equal() +
-  scale_colour_viridis_c(option = "C", direction = -1) +
-  theme(panel.background = element_rect(fill = "grey50"))
-```
 
 #### Simulaties
 
