@@ -641,7 +641,8 @@ nrstrata <- length(strata)
 evaluation <- 
   map(simdata, ~.$latent[1:nrobs]) %>% 
   do.call(cbind, .) %>% 
-  as_tibble %>% 
+  as_tibble(.name_repair = "minimal") %>% 
+  magrittr::set_colnames(str_c("sample_", 1:nsim)) %>% 
   mutate(obs = 1:nrobs) %>% 
   # adding type and observed responses to the sampled latent values:
   bind_cols(select(dataset, type, .data[[respvar]])) %>% 
@@ -652,7 +653,8 @@ evaluation <-
   # joining the sampled values of latent with the sampled residual precision (stratum-specific):
   left_join(map(simdata, ~.$hyper[1:nrstrata]) %>% 
               do.call(cbind, .) %>% 
-              as_tibble %>% 
+              as_tibble(.name_repair = "minimal") %>% 
+              magrittr::set_colnames(str_c("sample_", 1:nsim)) %>% 
               mutate(type = strata) %>% 
               relocate(type) %>% 
               pivot_longer(cols = -type,
