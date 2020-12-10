@@ -44,6 +44,7 @@ gw33 <-
 
 ```{r}
 dataset <- gw51a
+respvar <- "lg3_std"
 ```
 
 
@@ -88,7 +89,6 @@ strata_ts <-
 
 
 ```{r}
-respvar <- "lg3_std"
 strata <- dataset$type %>% unique %>% sort
 stratasplit <- 
   dataset %>% 
@@ -295,7 +295,7 @@ sd_res_glob <-
 M1_diagn <- 
   dataset %>% 
   mutate(fitted = M1$summary.fitted.values$mean,
-         resid = fitted - lg3_std,
+         resid = fitted - .data[[respvar]],
          sd_res = sd_res_glob[type],
          resid_std = resid / sd_res,
          cpo = M1$cpo$cpo,
@@ -580,7 +580,7 @@ We beschouwen de modelfit op verschillende manieren.
 
 ```{r fitted-obs, out.width='70%'}
 M1_diagn %>% 
-  ggplot(aes(x = lg3_std, y = fitted)) + 
+  ggplot(aes(x = .data[[respvar]], y = fitted)) + 
   geom_point(size = 0.3) + 
   geom_abline(colour = "red") + 
   coord_equal()
@@ -588,7 +588,7 @@ M1_diagn %>%
 
 ```{r fitted-obs-type, out.width='70%', fig.width=7, fig.height=6}
 M1_diagn %>% 
-  ggplot(aes(x = lg3_std, y = fitted)) + 
+  ggplot(aes(x = .data[[respvar]], y = fitted)) + 
   geom_point(size = 0.3) + 
   geom_abline(colour = "grey70") + 
   coord_equal() +
@@ -615,7 +615,7 @@ Voor waarnemingen met een onbetrouwbare CPO-berekening kunnen we de fit niet eva
 ```{r out.width='70%'}
 M1_diagn %>% 
   filter(cpo_failed) %>% 
-  ggplot(aes(x = lg3_std, y = fitted, fill = type)) + 
+  ggplot(aes(x = .data[[respvar]], y = fitted, fill = type)) + 
   geom_abline(colour = "grey70") + 
   geom_point(shape = 21) + 
   coord_equal()
