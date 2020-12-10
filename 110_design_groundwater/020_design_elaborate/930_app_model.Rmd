@@ -686,7 +686,7 @@ Met andere woorden: `z_avg` geeft aan met welke z-waarde de observatie gemiddeld
 
 De onderstaande figuren vergelijken de geobserveerde verdeling van `z_avg` (histogram voor alle observaties) met de verwachte verdeling volgens de standaard normale verdeling (volle lijn).
 
-```{r}
+```{r out.width='70%'}
 z_distr <- tibble(quant = seq(-5, 5, 0.05)) %>% mutate(dens = dnorm(quant))
 ggplot(evaluation, aes(x = z_avg)) +
   geom_histogram(aes(y = stat(density)),
@@ -703,6 +703,97 @@ ggplot(evaluation, aes(x = z_avg)) +
 ```
 
 Het blijkt dat het model de geobserveerde waarden goed ondersteunt: vaker dan verwacht volgens de normale foutverdeling, liggen de geobserveerde waarden nabij de gesimuleerde waarde.
+
+### Modelvisualisatie
+
+We focussen op een onderdeel waar we relatief weinig controle over hebben, maar dat potentieel veel invloed heeft op de simulaties: de korte-termijn temporele variatie.
+Het idee was om korte-termijnschommelingen (RW1) standaard in het model te laten, en alleen lange-termijntrends (RW2) weg te nemen als baseline model voor steekproefsimulatie (waaraan dan a priori gekende lineaire trends kunnen worden toegevoegd).
+
+De temporele variatie op korte-termijn via een random walk wordt bepaald door de precisieparameter $\tau$.
+We onderzoeken hoe groot deze temporele veranderingen volgens het model kunnen zijn, door 200 zulke tijdsreeksen te simuleren.
+
+```{r}
+set.seed(654321)
+tau_shortterm <- 
+  M1$summary.hyperpar[rownames(M1$summary.hyperpar) %>% 
+                        str_detect("short"), 
+                      "mean"]
+rw1sim <- simulate_rw(tau = tau_shortterm, length = 12, order = 1, n_sim = 200)
+```
+
+De gesimuleerde tijdsreeksen samen afgebeeld (Y-as in meter):
+
+```{r out.width='70%'}
+rw1sim %>% 
+  ggplot(aes(x = x, y = y, group = replicate)) +
+  geom_line(alpha = 0.1, size = 3) +
+  theme_bw()
+```
+
+Beter van elkaar onderscheiden:
+
+```{r fig.height=7, fig.width=7}
+rw1sim %>% 
+  mutate(replicate_set = ceiling(replicate / 10),
+         replicate = replicate %% 10,
+         replicate = factor(replicate)) %>% 
+  ggplot(aes(x = x, y = y, group = replicate, colour = replicate)) +
+  geom_line() +
+  theme(legend.position = "none") +
+  facet_wrap(~ replicate_set, labeller = "label_both")
+```
+
+De grote mogelijke variatie die hieruit voortkomt, en vooral ook het optreden van systematische trends, wijst er op dat meer controle hierover wenselijk is in het licht van steekproefsimulaties.
+
+Mogelijkheden:
+
+- door toevoegen van netto-neerslag als fixed effect in het model.
+Mogelijks biedt dit ook een oplossing voor de resterende temporele autocorrelatie van de residuen.
+Voor steekproefsimulaties kan dan het neerslageffect constant worden gehouden en in plaats daarvan een exacte lineaire trend aan de gesimuleerde respons worden toegevoegd.
+- voor de steekproefsimulatie alle hier gefitte temporele componenten weglaten, dus niet alleen de lange-termijntrend, maar ook de korte-termijnvariatie.
+Het resultaat is mogelijks een te sterk geîdealiseerde situatie (de enige temporele variatie in steekproefsimulaties is dan de zelf toegevoegde lineaire trend).
+- controle houden over welk type random walks worden 'toegelaten' voor deelname in de steekproefsimulaties.
+Namelijk alleen de gevallen zonder een systematische trend.
+Dit is eenvoudiger te implementeren dan een voorafgaandelijke modellering met neerslagreeksen, maar vereist het opleggen van een arbitraire grens, zoals in onderstaande figuren.
+
+  - enkel reeksen weerhouden met een niet-significante (p > 0.2) lineaire trend:
+
+```{r out.width='70%'}
+rw1sim %>% 
+  nest(data = c(x, y)) %>% 
+  mutate(beta_sign = 
+           map_lgl(data, function(xy) {
+             lm(y ~ x, data = xy) %>% 
+               confint("x", level = 0.8) %>% 
+               {0 < .[1] || 0 > .[2]}
+           })
+  ) %>% 
+  unnest(data) %>%  
+  filter(!beta_sign) %>% 
+  ggplot(aes(x = x, y = y, group = replicate)) +
+  geom_line(alpha = 0.1, size = 3) +
+  ylim(-2, 2) +
+  theme_bw()
+```
+
+  - enkel reeksen weerhouden waarvoor alle stapsgewijze veranderingen én de verandering tussen einde en begin kleiner zijn dan $2 \cdot \sigma$.
+
+```{r out.width='70%'}
+rw1sim %>% 
+  group_by(replicate) %>% 
+  arrange(replicate, x) %>% 
+  mutate(change = y - lag(y), 
+         max_change = max(abs(change), na.rm = TRUE),
+         total_change = abs(last(y))) %>% 
+  filter(max_change < 2 * invsqrt(tau_shortterm),
+         total_change < 2 * invsqrt(tau_shortterm)) %>% 
+  ungroup %>% 
+  ggplot(aes(x = x, y = y, group = replicate)) +
+  geom_line(alpha = 0.1, size = 3) +
+  ylim(-2, 2) +
+  theme_bw()
+```
+
 
 
 
