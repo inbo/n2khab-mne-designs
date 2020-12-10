@@ -54,7 +54,9 @@ table(dataset$type)
 # table(dataset$type:dataset$soilclass) # more heterogeneity can be incorporated if temporal autocorrelation + temporal smoother (+ spatial autocorrelation) don't solve things
 ```
 
-Distributie van het aantal jaren in locatiespecifieke tijdsreeksen, volgens de strata:
+Hoewel we voorlopig alles zo in het model laten, zal het nodig zijn om 7220 en eventueel 3110 te lumpen met een ander type.
+
+Distributie van het aantal beschikbare jaren in locatiespecifieke tijdsreeksen, volgens de strata:
 
 ```{r}
 ts_summaries <- 
@@ -190,6 +192,8 @@ names(M1$marginals.hyperpar)[str_detect(hypernames, "Gaussian")] <-
 
 ### Modelresultaten
 
+Modelbouw is gebeurd via git branching (dead ends, ...); alleen het uiteindelijke model wordt hier gepresenteerd.
+
 Model summary:
 
 ```{r paged.print=FALSE}
@@ -225,7 +229,7 @@ walk2(fixedmargs, names(fixedmargs), function(marg, par) {
 })
 ```
 
-Gemodelleerd tijdseffect:
+Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties):
 
 ```{r out.width='70%'}
 M1$summary.random[str_detect(names(M1$summary.random), 
@@ -241,6 +245,8 @@ M1$summary.random[str_detect(names(M1$summary.random),
   labs(x = "hydroyear_std", y = "posterior mean effect") + 
   facet_wrap(~stratum)
 ```
+
+Resterend korte-termijntijdseffect:
 
 ```{r out.width='70%'}
 M1$summary.random$hydroyear_std_short %>% 
@@ -321,7 +327,7 @@ M1_diagn %>%
 ```
 
 De residuele heterogeniteit is beperkt dankzij de stratumafhankelijke residuele hyperparameter.
-Door temporele autocorrelatie in het model te specifiëren is de overall tijdsafhankelijkheid verdwenen.
+Door temporele autocorrelatie in het model te specifiëren is de overall tijdsafhankelijkheid beperkt.
 
 ```{r resid-covar, message=FALSE, out.width='70%'}
 vars(hydroyear_std, type, soilclass) %>% 
@@ -333,6 +339,7 @@ M1_diagn %>%
       print
   })
 ```
+
 Tijdsafhankelijkheid komt nog altijd voor op locatieniveau (selectie van locaties).
 Omdat we naar de residuen kijken, zijn de grafieken opgesplitst volgens locatie x type.
 
@@ -412,7 +419,9 @@ lagcorr_spatial %>%
 
 We stellen een duidelijke relatie vast tussen de residuele autocorrelatie en de bodemklasse.
 
-Geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
+Opname van een RW1-interactie met `soilclass` gaf een iets beter, maar complexer model -- de beperkte voordelen wogen niet op tgo. de computationele en interpretatienadelen en deze piste is niet weerhouden.
+
+We zien geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
 
 <!-- verschillende waarden voor width + cutoff uitgeprobeerd, maar geen duidelijke spatiale autocorrelatie-->
 
