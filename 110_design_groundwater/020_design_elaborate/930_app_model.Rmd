@@ -218,15 +218,12 @@ fittedmargs <- M1$marginals.fitted.values
 
 Posterior density plots voor fixed parameters:
 
-```{r out.width='70%'}
-walk2(fixedmargs, names(fixedmargs), function(marg, par) {
-  (marg %>% 
-     inla.smarginal %>% 
-     as_tibble %>%  
-     ggplot(aes(x = x, y = y)) + geom_line() +
-     labs(x = par, y = "density")) %>% 
-    print
-})
+```{r warning=FALSE, fig.width=8, fig.height=4/3*ceiling(length(fixedmargs)/4)}
+map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>% 
+  ggplot(aes(x = x, y = y)) + geom_line() +
+  labs(x = "effectsize", y = "density") +
+  xlim(-4, 4) +
+  facet_wrap(~effect, ncol = 4, scales = "free_y")
 ```
 
 Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties):
@@ -261,28 +258,38 @@ M1$summary.random$hydroyear_std_short %>%
 
 Resultaten hyperparameters, getransformeerd tot standaardafwijkingen:
 
-```{r paged.print=FALSE, out.width='70%'}
-walk2(precmargs, names(precmargs), function(marg, hyperpar) {
-  str_replace(hyperpar, "Precision", 
-              "Posterior expected standard deviation") %>% 
-    cat(":\n")
-  cat(inla.emarginal(invsqrt, marg), "\n")
-  })
-walk2(precmargs, names(precmargs), function(marg, hyperpar) {
-  str_replace(hyperpar, "Precision", 
-              "Posterior standard deviation summary") %>% 
-    cat("\n")
-  inla.tmarginal(invsqrt, marg) %>% inla.zmarginal
-  cat("\n")
-  })
-walk2(precmargs, names(precmargs), function(marg, hyperpar) {
-  inla.tmarginal(fun = invsqrt, marg) %>% 
-  as_tibble %>%  
-  qplot(data = ., x = x, y = y, geom = "line", 
-        xlab = expression(sigma),
-        main = str_replace(hyperpar, "Precision", "Posterior distribution of standard deviation")) %>% 
-    print
-})
+```{r hyperpar-summary, warning=FALSE}
+map_dfr(precmargs,
+        function(marg){
+          sink(tempfile())
+          summ <- 
+            inla.tmarginal(invsqrt, marg) %>% 
+            inla.zmarginal
+          sink()
+          summ %>% 
+            as_tibble()
+        },
+        .id = "sd_hyperparameter") %>% 
+  mutate_if(is_numeric, ~ round(., 4)) %>% 
+  mutate(sd_hyperparameter = str_remove(sd_hyperparameter, 
+                                        "Precision\\sof\\s|^Precision\\sfor\\s")) %>% 
+  kable(caption = "Karakteristieken van de posterior distributie van de hyperparameters, uitgedrukt als standaardafwijking. Voorbeeld: 'mean' is de verwachte waarde van de betreffende standaardafwijking.") %>% 
+  kable_styling()
+```
+
+
+```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(precmargs)/3)*12/7}
+map_dfr(precmargs, 
+        ~ as_tibble(inla.tmarginal(fun = invsqrt, .)), 
+        .id = "hyperpar") %>% 
+  mutate(hyperpar = 
+           str_remove(hyperpar, 
+                       "Precision\\sof\\s|^Precision\\sfor\\s")) %>% 
+  ggplot(aes(x = x, y = y)) + geom_line() +
+  labs(x = "standard deviation", y = "density") +
+  xlim(0, 3) +
+  facet_wrap(~hyperpar, ncol = 3, scales = "free_y") +
+  theme(strip.text = element_text(hjust = 0))
 ```
 
 ### Modeldiagnose
