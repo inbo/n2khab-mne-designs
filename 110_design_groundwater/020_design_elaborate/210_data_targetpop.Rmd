@@ -297,19 +297,20 @@ expand.grid(n_infinitepop = c(10, seq(25, 200, 25)) %>% factor,
 
 ```{r grass-setup2, include=FALSE}
 # CREATE or LINK to a permanent GRASS database
-link2GI::linkGRASS7(x = ifelse(grass_exists,
-                               substitute(),
-                               hmt_pol), 
-                    gisdbase_exist = grass_exists,
-                    gisdbase = "data", 
-                    location = "grass_gw",
-                    search_path = if (.Platform$OS.type == "unix") {
-                      "/usr/bin"} else NULL,
-                    use_home = TRUE)
+initGRASS(gisBase = gisbase_grass,
+          home = tempdir(),
+          gisDbase = datapath, 
+          location = grass_location, 
+          mapset = "PERMANENT", 
+          override = TRUE)
+if (!grass_exists) {
+    execGRASS("g.proj", flags = c("c", "quiet"), 
+              epsg = 31370)
+}
 ```
 
 ```{r include=FALSE}
-assertthat::assert_that(file.exists("data/grass_gw/PERMANENT/PROJ_INFO"),
+assertthat::assert_that(file.exists(projfilepath),
                         msg = "Please configure your GRASS setup first.")
 ```
 
@@ -321,7 +322,7 @@ system("g.manual -i")
 system("g.gisenv get=GISDBASE,LOCATION_NAME,MAPSET sep='/'")
 # CRS info
 system("g.region -p
-        g.proj -j")
+        g.proj -w")
 gmeta()
 # launch GUI
 system("g.gui")
