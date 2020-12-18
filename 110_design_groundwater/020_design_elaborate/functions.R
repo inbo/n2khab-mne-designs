@@ -1,3 +1,16 @@
+################################################################################
+
+# Miscellaneous functions
+
+execshell <- function(commandstring, intern = FALSE) {
+    if (.Platform$OS.type == "windows") {
+        res <- shell(commandstring, intern = TRUE)
+    } else {
+        res <- system(commandstring, intern = TRUE)
+    }
+    if (!intern) cat(res, sep = "\n") else return(res)
+}
+
 #####################################################################
 #corvif() FUNCTION.
 #From:
@@ -68,8 +81,8 @@ myvif <- function(mod) {
 
 get_latest_filecommit <- function(filepath, reporoot, repostatus) {
     label <-
-        system(paste0("git log -n 1 --pretty=format:'`%H` (%ai)' -- '",
-                      filepath, "'"),
+        execshell(paste0("git log -n 1 --pretty=format:'`%H` (%ai)' -- '",
+                         filepath, "'"),
            intern = TRUE)
     gitpath <- fs::path_rel(filepath, reporoot)
     if (gitpath %in% repostatus$unstaged) {
