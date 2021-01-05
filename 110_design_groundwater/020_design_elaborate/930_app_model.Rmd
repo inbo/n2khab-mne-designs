@@ -362,9 +362,8 @@ M1_diagn %>%
 ```
 
 Ondanks de integratie van een overall smoother volgens de tijd blijft nog heel wat autocorrelatie over op het lokale niveau - hieronder voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven).
-Elke kleur (staafje) komt overeen met 1 tijdsreeks.
 
-```{r fig.width=7, fig.height=12, out.width='80%'}
+```{r}
 lagcorr <- 
   M1_diagn %>% 
   semi_join(
@@ -380,12 +379,60 @@ lagcorr <-
   select(-hydroyear_std) %>% 
   map2_df(names(.), function (x, name) {
     result <- acf(x, na.action = na.pass, plot = FALSE)
+    presult <- acf(x, na.action = na.pass, type = "partial", plot = FALSE)
     tibble(locxtype = name,
            lag = result$lag[,1,1],
-           acf = result$acf[,1,1])
+           acf = result$acf[,1,1],
+           pacf = c(1, presult$acf[,1,1]))
   }) %>% 
   filter(lag > 0, lag < 7)
+```
 
+Grafiek met nadruk op het patroon van de autocorrelatiefunctie (1 lijn correspondeert met 1 tijdsreeks).
+
+```{r fig.height=5, fig.width=6, out.width='70%'}
+lagcorr %>% 
+  inner_join(lagcorr %>% 
+               distinct(locxtype) %>% 
+               mutate(subset = rep(1:4, each = floor(n() / 4))) %>% 
+               group_by(subset) %>% 
+               mutate(id = factor(1:n())) %>% 
+               ungroup,
+             by = "locxtype") %>% 
+  ggplot(aes(x = lag, y = acf, group = id, colour = id)) +
+  geom_line() +
+  theme(legend.position = "none") +
+  facet_wrap(~subset, labeller = "label_both")
+```
+
+Een beperkt aantal tijdsreeksen toont geen autocorrelatie.
+Andere vertonen een afnemende autocorrelatie, wat wijst op een geleidelijke trend.
+Nog andere vertonen een wisselend positieve en negatieve autocorrelatie, wat wijst op een cyclische trend.
+
+Verloop van de partiële autocorrelatie - relevant om de orde van een eventuele temporele AR-autocorrelatie te bepalen:
+
+```{r fig.height=5, fig.width=6, out.width='70%'}
+lagcorr %>% 
+  inner_join(lagcorr %>% 
+               distinct(locxtype) %>% 
+               mutate(subset = rep(1:4, each = floor(n() / 4))) %>% 
+               group_by(subset) %>% 
+               mutate(id = factor(1:n())) %>% 
+               ungroup,
+             by = "locxtype") %>% 
+  ggplot(aes(x = lag, y = pacf, group = id, colour = id)) +
+  geom_line() +
+  ylim(-1, 1) +
+  theme(legend.position = "none") +
+  facet_wrap(~subset, labeller = "label_both")
+```
+
+Hieruit leiden we af dat bv. AR(4) of AR(5) nog zeker zinvol kan zijn.
+
+Grafiek met nadruk op de variatie in grootte van de autocorrelatie, per lag.
+Elke kleur (staafje) komt overeen met 1 tijdsreeks.
+
+```{r fig.width=7, fig.height=12, out.width='80%'}
 lagcorr %>% 
   ggplot(aes(x = lag, y = acf, group = locxtype, fill = locxtype)) +
   geom_col(position = "dodge") +
