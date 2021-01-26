@@ -66,12 +66,16 @@ rw1_pcprec <- list(theta = list(
     prior = "pc.prec",
     param = c(1, 0.01)))
 rw2_sub <-
-    str_c("f(hydroyear_std_type_",
-          strata_ts,
-          ", type_",
-          strata_ts,
-          ", model = 'rw2', hyper = rw2_pcprec)", collapse = " + ") %>%
-    str2lang
+    if (subdataset_name == "GW_05.1_terr_group3_grasslands") {
+        str2lang("f(hydroyear_std, model = 'rw2', hyper = rw2_pcprec)")
+    } else {
+        str_c("f(hydroyear_std_type_",
+              strata_ts,
+              ", type_",
+              strata_ts,
+              ", model = 'rw2', hyper = rw2_pcprec)", collapse = " + ") %>%
+            str2lang
+    }
 rw1_sub <-
     str_c("f(hydroyear_std_rw1_",
           strata_ts,
@@ -82,9 +86,7 @@ rw1_sub <-
 modformula <-
     substitute(Y ~ -1 + type + soilclass +
                    # smooth trend per stratum:
-                   # stratumsmoothers +
-                   f(hydroyear_std,
-                     model = 'rw2', hyper = rw2_pcprec) +
+                   stratumsmoothers +
                    # remaining short-term temporal variation
                    # (capture remaining autocorrelation):
                    f(hydroyear_std_short,
@@ -180,7 +182,7 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
 
 Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties):
 
-```{r out.width='70%', eval=FALSE}
+```{r out.width='70%', eval=(subdataset_name != "GW_05.1_terr_group3_grasslands")}
 M1$summary.random[str_detect(names(M1$summary.random),
                              "hydroyear_std_type_")] %>%
     map_dfr(~select(., ID, mean, matches("025|975")),
