@@ -182,10 +182,12 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
 
 Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties):
 
-```{r out.width='70%', eval=(subdataset_name != "GW_05.1_terr_group3_grasslands")}
-M1$summary.random[str_detect(names(M1$summary.random),
-                             "hydroyear_std_type_")] %>%
-    map_dfr(~select(., ID, mean, matches("025|975")),
+```{r out.width='70%'}
+{if (subdataset_name != "GW_05.1_terr_group3_grasslands") {
+       M1$summary.random[str_detect(names(M1$summary.random),
+                                    "hydroyear_std_type_")]} else {
+       M1$summary.random["hydroyear_std"]}} %>%
+  map_dfr(~select(., ID, mean, matches("025|975")),
             .id = "stratum") %>%
     ggplot(aes(x = ID)) +
     geom_ribbon(aes(ymin = `0.025quant`,
