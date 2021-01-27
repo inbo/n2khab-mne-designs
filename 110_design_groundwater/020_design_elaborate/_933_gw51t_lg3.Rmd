@@ -424,9 +424,48 @@ lagcorr_spatial %>%
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
 ```
 
-Residuele spatiale correlatie?
+Residuele spatiale correlatie op verschillende schalen:
 
-<!-- verschillende waarden voor width + cutoff uitgeprobeerd, maar geen duidelijke spatiale autocorrelatie-->
+```{r eval=!("read-provinces" %in% knitr::all_labels())}
+provinces <-
+    read_admin_areas(dsn = "provinces") %>%
+    select(province = name)
+```
+
+```{r}
+M1_diagn %>%
+    as_points(warn_dupl = FALSE) %>%
+    ggplot() +
+    geom_sf(data = provinces, fill = "grey70") +
+    geom_sf(aes(colour = resid_std)) +
+    scale_colour_gradientn(colours = rainbow(10)) +
+    coord_sf(datum = st_crs(31370)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          legend.position = "bottom",
+          legend.key.width = unit(0.08, "npc"))
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 500,
+                      cutoff = 5e3)}
+vg %>%
+    rename(semivariance = gamma,
+           distance = dist) %>%
+    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
+    geom_smooth(colour = "grey70", se = FALSE) +
+    geom_point(size = 3, shape = 21) +
+    ylim(0, NA) +
+    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
+    geom_text(vjust = -1, size = 3, colour = "grey30") +
+    theme_bw() +
+    theme(legend.position = "bottom",
+          legend.key.width = unit(0.08, "npc"))
+```
 
 ```{r warning=FALSE, message=FALSE, out.width='70%'}
 vg <-
@@ -449,27 +488,27 @@ vg %>%
           legend.key.width = unit(0.08, "npc"))
 ```
 
-
-
-```{r eval=!("read-provinces" %in% knitr::all_labels())}
-provinces <-
-    read_admin_areas(dsn = "provinces") %>%
-    select(province = name)
-```
-
-```{r}
-M1_diagn %>%
-    as_points(warn_dupl = FALSE) %>%
-    ggplot() +
-    geom_sf(data = provinces, fill = "grey70") +
-    geom_sf(aes(colour = resid_std)) +
-    scale_colour_gradientn(colours = rainbow(10)) +
-    coord_sf(datum = st_crs(31370)) +
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 5000,
+                      cutoff = 75e3)}
+vg %>%
+    rename(semivariance = gamma,
+           distance = dist) %>%
+    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
+    geom_smooth(colour = "grey70", se = FALSE) +
+    geom_point(size = 3, shape = 21) +
+    ylim(0, NA) +
+    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
+    geom_text(vjust = -1, size = 3, colour = "grey30") +
     theme_bw() +
-    theme(panel.grid = element_blank(),
-          legend.position = "bottom",
+    theme(legend.position = "bottom",
           legend.key.width = unit(0.08, "npc"))
 ```
+
 
 
 ##### Analyse van random effecten

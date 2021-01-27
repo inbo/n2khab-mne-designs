@@ -441,31 +441,7 @@ Opname van een RW1-interactie met `soilclass` gaf een iets beter, maar complexer
 
 We zien geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
 
-<!-- verschillende waarden voor width + cutoff uitgeprobeerd, maar geen duidelijke spatiale autocorrelatie-->
-
-```{r warning=FALSE, message=FALSE, out.width='70%'}
-vg <- 
-  M1_diagn %>% 
-  {gstat::variogram(resid_std ~ x + y, 
-                    data = as_points(., warn_dupl = FALSE),
-                    width = 20,
-                    cutoff = 1400)}
-vg %>% 
-  rename(semivariance = gamma,
-         distance = dist) %>% 
-  ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
-  # geom_line(size = 0.5, colour = "grey80") +
-  geom_smooth(colour = "grey70", se = FALSE) +
-  geom_point(size = 3, shape = 21) +
-  ylim(0, NA) +
-  scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
-  geom_text(vjust = -1, size = 3, colour = "grey30") +
-  theme_bw() +
-  theme(legend.position = "bottom",
-        legend.key.width = unit(0.08, "npc"))
-```
-
-
+Residuele spatiale correlatie op verschillende schalen:
 
 ```{r eval=!("read-provinces" %in% knitr::all_labels())}
 provinces <- 
@@ -488,6 +464,70 @@ M1_diagn %>%
         legend.position = "bottom",
         legend.key.width = unit(0.08, "npc"))
 ```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 500,
+                      cutoff = 5e3)}
+vg %>%
+    rename(semivariance = gamma,
+           distance = dist) %>%
+    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
+    geom_smooth(colour = "grey70", se = FALSE) +
+    geom_point(size = 3, shape = 21) +
+    ylim(0, NA) +
+    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
+    geom_text(vjust = -1, size = 3, colour = "grey30") +
+    theme_bw() +
+    theme(legend.position = "bottom",
+          legend.key.width = unit(0.08, "npc"))
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 1000,
+                      cutoff = 15e3)}
+vg %>%
+    rename(semivariance = gamma,
+           distance = dist) %>%
+    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
+    geom_smooth(colour = "grey70", se = FALSE) +
+    geom_point(size = 3, shape = 21) +
+    ylim(0, NA) +
+    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
+    geom_text(vjust = -1, size = 3, colour = "grey30") +
+    theme_bw() +
+    theme(legend.position = "bottom",
+          legend.key.width = unit(0.08, "npc"))
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 5000,
+                      cutoff = 75e3)}
+vg %>%
+    rename(semivariance = gamma,
+           distance = dist) %>%
+    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
+    geom_smooth(colour = "grey70", se = FALSE) +
+    geom_point(size = 3, shape = 21) +
+    ylim(0, NA) +
+    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
+    geom_text(vjust = -1, size = 3, colour = "grey30") +
+    theme_bw() +
+    theme(legend.position = "bottom",
+          legend.key.width = unit(0.08, "npc"))
+```
+
 
 
 #### Analyse van random effecten
