@@ -5,8 +5,8 @@ Distributie van het aantal beschikbare jaren in locatiespecifieke tijdsreeksen, 
 ```{r}
 ts_summaries <-
     dataset %>%
-    count(.data[[stratumvar]], loc_code, name = "nyears") %>%
-    group_by(.data[[stratumvar]]) %>%
+    count(.data[[ts_stratumvar]], loc_code, name = "nyears") %>%
+    group_by(.data[[ts_stratumvar]]) %>%
     nest() %>%
     mutate(nrlocs = map(data, nrow),
            summary = map(data,
@@ -28,7 +28,7 @@ ts_summaries
 strata_ts <-
     ts_summaries %>%
     filter(median >= 3, nrlocs > 15) %>%
-    pull(.data[[stratumvar]])
+    pull(.data[[ts_stratumvar]])
 ```
 
 
@@ -106,7 +106,7 @@ moddata <-
            hydroyear_std = covariates$hydroyear_std,
            soilclass = covariates$soilclass,
            map(set_names(strata_ts, str_c("stratum_", strata_ts)),
-               ~as.numeric(covariates[[stratumvar]] == .)),
+               ~as.numeric(covariates[[ts_stratumvar]] == .)),
            loc_code = covariates$loc_code,
            cluster_id = covariates$cluster_id)
 ```
