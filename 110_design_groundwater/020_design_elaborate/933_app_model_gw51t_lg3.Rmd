@@ -37,17 +37,9 @@ dataset_nested <-
   read_scheme_types(lang = "nl") %>% 
   filter(scheme == "GW_05.1_terr") %>% 
   select(type, typegroup) %>% 
-  inner_join(read_types(lang = "nl") %>% 
-               select(type, typeclass),
-             by = "type") %>% 
-  mutate(subdataset_name = ifelse(str_detect(typegroup, "3$"),
-                                  ifelse(typeclass == "GR",
-                                         "GW_05.1_terr_group3_grasslands",
-                                         "GW_05.1_terr_group3_other"),
-                                  as.character(typegroup)),
-         subdataset_name = factor(subdataset_name),
+  mutate(subdataset_name = droplevels(typegroup),
          subdataset_label = str_replace_all(subdataset_name, "_|\\.", "-")) %>% 
-  select(-typeclass) %>% 
+  select(-typegroup) %>% 
   inner_join(dataset, ., by = "type") %>% 
   group_by(subdataset_name, subdataset_label) %>% 
   nest() %>% 
