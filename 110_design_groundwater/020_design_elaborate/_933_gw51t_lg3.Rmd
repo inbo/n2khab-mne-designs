@@ -1,5 +1,16 @@
 ### {{subdataset_name}}
 
+```{r}
+if (subdataset_name == "GW_05.1_terr_group4") {
+  stratumvar <- "type" # to support heterogeneity in residuals
+  ts_stratumvar <- "type" # for interaction with time in RW2 trend
+} else {
+  stratumvar <- "soilclass" # to support heterogeneity in residuals
+  ts_stratumvar <- "soilclass" # for interaction with time in RW2 trend
+}
+```
+
+
 Distributie van het aantal beschikbare jaren in locatiespecifieke tijdsreeksen, volgens de strata:
 
 ```{r}
@@ -72,8 +83,13 @@ rw2_sub <-
               strata_ts,
               ", model = 'rw2', hyper = rw2_pcprec)", collapse = " + ") %>%
             str2lang
+fixed_sub <- 
+  if (subdataset_name == "GW_05.1_terr_group4") {
+    str2lang("type") } else {
+      str2lang("type + soilclass")
+    }
 modformula <-
-    substitute(Y ~ -1 + type + soilclass +
+    substitute(Y ~ -1 + fixed +
                    # smooth trend per stratum:
                    stratumsmoothers +
                    # remaining short-term temporal variation
@@ -84,7 +100,8 @@ modformula <-
                      model = "iid") +
                    f(cluster_id,
                      model = "iid"),
-               list(stratumsmoothers = rw2_sub))
+               list(fixed = fixed_sub,
+                    stratumsmoothers = rw2_sub))
 moddata <-
     splice(Y = resp_matrix,
            map(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)),
