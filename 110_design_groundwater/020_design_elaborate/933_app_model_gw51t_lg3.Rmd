@@ -12,22 +12,8 @@ Aantal beschikbare observaties per type:
 table(dataset$type) %>% sort(decreasing = TRUE)
 ```
 
-Gezien de computationele problemen om zeldzamere types te behouden, laten we deze met minder observaties in eerste instantie weg (we kunnen ze ook lumpen met een ander type).
-
-```{r}
-dataset <- 
-  dataset %>% 
-  filter(type %in% 
-           (dataset %>% 
-              count(type) %>% 
-              arrange(desc(n)) %>% 
-              filter(n >= 200) %>% 
-              pull(type))
-         ) %>% 
-  mutate(type = droplevels(type))
-```
-
-Omwille van het grotere aantal types, wordt de dataset in stukken gesplitst.
+Omwille van het grotere aantal types, wordt de dataset in subdatasets gesplitst, waarvoor telkens een apart model wordt gefit.
+Gezien de computationele problemen om zeldzamere types te behouden, laten we tevens de types met minder observaties weg (we kunnen ze ook lumpen met een ander type), voor die subdatasets waar we de variabele `type` hanteren in de modellering van de residuele heterogeniteit of voor interacties.
 
 ```{r}
 dataset_nested <- 
@@ -41,10 +27,23 @@ dataset_nested <-
   group_by(subdataset_name, subdataset_label) %>% 
   nest() %>% 
   ungroup %>% 
-  arrange(subdataset_name)
+  arrange(subdataset_name) %>% 
+  mutate(data = ifelse(subdataset_name == "GW_05.1_terr_group4",
+                       map(data, function(dataset) {
+                         dataset %>% 
+                           filter(type %in% 
+                                    (dataset %>% 
+                                       count(type) %>% 
+                                       arrange(desc(n)) %>% 
+                                       filter(n >= 200) %>% 
+                                       pull(type))
+                           )
+                       }),
+                       data),
+         data = map(data, ~mutate(., type = droplevels(type))))
 ```
 
-Aantal types en rijen per deelset:
+Aantal types en rijen per subdataset:
 
 ```{r}
 dataset_nested %>% 
@@ -60,7 +59,6 @@ pwalk(list(dataset_nested$data,
            dataset_nested$subdataset_name, 
            dataset_nested$subdataset_label), 
       function(dataset, subdataset_name, subdataset_label) {
-        dataset <- mutate(dataset, type = droplevels(type))
         knit_expand("_933_gw51t_lg3.Rmd") %>% 
           {knit_child(text = ., 
                       quiet = TRUE,
