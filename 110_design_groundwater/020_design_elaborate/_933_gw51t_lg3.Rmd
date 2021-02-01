@@ -8,6 +8,9 @@ if (subdataset_name == "GW_05.1_terr_group4") {
   stratumvar <- "soilclass" # to support heterogeneity in residuals
   ts_stratumvar <- "soilclass" # for interaction with time in RW2 trend
 }
+rds_filepath <- file.path(datapath, "binary/simmodels",
+                          str_c("model_gw51t_", respvar, "_", 
+                                subdataset_name, ".rds"))
 ```
 
 
@@ -69,7 +72,7 @@ covariates <-
 
 #### Model
 
-```{r}
+```{r eval=params$fit_simmodels}
 rw2_pcprec <- list(theta = list(
     prior = "pc.prec",
     param = c(100, 5e-5)))
@@ -117,7 +120,7 @@ moddata <-
 ```
 
 
-```{r results="hide"}
+```{r results="hide", eval=params$fit_simmodels}
 system.time(
     M1 <- inla(modformula,
                family = rep("gaussian", length(strata)),
@@ -129,15 +132,8 @@ system.time(
 )
 ```
 
-INLA formule en likelihood family:
 
-```{r echo=TRUE}
-M1$.args$formula
-cbind(colnames(resp_matrix), M1$.args$family)
-```
-
-
-```{r}
+```{r eval=params$fit_simmodels}
 hypernames <- rownames(M1$summary.hyperpar)
 rownames(M1$summary.hyperpar)[str_detect(hypernames, "Gaussian")] <-
     str_c("Stratum ", strata, ": Precision of residuals")
@@ -145,11 +141,26 @@ names(M1$marginals.hyperpar)[str_detect(hypernames, "Gaussian")] <-
     str_c("Stratum ", strata, ": Precision of residuals")
 ```
 
-```{r}
-saveRDS(M1, file.path(datapath, "binary/simmodels",
-                      str_c("model_gw51t_", respvar, "_", 
-                            subdataset_name, ".rds")))
+```{r include=FALSE}
+if (!params$fit_simmodels) {
+  M1 <- readRDS(rds_filepath)
+}
+if (!params$fit_simmodels && params$write_simmodels) {
+  warning("No simulation model fitted - so not overwriting. ",
+          "You probably misspecified a YAML parameter.")
+}
+if (params$fit_simmodels && params$write_simmodels) {
+  saveRDS(M1, rds_filepath)
+}
 ```
+
+INLA formule en likelihood family:
+
+```{r echo=TRUE}
+M1$.args$formula
+cbind(colnames(resp_matrix), M1$.args$family)
+```
+
 
 
 #### Modelresultaten
