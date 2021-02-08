@@ -18,7 +18,16 @@ Aantal beschikbare observaties per type:
 table(dataset$type)
 ```
 
-Hoewel we voorlopig alles zo in het model laten, zal het nodig zijn om 7220 en eventueel 3110 te lumpen met een ander type (of weg te laten).
+Vermits van type 7220 slechts één locatie voorhanden is, en omdat het type niet meteen aan één van de andere types kan worden gelinkt, laten we het zo in het model (de onzekerheid op het type-effect of de typespecifieke residuele variatie zal dan groter zijn).
+
+Omdat de 3 locaties van type 3110 ook type 3130_aom vertegenwoordigen, laten we dit type vallen uit de dataset en het model, maar zullen we de resultaten van 3130_aom hanteren voor steekproefgrootteberekeningen in 3110.
+
+```{r}
+dataset <- 
+  dataset %>% 
+  filter(type != "3110") %>% 
+  mutate(type = droplevels(type))
+```
 
 Distributie van het aantal beschikbare jaren in locatiespecifieke tijdsreeksen, volgens de strata:
 
@@ -375,7 +384,7 @@ Grafiek met nadruk op het patroon van de autocorrelatiefunctie (1 lijn correspon
 lagcorr %>% 
   inner_join(lagcorr %>% 
                distinct(locxtype) %>% 
-               mutate(subset = rep(1:4, each = floor(n() / 4))) %>% 
+               mutate(subset = rep(1:4, each = ceiling(n() / 4))[1:n()]) %>% 
                group_by(subset) %>% 
                mutate(id = factor(1:n())) %>% 
                ungroup,
@@ -396,7 +405,7 @@ Verloop van de partiële autocorrelatie - relevant om de orde van een eventuele 
 lagcorr %>% 
   inner_join(lagcorr %>% 
                distinct(locxtype) %>% 
-               mutate(subset = rep(1:4, each = floor(n() / 4))) %>% 
+               mutate(subset = rep(1:4, each = ceiling(n() / 4))[1:n()]) %>% 
                group_by(subset) %>% 
                mutate(id = factor(1:n())) %>% 
                ungroup,
