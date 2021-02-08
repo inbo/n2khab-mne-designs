@@ -1,4 +1,45 @@
 # (PART) Modellen voor steekproefsimulaties {-}
 
+<!-- Onderstaande chunks vereisen dat verder gebruikte modelobjectfiles (rds) reeds op schijf beschikbaar zijn. -->
+<!-- Om tijd te besparen in partial runs, zet de overeenkomstige 'load' parameters op FALSE in bookdown::render_book(). -->
 
+```{r eval=params$loadmodels_GW_05.1_terr, include=FALSE}
+# GW_05.1_terr
+subdataset_name <- 
+    read_scheme_types(lang = "nl") %>% 
+    filter(scheme == "GW_05.1_terr") %>% 
+    distinct(typegroup) %>% 
+    mutate(subdataset_name = droplevels(typegroup)) %>% 
+    arrange(subdataset_name) %>% 
+    pull(subdataset_name)
+respvar <- c("lg3_lcl", "hg3_lcl")
+file.path(datapath, 
+          "binary/simmodels",
+          str_c("model_gw51t_", 
+                crossing(respvar, subdataset_name) %>% 
+                    unite("submodel") %>% 
+                    pull("submodel"), 
+                ".rds")) %>% 
+    walk(function(path) {
+        if (file.exists(path)) {
+            modelname <- basename(path) %>% str_remove(".rds")
+            assign(modelname, readRDS(path), envir = .GlobalEnv)
+        }
+    })
+```
 
+```{r eval=params$loadmodels_GW_05.1_aq, include=FALSE}
+# GW_05.1_aq
+respvar <- c("lg3_std", "hg3_std")
+file.path(datapath, 
+          "binary/simmodels",
+          str_c("model_gw51a_", 
+                respvar, 
+                ".rds")) %>% 
+    walk(function(path) {
+        if (file.exists(path)) {
+            modelname <- basename(path) %>% str_remove(".rds")
+            assign(modelname, readRDS(path), envir = .GlobalEnv)
+        }
+    })
+```

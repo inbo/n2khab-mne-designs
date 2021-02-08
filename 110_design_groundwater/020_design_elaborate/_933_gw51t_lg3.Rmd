@@ -8,6 +8,10 @@ if (subdataset_name == "GW_05.1_terr_group4") {
   stratumvar <- "soilclass" # to support heterogeneity in residuals
   ts_stratumvar <- "soilclass" # for interaction with time in RW2 trend
 }
+```
+
+
+```{r include=FALSE}
 rds_filepath <- file.path(datapath, "binary/simmodels",
                           str_c("model_gw51t_", respvar, "_", 
                                 subdataset_name, ".rds"))
@@ -146,8 +150,12 @@ names(M1$marginals.hyperpar)[str_detect(hypernames, "Gaussian")] <-
 
 ```{r include=FALSE}
 if (!params$fit_simmodels) {
-  M1 <- readRDS(rds_filepath)
-}
+  modelname <- basename(rds_filepath) %>% str_remove(".rds")
+  if (exists(modelname)) {
+    M1 <- modelname %>% as.name %>% eval
+  } else {
+    M1 <- readRDS(rds_filepath)
+}}
 if (!params$fit_simmodels && params$write_simmodels) {
   warning("No simulation model fitted - so not overwriting. ",
           "You probably misspecified a YAML parameter.")
