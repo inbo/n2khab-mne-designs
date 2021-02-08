@@ -944,13 +944,14 @@ tau_shortterm <-
   M1$summary.hyperpar[rownames(M1$summary.hyperpar) %>% 
                         str_detect("short"), 
                       "mean"]
-rw1sim <- simulate_rw(tau = tau_shortterm, length = 12, order = 1, n_sim = 200)
+rw1sim <- simulate_rw(tau = tau_shortterm, length = 12, order = 1, n_sim = 500)
 ```
 
-De gesimuleerde tijdsreeksen samen afgebeeld (Y-as in meter):
+De gesimuleerde tijdsreeksen samen afgebeeld (Y-as in meter;  subset van eerste 200 simulaties):
 
 ```{r out.width='70%'}
 rw1sim %>% 
+  filter(replicate <= 200) %>% 
   ggplot(aes(x = x, y = y, group = replicate)) +
   geom_line(alpha = 0.1, size = 3) +
   theme_bw()
@@ -960,6 +961,7 @@ Beter van elkaar onderscheiden:
 
 ```{r fig.height=7, fig.width=7}
 rw1sim %>% 
+  filter(replicate <= 200) %>% 
   mutate(replicate_set = ceiling(replicate / 10),
          replicate = replicate %% 10,
          replicate = factor(replicate)) %>% 
@@ -986,6 +988,7 @@ Dit is eenvoudiger te implementeren dan een voorafgaandelijke modellering met ne
 
 ```{r out.width='70%'}
 rw1sim %>% 
+  filter(replicate <= 200) %>% 
   nest(data = c(x, y)) %>% 
   mutate(beta_sign = 
            map_lgl(data, function(xy) {
@@ -1002,7 +1005,7 @@ rw1sim %>%
   theme_bw()
 ```
 
-  - enkel reeksen weerhouden waarvoor alle stapsgewijze veranderingen én de verandering tussen einde en begin kleiner zijn dan $2 \cdot \sigma$.
+  - enkel reeksen weerhouden waarvoor alle stapsgewijze veranderingen én de verandering tussen einde en begin kleiner zijn dan $1.5 \cdot \sigma$.
 
 ```{r out.width='70%'}
 rw1sim %>% 
@@ -1011,16 +1014,35 @@ rw1sim %>%
   mutate(change = y - lag(y), 
          max_change = max(abs(change), na.rm = TRUE),
          total_change = abs(last(y))) %>% 
-  filter(max_change < 2 * invsqrt(tau_shortterm),
-         total_change < 2 * invsqrt(tau_shortterm)) %>% 
+  filter(max_change < 1.5 * invsqrt(tau_shortterm),
+         total_change < 1.5 * invsqrt(tau_shortterm)) %>% 
   ungroup %>% 
   ggplot(aes(x = x, y = y, group = replicate)) +
   geom_line(alpha = 0.1, size = 3) +
   ylim(-2, 2) +
   theme_bw()
 ```
+De bovenstaande beter van elkaar onderscheiden:
 
-
+```{r fig.width=6, fig.height=6, out.width='70%'}
+rw1sim %>% 
+  group_by(replicate) %>% 
+  arrange(replicate, x) %>% 
+  mutate(change = y - lag(y), 
+         max_change = max(abs(change), na.rm = TRUE),
+         total_change = abs(last(y))) %>% 
+  filter(max_change < 1.5 * invsqrt(tau_shortterm),
+         total_change < 1.5 * invsqrt(tau_shortterm)) %>% 
+  ungroup %>% 
+  mutate(replicate_set = ceiling(replicate / 75),
+         replicate = replicate %% 75,
+         replicate = factor(replicate)) %>% 
+  ggplot(aes(x = x, y = y, group = replicate, colour = replicate)) +
+  geom_line() +
+  ylim(-2, 2) +
+  theme(legend.position = "none") +
+  facet_wrap(~ replicate_set, labeller = "label_both")
+```
 
 
 
