@@ -1,0 +1,105 @@
+## GW_05.1_aq: lg3_std
+
+```{r}
+respvar <- "lg3_std"
+modelcomponent_tempnoise <- "Precision for hydroyear_std_short"
+```
+
+```{r include=FALSE}
+rds_filepath <- file.path(datapath, "binary/simmodels",
+                          str_c("model_gw51a_", respvar, ".rds"))
+modelname <- basename(rds_filepath) %>% str_remove(".rds")
+if (exists(modelname)) {
+  M1 <- modelname %>% as.name %>% eval
+} else {
+  M1 <- readRDS(rds_filepath)
+}
+```
+
+De modelvorm die werd gefit ten behoeve van simulaties, ziet er uit als volgt:
+
+```{r}
+M1$.args$formula
+```
+
+```{r}
+modelterms_type <- 
+    targetpop %>% 
+    filter(scheme == "GW_05.1_aq") %>% 
+    distinct(type) %>% 
+    arrange(type) %>% 
+    mutate(type = droplevels(type),
+           modelterm = str_c("type", type),
+           modelterm = ifelse(type == "3110", "type3130_aom", modelterm))
+```
+
+<!-- parallellize below chunk per type! -->
+<!-- https://stackoverflow.com/questions/47552930/how-to-fork-parallelize-process-in-purrrpmap -->
+
+We simuleren een grote steekproef om de spatiale variantiecomponent per type te bepalen.
+
+```{r}
+latent_names <- M1$misc$configs$contents$tag
+nsim <- nlocs_per_type * nrow(modelterms_type)
+set.seed(123456)
+
+# each simulation is for one location (having one type)
+sim_obs_nlocs_per_type <- 
+    tibble(location = str_c("simloc_", str_pad(1:nsim, 5, pad = "0")),
+           type = rep(modelterms_type$type, each = nsim / nrow(modelterms_type)),
+           modelterm_type = rep(modelterms_type$modelterm, each = nsim / nrow(modelterms_type))) %>% 
+    mutate(modelpar_simulation = map(modelterm_type, 
+                    # the below code is preferred over 'n=1000' because otherwise
+                    # the sampled hyperparameter values remain constant among posterior samples
+                                     ~(inla.posterior.sample(n = 1, 
+                                                             result = M1, 
+                                                             selection = set_names(list(0), .)
+                                                             )[[1]])),
+           fixef_type = map_dbl(modelpar_simulation, ~.$latent[1, 1]),
+           ranef_loc = map_dbl(modelpar_simulation, 
+                               ~rnorm(1, sd = invsqrt(.$hyperpar["Precision for loc_code"]))),
+           ranef_clus = map_dbl(modelpar_simulation, 
+                               ~rnorm(1, sd = invsqrt(.$hyperpar["Precision for cluster_id"]))),
+           temporal_noise = 
+             map(modelpar_simulation, function(simobs) {
+               tau_temporal <- simobs$hyperpar[modelcomponent_tempnoise]
+               continue <- TRUE
+               while(continue) {
+                 sim_temporal <- simulate_rw(tau = tau_temporal, 
+                                             length = 12, 
+                                             order = 1, 
+                                             n_sim = 1)
+                 continue <- 
+                   sim_temporal %>% 
+                   mutate(change = y - lag(y)) %>% 
+                   summarise(max_change = max(abs(change), na.rm = TRUE),
+                             max_net_change = max(abs(y))) %>% 
+                   {.$max_change < 2 * invsqrt(tau_temporal) &&
+                       .$max_net_change < 2 * invsqrt(tau_temporal)} %>% 
+                   !.
+               }
+               sim_temporal %>% 
+                 as_tibble %>% 
+                 select(hydroyear = x,
+                        ranef_hydroyear = y)
+             }),
+           resid_noise = 
+             map2(modelpar_simulation, modelterm_type, function(simobs, type) {
+                 simobs$hyperpar[names(simobs$hyperpar) %>% 
+                                   str_detect(str_c("^Stratum.*", 
+                                                    str_remove(type, "type")))] %>% 
+                 invsqrt %>% 
+                 {tibble(resid = rnorm(12, sd = .))}
+             })
+             )
+sim_obs_nlocs_per_type_tibble <- 
+  sim_obs_nlocs_per_type %>% 
+  select(-modelterm_type, -modelpar_simulation) %>% 
+  unnest(cols = c(temporal_noise, resid_noise))
+```
+
+
+
+
+
+
