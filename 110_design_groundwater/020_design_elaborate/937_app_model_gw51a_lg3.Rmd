@@ -1024,7 +1024,7 @@ rw1sim %>%
   theme_bw()
 ```
 
-  - enkel reeksen weerhouden waarvoor alle stapsgewijze veranderingen én de verandering tussen einde en begin kleiner zijn dan $1.5 \cdot \sigma$.
+  - enkel reeksen weerhouden waarvoor alle stapsgewijze veranderingen én de netto verandering ten opzichte van het begin kleiner zijn dan $2 \cdot \sigma$.
 
 ```{r out.width='70%'}
 rw1sim %>% 
@@ -1032,9 +1032,10 @@ rw1sim %>%
   arrange(replicate, x) %>% 
   mutate(change = y - lag(y), 
          max_change = max(abs(change), na.rm = TRUE),
+         max_net_change = max(abs(y)),
          total_change = abs(last(y))) %>% 
-  filter(max_change < 1.5 * invsqrt(tau_shortterm),
-         total_change < 1.5 * invsqrt(tau_shortterm)) %>% 
+  filter(max_change < 2 * invsqrt(tau_shortterm),
+         max_net_change < 2 * invsqrt(tau_shortterm)) %>% 
   ungroup %>% 
   ggplot(aes(x = x, y = y, group = replicate)) +
   geom_line(alpha = 0.1, size = 3) +
@@ -1049,11 +1050,12 @@ rw1sim %>%
   arrange(replicate, x) %>% 
   mutate(change = y - lag(y), 
          max_change = max(abs(change), na.rm = TRUE),
+         max_net_change = max(abs(y)),
          total_change = abs(last(y))) %>% 
-  filter(max_change < 1.5 * invsqrt(tau_shortterm),
-         total_change < 1.5 * invsqrt(tau_shortterm)) %>% 
+  filter(max_change < 2 * invsqrt(tau_shortterm),
+         max_net_change < 2 * invsqrt(tau_shortterm)) %>% 
   ungroup %>% 
-  mutate(replicate_set = ceiling(replicate / 75),
+  mutate(replicate_set = ceiling(replicate / 25),
          replicate = replicate %% 75,
          replicate = factor(replicate)) %>% 
   ggplot(aes(x = x, y = y, group = replicate, colour = replicate)) +
