@@ -1,0 +1,62 @@
+# Steekproefsimulatie volgens scenario's {#app:simsamples}
+
+## Aanpak
+
+### Basisset van gesimuleerde steekproeven voor scenario's
+
+We simuleren een **basisset** van steekproeven op basis van het model dat specifiek met dit doel werd gefit.
+
+We beogen daarbij een relatief groot aantal steekproeven (bv. 500), van een aanzienlijke grootte (in termen van het aantal locaties en van de frequentie), zodat we daarna uit dezelfde steekproef kunnen putten om ook kleinere gesimuleerde steekproeven te bekomen.
+
+De inputdata daarvoor zien er uit als volgt:
+
+- een reeks hypothetische lijst van locaties (`location`).
+We beschouwen dit voor de simulaties niet spatiaal expliciet;
+- per locatie komt één bepaald type voor (`type`); per type zijn meerdere locaties aanwezig;
+- in zoverre het model andere fixed effecten voorziet, wordt dit per type gespreid overeenkomstig de spreiding in de doelpopulatie;
+- de tijdsstappen waarvoor we een waarde wensen te simuleren in functie van scenario's.
+De tijdsstappen bestrijken een periode van 12 jaar -- we zullen immers kijken naar de trend over 12 jaar.
+
+Voor de toestandsinferentie (design-based spatiotemporeel gemiddelde) hebben we slechts een zesjaarperiode nodig.
+Voor de trendinferentie (richtingscoëfficiënt) benodigen we een twaalfjaarperiode.
+We simuleren daarom in de basisset twaalf jaar, zodat we voor toestandsinferentie de eerste zes jaar daarvan kunnen gebruiken.
+
+Voor de simulatie van een basisset van steekproeven voor scenario's:
+
+- laten we de post-hoc gefitte RW2-trend (lange-termijntrend) weg uit het model.
+Deze wordt in de scenario's immers vervangen door een gekende lineaire trend;
+- gebeurt de simulatie op locatiebasis: voor elke locatie is er een gesimuleerde tijdsreeks.
+Omdat we spatiaal design-based werken (d.w.z. het sampling pattern is random) en enkel temporeel model-based (model is opgehangen aan welbepaalde tijdsstappen), hoeft alleen met temporele autocorrelatie rekening te worden gehouden;
+- wordt per locatie een nieuwe waarde getrokken uit de posterior distributie van de fixed effecten;
+- wordt per locatie één waarde getrokken uit een locatiespecifieke distributie van de random effecten.
+De locatiespecifieke distributie is telkens gebaseerd op een andere trekking uit de posterior distributie van de hyperparameters.
+Het gaat specifiek om de volgende random effecten:
+    - `cluster_id`
+    - `loc_id`
+    - random temporeel effect: we vervangen post-hoc de gefitte RW1-trend uit het model door RW1-simulaties met beperking van de toegelaten sprongen in de tijd (naar analogie van de feitelijk gefitte trend): alle stapsgewijze veranderingen én elke netto verandering t.o.v. het begin moeten kleiner zijn dan $2 \cdot \sigma$.
+    Op die manier vermijden we onrealistisch grote sprongen en zijn ook systematische RW1-trends weinig waarschijnlijk
+    - residueel effect (`resid`): desgevallend is de overeenkomstige hyperparameter stratum-specifiek
+
+### Verhoudingen tussen het aantal locaties per type
+
+Tussen types variëren we enkel in ruimtelijke steekproefgrootte, en niet in de frequentie (temporele steekproefgrootte), zoals voorzien in de ruimtelijke en de temporele design.
+De temporele design is een systematische sampling.
+    
+De _verhouding_ tussen het aantal locaties per type, voor oneindige populaties, leiden we af uit de typespecifieke, _spatiale_ variantiecomponent van de schatter (van een doelparameter) voor oneindige populaties, meer bepaald uit de verhouding hiertussen voor verschillende types.
+Dit kan zowel voor de toestands- als de trendschatter.
+We berekenen deze varianties op basis van één grote gesimuleerde 'steekproef' (uit een oneindige populatie) van `r nlocs_per_type` locaties per type over 12 jaar (pure panel) en zonder artificieel toegevoegde trend.
+
+```{r}
+nlocs_per_type <- 10 # becomes 500
+```
+
+### Aandachtspunt scenario's: ruimtelijke steekproefgrootte
+
+_Elk scenario_ gaat uit van een ruimtelijke steekproefgrootte voor alle types samen, voor oneindige populaties.
+Deze wordt eerst verdeeld over de types volgens voorgaande verhouding, waarna de ruimtelijke steekproefgroottes (per type) meteen naar beneden worden bijgesteld op basis van de ruimtelijke populatiegrootte van elk type (finite population correction).
+De steekproefgrootte van een eindige populatie hangt immers af van zowel de totale populatiegrootte als van de steekproefgrootte van een oneindige populatie (zie paragraaf \@ref(popsize)).
+
+
+### Scenario's
+
+
