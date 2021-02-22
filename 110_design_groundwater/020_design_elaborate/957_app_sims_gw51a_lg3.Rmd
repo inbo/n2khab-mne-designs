@@ -84,9 +84,14 @@ sim_obs_nlocs_per_type <-
                    sim_temporal %>% 
                    mutate(change = y - lag(y)) %>% 
                    summarise(max_change = max(abs(change), na.rm = TRUE),
-                             max_net_change = max(abs(y))) %>% 
-                   {.$max_change < 2 * invsqrt(tau_temporal) &&
-                       .$max_net_change < 2 * invsqrt(tau_temporal)} %>% 
+                             max_net_change = max(abs(y)),
+                             pval_trend = 
+                               lm(y ~ x) %>% 
+                               summary %>% 
+                               {.$coefficients["x", "Pr(>|t|)"]}) %>% 
+                   {.$max_change < 1.5 * invsqrt(tau_temporal) &&
+                       .$max_net_change < 1.5 * invsqrt(tau_temporal) &&
+                       .$pval_trend > 0.2} %>% 
                    !.
                }
                sim_temporal %>% 

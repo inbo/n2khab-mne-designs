@@ -1027,43 +1027,41 @@ rw1sim %>%
   theme_bw()
 ```
 
-  - enkel reeksen weerhouden waarvoor alle stapsgewijze veranderingen én de netto verandering ten opzichte van het begin kleiner zijn dan $2 \cdot \sigma$.
+  - enkel reeksen weerhouden waarvoor alle stapsgewijze veranderingen én de netto verandering ten opzichte van het begin kleiner zijn dan $1.5 \cdot \sigma$, met behoud van de eerdere trend-voorwaarde.
 
 ```{r out.width='70%'}
-rw1sim %>% 
+rw1sim_filtered <- 
+  rw1sim %>% 
   group_by(replicate) %>% 
   arrange(replicate, x) %>% 
   mutate(change = y - lag(y), 
          max_change = max(abs(change), na.rm = TRUE),
          max_net_change = max(abs(y)),
-         total_change = abs(last(y))) %>% 
-  filter(max_change < 2 * invsqrt(tau_shortterm),
-         max_net_change < 2 * invsqrt(tau_shortterm)) %>% 
-  ungroup %>% 
+         total_change = abs(last(y)),
+         pval_trend = 
+           lm(y ~ x) %>% 
+           summary %>% 
+           {.$coefficients["x", "Pr(>|t|)"]}) %>% 
+  filter(max_change < 1.5 * invsqrt(tau_shortterm),
+         max_net_change < 1.5 * invsqrt(tau_shortterm),
+         pval_trend > 0.2) %>% 
+  ungroup
+rw1sim_filtered %>% 
   ggplot(aes(x = x, y = y, group = replicate)) +
   geom_line(alpha = 0.1, size = 3) +
-  ylim(-2, 2) +
+  ylim(-1, 1) +
   theme_bw()
 ```
 De bovenstaande beter van elkaar onderscheiden:
 
 ```{r fig.width=6, fig.height=6, out.width='70%'}
-rw1sim %>% 
-  group_by(replicate) %>% 
-  arrange(replicate, x) %>% 
-  mutate(change = y - lag(y), 
-         max_change = max(abs(change), na.rm = TRUE),
-         max_net_change = max(abs(y)),
-         total_change = abs(last(y))) %>% 
-  filter(max_change < 2 * invsqrt(tau_shortterm),
-         max_net_change < 2 * invsqrt(tau_shortterm)) %>% 
-  ungroup %>% 
-  mutate(replicate_set = ceiling(replicate / 25),
+rw1sim_filtered %>% 
+  mutate(replicate_set = ceiling(replicate / 75),
          replicate = replicate %% 75,
          replicate = factor(replicate)) %>% 
   ggplot(aes(x = x, y = y, group = replicate, colour = replicate)) +
   geom_line() +
-  ylim(-2, 2) +
+  ylim(-1, 1) +
   theme(legend.position = "none") +
   facet_wrap(~ replicate_set, labeller = "label_both")
 ```
