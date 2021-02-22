@@ -39,15 +39,26 @@ modelterms_type <-
 We simuleren een grote steekproef om de spatiale variantiecomponent per type te bepalen.
 
 ```{r}
-latent_names <- M1$misc$configs$contents$tag
 nsim <- nlocs_per_type * nrow(modelterms_type)
+linear_trend <- 0
+design_matrix <- 
+  tibble(location = str_c("simloc_", str_pad(1:nsim, 5, pad = "0")),
+         type = rep(modelterms_type$type, each = nsim / nrow(modelterms_type)),
+         modelterm_type = rep(modelterms_type$modelterm, each = nsim / nrow(modelterms_type))) %>% 
+  tidyr::expand(nesting(location, type, modelterm_type),
+                nesting(hydroyear = 1:12,
+                        temporal_increase = hydroyear * linear_trend))
+```
+
+
+```{r}
+latent_names <- M1$misc$configs$contents$tag
 set.seed(123456)
 
 # each simulation is for one location (having one type)
 sim_obs_nlocs_per_type <- 
-    tibble(location = str_c("simloc_", str_pad(1:nsim, 5, pad = "0")),
-           type = rep(modelterms_type$type, each = nsim / nrow(modelterms_type)),
-           modelterm_type = rep(modelterms_type$modelterm, each = nsim / nrow(modelterms_type))) %>% 
+    design_matrix %>% 
+    nest(temporal_design = c(hydroyear, temporal_increase)) %>% 
     mutate(modelpar_simulation = map(modelterm_type, 
                     # the below code is preferred over 'n=1000' because otherwise
                     # the sampled hyperparameter values remain constant among posterior samples
@@ -80,8 +91,7 @@ sim_obs_nlocs_per_type <-
                }
                sim_temporal %>% 
                  as_tibble %>% 
-                 select(hydroyear = x,
-                        ranef_hydroyear = y)
+                 select(ranef_hydroyear = y)
              }),
            resid_noise = 
              map2(modelpar_simulation, modelterm_type, function(simobs, type) {
