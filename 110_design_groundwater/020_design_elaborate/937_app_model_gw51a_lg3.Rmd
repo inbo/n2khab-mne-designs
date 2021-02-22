@@ -3,6 +3,8 @@
 ```{r}
 dataset <- gw51a
 respvar <- "lg3_std"
+stratumvar <- "type" # to support heterogeneity in residuals
+ts_stratumvar <- "type" # for interaction with time in RW2 trend
 ```
 
 
@@ -34,8 +36,8 @@ Distributie van het aantal beschikbare jaren in locatiespecifieke tijdsreeksen, 
 ```{r}
 ts_summaries <- 
   dataset %>% 
-  count(type, loc_code, name = "nyears") %>% 
-  group_by(type) %>% 
+  count(.data[[ts_stratumvar]], loc_code, name = "nyears") %>%
+  group_by(.data[[ts_stratumvar]]) %>%
   nest() %>% 
   mutate(nrlocs = map(data, nrow),
          summary = map(data, 
@@ -59,32 +61,32 @@ We laten alleen strata met voldoende locaties en (mediaan) aantal hydrologische 
 strata_ts <- 
   ts_summaries %>% 
   filter(median >= 3, nrlocs > 15) %>% 
-  pull(type)
+  pull(.data[[ts_stratumvar]])
 ```
 
 
 ```{r}
-strata <- dataset$type %>% unique %>% sort
+strata <- dataset[[stratumvar]] %>% unique %>% sort
 stratasplit <- 
   dataset %>% 
   cbind(matrix(data = NA_real_,
                nrow = nrow(.),
                ncol = length(strata),
-               dimnames = list(NULL, str_c("type_", strata)))) %>% 
+               dimnames = list(NULL, str_c("stratum_", strata)))) %>% 
   as_tibble
 for (stratum in strata) {
-  stratasplit[[str_c("type_", stratum)]] <- 
-    ifelse(stratasplit$type == stratum, 
+  stratasplit[[str_c("stratum_", stratum)]] <- 
+    ifelse(stratasplit[[stratumvar]] == stratum, 
            stratasplit[[respvar]],
            NA_real_)
 }
 resp_matrix <- 
   stratasplit %>% 
-  select(contains("type_")) %>% 
+  select(contains("stratum_")) %>% 
   as.matrix
 covariates <- 
   stratasplit %>% 
-  select(!contains("type_"))
+  select(!contains("stratum_"))
 ```
 
 ### Model
@@ -97,9 +99,9 @@ rw1_pcprec <- list(theta = list(
                      prior = "pc.prec",
                      param = c(1, 0.01)))
 rw2_sub <-
-    str_c("f(hydroyear_std_type_",
+    str_c("f(hydroyear_std_stratum_",
           strata_ts,
-          ", type_", 
+          ", stratum_", 
           strata_ts,
           ", model = 'rw2', hyper = rw2_pcprec)", collapse = " + ") %>% 
     str2lang
@@ -118,12 +120,12 @@ modformula <-
              list(stratumsmoothers = rw2_sub))
 moddata <-
   splice(Y = resp_matrix,
-         map(set_names(strata_ts, str_c("hydroyear_std_type_", strata_ts)), 
+         map(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)), 
              ~covariates$hydroyear_std),
          hydroyear_std_short = covariates$hydroyear_std,
          type = covariates$type,
-         map(set_names(strata_ts, str_c("type_", strata_ts)), 
-             ~as.numeric(covariates$type == .)),
+         map(set_names(strata_ts, str_c("stratum_", strata_ts)), 
+             ~as.numeric(covariates[[ts_stratumvar]] == .)),
          loc_code = covariates$loc_code,
          cluster_id = covariates$cluster_id)
 ```
@@ -223,7 +225,7 @@ Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- o
 
 ```{r out.width='70%'}
 M1$summary.random[str_detect(names(M1$summary.random), 
-                              "hydroyear_std_type_")] %>% 
+                              "hydroyear_std_stratum_")] %>% 
   map_dfr(~select(., ID, mean, matches("025|975")),
           .id = "stratum") %>% 
   ggplot(aes(x = ID)) +
@@ -296,7 +298,7 @@ M1_diagn <-
   dataset %>% 
   mutate(fitted = M1$summary.fitted.values$mean,
          resid = fitted - .data[[respvar]],
-         sd_res = sd_res_glob[type],
+         sd_res = sd_res_glob[.data[[stratumvar]]],
          resid_std = resid / sd_res,
          cpo = M1$cpo$cpo,
          cpo_failed = M1$cpo$failure >= 0.2
@@ -899,10 +901,10 @@ evaluation <-
   as_tibble(.name_repair = "minimal") %>% 
   magrittr::set_colnames(str_c("sample_", 1:nsim)) %>% 
   mutate(obs = 1:nrobs) %>% 
-  # adding type and observed responses to the sampled latent values:
-  bind_cols(select(dataset, type, .data[[respvar]])) %>% 
-  relocate(obs, type, .data[[respvar]]) %>% 
-  pivot_longer(cols = c(-type, -obs, -.data[[respvar]]),
+  # adding stratumvariable, type and observed responses to the sampled latent values:
+  bind_cols(select(dataset, .data[[stratumvar]], type, .data[[respvar]])) %>% 
+  relocate(obs, .data[[stratumvar]], type, .data[[respvar]]) %>% 
+  pivot_longer(cols = c(-.data[[stratumvar]], -type, -obs, -.data[[respvar]]),
                names_to = "sample",
                values_to = "latent_sim") %>% 
   # joining the sampled values of latent with the sampled residual precision (stratum-specific):
@@ -910,13 +912,13 @@ evaluation <-
               do.call(cbind, .) %>% 
               as_tibble(.name_repair = "minimal") %>% 
               magrittr::set_colnames(str_c("sample_", 1:nsim)) %>% 
-              mutate(type = strata) %>% 
-              relocate(type) %>% 
-              pivot_longer(cols = -type,
+              mutate(!!stratumvar := strata) %>% 
+              relocate(.data[[stratumvar]]) %>% 
+              pivot_longer(cols = -.data[[stratumvar]],
                names_to = "sample",
                values_to = "precision_sim") %>% 
               mutate(sd_sim = 1 / sqrt(precision_sim), .keep = "unused"),
-            by = c("type", "sample")) %>% 
+            by = c(stratumvar, "sample")) %>%
   # simulating response values (nsim per observation) by sampling from a normal distribution (which is different for each row); actually it's unneeded here as we will use the p-values and corresponding quantile that we determine for each normal distribution:
   mutate(response_sim = rnorm(mean = latent_sim, sd = sd_sim, n = nsim * nrobs),
          pval = pnorm(q = .data[[respvar]], mean = latent_sim, sd = sd_sim),
