@@ -42,7 +42,7 @@ We simuleren een grote steekproef om de spatiale variantiecomponent per type te 
 nsim <- nlocs_per_type * nrow(modelterms_type)
 linear_trend <- 0
 design_matrix <- 
-  tibble(location = str_c("simloc_", str_pad(1:nsim, 5, pad = "0")),
+  tibble(location = str_c("simloc_", str_pad(1:nsim, 5, pad = "0")) %>% as.factor,
          type = rep(modelterms_type$type, each = nsim / nrow(modelterms_type)),
          modelterm_type = rep(modelterms_type$modelterm, each = nsim / nrow(modelterms_type))) %>% 
   tidyr::expand(nesting(location, type, modelterm_type),
@@ -71,31 +71,31 @@ sim_obs_nlocs_per_type <-
                                ~rnorm(1, sd = invsqrt(.$hyperpar["Precision for loc_code"]))),
            ranef_clus = map_dbl(modelpar_simulation, 
                                ~rnorm(1, sd = invsqrt(.$hyperpar["Precision for cluster_id"]))),
-           temporal_noise = 
+           temporal_noise = # sadly takes much computing time
              map(modelpar_simulation, function(simobs) {
                tau_temporal <- simobs$hyperpar[modelcomponent_tempnoise]
                continue <- TRUE
                while(continue) {
-                 sim_temporal <- simulate_rw(tau = tau_temporal, 
-                                             length = 12, 
-                                             order = 1, 
+                 sim_temporal <- simulate_rw(tau = tau_temporal,
+                                             length = 12,
+                                             order = 1,
                                              n_sim = 1)
-                 continue <- 
-                   sim_temporal %>% 
-                   mutate(change = y - lag(y)) %>% 
+                 continue <-
+                   sim_temporal %>%
+                   mutate(change = y - lag(y)) %>%
                    summarise(max_change = max(abs(change), na.rm = TRUE),
                              max_net_change = max(abs(y)),
-                             pval_trend = 
-                               lm(y ~ x) %>% 
-                               summary %>% 
-                               {.$coefficients["x", "Pr(>|t|)"]}) %>% 
+                             pval_trend =
+                               lm(y ~ x) %>%
+                               summary %>%
+                               {.$coefficients["x", "Pr(>|t|)"]}) %>%
                    {.$max_change < 1.5 * invsqrt(tau_temporal) &&
                        .$max_net_change < 1.5 * invsqrt(tau_temporal) &&
-                       .$pval_trend > 0.2} %>% 
+                       .$pval_trend > 0.2} %>%
                    !.
                }
-               sim_temporal %>% 
-                 as_tibble %>% 
+               sim_temporal %>%
+                 as_tibble %>%
                  select(ranef_hydroyear = y)
              }),
            resid_noise = 
