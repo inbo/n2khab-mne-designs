@@ -38,7 +38,7 @@ modelterms_type <-
 
 We simuleren een grote steekproef om de spatiale variantiecomponent per type te bepalen.
 
-```{r}
+```{r eval=params$simulate_typevariance}
 nsim <- nlocs_per_type * nrow(modelterms_type)
 linear_trend <- 0
 design_matrix <- 
@@ -51,7 +51,7 @@ design_matrix <-
 ```
 
 
-```{r results="hide"}
+```{r results="hide", eval=params$simulate_typevariance}
 # latent_names <- M1$misc$configs$contents$tag
 # each simulation is for one location (having one type)
 nr_nodes <- min(10, nrow(modelterms_type))
@@ -147,7 +147,19 @@ sim_obs_nlocs_per_type <-
   rowwise %>% 
   mutate(response = sum(fixef_type, ranef_loc, ranef_clus, ranef_hydroyear, resid),
          .keep = "unused") %>% 
-  ungroup
+  ungroup %>% 
+  arrange(location, type, hydroyear)
+```
+
+```{r}
+simsample00_root <- file.path(datapath, "20_intermediate1")
+if (params$simulate_typevariance) {
+  sim_obs_nlocs_per_type %>% 
+    write_vc("00_large_simsample_for_typevariance_estimation", simsample00_root)
+} else {
+  sim_obs_nlocs_per_type <- 
+    read_vc("00_large_simsample_for_typevariance_estimation", simsample00_root)
+}
 ```
 
 
