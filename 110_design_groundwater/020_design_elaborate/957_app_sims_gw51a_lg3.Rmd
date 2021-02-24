@@ -51,22 +51,54 @@ design_matrix <-
 ```
 
 
-```{r}
-latent_names <- M1$misc$configs$contents$tag
-set.seed(123456)
-
+```{r results="hide"}
+# latent_names <- M1$misc$configs$contents$tag
 # each simulation is for one location (having one type)
-sim_obs_nlocs_per_type <- 
-    design_matrix %>% 
-    nest(temporal_design = c(hydroyear, temporal_increase)) %>% 
-    mutate(modelpar_simulation = map(modelterm_type, 
+nr_nodes <- min(10, nrow(modelterms_type))
+set.seed(123456)
+system.time({
+clus <- parallel::makeCluster(nr_nodes)
+parallel::clusterApply(clus, 
+                       as.integer(runif(nr_nodes) * 1e9), 
+                       set.seed)
+modelpar_simulation_tibble <- 
+  parallel::clusterMap(clus,
+                       function(type, modelterm, nlocs, seed, model) {
+                         tibble::tibble(
+                           type = type,
+                           modelpar_simulation=
+                             purrr::map(1:nlocs,
                     # the below code is preferred over 'n=1000' because otherwise
                     # the sampled hyperparameter values remain constant among posterior samples
-                                     ~(inla.posterior.sample(n = 1, 
-                                                             result = M1, 
-                                                             selection = set_names(list(0), .)
-                                                             )[[1]])),
-           fixef_type = map_dbl(modelpar_simulation, ~.$latent[1, 1]),
+                    # and also with seed it repeats random numbers that it already used.
+                                ~INLA::inla.posterior.sample(n = 1, 
+                                                             result = model, 
+                                                             selection =
+                                                               magrittr::set_names(list(0),
+                                                                                   modelterm),
+                                                             seed = seed
+                                      )[[1]]))
+                       },
+                       type = modelterms_type$type,
+                       modelterm = modelterms_type$modelterm,
+                       nlocs = nlocs_per_type,
+                       seed = as.integer(runif(nlocs_per_type) * 5e8),
+                       MoreArgs = list(model = M1))
+parallel::stopCluster(clus)
+})
+modelpar_simulation_tibble <- 
+  bind_rows(modelpar_simulation_tibble) %>% 
+  nest(modelpar_simulation = modelpar_simulation)
+set.seed(123456)
+system.time(
+sim_nlocs_per_type <- 
+    design_matrix %>% 
+    nest(temporal_design = c(hydroyear, temporal_increase)) %>% 
+    nest(location = location) %>% 
+    inner_join(modelpar_simulation_tibble, by = "type") %>% 
+    unnest(c(location, modelpar_simulation)) %>% 
+    relocate(location) %>% 
+    mutate(fixef_type = map_dbl(modelpar_simulation, ~.$latent[1, 1]),
            ranef_loc = map_dbl(modelpar_simulation, 
                                ~rnorm(1, sd = invsqrt(.$hyperpar["Precision for loc_code"]))),
            ranef_clus = map_dbl(modelpar_simulation, 
@@ -107,8 +139,9 @@ sim_obs_nlocs_per_type <-
                  {tibble(resid = rnorm(12, sd = .))}
              })
              )
-sim_obs_nlocs_per_type_tibble <- 
-  sim_obs_nlocs_per_type %>% 
+)
+sim_obs_nlocs_per_type <- 
+  sim_nlocs_per_type %>% 
   select(-modelterm_type, -modelpar_simulation) %>% 
   unnest(cols = c(temporal_design, temporal_noise, resid_noise)) %>% 
   rowwise %>% 
