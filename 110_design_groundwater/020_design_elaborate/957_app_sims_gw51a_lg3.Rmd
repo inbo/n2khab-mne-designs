@@ -49,121 +49,31 @@ linear_trend <- 0
 design_matrix <- 
   tibble(location = str_c("simloc_", str_pad(1:nsim, 5, pad = "0")) %>% as.factor,
          type = rep(modelterms_type$type, each = nsim / nrow(modelterms_type)),
-         modelterm_type = rep(modelterms_type$modelterm, each = nsim / nrow(modelterms_type))) %>% 
+         modelterm_type = rep(modelterms_type$modelterm, 
+                              each = nsim / nrow(modelterms_type))) %>% 
   tidyr::expand(nesting(location, type, modelterm_type),
-                nesting(hydroyear = 1:12,
-                        temporal_increase = hydroyear * linear_trend))
+                nesting(time = 1:12,
+                        temporal_increase = time * linear_trend))
 ```
 
 
 ```{r results="hide", eval=params$simulate_typevariance}
 # latent_names <- M1$misc$configs$contents$tag
-# each simulation is for one location (having one type)
-nr_nodes <- min(10, nrow(modelterms_type))
-set.seed(123456)
-system.time({
-clus <- parallel::makeCluster(nr_nodes)
-parallel::clusterApply(clus, 
-                       as.integer(runif(nr_nodes) * 1e9), 
-                       set.seed)
-modelpar_simulation_tibble <- 
-  parallel::clusterMap(clus,
-                       function(type, modelterm, nlocs, seed, model) {
-                         tibble::tibble(
-                           type = type,
-                           modelpar_simulation=
-                             purrr::map(1:nlocs,
-                    # the below code is preferred over 'n=1000' because otherwise
-                    # the sampled hyperparameter values remain constant among posterior samples
-                    # and also with seed it repeats random numbers that it already used.
-                                ~INLA::inla.posterior.sample(n = 1, 
-                                                             result = model, 
-                                                             selection =
-                                                               magrittr::set_names(list(0),
-                                                                                   modelterm),
-                                                             seed = seed
-                                      )[[1]]))
-                       },
-                       type = modelterms_type$type,
-                       modelterm = modelterms_type$modelterm,
-                       nlocs = nlocs_per_type,
-                       seed = as.integer(runif(nlocs_per_type) * 5e8),
-                       MoreArgs = list(model = M1))
-parallel::stopCluster(clus)
-})
-modelpar_simulation_tibble <- 
-  bind_rows(modelpar_simulation_tibble) %>% 
-  nest(modelpar_simulation = modelpar_simulation)
-set.seed(123456)
-system.time(
-sim_nlocs_per_type <- 
-    design_matrix %>% 
-    nest(temporal_design = c(hydroyear, temporal_increase)) %>% 
-    nest(location = location) %>% 
-    inner_join(modelpar_simulation_tibble, by = "type") %>% 
-    unnest(c(location, modelpar_simulation)) %>% 
-    relocate(location) %>% 
-    mutate(fixef_type = map_dbl(modelpar_simulation, ~.$latent[1, 1]),
-           ranef_loc = map_dbl(modelpar_simulation, 
-                               ~rnorm(1, sd = invsqrt(.$hyperpar["Precision for loc_code"]))),
-           ranef_clus = map_dbl(modelpar_simulation, 
-                               ~rnorm(1, sd = invsqrt(.$hyperpar["Precision for cluster_id"]))),
-           temporal_noise = # sadly takes much computing time
-             map(modelpar_simulation, function(simobs) {
-               tau_temporal <- simobs$hyperpar[modelcomponent_tempnoise]
-               continue <- TRUE
-               while(continue) {
-                 sim_temporal <- simulate_rw(tau = tau_temporal,
-                                             length = 12,
-                                             order = 1,
-                                             n_sim = 1)
-                 continue <-
-                   sim_temporal %>%
-                   mutate(change = y - lag(y)) %>%
-                   summarise(max_change = max(abs(change), na.rm = TRUE),
-                             max_net_change = max(abs(y)),
-                             pval_trend =
-                               lm(y ~ x) %>%
-                               summary %>%
-                               {.$coefficients["x", "Pr(>|t|)"]}) %>%
-                   {.$max_change < 1.5 * invsqrt(tau_temporal) &&
-                       .$max_net_change < 1.5 * invsqrt(tau_temporal) &&
-                       .$pval_trend > 0.2} %>%
-                   !.
-               }
-               sim_temporal %>%
-                 as_tibble %>%
-                 mutate(y = y - mean(y)) %>% 
-                 select(ranef_hydroyear = y)
-             }),
-           resid_noise = 
-             map2(modelpar_simulation, modelterm_type, function(simobs, type) {
-                 simobs$hyperpar[names(simobs$hyperpar) %>% 
-                                   str_detect(str_c("^Stratum.*", 
-                                                    str_remove(type, "type")))] %>% 
-                 invsqrt %>% 
-                 {tibble(resid = rnorm(12, sd = .))}
-             })
-             )
-)
-sim_obs_nlocs_per_type <- 
-  sim_nlocs_per_type %>% 
-  select(-modelterm_type, -modelpar_simulation) %>% 
-  unnest(cols = c(temporal_design, temporal_noise, resid_noise)) %>% 
-  rowwise %>% 
-  mutate(response = sum(fixef_type, ranef_loc, ranef_clus, ranef_hydroyear, resid),
-         .keep = "unused") %>% 
-  ungroup %>% 
-  arrange(location, type, hydroyear)
+gw51a_large_simsample <- 
+  simulate_modelterms(model = M1,
+                      design_matrix = design_matrix,
+                      nr_nodes = 7,
+                      simulate_response = TRUE) %>% 
+  .$response_sim
 ```
 
 ```{r include=FALSE}
 rds_filepath <- file.path(datapath, "binary/simobs",
                           str_c("gw51a_large_simsample", respvar, ".rds"))
 if (params$simulate_typevariance) {
-    saveRDS(sim_obs_nlocs_per_type, rds_filepath)
+    saveRDS(gw51a_large_simsample, rds_filepath)
 } else {
-  sim_obs_nlocs_per_type <- readRDS(rds_filepath)
+  gw51a_large_simsample <- readRDS(rds_filepath)
 }
 ```
 

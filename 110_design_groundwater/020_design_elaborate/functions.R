@@ -120,3 +120,148 @@ enclose <- function(x, y) paste0(y, x, y)
 invsqrt <- function(x) 1 / sqrt(x)
 
 
+################################################################################
+
+# Functions used to aid reproducible scenario simulation
+
+simulate_modelterms <-
+function(model,
+         design_matrix,
+         simulate_response = FALSE,
+         nr_nodes = 4,
+         hyperparname_loc = "Precision for loc_code",
+         hyperparname_cluster = "Precision for cluster_id",
+         hyperparname_tempnoise = "Precision for hydroyear_std_short",
+         seed_main = 123456,
+         seed_node_base = 1e9,
+         seed_inla_base = 5e8) { # has at least columns location, type, modelterm_type, time, temporal_increase
+
+    latent_extra <-
+        colnames(design_matrix)[!str_detect(colnames(design_matrix),
+                                            "location|type|modelterm_type|time|temporal_increase")] %>%
+        {if (length(.) > 0) paste(collapse = "|") else .} %>%
+        {model$names.fixed[str_detect(model$names.fixed, .)]}
+    modelterms_type <-
+        design_matrix %>%
+        distinct(type, modelterm_type) %>%
+        rename(modelterm = modelterm_type)
+    nr_nodes <- min(nr_nodes, nrow(modelterms_type))
+    nlocs_per_type <-
+        design_matrix %>%
+        distinct(location, type) %>%
+        count(type) %>%
+        pull(n)
+    ntimesteps <-
+        design_matrix %>%
+        distinct(time) %>%
+        nrow
+    set.seed(seed_main)
+    clus <- parallel::makeCluster(nr_nodes)
+    parallel::clusterApply(clus,
+                           as.integer(runif(nr_nodes) * seed_node_base),
+                           set.seed)
+    # simulate selected modelparameters, i.e. at location level (1 location has 1 type)
+    modelpars_sim <-
+        parallel::clusterMap(
+            clus,
+            function(type, modelterm, nlocs, seed, model, latent_extra) {
+                tibble::tibble(
+                    type = type,
+                    modelpar_simulation=
+                        purrr::map(1:nlocs,
+               # the below code is preferred over 'n=1000' because otherwise
+               # the sampled hyperparameter values remain constant among posterior samples
+               # and also with seed it repeats random numbers that it already used.
+                                   ~INLA::inla.posterior.sample(
+                                       n = 1,
+                                       result = model,
+                                       selection =
+                                           magrittr::set_names(list(0),
+                                                               c(modelterm, latent_extra)),
+                                       seed = seed
+                                   )[[1]]))
+            },
+            type = modelterms_type$type,
+            modelterm = modelterms_type$modelterm,
+            nlocs = nlocs_per_type,
+            seed = as.integer(runif(nlocs_per_type) * seed_inla_base),
+            MoreArgs = list(model = M1, latent_extra = latent_extra))
+    parallel::stopCluster(clus)
+    modelpars_sim <-
+        bind_rows(modelpars_sim) %>%
+        nest(modelpar_simulation = modelpar_simulation)
+    # Simulate all modelterms (per location x timestep),
+    # excluding long-term trend and with constraints on temporal noise.
+    # This provides a baseline scenario (no long-term trend).
+    set.seed(seed_main)
+    modelterms_sim <-
+        design_matrix %>%
+        nest(temporal_design = c(time, temporal_increase)) %>%
+        nest(location = location) %>%
+        inner_join(modelpars_sim, by = "type") %>%
+        unnest(c(location, modelpar_simulation)) %>%
+        relocate(location) %>%
+        mutate(fixef_type = map_dbl(modelpar_simulation, ~.$latent[1, 1]),
+               ranef_loc = map_dbl(modelpar_simulation,
+                                   ~rnorm(1, sd = invsqrt(.$hyperpar["Precision for loc_code"]))),
+               ranef_clus = map_dbl(modelpar_simulation,
+                                    ~rnorm(1, sd = invsqrt(.$hyperpar["Precision for cluster_id"]))),
+               temporal_noise = # sadly takes much computing time
+                   map(modelpar_simulation, function(simobs) {
+                       tau_temporal <- simobs$hyperpar[modelcomponent_tempnoise]
+                       continue <- TRUE
+                       while(continue) {
+                           sim_temporal <- simulate_rw(tau = tau_temporal,
+                                                       length = ntimesteps,
+                                                       order = 1,
+                                                       n_sim = 1)
+                           continue <-
+                               sim_temporal %>%
+                               mutate(change = y - lag(y)) %>%
+                               summarise(max_change = max(abs(change), na.rm = TRUE),
+                                         max_net_change = max(abs(y)),
+                                         pval_trend =
+                                             lm(y ~ x) %>%
+                                             summary %>%
+                                             {.$coefficients["x", "Pr(>|t|)"]}) %>%
+                               {.$max_change < 1.5 * invsqrt(tau_temporal) &&
+                                       .$max_net_change < 1.5 * invsqrt(tau_temporal) &&
+                                       .$pval_trend > 0.2} %>%
+                               !.
+                       }
+                       sim_temporal %>%
+                           as_tibble %>%
+                           mutate(y = y - mean(y)) %>%
+                           select(ranef_time = y)
+                   }),
+               resid_noise =
+                   map2(modelpar_simulation, modelterm_type, function(simobs, type) {
+                       simobs$hyperpar[names(simobs$hyperpar) %>%
+                                           str_detect(str_c("^Stratum.*",
+                                                            str_remove(type, "type")))] %>%
+                           invsqrt %>%
+                           {tibble(resid = rnorm(ntimesteps, sd = .))}
+                   })
+        )
+    # optionally: unnest, calculate response values - including temporal increase -
+    # and drop simulated modelterms
+    if (simulate_response) {
+        response_sim <-
+            modelterms_sim %>%
+            select(-modelterm_type, -modelpar_simulation) %>%
+            unnest(cols = c(temporal_design, temporal_noise, resid_noise)) %>%
+            rowwise %>%
+            mutate(response = sum(fixef_type,
+                                  ranef_loc,
+                                  ranef_clus,
+                                  temporal_increase,
+                                  ranef_time,
+                                  resid),
+                   .keep = "unused") %>%
+            ungroup %>%
+            arrange(location, type, time)
+        return(list(modelterms_sim = modelterms_sim,
+                    response_sim = response_sim))
+    } else
+        return(modelterms_sim)
+}
