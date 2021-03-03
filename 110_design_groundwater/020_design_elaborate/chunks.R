@@ -24,6 +24,17 @@ gw51a <-
 # Data modifications for modelling purposes:
 ##################################################################
 
+## ---- envdata-use-typeclusters-as-types-and-be-selective
+
+gw51t <-
+    gw51t %>%
+    inner_join(read_vc("typeclusters_gw51t",
+                       root = "data/10_input"),
+               by = "type") %>%
+    mutate(type = type_model) %>%
+    filter(use_data_in_model) %>%
+    select(-type_model, -use_data_in_model)
+
 ## ---- envdata-dropfactorlevels
 
 gw51t <-

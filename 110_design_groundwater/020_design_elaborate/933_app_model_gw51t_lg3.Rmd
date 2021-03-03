@@ -13,7 +13,7 @@ table(dataset$type) %>% sort(decreasing = TRUE)
 ```
 
 Omwille van het grotere aantal types, wordt de dataset in subdatasets gesplitst, waarvoor telkens een apart model wordt gefit.
-Gezien de computationele problemen om zeldzamere types te behouden, laten we tevens de types met minder observaties weg (we kunnen ze ook lumpen met een ander type), voor die subdatasets waar we de variabele `type` hanteren in de modellering van de residuele heterogeniteit of voor interacties.
+Gezien de computationele problemen om zeldzamere types te behouden, laten we tevens de types met minder observaties weg - of indien verantwoord clusteren we ze met een ander type - voor die subdatasets waar we de variabele `type` hanteren in de modellering van de residuele heterogeniteit of voor interacties.
 
 ```{r}
 dataset_nested <- 
@@ -21,26 +21,21 @@ dataset_nested <-
   filter(scheme == "GW_05.1_terr") %>% 
   select(type, typegroup) %>% 
   mutate(subdataset_name = droplevels(typegroup),
-         subdataset_label = str_replace_all(subdataset_name, "_|\\.", "-")) %>% 
-  select(-typegroup) %>% 
+         subdataset_label = str_replace_all(subdataset_name, "_|\\.", "-")) %>%
+  inner_join(read_vc("typeclusters_gw51t",
+                     root = "data/10_input") %>% 
+               select(type, type_model) %>% 
+               as_tibble, .,
+             by = "type") %>% 
+  select(-type, -typegroup) %>% 
+  distinct %>% 
+  rename(type = type_model) %>% 
   inner_join(dataset, ., by = "type") %>% 
   group_by(subdataset_name, subdataset_label) %>% 
   nest() %>% 
   ungroup %>% 
   arrange(subdataset_name) %>% 
-  mutate(data = ifelse(subdataset_name == "GW_05.1_terr_group4",
-                       map(data, function(dataset) {
-                         dataset %>% 
-                           filter(type %in% 
-                                    (dataset %>% 
-                                       count(type) %>% 
-                                       arrange(desc(n)) %>% 
-                                       filter(n >= 200) %>% 
-                                       pull(type))
-                           )
-                       }),
-                       data),
-         data = map(data, ~mutate(., type = droplevels(type))))
+  mutate(data = map(data, ~mutate(., type = droplevels(type))))
 ```
 
 Aantal types en rijen per subdataset:
