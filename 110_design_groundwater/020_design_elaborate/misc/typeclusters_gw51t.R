@@ -4,52 +4,38 @@ library(tidyr)
 library(stringr)
 library(n2khab)
 gsheet <- as_sheets_id("1XTWmGThdZQcdIXOeQNFy6yAsultkVXZNjh0SfwxVPUg")
-# read_scheme_types(lang = "nl", extended = TRUE) %>%
-#     select(scheme,
-#            type, typegroup, typegroup_shortname,
-#            type_shortname, hydr_class, hydr_class_shortname,
-#            groundw_dep, groundw_dep_shortname) %>%
-#     filter(scheme == "GW_05.1_terr") %>%
-#     left_join(dataset %>%
-#                   count(type, name = "nrobs_xg3"),
-#               by = "type") %>%
-#     mutate(nrobs_xg3 = ifelse(is.na(nrobs_xg3), 0, nrobs_xg3),
-#            typegroup_small = str_c(typegroup, "_00")) %>%
-#     relocate(nrobs_xg3, typegroup_small, .after = type) %>%
-#     arrange(typegroup, desc(hydr_class), desc(groundw_dep), type) %>%
-#     write_sheet(ss = gsheet, sheet = 1)
 
 result <- read_sheet(gsheet)
 result
 
-# first screenings
+glimpse(result)
 
-result %>%
-    count(typegroup_small) %>% as.data.frame()
+# defining names of typeclusters ('type_model') and writing to vc-file
+
 result %>%
     group_by(typegroup_small) %>%
-    summarise(ntypes = n(),
-              nrobs = sum(nrobs_xg3)) %>% as.data.frame()
-result %>%
-    group_by(typegroup_small) %>%
-    arrange(typegroup_small, desc(nrobs_xg3)) %>%
-    mutate(nrobs = sum(nrobs_xg3),
-           type_num = str_c("type", row_number()),
-           type_obs = str_c(type, " (", nrobs_xg3, ")")) %>%
-    pivot_wider(id_cols = c(typegroup_small, nrobs) ,
-                names_from = type_num,
-                values_from = type_obs,
-                values_fill = "") %>% View()
+    select(typegroup_small, type, nrobs_xg3, use_data_in_model_def) %>%
+    arrange(typegroup_small) %>%
+    mutate(type_model = ifelse(nrobs_xg3 == max(nrobs_xg3),
+                               type,
+                               NA_character_) %>% {first(.[!is.na(.)])},
+           ntypes_model = sum(use_data_in_model_def, na.rm = TRUE)) %>%
+    ungroup %>%
+    mutate(type = factor(type, levels = levels(read_types()$type)),
+           type_model = factor(type_model, levels = levels(type)) %>% droplevels,
+           type_model = plyr::mapvalues(type_model, type_model,
+                                        ifelse(ntypes_model > 1,
+                                               str_c(type_model, "_clus"),
+                                               as.character(type_model)),
+                                        warn_missing = FALSE),
+           use_data_in_model = use_data_in_model_def == 1) %>%
+    select(type,
+           type_model,
+           use_data_in_model) %>%
+    git2rdata::write_vc("typeclusters_gw51t",
+                        root = "data/10_input",
+                        sorting = "type",
+                        optimize = FALSE)
 
-result %>%
-    mutate(small = str_match(typegroup_small, "_(\\d+)$")[,2]) %>%
-    select(Dries, small) %>%
-    mutate(test = Dries == small) %>%
-    pull(test) %>% all
 
-result %>%
-    mutate(typegroup_test = str_match(typegroup_small, "^(.+)_\\d+$")[,2]) %>%
-    transmute(test = typegroup == typegroup_test) %>%
-    pull(test) %>% all
 
-all(is.na(result$use_data_in_model) == (result$nrobs_xg3 == 0))
