@@ -4,7 +4,7 @@
 dataset <- gw51a
 respvar <- "lg3_std"
 stratumvar <- "type" # to support heterogeneity in residuals
-ts_stratumvar <- "type" # for interaction with time in RW2 trend
+ts_stratumvar <- "type" # for interaction with time in long-term trend
 ```
 
 
@@ -61,7 +61,33 @@ We laten alleen strata met voldoende locaties en (mediaan) aantal hydrologische 
 strata_ts <- 
   ts_summaries %>% 
   filter(median >= 3, nrlocs > 15) %>% 
-  pull(.data[[ts_stratumvar]])
+  pull(.data[[ts_stratumvar]]) %>% 
+  as.character
+# the stratum_ts variable is only needed in model formulas where it is used - 
+# up to now that is the case when fitting stratum-specific polynomial trends
+dataset <-
+  dataset %>% 
+  mutate(stratum_ts = as.character(.data[[ts_stratumvar]]),
+         stratum_ts = 
+           ifelse(stratum_ts %in% strata_ts, 
+                  stratum_ts,
+                  NA_character_) %>% 
+           factor(levels = strata_ts))
+# model-specific extra covariates:
+dataset <-
+  bind_cols(dataset,
+    map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts)), 
+             ~as.integer(dataset[[ts_stratumvar]] == .)),
+    map_dfc(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)), 
+             ~dataset$hydroyear_std)
+  )
+# Beside that, stratum_ts is used to expand the dataset in order to predict 
+# values for polynomial trends:
+dataset <-
+  nesting(!!ts_stratumvar := dataset[[ts_stratumvar]],
+        stratum_ts = dataset$stratum_ts) %>%
+  crossing(hydroyear_std = full_seq(dataset$hydroyear_std, 1)) %>%
+  bind_rows(dataset, .)
 ```
 
 
@@ -72,62 +98,54 @@ stratasplit <-
   cbind(matrix(data = NA_real_,
                nrow = nrow(.),
                ncol = length(strata),
-               dimnames = list(NULL, str_c("stratum_", strata)))) %>% 
+               dimnames = list(NULL, str_c("resp_stratum_", strata)))) %>% 
   as_tibble
 for (stratum in strata) {
-  stratasplit[[str_c("stratum_", stratum)]] <- 
+  stratasplit[[str_c("resp_stratum_", stratum)]] <- 
     ifelse(stratasplit[[stratumvar]] == stratum, 
            stratasplit[[respvar]],
            NA_real_)
 }
-resp_matrix <- 
+resp <- 
   stratasplit %>% 
-  select(contains("stratum_")) %>% 
-  as.matrix
+  select(contains("resp_stratum_"))
 covariates <- 
   stratasplit %>% 
-  select(!contains("stratum_"))
+  select(!contains("resp_stratum_"))
 ```
 
 ### Model
 
 ```{r eval=params$fit_simmodels}
-rw2_pcprec <- list(theta = list(
-                     prior = "pc.prec",
-                     param = c(2, 0.01)))
-rw1_pcprec <- list(theta = list(
-                     prior = "pc.prec",
-                     param = c(1, 0.01)))
-rw2_sub <-
+tempnoise <- 
     str_c("f(hydroyear_std_stratum_",
           strata_ts,
           ", stratum_", 
           strata_ts,
-          ", model = 'rw2', hyper = rw2_pcprec)", collapse = " + ") %>% 
+          ", model = 'iid')", collapse = " + ") %>% 
     str2lang
 modformula <- 
   substitute(Y ~ -1 + type +
-               # smooth trend per stratum:
-               stratumsmoothers +
-               # remaining short-term temporal variation
-               # (capture remaining autocorrelation):
-               f(hydroyear_std_short,
-               model = 'rw1', hyper = rw1_pcprec) +
+               # polynomial trend per stratum:
+               stratum_ts:(hydroyear_std + I(hydroyear_std^2)) +
+               # remaining short-term temporal variation:
+               stratumtempnoise +
                f(loc_code,
                  model = "iid") + 
                f(cluster_id,
                  model = "iid"),
-             list(stratumsmoothers = rw2_sub))
+             list(stratumtempnoise = tempnoise))
 moddata <-
-  splice(Y = resp_matrix,
-         map(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)), 
-             ~covariates$hydroyear_std),
-         hydroyear_std_short = covariates$hydroyear_std,
-         type = covariates$type,
-         map(set_names(strata_ts, str_c("stratum_", strata_ts)), 
-             ~as.numeric(covariates[[ts_stratumvar]] == .)),
-         loc_code = covariates$loc_code,
-         cluster_id = covariates$cluster_id)
+  splice(Y = resp,
+         as.list(covariates %>% 
+                   select(type,
+                          loc_code,
+                          cluster_id,
+                          hydroyear_std,
+                          stratum_ts,
+                          str_c("stratum_", strata_ts),
+                          str_c("hydroyear_std_stratum_", strata_ts)
+                          )))
 ```
 
 
@@ -175,7 +193,7 @@ INLA formule en likelihood family:
 
 ```{r echo=TRUE}
 M1$.args$formula
-cbind(colnames(resp_matrix), M1$.args$family)
+cbind(colnames(resp), M1$.args$family)
 ```
 
 
@@ -224,6 +242,25 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
 Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties):
 
 ```{r out.width='70%'}
+dataset %>% 
+  filter(is.na(.data[[respvar]])) %>% 
+  select(stratum = .data[[ts_stratumvar]], 
+         hydroyear_std) %>% 
+  bind_cols(slice_tail(M1$summary.fitted.values, n = nrow(.))) %>% 
+  ggplot(aes(x = hydroyear_std)) +
+  geom_ribbon(aes(ymin = `0.025quant`,
+                  ymax = `0.975quant`),
+              alpha = 0.2) +
+  geom_line(aes(y = mean), colour = "blue") +
+  ylim(-1.5, 0.5) +
+  labs(y = str_c("posterior mean fixed effect of hydroyear_std and ",
+                 ts_stratumvar)) + 
+  facet_wrap(~stratum)
+```
+
+Resterend korte-termijntijdseffect:
+
+```{r out.width='70%'}
 M1$summary.random[str_detect(names(M1$summary.random), 
                               "hydroyear_std_stratum_")] %>% 
   map_dfr(~select(., ID, mean, matches("025|975")),
@@ -233,23 +270,11 @@ M1$summary.random[str_detect(names(M1$summary.random),
                   ymax = `0.975quant`),
               alpha = 0.2) +
   geom_line(aes(y = mean), colour = "blue") +
-  ylim(-2, 2) +
+  ylim(-1.5, 0.5) +
   labs(x = "hydroyear_std", y = "posterior mean effect") + 
   facet_wrap(~stratum)
 ```
 
-Resterend korte-termijntijdseffect:
-
-```{r out.width='70%'}
-M1$summary.random$hydroyear_std_short %>% 
-  ggplot(aes(x = ID)) +
-  geom_ribbon(aes(ymin = `0.025quant`,
-                  ymax = `0.975quant`),
-              alpha = 0.2) +
-  geom_line(aes(y = mean), colour = "blue") +
-  ylim(-2, 2) +
-  labs(x = "hydroyear_std", y = "posterior mean effect")
-```
 
 Resultaten hyperparameters, getransformeerd tot standaardafwijkingen:
 
@@ -482,7 +507,7 @@ vg %>%
 
 
 
-#### Analyse van random effecten
+#### Analyse van random effecten `loc_code` en `cluster_id`
 
 Omdat `loc_code` en `cluster_id` sterk gecorreleerd zijn, beoordelen we de resp. random effecten ten opzichte van de gefitte waarde met de beide random effecten ervan afgetrokken.
 
@@ -690,119 +715,7 @@ ggplot(evaluation, aes(x = z_avg)) +
 
 Het blijkt dat het model de geobserveerde waarden goed ondersteunt: vaker dan verwacht volgens de normale foutverdeling, liggen de geobserveerde waarden nabij de gesimuleerde waarde.
 
-### Modelvisualisatie
 
-We focussen op een onderdeel waar we relatief weinig controle over hebben, maar dat potentieel veel invloed heeft op de simulaties: de korte-termijn temporele variatie.
-Het idee was om korte-termijnschommelingen (RW1) standaard in het model te laten, en alleen lange-termijntrends (RW2) weg te nemen als baseline model voor steekproefsimulatie (waaraan dan a priori gekende lineaire trends kunnen worden toegevoegd).
-
-De temporele variatie op korte-termijn via een random walk wordt bepaald door de precisieparameter $\tau$.
-We onderzoeken hoe groot deze temporele veranderingen volgens het model kunnen zijn, door 200 zulke tijdsreeksen te simuleren.
-
-```{r}
-set.seed(654321)
-tau_shortterm <- 
-  M1$summary.hyperpar[rownames(M1$summary.hyperpar) %>% 
-                        str_detect("short"), 
-                      "mean"]
-rw1sim <- simulate_rw(tau = tau_shortterm, length = 12, order = 1, n_sim = 500)
-```
-
-De gesimuleerde tijdsreeksen samen afgebeeld (Y-as in meter;  subset van eerste 200 simulaties):
-
-```{r out.width='70%'}
-rw1sim %>% 
-  filter(replicate <= 200) %>% 
-  ggplot(aes(x = x, y = y, group = replicate)) +
-  geom_line(alpha = 0.1, size = 3) +
-  theme_bw()
-```
-
-Beter van elkaar onderscheiden:
-
-```{r fig.height=7, fig.width=7}
-rw1sim %>% 
-  filter(replicate <= 200) %>% 
-  mutate(replicate_set = ceiling(replicate / 10),
-         replicate = replicate %% 10,
-         replicate = factor(replicate)) %>% 
-  ggplot(aes(x = x, y = y, group = replicate, colour = replicate)) +
-  geom_line() +
-  theme(legend.position = "none") +
-  facet_wrap(~ replicate_set, labeller = "label_both")
-```
-
-De grote mogelijke variatie die hieruit voortkomt, en vooral ook het optreden van systematische trends, wijst er op dat meer controle hierover wenselijk is in het licht van steekproefsimulaties.
-
-Mogelijkheden:
-
-- door toevoegen van netto-neerslag als fixed effect in het model.
-Mogelijks biedt dit ook een oplossing voor de resterende temporele autocorrelatie van de residuen.
-Voor steekproefsimulaties kan dan het neerslageffect constant worden gehouden en in plaats daarvan een exacte lineaire trend aan de gesimuleerde respons worden toegevoegd.
-- voor de steekproefsimulatie alle hier gefitte temporele componenten weglaten, dus niet alleen de lange-termijntrend, maar ook de korte-termijnvariatie.
-Het resultaat is mogelijks een te sterk geîdealiseerde situatie (de enige temporele variatie in steekproefsimulaties is dan de zelf toegevoegde lineaire trend).
-- controle houden over welk type random walks worden 'toegelaten' voor deelname in de steekproefsimulaties.
-Namelijk alleen de gevallen zonder een systematische trend.
-Dit is eenvoudiger te implementeren dan een voorafgaandelijke modellering met neerslagreeksen, maar vereist het opleggen van een arbitraire grens, zoals in onderstaande figuren.
-
-  - enkel reeksen weerhouden met een niet-significante (p > 0.2) lineaire trend:
-
-```{r out.width='70%'}
-rw1sim %>% 
-  filter(replicate <= 200) %>% 
-  nest(data = c(x, y)) %>% 
-  mutate(beta_sign = 
-           map_lgl(data, function(xy) {
-             lm(y ~ x, data = xy) %>% 
-               confint("x", level = 0.8) %>% 
-               {0 < .[1] || 0 > .[2]}
-           })
-  ) %>% 
-  unnest(data) %>%  
-  filter(!beta_sign) %>% 
-  ggplot(aes(x = x, y = y, group = replicate)) +
-  geom_line(alpha = 0.1, size = 3) +
-  ylim(-2, 2) +
-  theme_bw()
-```
-
-  - enkel reeksen weerhouden waarvoor alle stapsgewijze veranderingen én de netto verandering ten opzichte van het begin kleiner zijn dan $1.5 \cdot \sigma$, met behoud van de eerdere trend-voorwaarde.
-
-```{r out.width='70%'}
-rw1sim_filtered <- 
-  rw1sim %>% 
-  group_by(replicate) %>% 
-  arrange(replicate, x) %>% 
-  mutate(change = y - lag(y), 
-         max_change = max(abs(change), na.rm = TRUE),
-         max_net_change = max(abs(y)),
-         total_change = abs(last(y)),
-         pval_trend = 
-           lm(y ~ x) %>% 
-           summary %>% 
-           {.$coefficients["x", "Pr(>|t|)"]}) %>% 
-  filter(max_change < 1.5 * invsqrt(tau_shortterm),
-         max_net_change < 1.5 * invsqrt(tau_shortterm),
-         pval_trend > 0.2) %>% 
-  ungroup
-rw1sim_filtered %>% 
-  ggplot(aes(x = x, y = y, group = replicate)) +
-  geom_line(alpha = 0.1, size = 3) +
-  ylim(-1, 1) +
-  theme_bw()
-```
-De bovenstaande beter van elkaar onderscheiden:
-
-```{r fig.width=6, fig.height=6, out.width='70%'}
-rw1sim_filtered %>% 
-  mutate(replicate_set = ceiling(replicate / 75),
-         replicate = replicate %% 75,
-         replicate = factor(replicate)) %>% 
-  ggplot(aes(x = x, y = y, group = replicate, colour = replicate)) +
-  geom_line() +
-  ylim(-1, 1) +
-  theme(legend.position = "none") +
-  facet_wrap(~ replicate_set, labeller = "label_both")
-```
 
 
 
