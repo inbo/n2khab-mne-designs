@@ -236,10 +236,11 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
   ggplot(aes(x = x, y = y)) + geom_line() +
   labs(x = "effectsize", y = "density") +
   xlim(-4, 4) +
-  facet_wrap(~effect, ncol = 4, scales = "free_y")
+  facet_wrap(~effect, ncol = 4, scales = "free_y") +
+  theme(strip.text = element_text(hjust = 0))
 ```
 
-Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties):
+Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties), met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele:
 
 ```{r out.width='70%'}
 dataset %>% 
@@ -253,7 +254,7 @@ dataset %>%
               alpha = 0.2) +
   geom_line(aes(y = mean), colour = "blue") +
   ylim(-1.5, 0.5) +
-  labs(y = str_c("posterior mean fixed effect of hydroyear_std and ",
+  labs(y = str_c("posterior mean fixed effect of hydroyear_std + ",
                  ts_stratumvar)) + 
   facet_wrap(~stratum)
 ```
@@ -298,18 +299,21 @@ map_dfr(precmargs,
 ```
 
 
-```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(precmargs)/3)*12/7}
+```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(precmargs)/3)*6/7}
 map_dfr(precmargs, 
         ~ as_tibble(inla.tmarginal(fun = invsqrt, .)), 
         .id = "hyperpar") %>% 
   mutate(hyperpar = 
            str_remove(hyperpar, 
                        "Precision\\sof\\s|^Precision\\sfor\\s")) %>% 
-  ggplot(aes(x = x, y = y)) + geom_line() +
-  labs(x = "standard deviation", y = "density") +
-  xlim(0, 3) +
-  facet_wrap(~hyperpar, ncol = 3, scales = "free_y") +
-  theme(strip.text = element_text(hjust = 0))
+  split(str_detect(.$hyperpar, "year")) %>% 
+  walk(~
+    {ggplot(., aes(x = x, y = y)) + geom_line() +
+      labs(x = "standard deviation", y = "density") +
+      facet_wrap(~hyperpar, ncol = 3, scales = "free_y") +
+      theme(strip.text = element_text(hjust = 0))} %>% 
+      print
+  )
 ```
 
 ### Modeldiagnose
