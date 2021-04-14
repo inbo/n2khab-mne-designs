@@ -63,14 +63,14 @@ strata_ts <-
   filter(median >= 3, nrlocs > 15) %>% 
   pull(.data[[ts_stratumvar]]) %>% 
   as.character
-# the stratum_ts variable is only needed in model formulas where it is used - 
+# the stratum_ variable is only needed in model formulas where it is used - 
 # up to now that is the case when fitting stratum-specific polynomial trends
 dataset <-
   dataset %>% 
-  mutate(stratum_ts = as.character(.data[[ts_stratumvar]]),
-         stratum_ts = 
-           ifelse(stratum_ts %in% strata_ts, 
-                  stratum_ts,
+  mutate(stratum_ = as.character(.data[[ts_stratumvar]]),
+         stratum_ = 
+           ifelse(stratum_ %in% strata_ts, 
+                  stratum_,
                   NA_character_) %>% 
            factor(levels = strata_ts))
 # model-specific extra covariates:
@@ -81,13 +81,12 @@ dataset <-
     map_dfc(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)), 
              ~dataset$hydroyear_std)
   )
-# Beside that, stratum_ts is used to expand the dataset in order to predict 
+# Beside that, stratum_ is used to predict 
 # values for polynomial trends:
-dataset <-
+newdata <- 
   nesting(!!ts_stratumvar := dataset[[ts_stratumvar]],
-        stratum_ts = dataset$stratum_ts) %>%
-  crossing(hydroyear_std = full_seq(dataset$hydroyear_std, 1)) %>%
-  bind_rows(dataset, .)
+          stratum_ = dataset$stratum_) %>%
+  crossing(hydroyear_std = full_seq(dataset$hydroyear_std, 1))
 ```
 
 
@@ -117,6 +116,9 @@ covariates <-
 ### Model
 
 ```{r eval=params$fit_simmodels}
+polynom <- 
+  "stratum_:(hydroyear_std + I(hydroyear_std^2))" %>% 
+  str2lang
 tempnoise <- 
     str_c("f(hydroyear_std_stratum_",
           strata_ts,
@@ -127,14 +129,15 @@ tempnoise <-
 modformula <- 
   substitute(Y ~ -1 + type +
                # polynomial trend per stratum:
-               stratum_ts:(hydroyear_std + I(hydroyear_std^2)) +
+               stratumpolynoms +
                # remaining short-term temporal variation:
                stratumtempnoise +
                f(loc_code,
                  model = "iid") + 
                f(cluster_id,
                  model = "iid"),
-             list(stratumtempnoise = tempnoise))
+             list(stratumpolynoms = polynom,
+                  stratumtempnoise = tempnoise))
 moddata <-
   splice(Y = resp,
          as.list(covariates %>% 
@@ -142,10 +145,29 @@ moddata <-
                           loc_code,
                           cluster_id,
                           hydroyear_std,
-                          stratum_ts,
+                          stratum_,
                           str_c("stratum_", strata_ts),
                           str_c("hydroyear_std_stratum_", strata_ts)
                           )))
+# linear combinations to compute posterior of predicted fixed effects:
+lincomb_newdata <- 
+  newdata %>% 
+  model.matrix(formula(paste("~-1 +", 
+                             ts_stratumvar, " + ",
+                             deparse(polynom))),
+               data = .) %>% 
+  as_tibble %>% 
+  inla.make.lincombs %>% 
+  {if (nrow(drop_na(newdata)) == nrow(newdata)) . else {
+    c(., 
+      newdata %>% 
+        filter(is.na(stratum_)) %>% 
+        model.matrix(formula(paste("~-1 +", 
+                                   ts_stratumvar)),
+                     data = .) %>% 
+        as_tibble %>% 
+        inla.make.lincombs)
+  }}
 ```
 
 
@@ -154,6 +176,7 @@ system.time(
 M1 <- inla(modformula,
              family = rep("gaussian", length(strata)),
              data = moddata,
+             lincomb = lincomb_newdata,
              control.compute = list(waic = TRUE, 
                                     dic = TRUE,
                                     cpo = TRUE,
@@ -243,11 +266,11 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
 Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties), met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele:
 
 ```{r out.width='70%'}
-dataset %>% 
-  filter(is.na(.data[[respvar]])) %>% 
+newdata %>% 
+  arrange(is.na(stratum_)) %>% 
   select(stratum = .data[[ts_stratumvar]], 
          hydroyear_std) %>% 
-  bind_cols(slice_tail(M1$summary.fitted.values, n = nrow(.))) %>% 
+  bind_cols(M1$summary.lincomb.derived) %>% 
   ggplot(aes(x = hydroyear_std)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
