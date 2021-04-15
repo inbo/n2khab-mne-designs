@@ -3,10 +3,10 @@
 ```{r}
 if (!str_detect(subdataset_name, "[23]$")) {
   stratumvar <- "type" # to support heterogeneity in residuals
-  ts_stratumvar <- "type" # for interaction with time in RW2 trend
+  ts_stratumvar <- "type" # for interaction with time in long-term trend
 } else {
   stratumvar <- "soilclass" # to support heterogeneity in residuals
-  ts_stratumvar <- "soilclass" # for interaction with time in RW2 trend
+  ts_stratumvar <- "soilclass" # for interaction with time in long-term trend
 }
 ```
 
@@ -48,7 +48,32 @@ We laten alleen strata met voldoende locaties en (mediaan) aantal hydrologische 
 strata_ts <-
     ts_summaries %>%
     filter(median >= 3, nrlocs > 15) %>%
-    pull(.data[[ts_stratumvar]])
+    pull(.data[[ts_stratumvar]]) %>% 
+  as.character
+# the stratum_ variable is only needed in model formulas where it is used - 
+# up to now that is the case when fitting stratum-specific polynomial trends
+dataset <-
+  dataset %>% 
+  mutate(stratum_ = as.character(.data[[ts_stratumvar]]),
+         stratum_ = 
+           ifelse(stratum_ %in% strata_ts, 
+                  stratum_,
+                  NA_character_) %>% 
+           factor(levels = strata_ts))
+# model-specific extra covariates:
+dataset <-
+  bind_cols(dataset,
+    map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts)), 
+             ~as.integer(dataset[[ts_stratumvar]] == .)),
+    map_dfc(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)), 
+             ~dataset$hydroyear_std)
+  )
+# Beside that, stratum_ is used to predict 
+# values for polynomial trends:
+newdata <- 
+  nesting(!!ts_stratumvar := dataset[[ts_stratumvar]],
+          stratum_ = dataset$stratum_) %>%
+  crossing(hydroyear_std = full_seq(dataset$hydroyear_std, 1))
 ```
 
 
@@ -59,70 +84,79 @@ stratasplit <-
     cbind(matrix(data = NA_real_,
                  nrow = nrow(.),
                  ncol = length(strata),
-                 dimnames = list(NULL, str_c("stratum_", strata)))) %>%
+                 dimnames = list(NULL, str_c("resp_stratum_", strata)))) %>%
     as_tibble
 for (stratum in strata) {
-    stratasplit[[str_c("stratum_", stratum)]] <-
+    stratasplit[[str_c("resp_stratum_", stratum)]] <-
         ifelse(stratasplit[[stratumvar]] == stratum,
                stratasplit[[respvar]],
                NA_real_)
 }
-resp_matrix <-
+resp <-
     stratasplit %>%
-    select(contains("stratum_")) %>%
-    as.matrix
+    select(contains("resp_stratum_"))
 covariates <-
     stratasplit %>%
-    select(!contains("stratum_"))
+    select(!contains("resp_stratum_"))
 ```
 
 #### Model
 
 ```{r eval=params$fit_simmodels}
-rw2_pcprec <- list(theta = list(
-    prior = "pc.prec",
-    param = c(2, 0.01)))
-rw1_pcprec <- list(theta = list(
-    prior = "pc.prec",
-    param = c(1, 0.01)))
-rw2_sub <-
+polynom <- 
+  "stratum_:(hydroyear_std + I(hydroyear_std^2))" %>% 
+  str2lang
+tempnoise <-
         str_c("f(hydroyear_std_stratum_",
               strata_ts,
               ", stratum_",
               strata_ts,
-              ", model = 'rw2', hyper = rw2_pcprec)", collapse = " + ") %>%
+              ", model = 'iid')", collapse = " + ") %>%
             str2lang
-fixed_sub <- 
-  if (subdataset_name == "GW_05.1_terr_group4") {
-    str2lang("type") } else {
-      str2lang("type + soilclass")
-    }
 modformula <-
-    substitute(Y ~ -1 + fixed +
-                   # smooth trend per stratum:
-                   stratumsmoothers +
-                   # remaining short-term temporal variation
-                   # (capture remaining autocorrelation):
-                   f(hydroyear_std_short,
-                     model = 'rw1', hyper = rw1_pcprec) +
+    substitute(Y ~ type + soilclass +
+                   # polynomial trend per stratum:
+                   stratumpolynoms +
+                   # remaining short-term temporal variation:
+                   stratumtempnoise +
                    f(loc_code,
                      model = "iid") +
                    f(cluster_id,
                      model = "iid"),
-               list(fixed = fixed_sub,
-                    stratumsmoothers = rw2_sub))
+               list(stratumpolynoms = polynom,
+                    stratumtempnoise = tempnoise))
 moddata <-
-    splice(Y = resp_matrix,
-           map(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)),
-               ~covariates$hydroyear_std),
-           hydroyear_std_short = covariates$hydroyear_std,
-           type = covariates$type,
-           hydroyear_std = covariates$hydroyear_std,
-           soilclass = covariates$soilclass,
-           map(set_names(strata_ts, str_c("stratum_", strata_ts)),
-               ~as.numeric(covariates[[ts_stratumvar]] == .)),
-           loc_code = covariates$loc_code,
-           cluster_id = covariates$cluster_id)
+    splice(Y = resp,
+           as.list(covariates %>% 
+                     select(type,
+                            soilclass,
+                            loc_code,
+                            cluster_id,
+                            hydroyear_std,
+                            stratum_,
+                            str_c("stratum_", strata_ts),
+                            str_c("hydroyear_std_stratum_", strata_ts)
+                     )))
+# linear combinations to compute posterior of predicted fixed effects:
+lincomb_newdata <- 
+  newdata %>% 
+  model.matrix(formula(paste("~", 
+                             ts_stratumvar, " + ",
+                             deparse(polynom))),
+               data = .) %>% 
+  as_tibble %>% 
+  inla.make.lincombs %>% 
+  {if (nrow(drop_na(newdata)) == nrow(newdata)) . else {
+    c(., 
+      newdata %>% 
+        filter(is.na(stratum_)) %>% 
+        model.matrix(formula(paste("~", 
+                                   ts_stratumvar)),
+                     data = .) %>% 
+        as_tibble %>% 
+        inla.make.lincombs)
+  }}
+names(lincomb_newdata) <- NULL
 ```
 
 
@@ -137,6 +171,7 @@ system.time(
     M1 <- inla(modformula,
                family = rep("gaussian", length(strata)),
                data = moddata,
+               lincomb = lincomb_newdata,
                control.compute = cont_comp,
                control.inla = list(force.diagonal = TRUE))
 )
@@ -172,7 +207,7 @@ INLA formule en likelihood family:
 
 ```{r echo=TRUE}
 M1$.args$formula
-cbind(colnames(resp_matrix), M1$.args$family)
+cbind(colnames(resp), M1$.args$family)
 ```
 
 
@@ -218,35 +253,43 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
     theme(strip.text = element_text(hjust = 0))
 ```
 
-Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties):
+Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties), met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele:
 
 ```{r out.width='70%'}
-M1$summary.random[str_detect(names(M1$summary.random),
-                             "hydroyear_std_stratum_")] %>%
-  map_dfr(~select(., ID, mean, matches("025|975")),
-            .id = "stratum") %>%
-    ggplot(aes(x = ID)) +
-    geom_ribbon(aes(ymin = `0.025quant`,
-                    ymax = `0.975quant`),
-                alpha = 0.2) +
-    geom_line(aes(y = mean), colour = "blue") +
-    ylim(-2, 2) +
-    labs(x = "hydroyear_std", y = "posterior mean effect") +
-    facet_wrap(~stratum)
+newdata %>% 
+  arrange(is.na(stratum_)) %>% 
+  select(stratum = .data[[ts_stratumvar]], 
+         hydroyear_std) %>% 
+  bind_cols(M1$summary.lincomb.derived) %>% 
+  ggplot(aes(x = hydroyear_std)) +
+  geom_ribbon(aes(ymin = `0.025quant`,
+                  ymax = `0.975quant`),
+              alpha = 0.2) +
+  geom_line(aes(y = mean), colour = "blue") +
+  ylim(-1.5, 0.5) +
+  labs(y = str_c("posterior mean fixed effect of hydroyear_std + ",
+                 ts_stratumvar)) + 
+  facet_wrap(~stratum)
 ```
 
 Resterend korte-termijntijdseffect:
 
 ```{r out.width='70%'}
-M1$summary.random$hydroyear_std_short %>%
-    ggplot(aes(x = ID)) +
-    geom_ribbon(aes(ymin = `0.025quant`,
-                    ymax = `0.975quant`),
-                alpha = 0.2) +
-    geom_line(aes(y = mean), colour = "blue") +
-    ylim(-2, 2) +
-    labs(x = "hydroyear_std", y = "posterior mean effect")
+M1$summary.random[str_detect(names(M1$summary.random), 
+                              "hydroyear_std_stratum_")] %>% 
+  map_dfr(~select(., ID, mean, matches("025|975")),
+          .id = "stratum") %>% 
+  ggplot(aes(x = ID)) +
+  geom_ribbon(aes(ymin = `0.025quant`,
+                  ymax = `0.975quant`),
+              alpha = 0.2) +
+  geom_line(aes(y = mean), colour = "blue") +
+  ylim(-1.5, 0.5) +
+  labs(x = "hydroyear_std", y = "posterior mean effect") + 
+  facet_wrap(~stratum)
 ```
+
+
 
 Resultaten hyperparameters, getransformeerd tot standaardafwijkingen:
 
