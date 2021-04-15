@@ -40,7 +40,7 @@ M1_diagn %>%
 ```
 
 De residuele heterogeniteit is beperkt dankzij de stratumafhankelijke residuele hyperparameter.
-Door temporele autocorrelatie in het model te specifiëren is de overall tijdsafhankelijkheid beperkt.
+Door een temporele component in het model te specifiëren is de overall tijdsafhankelijkheid beperkt.
 
 ```{r resid-covar-{{subdataset_label}}, message=FALSE, out.width='70%'}
 c("hydroyear_std", "type", "soilclass") %>%
@@ -53,21 +53,7 @@ c("hydroyear_std", "type", "soilclass") %>%
     })
 ```
 
-<!-- Tijdsafhankelijkheid komt nog altijd voor op locatieniveau (selectie van locaties). -->
-<!-- Omdat we naar de residuen kijken, zijn de grafieken opgesplitst volgens locatie x type. -->
-
-```{r eval=FALSE, fig.height=12, fig.width=8, message=FALSE, include=FALSE}
-M1_diagn %>%
-    semi_join(
-        dataset %>% count(loc_code, type) %>% filter(n >= 8),
-        by = c("loc_code", "type")) %>%
-    ggplot(aes(x = hydroyear_std, y = resid_std)) +
-    geom_point() +
-    geom_line() +
-    facet_wrap(~loc_code + type)
-```
-
-Ondanks de integratie van een overall smoother volgens de tijd blijft nog heel wat autocorrelatie over op het lokale niveau - hieronder voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven).
+Ondanks de integratie van een temporele trend blijft nog heel wat autocorrelatie over op het lokale niveau - hieronder voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven).
 
 ```{r}
 lagcorr <-
@@ -115,65 +101,7 @@ Een beperkt aantal tijdsreeksen toont geen autocorrelatie.
 Andere vertonen een afnemende autocorrelatie, wat wijst op een geleidelijke trend.
 Nog andere vertonen een wisselend positieve en negatieve autocorrelatie, wat wijst op een cyclische trend.
 
-Verloop van de partiële autocorrelatie - relevant om de orde van een eventuele temporele AR-autocorrelatie te bepalen:
-
-```{r fig.height=5, fig.width=6, out.width='70%'}
-lagcorr %>%
-    inner_join(lagcorr %>%
-                   distinct(locxtype) %>%
-                   mutate(subset = rep(1:15, each = ceiling(n() / 15))[1:n()]) %>%
-                   group_by(subset) %>%
-                   mutate(id = factor(1:n())) %>%
-                   ungroup,
-               by = "locxtype") %>%
-    ggplot(aes(x = lag, y = pacf, group = id, colour = id)) +
-    geom_line() +
-    ylim(-1, 1) +
-    theme(legend.position = "none") +
-    facet_wrap(~subset, labeller = "label_both")
-```
-
-<!-- Grafiek met nadruk op de variatie in grootte van de autocorrelatie, per lag. -->
-<!-- Elke kleur (staafje) komt overeen met 1 tijdsreeks. -->
-
-```{r fig.width=7, fig.height=12, out.width='80%', eval=FALSE, include=FALSE}
-lagcorr %>%
-    ggplot(aes(x = lag, y = acf, group = locxtype, fill = locxtype)) +
-    geom_col(position = "dodge") +
-    scale_x_continuous(guide = "none") +
-    ylab("timeseries autocorrelation") +
-    coord_flip() +
-    facet_wrap(~lag, scales = "free_y", ncol = 1, labeller = "label_both") +
-    theme(legend.position="none",
-          axis.title.y = element_blank(),
-          panel.grid.major.y = element_blank(),
-          panel.grid.minor.y = element_blank())
-```
-
-```{r eval=FALSE, include=FALSE}
-lagcorr_spatial <-
-    lagcorr %>%
-    separate(locxtype, c("loc_code", "type"), "_", extra = "merge") %>%
-    mutate(loc_code = factor(loc_code, levels = levels(dataset$loc_code)),
-           type = factor(type, levels = levels(dataset$type))) %>%
-    inner_join(dataset %>% distinct(loc_code, type, soilclass, ecoregion),
-               by = c("loc_code", "type"))
-```
-
-```{r out.width='70%', eval=FALSE, include=FALSE}
-lagcorr_spatial %>%
-    ggplot(aes(x = soilclass, y = acf)) +
-    geom_boxplot() +
-    facet_wrap(~lag, labeller = "label_both")
-```
-
-```{r fig.height=7, fig.width=5, out.width='60%', eval=FALSE, include=FALSE}
-lagcorr_spatial %>%
-    ggplot(aes(x = ecoregion, y = acf)) +
-    geom_boxplot() +
-    facet_wrap(~lag, labeller = "label_both") +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
-```
+We zien geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
 
 Residuele spatiale correlatie op verschillende schalen:
 
@@ -262,7 +190,7 @@ vg %>%
 
 
 
-##### Analyse van random effecten
+##### Analyse van random effecten `loc_code` en `cluster_id`
 
 Omdat `loc_code` en `cluster_id` sterk gecorreleerd zijn, beoordelen we de resp. random effecten ten opzichte van de gefitte waarde met de beide random effecten ervan afgetrokken.
 
@@ -311,98 +239,6 @@ M1_diagn %>%
     geom_smooth()
 ```
 
-Onafhankelijkheid:
-
-```{r ranef-loc-covar-{{subdataset_label}}, message=FALSE, out.width='70%'}
-c("hydroyear_std", "type", "soilclass") %>%
-    walk(function(quosvar) {
-        M1_diagn %>%
-            {ggplot(data = ., aes(x = .data[[quosvar]], y = ranef_loc)) +
-                    geom_point() +
-                    geom_smooth()} %>%
-            print
-    })
-```
-
-Spatiale correlatie van het random effect op verschillende schalen:
-
-```{r}
-M1_diagn %>%
-    as_points(warn_dupl = FALSE) %>%
-    ggplot() +
-    geom_sf(data = provinces, fill = "grey70") +
-    geom_sf(aes(colour = ranef_loc)) +
-    scale_colour_gradientn(colours = rainbow(10)) +
-    coord_sf(datum = st_crs(31370)) +
-    theme_bw() +
-    theme(panel.grid = element_blank(),
-          legend.position = "bottom",
-          legend.key.width = unit(0.08, "npc"))
-```
-
-```{r warning=FALSE, message=FALSE, out.width='70%'}
-vg <-
-    M1_diagn %>%
-    {gstat::variogram(ranef_loc ~ x + y,
-                      data = as_points(., warn_dupl = FALSE),
-                      width = 500,
-                      cutoff = 5e3)}
-vg %>%
-    rename(semivariance = gamma,
-           distance = dist) %>%
-    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
-    geom_smooth(colour = "grey70", se = FALSE) +
-    geom_point(size = 3, shape = 21) +
-    ylim(0, NA) +
-    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
-    geom_text(vjust = -1, size = 3, colour = "grey30") +
-    theme_bw() +
-    theme(legend.position = "bottom",
-          legend.key.width = unit(0.08, "npc"))
-```
-
-```{r warning=FALSE, message=FALSE, out.width='70%'}
-vg <-
-    M1_diagn %>%
-    {gstat::variogram(ranef_loc ~ x + y,
-                      data = as_points(., warn_dupl = FALSE),
-                      width = 1000,
-                      cutoff = 15e3)}
-vg %>%
-    rename(semivariance = gamma,
-           distance = dist) %>%
-    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
-    geom_smooth(colour = "grey70", se = FALSE) +
-    geom_point(size = 3, shape = 21) +
-    ylim(0, NA) +
-    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
-    geom_text(vjust = -1, size = 3, colour = "grey30") +
-    theme_bw() +
-    theme(legend.position = "bottom",
-          legend.key.width = unit(0.08, "npc"))
-```
-
-```{r warning=FALSE, message=FALSE, out.width='70%'}
-vg <-
-    M1_diagn %>%
-    {gstat::variogram(ranef_loc ~ x + y,
-                      data = as_points(., warn_dupl = FALSE),
-                      width = 5000,
-                      cutoff = 75e3)}
-vg %>%
-    rename(semivariance = gamma,
-           distance = dist) %>%
-    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
-    geom_smooth(colour = "grey70", se = FALSE) +
-    geom_point(size = 3, shape = 21) +
-    ylim(0, NA) +
-    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
-    geom_text(vjust = -1, size = 3, colour = "grey30") +
-    theme_bw() +
-    theme(legend.position = "bottom",
-          legend.key.width = unit(0.08, "npc"))
-```
-
 ###### `cluster_id`
 
 ```{r message=FALSE, out.width='70%'}
@@ -426,98 +262,6 @@ M1_diagn %>%
     ggplot(aes(x = fitted_without_ranef, y = ranef_clus)) +
     geom_point() +
     geom_smooth()
-```
-
-Onafhankelijkheid:
-
-```{r ranef-clus-covar-{{subdataset_label}}, message=FALSE, out.width='70%'}
-c("hydroyear_std", "type", "soilclass") %>%
-    walk(function(quosvar) {
-        M1_diagn %>%
-            {ggplot(data = ., aes(x = .data[[quosvar]], y = ranef_clus)) +
-                    geom_point() +
-                    geom_smooth()} %>%
-            print
-    })
-```
-
-Spatiale correlatie van het random effect op verschillende schalen:
-
-```{r}
-M1_diagn %>%
-    as_points(warn_dupl = FALSE) %>%
-    ggplot() +
-    geom_sf(data = provinces, fill = "grey70") +
-    geom_sf(aes(colour = ranef_clus)) +
-    scale_colour_gradientn(colours = rainbow(10)) +
-    coord_sf(datum = st_crs(31370)) +
-    theme_bw() +
-    theme(panel.grid = element_blank(),
-          legend.position = "bottom",
-          legend.key.width = unit(0.08, "npc"))
-```
-
-```{r warning=FALSE, message=FALSE, out.width='70%'}
-vg <-
-    M1_diagn %>%
-    {gstat::variogram(ranef_clus ~ x + y,
-                      data = as_points(., warn_dupl = FALSE),
-                      width = 500,
-                      cutoff = 5e3)}
-vg %>%
-    rename(semivariance = gamma,
-           distance = dist) %>%
-    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
-    geom_smooth(colour = "grey70", se = FALSE) +
-    geom_point(size = 3, shape = 21) +
-    ylim(0, NA) +
-    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
-    geom_text(vjust = -1, size = 3, colour = "grey30") +
-    theme_bw() +
-    theme(legend.position = "bottom",
-          legend.key.width = unit(0.08, "npc"))
-```
-
-```{r warning=FALSE, message=FALSE, out.width='70%'}
-vg <-
-    M1_diagn %>%
-    {gstat::variogram(ranef_clus ~ x + y,
-                      data = as_points(., warn_dupl = FALSE),
-                      width = 1000,
-                      cutoff = 15e3)}
-vg %>%
-    rename(semivariance = gamma,
-           distance = dist) %>%
-    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
-    geom_smooth(colour = "grey70", se = FALSE) +
-    geom_point(size = 3, shape = 21) +
-    ylim(0, NA) +
-    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
-    geom_text(vjust = -1, size = 3, colour = "grey30") +
-    theme_bw() +
-    theme(legend.position = "bottom",
-          legend.key.width = unit(0.08, "npc"))
-```
-
-```{r warning=FALSE, message=FALSE, out.width='70%'}
-vg <-
-    M1_diagn %>%
-    {gstat::variogram(ranef_clus ~ x + y,
-                      data = as_points(., warn_dupl = FALSE),
-                      width = 5000,
-                      cutoff = 75e3)}
-vg %>%
-    rename(semivariance = gamma,
-           distance = dist) %>%
-    ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
-    geom_smooth(colour = "grey70", se = FALSE) +
-    geom_point(size = 3, shape = 21) +
-    ylim(0, NA) +
-    scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
-    geom_text(vjust = -1, size = 3, colour = "grey30") +
-    theme_bw() +
-    theme(legend.position = "bottom",
-          legend.key.width = unit(0.08, "npc"))
 ```
 
 #### Modelevaluatie
