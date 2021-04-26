@@ -4,7 +4,6 @@
 
 ```{r}
 respvar <- "lg3_std"
-modelcomponent_tempnoise <- "Precision for hydroyear_std_short"
 ```
 
 ```{r include=FALSE}
@@ -24,56 +23,67 @@ De modelvorm die werd gefit ten behoeve van simulaties, ziet er uit als volgt:
 M1$.args$formula
 ```
 
-### Basisset van steekproeven zonder trend
+### Basisset van gesimuleerde populaties zonder trend
 
-```{r}
-modelterms_type <- 
+
+```{r eval=params$simulate_pops}
+type_attrib <- 
     targetpop %>% 
     filter(scheme == "GW_05.1_aq") %>% 
     distinct(type) %>% 
     arrange(type) %>% 
     mutate(type = droplevels(type),
-           modelterm = str_c("type", type),
-           modelterm = ifelse(type == "3110", "type3130_aom", modelterm))
-```
-
-
-
-### Schatting van spatiale variantie per type
-
-We simuleren een grote steekproef om de spatiale variantiecomponent per type te bepalen.
-
-```{r eval=params$simulate_typevariance}
-nsim <- nlocs_per_type * nrow(modelterms_type)
-linear_trend <- 0
+           modelterm_type = 
+             case_when(type == "3110" ~ "3130_aom", 
+                       type == "7220" ~ "3140", 
+                       TRUE ~ as.character(type)) %>% 
+             factor(levels = levels(type)) %>% 
+             droplevels) %>% 
+  mutate(modelname = modelname %>% factor) %>% 
+  inner_join(
+    targetpop_stratumsize %>% 
+      filter(scheme == "GW_05.1_aq") %>% 
+      group_by(type) %>% 
+      summarize(population_size = sum(population_size)),
+    by = "type"
+  )
+# design matrix for each simulated population (each will apply one series of random value for loc+cluster effect (all types) and one random timeseries per type):
 design_matrix <- 
-  tibble(location = str_c("simloc_", str_pad(1:nsim, 5, pad = "0")) %>% as.factor,
-         type = rep(modelterms_type$type, each = nsim / nrow(modelterms_type)),
-         modelterm_type = rep(modelterms_type$modelterm, 
-                              each = nsim / nrow(modelterms_type))) %>% 
-  tidyr::expand(nesting(location, type, modelterm_type),
-                nesting(time = 1:12,
-                        temporal_increase = time * linear_trend))
-```
+  type_attrib %>% 
+  uncount(population_size) %>% 
+  add_st(time = 1:12)
 
+simpops <- 
+  simulate_detrended_obs(design_matrix = design_matrix,
+                         npop = 50, 
+                         var_time = "hydroyear_std",
+                         var_stratum = "type", 
+                         var_stratum_ = "type",
+                         seed = 20210422)
 
-```{r results="hide", eval=params$simulate_typevariance}
-# latent_names <- M1$misc$configs$contents$tag
-gw51a_large_simsample <- 
-  simulate_modelterms(model = M1,
-                      design_matrix = design_matrix,
-                      nr_nodes = 7,
-                      simulate_response = TRUE) %>% 
-  .$response_sim
+simpops_500locs <- 
+  type_attrib %>% 
+  select(-population_size) %>% 
+  uncount(500) %>% 
+  add_st(time = 1:6) %>% 
+  simulate_detrended_obs(npop = 100, 
+                         var_time = "hydroyear_std",
+                         var_stratum = "type", 
+                         var_stratum_ = "type",
+                         seed = 20210422)
 ```
 
 ```{r include=FALSE}
 rds_filepath <- file.path(datapath, "binary/simobs",
-                          str_c("gw51a_large_simsample", respvar, ".rds"))
-if (params$simulate_typevariance) {
-    saveRDS(gw51a_large_simsample, rds_filepath)
+                          str_c("gw51a_", respvar, "_simpops.rds"))
+rds_filepath_500 <- file.path(datapath, "binary/simobs",
+                          str_c("gw51a_", respvar, "_simpops_500.rds"))
+if (params$simulate_pops) {
+    saveRDS(simpops, rds_filepath)
+    saveRDS(simpops_500locs, rds_filepath_500)
 } else {
-  gw51a_large_simsample <- readRDS(rds_filepath)
+  simpops <- readRDS(rds_filepath)
+  simpops_500locs <- readRDS(rds_filepath_500)
 }
 ```
 

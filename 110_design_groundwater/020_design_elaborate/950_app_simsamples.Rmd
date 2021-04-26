@@ -2,13 +2,38 @@
 
 ## Aanpak
 
-### Basisset van gesimuleerde steekproeven voor scenario's
+### Basisset van gesimuleerde populaties zonder lange-termijntrend
 
-We simuleren een **basisset** van steekproeven op basis van het model dat specifiek met dit doel werd gefit.
+We simuleren een **basisset** van populaties op basis van het model dat specifiek met dit doel werd gefit.
+Alle gesimuleerde populaties in de basisset zijn gegenereerd op basis van dezelfde modelparameterwaarden (posterior mean van fixed en hyperparameters).
 
-We beogen daarbij een relatief groot aantal steekproeven (bv. 500), van een aanzienlijke grootte (in termen van het aantal locaties en van de frequentie), zodat we daarna uit dezelfde set steekproeven kunnen putten om ook kleinere gesimuleerde steekproeven te bekomen.
+Elke gesimuleerde populatie is uniek in zijn trekking van random effecten en residuals.
+De ruimtelijke populatiegrootte wordt voor elk type gedimensioneerd in overeenstemming met de beschikbare schatting hiervan voor de doelpopulatie (zie paragraaf \@ref(popsize)).
+Er worden steeds 12 tijdsstappen voorzien op elke locatie.
 
-De inputdata daarvoor zien er uit als volgt:
+Omdat de gesimuleerde populaties moeten dienen voor scenario's met verschillende lange-termijntrend, laten we de lange-termijntrend weg uit het model.
+Deze wordt in de scenario's vervangen door een gekende lineaire trend.
+
+Deze basisset dient meerdere doelen:
+
+- om design-based steekproeftrekking en inferentie voor specifieke scenario's te simuleren.
+Het gaat dan om herhaalde trekkingen uit een vaste doelpopulatie met bepaalde kenmerken.
+Scenario's voor steekproeftrekking kunnen zich onderscheiden in:
+  - het aantal getrokken locaties (voor alle types samen) uit een oneindige populatie;
+  - de revisit design;
+  - de grootte van een aan de populatie (post-hoc) toegevoegde lineaire trend;
+- om de invloed van nieuwe spatiale en temporele random effecten (uit dezelfde distributie) op de voorgaande poweranalyse te kunnen vaststellen.
+
+Merk op dat in het model veelal reeds bepaalde types gelumpt werden in kleinere 'typeclusters' (in het model voorgesteld als `type`) om voldoende data te hebben per typecluster.
+Ook types van de doelpopulatie waarvoor geen data voorhanden waren, werden aan een typecluster (met data) toegewezen.
+
+In de gesimuleerde populaties worden voor elk origineel type van de doelpopulatie observaties gegenereerd op basis van de toewijzing aan typeclusters.
+
+Voor de toestandsinferentie (design-based spatiotemporeel gemiddelde) hebben we slechts een zesjaarperiode nodig.
+Voor de trendinferentie (richtingscoëfficiënt) benodigen we een twaalfjaarperiode.
+We simuleren daarom in de basisset twaalf jaar, zodat we voor toestandsinferentie de eerste zes jaar daarvan kunnen gebruiken.
+
+De inputdata om de populaties te simuleren, zien er uit als volgt:
 
 - een hypothetische lijst van locaties (`location`).
 We beschouwen dit voor de simulaties niet spatiaal expliciet;
@@ -17,32 +42,6 @@ We beschouwen dit voor de simulaties niet spatiaal expliciet;
 - de tijdsstappen waarvoor we een waarde wensen te simuleren in functie van scenario's.
 De tijdsstappen bestrijken een periode van 12 jaar -- we zullen immers kijken naar de trend over 12 jaar.
 
-Voor de toestandsinferentie (design-based spatiotemporeel gemiddelde) hebben we slechts een zesjaarperiode nodig.
-Voor de trendinferentie (richtingscoëfficiënt) benodigen we een twaalfjaarperiode.
-We simuleren daarom in de basisset twaalf jaar, zodat we voor toestandsinferentie de eerste zes jaar daarvan kunnen gebruiken.
-
-Voor de simulatie van een basisset van steekproeven voor scenario's:
-
-- laten we de post-hoc gefitte RW2-trend (lange-termijntrend) weg uit het model.
-Deze wordt in de scenario's immers vervangen door een gekende lineaire trend;
-- gebeurt de simulatie op locatiebasis: voor elke locatie is er een gesimuleerde tijdsreeks.
-Omdat we spatiaal design-based werken (d.w.z. het sampling pattern is random) en enkel temporeel model-based (model is opgehangen aan welbepaalde tijdsstappen), hoeft bij de inferentie nadien alleen met temporele autocorrelatie rekening te worden gehouden;
-- wordt per locatie een nieuwe waarde getrokken uit de posterior distributie van de fixed effecten;
-- wordt per locatie één waarde getrokken uit een locatiespecifieke distributie van de random effecten.
-De locatiespecifieke distributie is telkens gebaseerd op een andere trekking uit de posterior distributie van de hyperparameters.
-Het gaat specifiek om de volgende random effecten:
-    - `cluster_id`
-    - `loc_id`
-    - random temporeel effect: we vervangen post-hoc de gefitte RW1-trend uit het model door RW1-simulaties met beperking van de toegelaten sprongen in de tijd (naar analogie van de feitelijk gefitte trend): alle stapsgewijze veranderingen én elke netto verandering t.o.v. het begin moeten kleiner zijn dan $1.5 \cdot \sigma$, en de RW1-reeks mag geen lineare trend vertonen met p < 0.2.
-    Op die manier vermijden we onrealistisch grote sprongen en zijn ook systematische RW1-trends uitgesloten.
-    We willen in scenario's immers controle voeren over systematische trends, en wensen geen andere grote trendpatronen toe te laten dan de voormelde.
-    Wel willen we dat die systematische trends nog realistisch zijn, en daarom kunnen we een RW1-component toelaten;
-    - residueel effect (`resid`): desgevallend is de overeenkomstige hyperparameter stratum-specifiek
-
-Merk op dat in het model veelal reeds bepaalde types gelumpt werden in kleinere 'typeclusters' (in het model voorgesteld als `type`) om voldoende data te hebben per typecluster.
-Ook types van de doelpopulatie waarvoor geen data voorhanden waren, werden aan een typecluster (met data) toegewezen.
-
-In de gesimuleerde steekproeven worden voor elk origineel type van de doelpopulatie observaties gegenereerd op basis van de toewijzing aan typeclusters.
 
 ### Verhoudingen tussen het aantal locaties per type
 
@@ -50,16 +49,10 @@ Tussen types variëren we enkel in ruimtelijke steekproefgrootte, en niet in de 
 De temporele design is een systematische sampling.
     
 De _verhouding_ tussen het aantal locaties per type, voor oneindige populaties, leiden we af uit de typespecifieke, _spatiale_ variantiecomponent van de schatter (van een doelparameter) voor oneindige populaties, meer bepaald uit de verhouding hiertussen voor verschillende types.
-Dit kan zowel voor de toestands- als de trendschatter.
-We berekenen deze varianties op basis van één grote gesimuleerde 'steekproef' (uit een oneindige populatie) van `r nlocs_per_type` locaties per type over 12 jaar (pure panel) en zonder artificieel toegevoegde trend.
+Dit kan zowel voor de toestands- als de trendschatter, maar we baseren ons op de toestandsschatter vermits deze de belangrijkste is.
 
-```{r}
-nlocs_per_type <- 500
-```
+Om de spatiale variantie per type stabiel te schatten (voor toestand), maken we een variant can de basisset, met 500 locaties en 6 tijdsstappen voor elk type (pure panel) en zonder artificieel toegevoegde trend.
 
-Indien het model (of de combinatie van modellen) reeds alle spatiale variatie eenduidig schat met één standaardafwijking per type, dan kunnen deze schatters worden gebruikt.
-Veelal is het model echter niet op die manier gespecifieerd.
-Voor modellen waar dit wel gebeurt, is het bovendien alleen bruikbaar indien het effect voor elk level werd gefit.
 
 ### Aandachtspunt scenario's: ruimtelijke steekproefgrootte
 
