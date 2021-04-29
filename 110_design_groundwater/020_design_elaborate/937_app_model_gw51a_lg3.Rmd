@@ -4,7 +4,7 @@
 dataset <- gw51a
 respvar <- "lg3_std"
 stratumvar <- "type" # to support heterogeneity in residuals
-ts_stratumvar <- "type" # for interaction with time in long-term trend
+ts_stratumvar <- "type" # for interaction with space and time
 ```
 
 
@@ -80,7 +80,9 @@ dataset <-
     map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts)), 
              ~as.integer(dataset[[ts_stratumvar]] == .)),
     map_dfc(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)), 
-             ~dataset$hydroyear_std)
+             ~dataset$hydroyear_std),
+    map_dfc(set_names(strata_ts, str_c("cluster_stratum_", strata_ts)), 
+             ~dataset$cluster_id)
   )
 # Beside that, stratum_ is used to predict 
 # values for polynomial trends:
@@ -121,24 +123,25 @@ polynom <-
   "stratum_:(hydroyear_std + I(hydroyear_std^2))" %>% 
   str2lang
 tempnoise <- 
-    str_c("f(hydroyear_std_stratum_",
-          strata_ts,
-          ", stratum_", 
-          strata_ts,
-          ", model = 'iid')", collapse = " + ") %>% 
+    "f(hydroyear_std, model = 'iid')" %>% 
     str2lang
+clus_sub <- 
+  str_c("f(cluster_stratum_",
+        strata_ts,
+        ", stratum_",
+        strata_ts,
+        ", model = 'iid')", collapse = " + ") %>%
+  str2lang
 modformula <- 
   substitute(Y ~ -1 + type +
                # polynomial trend per stratum:
                stratumpolynoms +
                # remaining short-term temporal variation:
                stratumtempnoise +
-               f(loc_code,
-                 model = "iid") + 
-               f(cluster_id,
-                 model = "iid"),
+               cluster_id_stratum,
              list(stratumpolynoms = polynom,
-                  stratumtempnoise = tempnoise))
+                  stratumtempnoise = tempnoise,
+                  cluster_id_stratum = clus_sub))
 moddata <-
   splice(Y = resp,
          as.list(covariates %>% 
@@ -148,7 +151,8 @@ moddata <-
                           hydroyear_std,
                           stratum_,
                           str_c("stratum_", strata_ts),
-                          str_c("hydroyear_std_stratum_", strata_ts)
+                          str_c("hydroyear_std_stratum_", strata_ts),
+                          str_c("cluster_stratum_", strata_ts)
                           )))
 # linear combinations to compute posterior of predicted fixed effects:
 lincomb_newdata <- 
@@ -287,18 +291,15 @@ newdata %>%
 Resterend korte-termijntijdseffect:
 
 ```{r out.width='70%'}
-M1$summary.random[str_detect(names(M1$summary.random), 
-                              "hydroyear_std_stratum_")] %>% 
-  map_dfr(~select(., ID, mean, matches("025|975")),
-          .id = "stratum") %>% 
+M1$summary.random[["hydroyear_std"]] %>% 
+  select(ID, mean, matches("025|975")) %>% 
   ggplot(aes(x = ID)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
               alpha = 0.2) +
   geom_line(aes(y = mean), colour = "blue") +
   ylim(-1.5, 0.5) +
-  labs(x = "hydroyear_std", y = "posterior mean effect") + 
-  facet_wrap(~stratum)
+  labs(x = "hydroyear_std", y = "posterior mean effect")
 ```
 
 
@@ -532,83 +533,6 @@ vg %>%
     theme_bw() +
     theme(legend.position = "bottom",
           legend.key.width = unit(0.08, "npc"))
-```
-
-
-
-#### Analyse van random effecten `loc_code` en `cluster_id`
-
-Omdat `loc_code` en `cluster_id` sterk gecorreleerd zijn, beoordelen we de resp. random effecten ten opzichte van de gefitte waarde met de beide random effecten ervan afgetrokken.
-
-```{r}
-M1_diagn <- 
-  M1_diagn %>% 
-  inner_join(M1$summary.random$loc_code %>% 
-               select(loc_code = ID, 
-                      ranef_loc = mean) %>% 
-               mutate(loc_code = factor(loc_code, 
-                                        levels = levels(M1_diagn$loc_code))), 
-             by = "loc_code") %>% 
-  inner_join(M1$summary.random$cluster_id %>% 
-               select(cluster_id = ID, 
-                      ranef_clus = mean) %>% 
-               mutate(cluster_id = factor(cluster_id, 
-                                          levels = levels(M1_diagn$cluster_id))), 
-             by = "cluster_id") %>% 
-  mutate(fitted_without_ranef = fitted - ranef_loc - ranef_clus)
-```
-
-
-
-##### `loc_code`
-
-```{r message=FALSE, out.width='70%'}
-tibble(ranef = M1$summary.random$loc_code$mean,
-       ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for loc_code"]])) %>% 
-  (function(df) {
-    p <- 
-      df %>% 
-      ggplot(aes(sample = ranef_std)) + geom_qq() + geom_abline() + coord_equal()
-    q <-
-      df %>% 
-      ggplot(aes(x = ranef_std)) + geom_histogram(fill = "white", colour = "grey70")
-    print(p); print(q)
-  })
-```
-
-De variatie van het random effect is behoorlijk homogeen.
-
-```{r ranef-loc-fitted, message=FALSE, out.width='70%'}
-M1_diagn %>% 
-  ggplot(aes(x = fitted_without_ranef, y = ranef_loc)) + 
-  geom_point() +
-  geom_smooth()
-```
-
-
-##### `cluster_id`
-
-```{r message=FALSE, out.width='70%'}
-tibble(ranef = M1$summary.random$cluster_id$mean,
-       ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for cluster_id"]])) %>% 
-  (function(df) {
-    p <- 
-      df %>% 
-      ggplot(aes(sample = ranef_std)) + geom_qq() + geom_abline() + coord_equal()
-    q <-
-      df %>% 
-      ggplot(aes(x = ranef_std)) + geom_histogram(fill = "white", colour = "grey70")
-    print(p); print(q)
-  })
-```
-
-De variatie van het random effect is behoorlijk homogeen.
-
-```{r ranef-clus-fitted, message=FALSE, out.width='70%'}
-M1_diagn %>% 
-  ggplot(aes(x = fitted_without_ranef, y = ranef_clus)) + 
-  geom_point() +
-  geom_smooth()
 ```
 
 
