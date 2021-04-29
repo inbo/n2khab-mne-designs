@@ -178,7 +178,6 @@ simulate_detrended_obs <-
             mutate(
                 model = list(modelname %>% as.character %>% str2lang %>% eval)) %>%
             ungroup %>%
-            # select(-modelname) %>%
             mutate(
                 design_matrix = map2(design_matrix, model, function(dm, model) {
                     dm %>%
@@ -207,6 +206,7 @@ simulate_detrended_obs <-
                             as.formula}),
                 model_matrix = map2(design_matrix, formula_fixed,
                                     ~model.matrix(.y, data = .x)),
+                # calculate fixed part
                 prediction_fixed = map2(model_matrix, model,
                                        function(mm, model) {
                                            if(any(rownames(model$summary.fixed)[rownames(model$summary.fixed) %in% colnames(mm)] != colnames(mm))) stop("The order of model matrix columns does not match that of the fixed effects.")
@@ -232,6 +232,7 @@ simulate_detrended_obs <-
                     map2(design_modelres, model,
                          function(design_modelres, model) {
                              design_modelres %>%
+                                 # spatial noise
                                  group_by(location) %>%
                                  mutate(ranef_loc =
                                             rnorm(1,
@@ -239,15 +240,18 @@ simulate_detrended_obs <-
                                         ranef_clus =
                                             rnorm(1,
                                                   sd = invsqrt(model$summary.hyperpar["Precision for cluster_id", "mean"]))) %>%
+                                 # temporal noise
                                  group_by(.data[[var_time]], stratum_) %>%
                                  mutate(temporal_noise =
                                             rnorm(1,
                                                   sd = invsqrt(model$summary.hyperpar[str_c("Precision for ", var_time, "_stratum_", stratum_), "mean"]))) %>%
+                                 # residual noise
                                  group_by(.data[[var_stratum]]) %>%
                                  mutate(resid_noise =
                                             rnorm(n(),
                                                   sd = invsqrt(model$summary.hyperpar[str_c("Stratum ", .data[[var_stratum]], ": Precision of residuals"), "mean"]))) %>%
                                  ungroup %>%
+                                 # calculate response
                                  mutate(response =
                                             prediction_fixed +
                                             ranef_loc +
