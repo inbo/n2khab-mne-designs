@@ -234,17 +234,32 @@ simulate_detrended_obs <-
                              design_modelres %>%
                                  # spatial noise
                                  group_by(location) %>%
-                                 mutate(ranef_loc =
+                                 {if ("loc_code" %in% names(model$summary.random)) {
+                                 mutate(., ranef_loc =
                                             rnorm(1,
-                                                  sd = invsqrt(model$summary.hyperpar["Precision for loc_code", "mean"])),
-                                        ranef_clus =
-                                            rnorm(1,
-                                                  sd = invsqrt(model$summary.hyperpar["Precision for cluster_id", "mean"]))) %>%
+                                                  sd = invsqrt(model$summary.hyperpar["Precision for loc_code", "mean"])))} else .} %>%
+                                 {if ("cluster_id" %in% names(model$summary.random)) {
+                                     mutate(., ranef_clus =
+                                                rnorm(1,
+                                                      sd = invsqrt(model$summary.hyperpar["Precision for cluster_id", "mean"])))} else .} %>%
+                                 {if (any(str_detect(names(model$summary.random),
+                                                     "cluster_stratum_"))) {
+                                     group_by(., location, stratum_) %>%
+                                         mutate(spatial_noise =
+                                                    rnorm(1,
+                                                          sd = invsqrt(model$summary.hyperpar[str_c("Precision for cluster_stratum_", stratum_), "mean"])))} else .} %>%
                                  # temporal noise
-                                 group_by(.data[[var_time]], stratum_) %>%
-                                 mutate(temporal_noise =
-                                            rnorm(1,
-                                                  sd = invsqrt(model$summary.hyperpar[str_c("Precision for ", var_time, "_stratum_", stratum_), "mean"]))) %>%
+                                 {if (var_time %in% names(model$summary.random)) {
+                                     group_by(., .data[[var_time]]) %>%
+                                     mutate(ranef_time =
+                                                rnorm(1,
+                                                      sd = invsqrt(model$summary.hyperpar[str_c("Precision for ", var_time), "mean"])))} else .} %>%
+                                 {if (any(str_detect(names(model$summary.random),
+                                                     str_c(var_time, "_stratum_")))) {
+                                     group_by(., .data[[var_time]], stratum_) %>%
+                                         mutate(temporal_noise =
+                                                    rnorm(1,
+                                                          sd = invsqrt(model$summary.hyperpar[str_c("Precision for ", var_time, "_stratum_", stratum_), "mean"])))} else .} %>%
                                  # residual noise
                                  group_by(.data[[var_stratum]]) %>%
                                  mutate(resid_noise =
@@ -253,11 +268,11 @@ simulate_detrended_obs <-
                                  ungroup %>%
                                  # calculate response
                                  mutate(response =
-                                            prediction_fixed +
-                                            ranef_loc +
-                                            ranef_clus +
-                                            temporal_noise +
-                                            resid_noise) %>%
+                                            rowSums(across(c(
+                                                prediction_fixed,
+                                                starts_with("ranef"),
+                                                ends_with("noise"))))
+                                 ) %>%
                                  select(-modelterm_type, -stratum_)
 
             }
