@@ -199,7 +199,7 @@ simulate_detrended_obs <-
                                           # keeping only fixed effects, and excluding long-term
                                           # trend:
                                           "f\\(|:.*year|I\\(.*year|year_std$")] %>%
-                            {if ("stratum_" %in% colnames(df)) . else .[!str_detect(., "stratum_")]} %>%
+                            {if ("stratum_" %in% colnames(dm)) . else .[!str_detect(., "stratum_")]} %>%
                             paste(collapse = " + ") %>%
                             {if ("(Intercept)" %in% model$names.fixed) {
                                 paste("~", .) } else paste("~-1 +", .)
