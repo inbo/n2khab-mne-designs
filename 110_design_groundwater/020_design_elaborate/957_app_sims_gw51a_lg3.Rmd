@@ -4,11 +4,13 @@
 
 ```{r}
 respvar <- "lg3_std"
+scheme <- "GW_05.1_aq"
+filepath_sub <- "gw51a_"
 ```
 
 ```{r include=FALSE}
 rds_filepath <- file.path(datapath, "binary/simmodels",
-                          str_c("model_gw51a_", respvar, ".rds"))
+                          str_c("model_", filepath_sub, respvar, ".rds"))
 modelname <- basename(rds_filepath) %>% str_remove(".rds")
 if (exists(modelname)) {
   M1 <- modelname %>% as.name %>% eval
@@ -29,7 +31,7 @@ M1$.args$formula
 ```{r eval=params$simulate_pops}
 type_attrib <- 
     targetpop %>% 
-    filter(scheme == "GW_05.1_aq") %>% 
+    filter(scheme == scheme) %>% 
     distinct(type) %>% 
     arrange(type) %>% 
     mutate(type = droplevels(type),
@@ -42,7 +44,7 @@ type_attrib <-
   mutate(modelname = modelname %>% factor) %>% 
   inner_join(
     targetpop_stratumsize %>% 
-      filter(scheme == "GW_05.1_aq") %>% 
+      filter(scheme == scheme) %>% 
       group_by(type) %>% 
       summarize(population_size = sum(population_size)),
     by = "type"
@@ -75,9 +77,9 @@ simpops_500locs <-
 
 ```{r include=FALSE}
 rds_filepath <- file.path(datapath, "binary/simobs",
-                          str_c("gw51a_", respvar, "_simpops.rds"))
+                          str_c(filepath_sub, respvar, "_simpops.rds"))
 rds_filepath_500 <- file.path(datapath, "binary/simobs",
-                          str_c("gw51a_", respvar, "_simpops_500.rds"))
+                          str_c(filepath_sub, respvar, "_simpops_500.rds"))
 if (params$simulate_pops) {
     saveRDS(simpops, rds_filepath)
     saveRDS(simpops_500locs, rds_filepath_500)
