@@ -272,11 +272,13 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
 Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties), met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele:
 
 ```{r out.width='70%'}
-newdata %>% 
+fixedpred_newdata <- 
+  newdata %>% 
   arrange(is.na(stratum_)) %>% 
   select(stratum = .data[[ts_stratumvar]], 
          hydroyear_std) %>% 
-  bind_cols(M1$summary.lincomb.derived) %>% 
+  bind_cols(M1$summary.lincomb.derived)
+fixedpred_newdata %>% 
   ggplot(aes(x = hydroyear_std)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
@@ -287,6 +289,55 @@ newdata %>%
                  ts_stratumvar)) + 
   facet_wrap(~stratum)
 ```
+
+
+```{r}
+trends_abs <- 
+  M1$summary.fixed[str_detect(rownames(M1$summary.fixed), "stratum_.+:"), ] %>% 
+  rownames_to_column("effect") %>% 
+  select(effect, mean) %>% 
+  separate(effect, c("stratum", "effect"), ":") %>% 
+  pivot_wider(names_from = effect, values_from = mean) %>% 
+  mutate(stratum = str_remove(stratum, "stratum_") %>% 
+           factor(levels = levels(dataset[[stratumvar]])),
+         trend_y01 = (hydroyear_std + 2 * `I(hydroyear_std^2)` * 1),
+         trend_y29 = (hydroyear_std + 2 * `I(hydroyear_std^2)` * 29),
+         avg_trend = rowMeans(across(c(trend_y01, trend_y29)))) %>% 
+  rowwise %>% 
+  mutate(max_abs_trend = max(abs(trend_y01), abs(trend_y29))) %>% 
+  ungroup %>% 
+  select(-contains("hydroyear")) 
+trends_abs %>% 
+  mutate(across(where(is.numeric), ~round(., 3))) %>% 
+  kable(caption = "Variatie, per stratum, van de lineaire trend in de data. De trend wordt beschouwd volgens de raaklijn aan de gemodelleerde langetermijntrend: de momentane verandering in meter per jaar.") %>% 
+  kable_styling()
+```
+
+```{r}
+trends_rel <-
+  trends_abs %>% 
+  select(1:3) %>% 
+  pivot_longer(cols = starts_with("trend"),
+               names_to = "hydroyear_std",
+               values_to = "trend") %>% 
+  mutate(hydroyear_std = str_remove(hydroyear_std, "trend_y") %>% as.numeric) %>% 
+  left_join(fixedpred_newdata %>% select(stratum, hydroyear_std, pred = mean),
+            by = c("stratum", "hydroyear_std")) %>% 
+  mutate(multiplier12 = (1 + trend / abs(pred))^12,
+         hydroyear_std = str_c("multiplier12_y", str_pad(hydroyear_std, 2, pad = "0"))) %>% 
+  pivot_wider(id_cols = "stratum", 
+              names_from = hydroyear_std,
+              values_from = multiplier12) %>% 
+  mutate(avg = rowMeans(across(c(multiplier12_y01, multiplier12_y29)))) %>% 
+  rowwise %>% 
+  mutate(max_abs = max(abs(multiplier12_y01), abs(multiplier12_y29))) %>% 
+  ungroup
+trends_rel %>% 
+  mutate(across(where(is.numeric), ~round(., 3))) %>% 
+  kable(caption = "Variatie, per stratum, van de lineaire trend in de data (uitgedrukt als multiplier). De trend wordt beschouwd volgens de raaklijn aan de gemodelleerde langetermijntrend: de momentane verandering per jaar, uitgedrukt als multiplier van de waarde van de milieuvariabele voor een constante exponentiële trend over 12 jaar.") %>% 
+  kable_styling()
+```
+
 
 Resterend korte-termijntijdseffect:
 
