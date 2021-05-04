@@ -154,15 +154,17 @@ add_st <- function(type_attrib, time = 1:12) {
 #' @param var_stratum_ variable by which temporal variation is stratified; it
 #' can have less levels than the orginal variable it is based on, because
 #' certain levels don't have enough timeseries data
-#' @param keep_effects should the result contain the separate fixed and
+#' @param keep_ranef should the result contain the separate
 #' random effects and residuals?
+#' @param keep_predfixed should the result contain the total fixed effect?
 simulate_detrended_obs <-
     function(design_matrix,
              npop = 20,
              var_time,
              var_stratum,
              var_stratum_,
-             keep_effects = FALSE,
+             keep_ranef = FALSE,
+             keep_predfixed = FALSE,
              seed = 123456) {
         # colnames(model$model.matrix)
         # rownames(model$summary.fixed)
@@ -281,8 +283,11 @@ simulate_detrended_obs <-
             unnest(design_modelres) %>%
             relocate(population) %>%
             relocate(modelname, .after = last_col()) %>%
-            {if (keep_effects) . else {
-                select(., -prediction_fixed, -starts_with("ranef"), -ends_with("noise"))
+            {if (keep_ranef) . else {
+                select(., -starts_with("ranef"), -ends_with("noise"))
+            }} %>%
+            {if (keep_predfixed) . else {
+                select(., -prediction_fixed)
             }} %>%
             arrange(population, location, .data[[var_time]])
 

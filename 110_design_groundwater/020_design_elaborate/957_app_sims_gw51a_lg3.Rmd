@@ -4,8 +4,11 @@
 
 ```{r}
 respvar <- "lg3_std"
-scheme <- "GW_05.1_aq"
+scheme_sel <- "GW_05.1_aq"
 filepath_sub <- "gw51a_"
+stratumvar <- "type" # to support heterogeneity in residuals
+ts_stratumvar <- "type" # for interaction with space and time
+timevar <- "hydroyear_std"
 ```
 
 ```{r include=FALSE}
@@ -28,10 +31,10 @@ M1$.args$formula
 ### Basisset van gesimuleerde populaties zonder trend
 
 
-```{r eval=params$simulate_pops}
+```{r}
 type_attrib <- 
     targetpop %>% 
-    filter(scheme == scheme) %>% 
+    filter(scheme == scheme_sel) %>% 
     distinct(type) %>% 
     arrange(type) %>% 
     mutate(type = droplevels(type),
@@ -44,11 +47,15 @@ type_attrib <-
   mutate(modelname = modelname %>% factor) %>% 
   inner_join(
     targetpop_stratumsize %>% 
-      filter(scheme == scheme) %>% 
+      filter(scheme == scheme_sel) %>% 
       group_by(type) %>% 
       summarize(population_size = sum(population_size)),
     by = "type"
   )
+```
+
+
+```{r eval=params$simulate_pops}
 # design matrix for each simulated population (each will apply one series of random value for loc+cluster effect (all types) and one random timeseries per type):
 design_matrix <- 
   type_attrib %>% 
@@ -58,10 +65,11 @@ design_matrix <-
 simpops <- 
   simulate_detrended_obs(design_matrix = design_matrix,
                          npop = 50, 
-                         var_time = "hydroyear_std",
-                         var_stratum = "type", 
-                         var_stratum_ = "type",
-                         seed = 20210422)
+                         var_time = timevar,
+                         var_stratum = stratumvar, 
+                         var_stratum_ = ts_stratumvar,
+                         seed = 20210422,
+                         keep_predfixed = TRUE)
 
 simpops_500locs <- 
   type_attrib %>% 
@@ -69,9 +77,9 @@ simpops_500locs <-
   uncount(500) %>% 
   add_st(time = 1:6) %>% 
   simulate_detrended_obs(npop = 100, 
-                         var_time = "hydroyear_std",
-                         var_stratum = "type", 
-                         var_stratum_ = "type",
+                         var_time = timevar,
+                         var_stratum = stratumvar, 
+                         var_stratum_ = ts_stratumvar,
                          seed = 20210422)
 ```
 
