@@ -183,8 +183,8 @@ simulate_detrended_obs <-
             mutate(
                 design_matrix = map2(design_matrix, model, function(dm, model) {
                     dm %>%
-                        rename(type = modelterm_type,
-                               {{var_time}} := time) %>%
+                        rename(type = modelterm_type) %>%
+                        `colnames<-`(colnames(.) %>% replace(. == "time", var_time)) %>%
                         mutate(stratum_ =
                                    .data[[var_stratum_]] %>%
                                    factor(levels = levels(model$.args$data$stratum_))) %>%
