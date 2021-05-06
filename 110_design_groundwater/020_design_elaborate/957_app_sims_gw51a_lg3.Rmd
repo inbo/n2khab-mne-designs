@@ -54,8 +54,14 @@ type_attrib <-
   )
 ```
 
+```{r include=FALSE}
+rds_filepath <- file.path(datapath, "binary/simobs",
+                          str_c(filepath_sub, respvar, "_simpops.rds"))
+rds_filepath_500 <- file.path(datapath, "binary/simobs",
+                          str_c(filepath_sub, respvar, "_simpops_500.rds"))
+```
 
-```{r eval=params$simulate_pops}
+```{r eval = (params$simulate_obs | !all(file.exists(c(rds_filepath, rds_filepath_500))))}
 # design matrix for each simulated population (each will apply one series of random values for random effect levels):
 design_matrix <- 
   type_attrib %>% 
@@ -83,12 +89,9 @@ simpops_500locs <-
                           seed = 20210422)
 ```
 
+
 ```{r include=FALSE}
-rds_filepath <- file.path(datapath, "binary/simobs",
-                          str_c(filepath_sub, respvar, "_simpops.rds"))
-rds_filepath_500 <- file.path(datapath, "binary/simobs",
-                          str_c(filepath_sub, respvar, "_simpops_500.rds"))
-if (params$simulate_pops) {
+if (params$simulate_obs | !all(file.exists(c(rds_filepath, rds_filepath_500)))) {
     saveRDS(simpops, rds_filepath)
     saveRDS(simpops_500locs, rds_filepath_500)
 } else {
@@ -150,7 +153,14 @@ sample_definition <-
 ```
 
 
-```{r}
+### Steekproefsimulatie
+
+```{r include=FALSE}
+rds_filepath_simsamples <- file.path(datapath, "binary/simobs",
+                          str_c(filepath_sub, respvar, "_simsamples.rds"))
+```
+
+```{r eval=(params$simulate_obs | !file.exists(rds_filepath_simsamples))}
 simsamples <- 
   simulate_trended_spatial_samples(sample_definition = sample_definition,
                                    population_data = simpops,
@@ -160,9 +170,7 @@ simsamples <-
 ```
 
 ```{r include=FALSE}
-rds_filepath_simsamples <- file.path(datapath, "binary/simobs",
-                          str_c(filepath_sub, respvar, "_simsamples.rds"))
-if (params$simulate_pops) {
+if (params$simulate_obs | !file.exists(rds_filepath_simsamples)) {
     saveRDS(simsamples, rds_filepath_simsamples)
 } else {
   simsamples <- readRDS(rds_filepath_simsamples)
