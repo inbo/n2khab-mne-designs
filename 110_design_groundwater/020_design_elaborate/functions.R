@@ -142,7 +142,8 @@ add_st <- function(type_attrib, time = 1:12) {
 
 #' Simulate populations from posterior mean fixed and hyperparameter values
 #'
-#' This function also omits the long-term trend component
+#' This function also omits the long-term trend component.
+#'
 #'
 #' @param npop number of populations to simulate.
 #' They only differ by their used random effect values, which still originate
