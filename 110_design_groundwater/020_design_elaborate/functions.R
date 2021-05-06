@@ -295,3 +295,79 @@ simulate_detrended_pops <-
     }
 
 
+
+
+
+#' Simulate spatial samples from given populations and sample definitions (including artificial trend)
+#'
+#' @param sample_definition Data frame that defines the constitution of a sample for each scenario.
+#' Minimal columns needed: scenario, trend_12yearly_multiplier, type, n_finitepop_spatial
+#' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, hydroyear_std, prediction_fixed, response and modelname.
+#' @param npops Number of populations to select from population_data (the first `npops` populations are used)
+#' @param nsamples_per_pop Number of samples to take per population (without replacement)
+#'
+simulate_trended_spatial_samples <- function(sample_definition = sample_definition,
+                                             population_data = simpops,
+                                             npops = length(unique(population_data$population)),
+                                             nsamples_per_pop = 20,
+                                             seed = NULL){
+    if (!is.null(seed)) set.seed(seed)
+
+    sample_definition %>%
+        nest(scen_attrib = -scenario) %>%
+        crossing(population_data %>%
+                     filter(str_sub(population, start = -5L) %>%
+                                as.numeric <= npops) %>%
+                     select(-modelname) %>%
+                     nest(pop_data = -population)) %>%
+        # adding trend to prediction_fixed (this intermediate result is
+        # below called fixed_term):
+        mutate(pop_data = map2(scen_attrib, pop_data, function(s, p) {
+            p %>%
+                inner_join(s %>% select(-popsize_spatial),
+                           by = "type") %>%
+                mutate(fixed_term = prediction_fixed *
+                           (trend_12yearly_multiplier^(.data[[timevar]]/12)),
+                       response = response - prediction_fixed + fixed_term) %>%
+                select(-prediction_fixed, -trend_12yearly_multiplier) %>%
+                relocate(response, .after = last_col())
+        })) %>%
+        # simulating repeated spatial samples:
+        mutate(sample_data = list(tibble(spatial_sample =
+                                             str_c("sample_",
+                                                   str_pad(1:nsamples_per_pop, 4, pad = "0")) %>%
+                                             factor)),
+               sample_data = map2(pop_data,
+                                  sample_data,
+                                  function(p, df) {
+                                      df %>%
+                                          mutate(units = map(spatial_sample, ~
+                                             p %>%
+                                             distinct(type,
+                                                      location,
+                                                      n_finitepop_spatial) %>%
+                                             nest(locs = location) %>%
+                                             mutate(sample = map2(locs, n_finitepop_spatial,
+                                                                  ~slice_sample(.x, n = .y))) %>%
+                                             select(-locs, -n_finitepop_spatial) %>%
+                                             unnest(sample)
+                                          ),
+                                          data = map2(spatial_sample, units, ~
+                                                          p %>%
+                                                          select(-n_finitepop_spatial,
+                                                                 -fixed_term) %>%
+                                                          semi_join(.y,
+                                                                    by = c("type",
+                                                                           "location"))
+                                          )
+                                          ) %>%
+                                          select(-units) %>%
+                                          unnest(data)
+                                  })) %>%
+        # drop scen_attrib and pop_data:
+        select(-scen_attrib, -pop_data) %>%
+        unnest(sample_data)
+}
+
+
+
