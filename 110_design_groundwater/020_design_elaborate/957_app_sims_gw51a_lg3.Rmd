@@ -100,6 +100,13 @@ if (params$simulate_obs | !all(file.exists(c(rds_filepath, rds_filepath_500)))) 
 }
 ```
 
+De basisset van gesimuleerde populaties zonder trend is een dataset met volgende opbouw:
+
+```{r}
+glimpse(simpops)
+```
+
+
 ### Schatting van spatiale variantie per type
 
 ```{r message=FALSE}
@@ -111,7 +118,9 @@ spatvar <-
   group_by(type) %>% 
   summarise(spatvar_estimate = mean(spatvar),
             spatvar_se = sd(spatvar) / sqrt(n()))
-spatvar %>% mutate(across(where(is.numeric), ~round(., 3)))
+spatvar %>% mutate(across(where(is.numeric), ~round(., 3))) %>% 
+  kable(caption = "De geschatte spatiale variantie per type, met de standaardfout. De schattingen zijn gebaseerd op 100 gesimuleerde populaties over 6 jaar en met een spatiale populatiegrootte van 500 locaties per type. Eén populatie levert één waarde per type.") %>% 
+  kable_styling()
 ```
 
 De verhouding tussen de typespecifieke variantieschattingen wordt gebruikt als verhouding van steekproefgroottes per type bij trekking uit een oneindige populatie.
@@ -126,11 +135,7 @@ scen <-
   relocate(scenario)
 # the yearly multiplier for a relative change is g = (1+f)^(1/Δt) with f the fractional change after Δt years (trend_12yearly_multiplier is 1+f for Δt=12)
 # see model results for example values (multiplier12) derived from the polynomial fitted trend
-kable(scen, caption = "Beschouwde scenario's.") %>% 
-  kable_styling()
 ```
-
-### Steekproefsimulatie
 
 ```{r}
 sample_definition <- 
@@ -152,8 +157,28 @@ sample_definition <-
   select(-n_infpop_spatial)
 ```
 
+```{r message=FALSE}
+sample_definition %>% 
+  select(-trend_12yearly_multiplier) %>% 
+  mutate(nN = str_c(n_finitepop_spatial, "/", popsize_spatial), 
+         .keep = "unused") %>% 
+  inner_join(scen, ., by = "scenario") %>% 
+  relocate(trend_12yearly_multiplier, 
+           .before = avg_nrlocs_pertype_infpop) %>% 
+  pivot_wider(names_from = type, values_from = nN) %>% 
+  kable(caption = "Kenmerken van de scenario's. Behalve door de artificieel toegevoegde trend, wordt een scenario gedefinieerd door het gemiddelde aantal locaties dat per type wordt weerhouden, bij trekking uit een oneindige spatiale populatie. De uiteindelijke spatiale steekproefgroottes per type staan in de kolommen erna (teller), vergezeld van de totale spatiale populatiegrootte van het type (noemer). Behalve de eindige populatiegrootte leiden ook verschillen in de spatiale variantie tussen de types tot een typespecifieke spatiale steekproefgrootte.") %>% 
+  kable_styling()
+```
 
 ### Steekproefsimulatie
+
+```{r}
+npops <- 20
+nsamples_per_pop <- 20
+```
+
+Voor elk scenario worden de eerste `r npop` gesimuleerde populaties gebruikt.
+Uit elke populatie worden `r nsamples_per_pop` steekproeven gesimuleerd (zonder teruglegging).
 
 ```{r include=FALSE}
 rds_filepath_simsamples <- file.path(datapath, "binary/simobs",
@@ -164,8 +189,8 @@ rds_filepath_simsamples <- file.path(datapath, "binary/simobs",
 simsamples <- 
   simulate_trended_spatial_samples(sample_definition = sample_definition,
                                    population_data = simpops,
-                                   npops = 20,
-                                   nsamples_per_pop = 20,
+                                   npops = npops,
+                                   nsamples_per_pop = nsamples_per_pop,
                                    seed = 20210506)
 ```
 
@@ -176,6 +201,13 @@ if (params$simulate_obs | !file.exists(rds_filepath_simsamples)) {
   simsamples <- readRDS(rds_filepath_simsamples)
 }
 ```
+
+De resulterende dataset heeft volgende opbouw:
+
+```{r}
+glimpse(simsamples)
+```
+
 
 
 
