@@ -158,7 +158,7 @@ add_st <- function(type_attrib, time = 1:12) {
 #' @param keep_ranef should the result contain the separate
 #' random effects and residuals?
 #' @param keep_predfixed should the result contain the total fixed effect?
-simulate_detrended_obs <-
+simulate_detrended_pops <-
     function(design_matrix,
              npop = 20,
              var_time,
