@@ -166,13 +166,13 @@ simulate_detrended_obs <-
              var_stratum_,
              keep_ranef = FALSE,
              keep_predfixed = FALSE,
-             seed = 123456) {
+             seed = NULL) {
         # colnames(model$model.matrix)
         # rownames(model$summary.fixed)
         # model$names.fixed
         # model$.args$data
         # latent_names <- model$misc$configs$contents$tag
-        set.seed(seed)
+        if (!is.null(seed)) set.seed(seed)
         if (var_stratum == "type") var_stratum <- "modelterm_type"
 
         design_matrix %>%
