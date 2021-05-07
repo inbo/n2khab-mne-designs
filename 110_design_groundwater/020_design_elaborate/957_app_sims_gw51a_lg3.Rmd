@@ -210,5 +210,85 @@ glimpse(simsamples)
 ```
 
 
+### Poweranalyse
+
+In de poweranalyse vergelijken we de scenario's door inferentie op basis van de gesimuleerde set van steekproeven per scenario.
+
+#### Toestand
+
+```{r}
+statusdata <- 
+  simsamples %>% 
+  filter(between(hydroyear_std, 1, 6)) %>% 
+  inner_join(type_attrib %>% select(type, population_size), by = "type") %>% 
+  group_by(scenario, population, spatial_sample, type, location, population_size) %>% 
+  summarise(targetvar = mean(response)) %>% 
+  ungroup %>% 
+  nest(data = -c(scenario, population, spatial_sample)) %>% 
+  mutate(design = map(data, ~svydesign(ids = ~1, 
+                                       strata = ~type, 
+                                       fpc = ~population_size, 
+                                       data = .))) %>% 
+  select(-data)
+status_res_overall <- 
+  statusdata %>% 
+  mutate(overall_mean_svystat = map(design, ~svymean(~targetvar, .)),
+         overall_mean = map_dbl(overall_mean_svystat, ~coef(.)),
+         overall_mean_se = map_dbl(overall_mean_svystat, ~SE(.)),
+         overall_mean_2sided_errmarg80 = overall_mean_se * qnorm(1 - 0.2 / 2),
+         overall_mean_2sided_errmarg90 = overall_mean_se * qnorm(1 - 0.1 / 2),
+         overall_mean_2sided_errmarg80_rel = 
+           overall_mean_2sided_errmarg80 / abs(overall_mean),
+         overall_mean_2sided_errmarg90_rel = 
+           overall_mean_2sided_errmarg90 / abs(overall_mean)
+  ) %>% 
+  select(-design, -overall_mean_svystat)
+status_res_per_type <- 
+  statusdata %>% 
+  mutate(type_mean_svystat = map(design, ~svyby(~targetvar, 
+                                                ~type, 
+                                                .,
+                                                svymean))) %>% 
+  select(-design) %>% 
+  unnest(type_mean_svystat) %>% 
+  mutate(mean_2sided_errmarg80 = se * qnorm(1 - 0.2 / 2),
+         mean_2sided_errmarg90 = se * qnorm(1 - 0.1 / 2),
+         mean_2sided_errmarg80_rel = 
+           mean_2sided_errmarg80 / abs(targetvar),
+         mean_2sided_errmarg90_rel = 
+           mean_2sided_errmarg90 / abs(targetvar)
+         )
+```
+
+
+```{r}
+status_res_overall %>% 
+  select(scenario, population, spatial_sample, ends_with("_rel")) %>% 
+  pivot_longer(cols = ends_with("_rel"),
+               names_to = "ci_type",
+               values_to = "errmarg_rel") %>% 
+  ggplot(aes(x = errmarg_rel, group = population)) +
+  geom_density() +
+  facet_grid(scenario ~ ci_type, scales = "free_y")
+```
+
+
+```{r}
+status_res_per_type %>% 
+  select(scenario, population, spatial_sample, type, ends_with("_rel")) %>% 
+  pivot_longer(cols = ends_with("_rel"),
+               names_to = "ci_type",
+               values_to = "errmarg_rel") %>% 
+  split(.$type) %>% 
+  walk2(., names(.), ~
+         {ggplot(.x, aes(x = errmarg_rel, group = population)) +
+             geom_density() +
+             ggtitle(.y) +
+             facet_grid(scenario ~ ci_type, scales = "free_y")} %>% 
+         print
+       )
+```
+
+
 
 
