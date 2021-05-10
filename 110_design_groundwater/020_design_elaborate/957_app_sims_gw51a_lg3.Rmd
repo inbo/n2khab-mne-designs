@@ -122,15 +122,25 @@ spatvar <-
     } %>% 
   group_by(type) %>% 
   summarise(spatvar_estimate = mean(spatvar),
-            spatvar_se = sd(spatvar) / sqrt(n()))
+            spatvar_se = sd(spatvar) / sqrt(n())) %>% 
+  mutate(spatvar_group = 
+           spatvar_estimate %>% 
+           dist %>% 
+           hclust(method = "complete") %>% 
+           cutree(h = (max(spatvar_estimate) - min(spatvar_estimate)) / 3)) %>% 
+  group_by(spatvar_group) %>% 
+  mutate(spatvar_generalized = mean(spatvar_estimate)) %>% 
+  ungroup %>% 
+  select(-spatvar_group)
 spatvar %>% mutate(across(where(is.numeric), ~round(., 3))) %>% 
   kable(caption = str_c("De geschatte spatiale variantie per type, met de standaardfout. ",
                         ifelse(errmarg_rel, "Berekeningen gebeurden in de log<sub>10</sub>-schaal. ", ""),
-                        "De schattingen zijn gebaseerd op 100 gesimuleerde populaties over 6 jaar en met een spatiale populatiegrootte van 500 locaties per type. Eén populatie levert één waarde per type.")) %>% 
+                        "De schattingen zijn gebaseerd op 100 gesimuleerde populaties (gesimuleerd met dezelfde parameterwaarden), over 6 jaar en met een spatiale populatiegrootte van 500 locaties per type. De populaties verschillen onderling enkel in de sampling van de random effectlevels. Eén populatie levert één waarde per type. Een vereenvoudigde waarde van de spatiale variantie (op basis van complete linkage clustering) wordt gebruikt voor verdere berekeningen, gezien de onzekerheid in de hyperparameters van het simulatiemodel.")) %>% 
   kable_styling()
 ```
 
-De verhouding tussen de typespecifieke variantieschattingen wordt gebruikt als verhouding van steekproefgroottes per type bij trekking uit een oneindige populatie.
+De verhouding tussen de typespecifieke -- maar achteraf gegeneraliseerde -- variantieschattingen wordt gebruikt als verhouding van steekproefgroottes per type bij trekking uit een oneindige populatie.
+
 
 ### Definitie van scenario's
 
