@@ -152,9 +152,9 @@ add_st <- function(type_attrib, time = 1:12) {
 #' @param design_matrix defines the size and fixed + random level configuration
 #' of one (and each) population
 #' @param var_stratum variable by which residual distribution has been split
-#' @param var_stratum_ variable by which temporal variation is stratified; it
-#' can have less levels than the orginal variable it is based on, because
-#' certain levels don't have enough timeseries data
+#' @param var_stratum_ variable by which temporal or spatial variation is
+#' stratified; it can have less levels than the orginal variable it is based on,
+#' because certain levels don't have enough timeseries data.
 #' @param keep_ranef should the result contain the separate
 #' random effects and residuals?
 #' @param keep_predfixed should the result contain the total fixed effect?
