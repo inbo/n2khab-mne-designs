@@ -9,6 +9,7 @@ filepath_sub <- "gw51a_"
 stratumvar <- "type" # to support heterogeneity in residuals
 ts_stratumvar <- "type" # for interaction with space and time
 timevar <- "hydroyear_std"
+errmarg_rel <- TRUE # should the error margins be evaluated relative to the estimated value?
 ```
 
 ```{r include=FALSE}
@@ -115,12 +116,17 @@ spatvar <-
   simpops_500locs %>% 
   group_by(population, type, location) %>% 
   summarise(spatresp = mean(response)) %>% 
-  summarise(spatvar = var(spatresp)) %>% 
+  {if (errmarg_rel) {
+    summarise(., spatvar = ifelse(-spatresp < 0, .01, -spatresp) %>% log10 %>% var)
+  } else summarise(., spatvar = var(spatresp))
+    } %>% 
   group_by(type) %>% 
   summarise(spatvar_estimate = mean(spatvar),
             spatvar_se = sd(spatvar) / sqrt(n()))
 spatvar %>% mutate(across(where(is.numeric), ~round(., 3))) %>% 
-  kable(caption = "De geschatte spatiale variantie per type, met de standaardfout. De schattingen zijn gebaseerd op 100 gesimuleerde populaties over 6 jaar en met een spatiale populatiegrootte van 500 locaties per type. Eén populatie levert één waarde per type.") %>% 
+  kable(caption = str_c("De geschatte spatiale variantie per type, met de standaardfout. ",
+                        ifelse(errmarg_rel, "Berekeningen gebeurden in de log<sub>10</sub>-schaal. ", ""),
+                        "De schattingen zijn gebaseerd op 100 gesimuleerde populaties over 6 jaar en met een spatiale populatiegrootte van 500 locaties per type. Eén populatie levert één waarde per type.")) %>% 
   kable_styling()
 ```
 
