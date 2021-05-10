@@ -149,8 +149,10 @@ sample_definition <-
   scen %>% 
   crossing(spatvar) %>% 
   group_by(scenario) %>% 
-  mutate(n_infpop_spatial = spatvar_estimate / sum(spatvar_estimate) * 
+  mutate(n_infpop_spatial = spatvar_generalized / sum(spatvar_generalized) * 
            sum(avg_nrlocs_pertype_infpop)) %>% 
+  rowwise %>% 
+  mutate(n_infpop_spatial = max(n_infpop_spatial, avg_nrlocs_pertype_infpop * 0.2)) %>% 
   ungroup %>% 
   select(-starts_with("spatvar"), -avg_nrlocs_pertype_infpop) %>% 
   left_join(type_attrib %>% 
