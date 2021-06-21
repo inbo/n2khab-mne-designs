@@ -32,7 +32,7 @@ filepath <- ifelse(.Platform$OS.type == "unix",
                    file.path("data/10_input/PRJ_Macrofyten",
                              "habitats/MonitoringPlassen/GIS",
                              "Kartering_waterhabitats.gdb"),
-                   file.path("Q:/Projects/PRJ_Macrofyten/habitats",
+                   file.path("\\\\172.31.11.14/inbo/Prjdata/Projects/PRJ_Macrofyten/habitats",
                              "MonitoringPlassen/GIS",
                              "Kartering_waterhabitats.gdb"))
 lentic_hab <- st_read(filepath,
