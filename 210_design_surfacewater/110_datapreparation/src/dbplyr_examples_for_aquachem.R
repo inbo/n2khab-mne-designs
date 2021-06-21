@@ -1,3 +1,4 @@
+renv::restore()
 library(tidyverse)
 library(inbodb) # see https://inbo.github.io/inbodb
 
