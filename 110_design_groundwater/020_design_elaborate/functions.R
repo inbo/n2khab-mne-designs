@@ -229,7 +229,7 @@ simulate_detrended_pops <-
             mutate(
                 model = list(modelname %>% as.character %>% str2lang %>% eval)) %>%
             ungroup %>%
-# different samples only need to be accommodated from this point on (they share their fixed prediction). Also there's the need to implement modelnames (within sample)
+# different populations only need to be accommodated from this point on (they share their fixed prediction). Also there's the need to implement modelnames (within population)
             mutate(
                 design_modelres =
                     map2(design_modelres, model,
@@ -306,8 +306,8 @@ simulate_detrended_pops <-
 #' @param npops Number of populations to select from population_data (the first `npops` populations are used)
 #' @param nsamples_per_pop Number of samples to take per population (without replacement)
 #'
-simulate_trended_spatial_samples <- function(sample_definition = sample_definition,
-                                             population_data = simpops,
+simulate_trended_spatial_samples <- function(sample_definition,
+                                             population_data,
                                              npops = length(unique(population_data$population)),
                                              nsamples_per_pop = 20,
                                              seed = NULL){
