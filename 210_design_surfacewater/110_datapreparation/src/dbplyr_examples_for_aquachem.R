@@ -11,6 +11,7 @@ tbl(aquachem, "FactResultAqua") %>% glimpse
 tbl(aquachem, "DimWaterhabitat") %>% glimpse
 tbl(aquachem, "DimAnalysis") %>% glimpse
 tbl(aquachem, "DimComponent") %>% glimpse
+tbl(aquachem, "DimAquaComponent") %>% glimpse
 tbl(aquachem, "DimUnit") %>% glimpse
 tbl(aquachem, "DimSample") %>% glimpse
 tbl(aquachem, "DimStatus") %>% glimpse
