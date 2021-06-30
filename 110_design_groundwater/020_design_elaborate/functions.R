@@ -371,3 +371,77 @@ simulate_trended_spatial_samples <- function(sample_definition,
 
 
 
+#' Compute sample statistics
+#'
+#'
+compute_status_persample <- function(statusdata,
+                                     level = c("typegroup", "type", "overall")) {
+    statusdata %>%
+        {switch(level,
+                "overall" =
+                    nest(., data = -c(scenario, population, spatial_sample)),
+                "type" =
+                    nest(., data = -c(scenario, population, spatial_sample, type))
+        )} %>%
+        mutate(design = map(data, ~svydesign(ids = ~1,
+                                             strata = if(level == "type") NULL else ~type,
+                                             fpc = ~population_size,
+                                             data = .)),
+               mean_svystat = map(design, ~svymean(~targetvar, .)),
+               deg_freedom = map_dbl(design, ~degf(.)),
+               mean = map_dbl(mean_svystat, ~coef(.)),
+               se = map_dbl(mean_svystat, ~SE(.)),
+               twosided_errmarg80 = se * qt(1 - 0.2 / 2, df = deg_freedom),
+               twosided_errmarg90 = se * qt(1 - 0.1 / 2, df = deg_freedom),
+               twosided_errmarg80_rel =
+                   twosided_errmarg80 / abs(mean),
+               twosided_errmarg90_rel =
+                   twosided_errmarg90 / abs(mean)) %>%
+        select(-data, -design, -mean_svystat)
+}
+
+
+#' Summarize simsample statistics within and among populations
+#'
+#' For a given sample statistic, calculates mean & percentiles, as well as CI
+#' (assuming normality), of its distribution obtained by multiple sample
+#' simulations (1 observation per sample), stratified by populations
+#'
+summarise_status_of_samples <- function(multisample_stats,
+                                        statistic,
+                                        conflevel = 0.9) {
+    stopifnot(between(conflevel, 0, 1))
+    q <- qnorm(p = 1 - (1 - conflevel) / 2)
+    multisample_stats %>%
+        nest(data = -c(scenario, contains("type"))) %>%
+        mutate(summ = map(data, function(df) {
+            df %>%
+                select(population, !!statistic) %>%
+                group_by(population) %>%
+                summarise(avg = mean(.data[[statistic]]),
+                          pctile_l = quantile(.data[[statistic]], (1 - conflevel) / 2),
+                          pctile_u = quantile(.data[[statistic]], 1 - (1 - conflevel) / 2),
+                          lcl_normal = avg - q * sd(.data[[statistic]]),
+                          ucl_normal = avg + q * sd(.data[[statistic]])) %>%
+                {if(statistic == "mean") . else mutate(.,
+                                                       lcl_normal = max(0, lcl_normal),
+                                                       ucl_normal = max(0, ucl_normal))} %>%
+                summarise(across(-population, ~mean(.)))
+        })) %>%
+        select(-data) %>%
+        unnest(cols = summ) %>%
+        relocate(contains("type")) %>%
+        {if(any(str_detect(colnames(.), "type"))) {
+            arrange(., across(contains("type"))) } else .} %>%
+        arrange(scenario)
+}
+
+
+
+
+
+
+
+
+
+

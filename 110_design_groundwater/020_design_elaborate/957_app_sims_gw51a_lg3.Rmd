@@ -247,43 +247,30 @@ statusdata <-
   ungroup
 status_res_overall <- 
   statusdata %>% 
-  nest(data = -c(scenario, population, spatial_sample)) %>% 
-  mutate(design = map(data, ~svydesign(ids = ~1, 
-                                       strata = ~type, 
-                                       fpc = ~population_size, 
-                                       data = .)),
-         overall_mean_svystat = map(design, ~svymean(~targetvar, .)),
-         deg_freedom = map_dbl(design, ~degf(.)),
-         overall_mean = map_dbl(overall_mean_svystat, ~coef(.)),
-         overall_mean_se = map_dbl(overall_mean_svystat, ~SE(.)),
-         overall_mean_2sided_errmarg80 = overall_mean_se * qt(1 - 0.2 / 2, 
-                                                              df = deg_freedom),
-         overall_mean_2sided_errmarg90 = overall_mean_se * qt(1 - 0.1 / 2, 
-                                                              df = deg_freedom),
-         overall_mean_2sided_errmarg80_rel = 
-           overall_mean_2sided_errmarg80 / abs(overall_mean),
-         overall_mean_2sided_errmarg90_rel = 
-           overall_mean_2sided_errmarg90 / abs(overall_mean)
-  ) %>% 
-  select(-data, -design, -overall_mean_svystat)
+  compute_status_persample("overall")
 status_res_per_type <- 
   statusdata %>% 
-  nest(data = -c(scenario, population, spatial_sample, type)) %>% 
-  mutate(design = map(data, ~svydesign(ids = ~1, 
-                                       fpc = ~population_size, 
-                                       data = .)),
-         type_mean_svystat = map(design, ~svymean(~targetvar, .)),
-         deg_freedom = map_dbl(design, ~degf(.)),
-         mean = map_dbl(type_mean_svystat, ~coef(.)),
-         se = map_dbl(type_mean_svystat, ~SE(.)),
-         mean_2sided_errmarg80 = se * qt(1 - 0.2 / 2, df = deg_freedom),
-         mean_2sided_errmarg90 = se * qt(1 - 0.1 / 2, df = deg_freedom),
-         mean_2sided_errmarg80_rel = 
-           mean_2sided_errmarg80 / abs(mean),
-         mean_2sided_errmarg90_rel = 
-           mean_2sided_errmarg90 / abs(mean)) %>% 
-  select(-data, -design, -type_mean_svystat)
+  compute_status_persample("type")
 ```
+
+```{r}
+status_res_overall %>% 
+  summarise_status_of_samples("twosided_errmarg90_rel",
+                              conflevel = 0.9) %>% 
+  mutate(across(where(is.numeric), ~round(., 3))) %>% 
+  kable(caption = "De relatieve foutenmarge op de doelparameter (voor 90% betrouwbaarheid) per scenario, voor een uitspraak over alle types samen. `avg` is de verwachte waarde volgens de distributie over meerdere steekproeven (gemiddeld over de populaties). De overige maten geven bijhorende onder- en bovengrenzen (5%, 95%) van de distributie (percentielen en op basis van normale benadering).") %>% 
+  kable_styling()
+```
+
+```{r}
+status_res_per_type %>% 
+  summarise_status_of_samples("twosided_errmarg90_rel",
+                              conflevel = 0.9) %>% 
+  mutate(across(where(is.numeric), ~round(., 3))) %>% 
+  kable(caption = "De relatieve foutenmarge op de doelparameter (voor 90% betrouwbaarheid) per scenario, voor een uitspraak over alle types samen. `avg` is de verwachte waarde volgens de distributie over meerdere steekproeven (gemiddeld over de populaties). De overige maten geven bijhorende onder- en bovengrenzen (5%, 95%) van de distributie (percentielen en op basis van normale benadering).") %>% 
+  kable_styling()
+```
+
 
 
 ```{r}
