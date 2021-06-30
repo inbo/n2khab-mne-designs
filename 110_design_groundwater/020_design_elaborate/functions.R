@@ -420,12 +420,7 @@ summarise_status_of_samples <- function(multisample_stats,
                 group_by(population) %>%
                 summarise(avg = mean(.data[[statistic]]),
                           pctile_l = quantile(.data[[statistic]], (1 - conflevel) / 2),
-                          pctile_u = quantile(.data[[statistic]], 1 - (1 - conflevel) / 2),
-                          lcl_normal = avg - q * sd(.data[[statistic]]),
-                          ucl_normal = avg + q * sd(.data[[statistic]])) %>%
-                {if(statistic == "mean") . else mutate(.,
-                                                       lcl_normal = max(0, lcl_normal),
-                                                       ucl_normal = max(0, ucl_normal))} %>%
+                          pctile_u = quantile(.data[[statistic]], 1 - (1 - conflevel) / 2)) %>%
                 summarise(across(-population, ~mean(.)))
         })) %>%
         select(-data) %>%
