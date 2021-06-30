@@ -427,8 +427,8 @@ summarise_status_of_samples <- function(multisample_stats,
         unnest(cols = summ) %>%
         relocate(contains("type")) %>%
         {if(any(str_detect(colnames(.), "type"))) {
-            arrange(., across(contains("type"))) } else .} %>%
-        arrange(scenario)
+            arrange(., across(contains("type")), scenario) } else {
+                arrange(., scenario)}}
 }
 
 
