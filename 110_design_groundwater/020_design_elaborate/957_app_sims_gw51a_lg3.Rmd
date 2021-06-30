@@ -273,35 +273,30 @@ status_res_per_type %>%
 ```
 
 
-```{r}
+```{r fig.caption="Visualisatie van het gemiddelde en het 5-95% bereik van de relatieve foutenmarge op de doelparameter, over de steekproeven per populatie (één populatie is één horizontale lijn). In deze grafiek maken we geen onderscheid tussen de types."}
 status_res_overall %>% 
-  select(scenario, population, spatial_sample, ends_with("_rel")) %>% 
-  pivot_longer(cols = ends_with("_rel"),
-               names_to = "ci_type",
-               values_to = "errmarg_rel") %>% 
-  ggplot(aes(x = errmarg_rel, group = population)) +
-  geom_density() +
-  facet_grid(scenario ~ ci_type, scales = "free_y")
+  summarise_status_of_samples("twosided_errmarg90_rel",
+                              conflevel = 0.9,
+                              merge_pops = FALSE,
+                              plot = TRUE) +
+  ggtitle("All types as one group")
 ```
 
-
-```{r}
+```{r warning=FALSE, fig.caption="Visualisatie van het gemiddelde en het 5-95% bereik van de relatieve foutenmarge op de doelparameter, over de steekproeven per populatie (één populatie is één horizontale lijn)."}
 status_res_per_type %>% 
-  select(scenario, population, spatial_sample, type, ends_with("_rel")) %>% 
-  pivot_longer(cols = ends_with("_rel"),
-               names_to = "ci_type",
-               values_to = "errmarg_rel") %>% 
-  split(.$type) %>% 
-  walk2(., names(.), ~
-         {ggplot(.x, aes(x = errmarg_rel, group = population)) +
-             geom_density() +
-             ggtitle(.y) +
-             facet_grid(scenario ~ ci_type, scales = "free_y") +
-             xlim(0, 1)} %>% 
-         print
-       )
+  summarise_status_of_samples("twosided_errmarg90_rel",
+                              conflevel = 0.9,
+                              merge_pops = FALSE,
+                              plot = TRUE)
 ```
 
+
+We kunnen zien dat:
+
+- de relatieve foutenmarge licht afneemt bij scenario's met een toenemende trend.
+Dit komt omdat de trend in absolute termen heel klein is ten opzichte van de relatief grote ruis die aan de tijdsreeksen wordt toegevoegd.
+Hierdoor is enerzijds de absolute foutenmarge vrijwel gelijk tussen de scenario's.
+Omdat de absolute waarde van het gemiddelde (de doelparameter) toeneemt met een toenemende trend, wordt daarbij de relatieve foutenmarge kleiner.
 
 
 

@@ -403,16 +403,21 @@ compute_status_persample <- function(statusdata,
 
 #' Summarize simsample statistics within and among populations
 #'
-#' For a given sample statistic, calculates mean & percentiles, as well as CI
-#' (assuming normality), of its distribution obtained by multiple sample
-#' simulations (1 observation per sample), stratified by populations
+#' For a given sample statistic, calculates mean & percentiles of its
+#' distribution obtained by multiple sample
+#' simulations (1 value per sample), stratified by populations.
+#' Results can be given per population or as an overall average (the default).
+#' Optionally returns a plot when merge_pops = FALSE.
 #'
 summarise_status_of_samples <- function(multisample_stats,
                                         statistic,
-                                        conflevel = 0.9) {
+                                        conflevel = 0.9,
+                                        merge_pops = TRUE,
+                                        plot = FALSE) {
     stopifnot(between(conflevel, 0, 1))
     q <- qnorm(p = 1 - (1 - conflevel) / 2)
-    multisample_stats %>%
+    result <-
+        multisample_stats %>%
         nest(data = -c(scenario, contains("type"))) %>%
         mutate(summ = map(data, function(df) {
             df %>%
@@ -421,7 +426,7 @@ summarise_status_of_samples <- function(multisample_stats,
                 summarise(avg = mean(.data[[statistic]]),
                           pctile_l = quantile(.data[[statistic]], (1 - conflevel) / 2),
                           pctile_u = quantile(.data[[statistic]], 1 - (1 - conflevel) / 2)) %>%
-                summarise(across(-population, ~mean(.)))
+                {if(merge_pops) summarise(across(-population, ~mean(.))) else .}
         })) %>%
         select(-data) %>%
         unnest(cols = summ) %>%
@@ -429,6 +434,26 @@ summarise_status_of_samples <- function(multisample_stats,
         {if(any(str_detect(colnames(.), "type"))) {
             arrange(., across(contains("type")), scenario) } else {
                 arrange(., scenario)}}
+
+    if(plot & !merge_pops) {
+        result %>%
+            unite("scen_pop", scenario, population,
+                  remove = FALSE) %>%
+            mutate(scen_pop = factor(scen_pop) %>% fct_rev) %>%
+            {ggplot(., aes(x = scen_pop,
+                       y = avg,
+                       ymin = pctile_l,
+                       ymax = pctile_u,
+                       colour = scenario)) +
+            geom_errorbar() +
+            geom_point(size = 0.5, colour = "black", alpha = 0.4) +
+            ylim(0, 1) +
+            coord_flip() +
+            {if("type" %in% colnames(result)) facet_wrap(~type, scales = "free_x") else if("typegroup" %in% colnames(result)) facet_wrap(~typegroup, scales = "free_x") else NULL} +
+            theme(axis.text.y = element_blank(),
+                  axis.ticks.y = element_blank()) +
+            labs(x = "simulated populations", y = statistic)}
+    } else return(result)
 }
 
 
