@@ -305,15 +305,20 @@ simulate_detrended_pops <-
 #' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, hydroyear_std, prediction_fixed, response and modelname.
 #' @param npops Number of populations to select from population_data (the first `npops` populations are used)
 #' @param nsamples_per_pop Number of samples to take per population (without replacement)
+#' @param sampling If TRUE (default), return repeated spatial samples from each population.
+#' If FALSE, simply return the full data of each (selected) population,
+#' with the artificial trend of each scenario added.
 #'
 simulate_trended_spatial_samples <- function(sample_definition,
                                              population_data,
                                              npops = length(unique(population_data$population)),
                                              nsamples_per_pop = 20,
+                                             sampling = TRUE,
                                              seed = NULL){
     if (!is.null(seed)) set.seed(seed)
 
-    sample_definition %>%
+    trended_pop_data <-
+        sample_definition %>%
         nest(scen_attrib = -scenario) %>%
         crossing(population_data %>%
                      filter(str_sub(population, start = -5L) %>%
@@ -331,8 +336,17 @@ simulate_trended_spatial_samples <- function(sample_definition,
                        response = response - prediction_fixed + fixed_term) %>%
                 select(-prediction_fixed, -trend_12yearly_multiplier) %>%
                 relocate(response, .after = last_col())
-        })) %>%
+        }))
+
+    if (!sampling) {
+        return(
+            trended_pop_data %>%
+                select(-scen_attrib) %>%
+                unnest(pop_data) %>%
+                select(-n_finitepop_spatial))
+    }
         # simulating repeated spatial samples:
+    trended_pop_data %>%
         mutate(sample_data = list(tibble(spatial_sample =
                                              str_c("sample_",
                                                    str_pad(1:nsamples_per_pop, 4, pad = "0")) %>%
