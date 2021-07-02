@@ -406,8 +406,9 @@ compute_status_persample <- function(statusdata,
 #' For a given sample statistic, calculates mean & percentiles of its
 #' distribution obtained by multiple sample
 #' simulations (1 value per sample), stratified by populations.
-#' Results can be given per population or as an overall average (the default).
-#' Optionally returns a plot when merge_pops = FALSE.
+#'
+#' @param merge_pops Results can be given per population or as an overall average (the default).
+#' @param plot Logical. Optionally returns a plot on condition that merge_pops = FALSE.
 #'
 summarise_status_of_samples <- function(multisample_stats,
                                         statistic,
