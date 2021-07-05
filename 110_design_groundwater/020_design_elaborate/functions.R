@@ -454,7 +454,7 @@ summarise_status_of_samples <- function(multisample_stats,
                 summarise(avg = mean(.data[[statistic]]),
                           pctile_l = quantile(.data[[statistic]], (1 - conflevel) / 2),
                           pctile_u = quantile(.data[[statistic]], 1 - (1 - conflevel) / 2)) %>%
-                {if(merge_pops) summarise(across(-population, ~mean(.))) else .}
+                {if(merge_pops) summarise(., across(-population, ~mean(.))) else .}
         })) %>%
         select(-data) %>%
         unnest(cols = summ) %>%
