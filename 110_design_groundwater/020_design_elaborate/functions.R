@@ -436,12 +436,16 @@ compute_status_persample <- function(statusdata,
 #'
 #' @param merge_pops Results can be given per population or as an overall average (the default).
 #' @param plot Logical. Optionally returns a plot on condition that merge_pops = FALSE.
+#' @param ylim NULL or a numeric vector of length 2. If a vector (has a default), is applied as y-limits in the plot.
+#' @param facet_scales String. Always applied but only relevant if ylim = NULL.
 #'
 summarise_status_of_samples <- function(multisample_stats,
                                         statistic,
                                         conflevel = 0.9,
                                         merge_pops = TRUE,
-                                        plot = FALSE) {
+                                        plot = FALSE,
+                                        ylim = c(0, 1),
+                                        facet_scales = "free_x") {
     stopifnot(between(conflevel, 0, 1))
     q <- qnorm(p = 1 - (1 - conflevel) / 2)
     result <-
@@ -475,9 +479,9 @@ summarise_status_of_samples <- function(multisample_stats,
                        colour = scenario)) +
             geom_errorbar() +
             geom_point(size = 0.5, colour = "black", alpha = 0.4) +
-            ylim(0, 1) +
+            {if (!is.null(ylim)) lims(y = ylim) else NULL} +
             coord_flip() +
-            {if("type" %in% colnames(result)) facet_wrap(~type, scales = "free_x") else if("typegroup" %in% colnames(result)) facet_wrap(~typegroup, scales = "free_x") else NULL} +
+            {if("type" %in% colnames(result)) facet_wrap(~type, scales = facet_scales) else if("typegroup" %in% colnames(result)) facet_wrap(~typegroup, scales = facet_scales) else NULL} +
             theme(axis.text.y = element_blank(),
                   axis.ticks.y = element_blank()) +
             labs(x = "simulated populations", y = statistic)}
