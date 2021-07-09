@@ -72,22 +72,86 @@ Scenario's voor steekproeftrekking kunnen zich onderscheiden in:
 - de revisit design;
 - de grootte van een aan de populatie (post-hoc) toegevoegde lineaire of exponentiële trend.
 
+#### Definitie van de scenariotrend
+
 De trend kan worden gezien als een constante jaarlijkse verandering van de waarde op elke locatie (positief: toename, negatief: afname), hetzij op de absolute schaal (lineaire trend), hetzij op de logaritmische schaal (exponentiële trend: relatieve verandering).
 
 - Een absolute verandering in $y$ (t.o.v. $y_0$) van $\Delta y$ na $\Delta t$ jaren (resulterend in $y_0 + \Delta y$) komt overeen met een jaarlijkse verandering van $\beta = \frac{\Delta y}{\Delta t}$ in de functie $y = \alpha + \beta \cdot t$.
 - Een relatieve verandering in $y$ (t.o.v. $y_0$) van fractie $f$ na $\Delta t$ jaren (resulterend in $y_0 \cdot (1 + f)$) komt overeen met een grondtal $g = (1 + f)^{1 / \Delta t}$ voor de exponentiële functie $y = \alpha \cdot g^t$,
 of, uitgedrukt op de logaritmische schaal, met een richtingscoëfficiënt $log(g) = \frac{log(1 + f)}{\Delta t}$ in de functie $log(y) = log(\alpha) + log(g) \cdot t$.
 
-Concreet _definiëren_ we de trend in de scenario's op basis van het resultaat dat we _op een locatie_ artificieel zullen bereiken na $\Delta t$ jaren: hetzij via het geïntroduceerde absolute verschil $\Delta y$ na $\Delta t$ jaren, ofwel via de multiplicatiefactor $(1 + f)$ na $\Delta t$ jaren (bij een relatief verschil).
+Concreet _definiëren_ we een scenariotrend op basis van het resultaat dat we _op een locatie_ artificieel zullen bereiken na $\Delta t$ jaren: hetzij via het geïntroduceerde absolute verschil $\Delta y$ na $\Delta t$ jaren, ofwel via de multiplicatiefactor $(1 + f)$ na $\Delta t$ jaren (bij een relatief verschil).
 
 Daartoe wordt het locatiespecifieke deel van de gesimuleerde respons (verwachte waarde + locatiespecifieke ruisterm) gesubstitueerd in $\alpha$ en vervangen door de boven gestelde uitkomst $y$.
 Andere random componenten van de gesimuleerde respons, niet opgenomen in bovenstaande formules, blijven onveranderd behouden.
-Het opnemen van de locatiespecifieke ruisterm in $\alpha$ is in het bijzonder relevant voor een exponentiële trend.
-
-Afhankelijk van hoe de instelwaarden zijn uitgedrukt -- absoluut of relatief -- wordt een lineaire trend op de absolute ofwel de logaritmische schaal geanalyseerd.
-Daarbij zal de locatiespecifieke trend worden geschat met een model, om op basis van dit resultaat een design-based spatiale inferentie te doen.
+Het opnemen van de locatiespecifieke ruisterm in $\alpha$ maakt in het bijzonder uit voor een exponentiële trend.
 
 Merk op dat een toenemende exponentiële trend ($f > 0$) bij milieuvariabelen met negatieve waarden resulteert in steeds sterker dalende waarden.
+
+
+#### Poweranalyse
+
+In een poweranalyse zijn we geïnteresseerd in de variatie van een kwaliteitsmaat voor toestand en trend over een reeks gesimuleerde steekproeven heen, zoals de foutenmarge.
+We bekomen dit door de inferentie te doen voor toestand en trend, voor een set gesimuleerde steekproeven per scenario.
+Bovendien bekijken we de variatie daarop, die het gevolg is van de onzekerheid over de doelpopulatie.
+Dat element zal niet tot uiting komen in de schatters tijdens de monitoring, maar we wensen er wel informatie over in de poweranalyse.
+Op die basis, en op basis van de geassocieerde kost, is het mogelijk om gefundeerde keuzes te maken voor een scenario.
+
+De inferenties voor toestand en trend houden rekening met de stratificatie volgens type en met de correctie voor eindige populaties.
+Specifiek wordt er in het geval van toestandsinferentie in een spatiotemporele design, waar ook in de tijd de primaire milieuvariabele slechts steekproefgewijs wordt bepaald, bijkomend temporeel gestratificeerd.
+
+Afhankelijk van hoe de instelwaarden zijn uitgedrukt -- absoluut of relatief -- wordt een lineaire trend op de absolute ofwel de logaritmische schaal geanalyseerd.
+Daarbij wordt de **locatiespecifieke trend** geschat met een model, en vervolgens geaggregeerd tot een design-based spatiale inferentie.
+
+Op basis van de formule (uit de kanstheorie) voor de [totale verwachte waarde](https://en.wikipedia.org/wiki/Law_of_total_variance):
+
+$$\beta = E[B] = E_p[E_\xi[B | L]]$$
+
+leiden we de hybride design-model-based schatter af (toepassing van @de_gruijter_sampling_2006):
+
+$$\hat{\beta} = \hat{\mu}_{p,E_{\xi_0}[B | L]}$$
+
+Betekenis van symbolen:
+
+- $L$: de locatievariabele: fixed in het locatiegebonden model $\xi$, maar random in design $p$.
+- $B$: regressiecoëfficiënt van de temporele superpopulatie: een stochastische variabele met een distributie inherent aan model $\xi$.
+- $E[B]$, $\beta$: de verwachte waarde van de stochastische variabele $B$.
+- $\hat{\beta}$: de hybride design-model-based schatter voor de  regressiecoëfficiënt $\beta$.
+- $E_\xi[B | L]$: de volgens een waarheidsgetrouw (juist)  model $\xi$ verwachte waarde van de locatiespecifieke regressiecoëfficiënt, $B | L$. Dit is een zg. conditionele verwachte waarde.
+- $E_p[...]$: verwachte waarde van $...$ voor de spatiale doelpopulatie, in overeenstemming met de spatiale design $p$.
+- $E_{\xi_0}[B | L] = \hat{\mu}_{\xi_0,B | L}$: modelschatting van $E_\xi[B | L]$ op basis van een concreet gefit model $\xi_0$.
+- $\hat{\mu}_{p,E_{\xi_0}[B | L]}$: spatiaal gemiddelde van $E_{\xi_0}[B | L]$ in overeenstemming met de spatiale design $p$.
+
+De overeenkomstige gekwadrateerde standaardfout bekomen we op basis van de formule (uit de kanstheorie) voor de [totale variantie](https://en.wikipedia.org/wiki/Law_of_total_variance):
+
+$$\sigma^2_\beta = Var[B] = E_p[Var_\xi[B | L]] + Var_p[E_\xi[B | L]]$$
+
+Dit is ook wel gekend als 'Eve's Law', van de initialen 'EV VE' voor 'expectation of variance' en 'variance of expectation'.
+
+Enkele toepassingen hiervan in monitoring zien we in multipele imputatie [@rubin_1996] en in hybride design-model-based schattingen [@binder_roberts_2003].
+
+Ook in de meetnetten natuurlijk milieu zijn we geïnteresseerd in de trend als 'proces', waarbij we de modelonzekerheid over dit proces mee willen betrekken in de onzekerheid van de schatter, zodat we niet alleen de spatiale variantie van de modelschattingen beschouwen.
+
+We leiden aldus de hybride design-model-based schatter van de gekwadrateerde standaardfout af:
+
+$$\hat{\sigma^2_\beta} = \hat{\mu}_{p,Var_{\xi_0}[B | L]} + \hat{\sigma^2}_{p,E_{\xi_0}[B | L]}$$
+
+Betekenis van bijkomende symbolen:
+
+- $Var[B]$, $\sigma^2_\beta$: de variantie van de stochastische variabele $B$.
+- $\hat{\sigma^2_\beta}$: de hybride design-model-based schatter voor de variantie van de regressiecoëfficiënt $\beta$ (kwadraat van de standaardfout).
+- $Var_\xi[B | L]$: de variantie volgens een waarheidsgetrouw (juist) model $\xi$ van de locatiespecifieke regressiecoëfficiënt, $B | L$. Dit is een zg. conditionele variantie.
+- $Var_p[...]$: variantie van $...$ voor de spatiale doelpopulatie, in overeenstemming met de spatiale design $p$.
+- $Var_{\xi_0}[B | L] = \hat{\sigma^2}_{\xi_0,B | L}$: modelschatting van $Var_\xi[B | L]$ op basis van een concreet gefit model $\xi_0$.
+- $\hat{\mu}_{p,Var_{\xi_0}[B | L]}$: spatiaal gemiddelde van $Var_{\xi_0}[B | L]$ in overeenstemming met de spatiale design $p$.
+- $\hat{\sigma^2}_{p,E_{\xi_0}[B | L]}$: spatiale variantie van $E_{\xi_0}[B | L]$ in overeenstemming met de spatiale design $p$.
+
+Merk op dat beide formules voor de design-model-based trendschatter niet met de afwijking, en dus vertekening, tussen het gefitte model $\xi_0$ en het waarheidsgetrouwe, onbekende model $\xi$ rekening kunnen houden.
+Er geldt dus de assumptie dat het gefitte model een goede weerspiegeling is van de realiteit.
+In de monitoring zelf proberen we dit maximaal te benaderen via een gelijkmatige spreiding van data in de tijd, en geen a priori vorm te veronderstellen van de trend (wat we hier wel mogen doen, vermits we een gekende trendvorm simuleren).
+
+
+
 
 
 
