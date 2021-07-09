@@ -366,3 +366,59 @@ In figuur XXXX is te zien dat de absolute foutenmarge voor dit type juist heel k
 
 
 
+#### Trend
+
+```{r}
+inputdata_trend <- 
+  if (any(simsamples$response < 0)) {
+    simsamples %>% 
+      group_by(scenario, population, spatial_sample, type, location) %>% 
+      mutate(negresp = -response,
+             minresp = min(negresp),
+             logresp = ifelse(minresp <=0, 
+                              log10(negresp - minresp + 0.01), 
+                              log10(negresp))) %>% 
+      select(-minresp, -negresp) %>% 
+      ungroup} else {
+        simsamples %>% 
+          mutate(logresp = log10(response))
+        }
+```
+
+```{r}
+testdata <- 
+  inputdata_trend %>% 
+  nest(data = -c(scenario, population, spatial_sample)) %>% 
+  pull(data) %>% .[[1]]
+```
+
+```{r}
+system.time(
+trendmodel <- 
+  lme(logresp ~ hydroyear_std:location,
+      random = ~ 1 | location,
+      # weights = varIdent(form = ~ 1 | type),
+      # control = lmeControl(opt = "optim"),
+      data = testdata)
+)
+```
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
