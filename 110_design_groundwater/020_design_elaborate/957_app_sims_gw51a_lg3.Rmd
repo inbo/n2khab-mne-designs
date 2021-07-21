@@ -385,29 +385,56 @@ inputdata_trend <-
         }
 ```
 
-```{r}
-testdata <- 
-  inputdata_trend %>% 
-  nest(data = -c(scenario, population, spatial_sample)) %>% 
-  pull(data) %>% .[[1]]
+```{r include=FALSE}
+rds_filepath_trend_estimateslocal <- file.path(datapath, "binary/simobs",
+                          str_c(filepath_sub, respvar,
+                                "_trend_estimateslocal.rds"))
 ```
 
-```{r}
+```{r eval=(params$simulate_obs | !file.exists(rds_filepath_trend_estimateslocal))}
 system.time(
-trendmodel <- 
-  lme(logresp ~ hydroyear_std:location,
-      random = ~ 1 | location,
-      # weights = varIdent(form = ~ 1 | type),
-      # control = lmeControl(opt = "optim"),
-      data = testdata)
+trend_estimateslocal <-
+  inputdata_trend %>% 
+  nest(data = -c(scenario, population, spatial_sample, type)) %>% 
+  # slice(1:300) %>%
+  mutate(location_estim = 
+           map(data, function(df) {
+             lme(logresp ~ -1 + hydroyear_std:location,
+                 random = ~ 1 | location,
+                 data = df) %>% 
+               summary %>% 
+               {tibble(distinct(.$groups),
+                       beta_loc = .$tTable[, "Value"],
+                       se_loc = .$tTable[, "Std.Error"])}
+           }
+           )) %>% 
+  select(-data) %>% 
+  unnest(cols = location_estim) %>% 
+  inner_join(type_attrib %>% select(type, population_size), by = "type")
 )
 ```
 
-```{r}
 
+```{r include=FALSE}
+if (params$simulate_obs | !file.exists(rds_filepath_trend_estimateslocal)) {
+    saveRDS(trend_estimateslocal, rds_filepath_trend_estimateslocal)
+} else {
+  trend_estimateslocal <- readRDS(rds_filepath_trend_estimateslocal)
+}
 ```
 
-
+```{r}
+trend_res_overall <- 
+  trend_estimateslocal %>% 
+  compute_status_persample("overall",
+                           targetvar = "beta_loc",
+                           extra_se_var = "se_loc")
+trend_res_per_type <- 
+  trend_estimateslocal %>% 
+  compute_status_persample("type",
+                           targetvar = "beta_loc",
+                           extra_se_var = "se_loc")
+```
 
 
 

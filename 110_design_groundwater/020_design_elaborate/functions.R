@@ -398,12 +398,31 @@ simulate_trended_spatial_samples <- function(sample_definition,
 
 
 
-#' Compute sample statistics
+#' Compute sample status
 #'
+#' Computes status (a global quantity) of a target variable, notably its
+#' spatial or spatiotemporal mean with standard error and error margin.
+#' Note that the target variable can also be a location specific trend estimate,
+#' in which case the mean trend estimate will emerge.
+#'
+#' @param statusdata Data frame with at least columns "scenario", "population",
+#' "spatial_sample", "type", "location", "population_size", and a column with
+#' the value of the target variable (conveniently named as "targetvar").
+#' @param level At which level the status estimate must be computed.
+#' For levels higher than type, the design is always stratified according to
+#' type.
+#' @param targetvar String. Name of the target variable.
+#' @param extra_se_var String (NULL by default).
+#' Name of a variable containing the standard errors
+#' associated with the values of targetvar, and which should be incorporated
+#' into the standard error of the spatial or spatiotemporal mean.
 #'
 compute_status_persample <- function(statusdata,
-                                     level = c("typegroup", "type", "overall")) {
-    statusdata %>%
+                                     level = c("typegroup", "type", "overall"),
+                                     targetvar = "targetvar",
+                                     extra_se_var = NULL) {
+    mean_se <-
+        statusdata %>%
         {switch(level,
                 "overall" =
                     nest(., data = -c(scenario, population, spatial_sample)),
@@ -414,11 +433,27 @@ compute_status_persample <- function(statusdata,
                                              strata = if(level == "type") NULL else ~type,
                                              fpc = ~population_size,
                                              data = .)),
-               mean_svystat = map(design, ~svymean(~targetvar, .)),
+               mean_svystat = map(design, ~svymean(paste0("~", targetvar) %>%
+                                                       as.formula, .)),
                deg_freedom = map_dbl(design, ~degf(.)),
                mean = map_dbl(mean_svystat, ~coef(.)),
-               se = map_dbl(mean_svystat, ~SE(.)),
-               twosided_errmarg80 = se * qt(1 - 0.2 / 2, df = deg_freedom),
+               se = map_dbl(mean_svystat, ~SE(.)))
+
+    if (!is.null(extra_se_var)) {
+        mean_se <-
+            mean_se %>%
+            mutate(mean_local_variance = map_dbl(design,
+                                            ~svymean(paste0("~I(",
+                                                            extra_se_var,
+                                                            "^2)") %>%
+                                                             as.formula, .) %>%
+                                                coef),
+                   variance_spatial_mean = se^2,
+                   se = sqrt(mean_local_variance + variance_spatial_mean))
+    }
+
+    mean_se %>%
+        mutate(twosided_errmarg80 = se * qt(1 - 0.2 / 2, df = deg_freedom),
                twosided_errmarg90 = se * qt(1 - 0.1 / 2, df = deg_freedom),
                twosided_errmarg80_rel =
                    twosided_errmarg80 / abs(mean),
