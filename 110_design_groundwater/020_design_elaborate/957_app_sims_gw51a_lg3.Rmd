@@ -203,43 +203,23 @@ nsamples_per_pop <- 20
 Voor elk scenario worden de eerste `r npops` gesimuleerde populaties gebruikt.
 
 Aan de populatiedata wordt een artificiële trend toegevoegd conform het scenario.
-Enkele voorbeelden (van populatie 1) zijn weergegeven in figuur XXXXX.
+Enkele voorbeelden (van populaties 1 en 2) zijn weergegeven in figuren XXXXX en XXXXX.
 
 ```{r fig.width=10, fig.height=10, fig.cap="Voorbeeld van gesimuleerde data voor geselecteerde types en locaties in populatie 1. De weergegeven scenario's omvatten de verschillende artificiële trends."}
-set.seed(20210702)
-  # select 1 scenario per artificial trend:
-sample_definition %>% 
-  nest(data = -c(scenario, trend_12yearly_multiplier)) %>% 
-  group_by(trend_12yearly_multiplier) %>% 
-  slice_head %>% 
-  unnest(data) %>% 
-  # add the trends to 1 simulated population:
-  simulate_trended_spatial_samples(population_data = simpops,
-                                   npops = 1,
-                                   sampling = FALSE) %>% 
-  # use only 2 locations and 9 types
-  select(-population) %>% 
-  nest(type_data = -type) %>% 
-  slice_sample(n = 9) %>% 
-  mutate(type_data = map(type_data, function(df) {
-    df %>% 
-      nest(location_data = -location) %>% 
-      slice_sample(n = 2) %>% 
-      unnest(location_data)})) %>% 
-  unnest(type_data) %>% 
-  arrange(type, location, scenario) %>% 
-  split(~type, drop = TRUE) %>% 
-  map(~ggplot(., aes(x = hydroyear_std, 
-                     y = response, 
-                     colour = scenario, 
-                     group = scenario:location)) +
-        geom_line() +
-        facet_grid(location ~ type)
-  ) %>% 
-  wrap_plots(ncol = 3, nrow = 3, guides = "collect") &
-  theme(legend.position = "bottom")
+visualize_trends(sample_definition = sample_definition,
+                 population_data = simpops,
+                 population = "population_00001",
+                 timevar = timevar,
+                 seed = 20210702)
 ```
 
+```{r fig.width=10, fig.height=10, fig.cap="Voorbeeld van gesimuleerde data voor geselecteerde types en locaties in populatie 2. De weergegeven scenario's omvatten de verschillende artificiële trends."}
+visualize_trends(sample_definition = sample_definition,
+                 population_data = simpops,
+                 population = "population_00002",
+                 timevar = timevar,
+                 seed = 20210702)
+```
 
 Uit elke populatie worden `r nsamples_per_pop` spatiale steekproeven gesimuleerd (zonder teruglegging).
 

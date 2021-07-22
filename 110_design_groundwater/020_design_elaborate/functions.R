@@ -297,13 +297,14 @@ simulate_detrended_pops <-
 
 
 
-
 #' Simulate spatial samples from given populations and sample definitions (including artificial trend)
 #'
 #' @param sample_definition Data frame that defines the constitution of a sample for each scenario.
 #' Minimal columns needed: scenario, trend_12yearly_multiplier, type, n_finitepop_spatial
 #' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, hydroyear_std, prediction_fixed, response and modelname.
 #' @param npops Number of populations to select from population_data (the first `npops` populations are used)
+#' @param pops Optional character vector of population names to select.
+#' If specified, npops is ignored.
 #' @param nsamples_per_pop Number of samples to take per population (without replacement)
 #' @param sampling If TRUE (default), return repeated spatial samples from each population.
 #' If FALSE, simply return the full data of each (selected) population,
@@ -312,10 +313,17 @@ simulate_detrended_pops <-
 simulate_trended_spatial_samples <- function(sample_definition,
                                              population_data,
                                              npops = length(unique(population_data$population)),
+                                             pops = NULL,
                                              nsamples_per_pop = 20,
                                              sampling = TRUE,
                                              seed = NULL){
     if (!is.null(seed)) set.seed(seed)
+
+    pops_missing <- missing(pops)
+
+    if (!pops_missing && !missing(npops)) {
+        warning("If you specify the populations with pops, then npops is ignored.")
+    }
 
     prediction_spatial_term <-
         names(population_data) %>%
@@ -326,8 +334,12 @@ simulate_trended_spatial_samples <- function(sample_definition,
         sample_definition %>%
         nest(scen_attrib = -scenario) %>%
         crossing(population_data %>%
-                     filter(str_sub(population, start = -5L) %>%
-                                as.numeric <= npops) %>%
+                     {if (!pops_missing) {
+                         filter(., population %in% pops)
+                     } else {
+                         filter(., str_sub(population, start = -5L) %>%
+                                    as.numeric <= npops)
+                     }} %>%
                      select(-c(modelname,
                                matches("ranef_time|resid_noise"))) %>%
                      nest(pop_data = -population)) %>%
@@ -394,6 +406,56 @@ simulate_trended_spatial_samples <- function(sample_definition,
         # drop scen_attrib and pop_data:
         select(-scen_attrib, -pop_data) %>%
         unnest(sample_data)
+}
+
+
+
+
+#' Visualize selected data of 1 population with scenario trends added
+#'
+#'
+visualize_trends <- function(sample_definition,
+                             population_data,
+                             population,
+                             ntypes = 9,
+                             timevar,
+                             seed = NULL) {
+
+    if (!is.null(seed)) set.seed(seed)
+    assertthat::assert_that(assertthat::is.string(population))
+
+    sample_definition %>%
+        # select 1 scenario per artificial trend:
+        nest(data = -c(scenario, trend_12yearly_multiplier)) %>%
+        group_by(trend_12yearly_multiplier) %>%
+        slice_head %>%
+        unnest(data) %>%
+        # add the trends to 1 simulated population:
+        simulate_trended_spatial_samples(population_data = population_data,
+                                         pops = population,
+                                         sampling = FALSE) %>%
+        # use only 2 locations per type and ntypes types
+        select(-population) %>%
+        nest(type_data = -type) %>%
+        slice_sample(n = ntypes) %>%
+        mutate(type_data = map(type_data, function(df) {
+            df %>%
+                nest(location_data = -location) %>%
+                slice_sample(n = 2) %>%
+                unnest(location_data)})) %>%
+        unnest(type_data) %>%
+        arrange(type, location, scenario) %>%
+        split(~type, drop = TRUE) %>%
+        map(~ggplot(., aes(x = .data[[timevar]],
+                           y = response,
+                           colour = scenario,
+                           group = scenario:location)) +
+                geom_line() +
+                facet_grid(location ~ type)
+        ) %>%
+        wrap_plots(ncol = 3, guides = "collect") +
+        plot_annotation(title = population) &
+        theme(legend.position = "bottom")
 }
 
 
