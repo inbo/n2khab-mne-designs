@@ -470,7 +470,7 @@ visualize_trends <- function(sample_definition,
 #' @param statusdata Data frame with at least columns "scenario", "population",
 #' "spatial_sample", "type", "location", "population_size", and a column with
 #' the value of the target variable (conveniently named as "targetvar").
-#' @param level At which level the status estimate must be computed.
+#' @param level Level at which the status estimate must be computed.
 #' For levels higher than type, the design is always stratified according to
 #' type.
 #' @param targetvar String. Name of the target variable.
@@ -530,6 +530,7 @@ compute_status_persample <- function(statusdata,
 #' For a given sample statistic, calculates mean & percentiles of its
 #' distribution obtained by multiple sample
 #' simulations (1 value per sample), stratified by populations.
+#' The calculation is done for each scenario and type(group) in turn.
 #'
 #' @param merge_pops Results can be given per population or as an overall average (the default).
 #' @param plot Logical. Optionally returns a plot on condition that merge_pops = FALSE.
@@ -588,11 +589,12 @@ summarise_status_of_samples <- function(multisample_stats,
 
 
 
-#' Calculate power within and among populations
+#' Calculate power for each population and among populations
 #'
 #' For a given sample statistic, calculates median and percentiles of
 #' power, where each power value is based on the simulated samples from one
 #' population. The power is for a two-sided test for comparison with zero.
+#' The calculation is done for each scenario and type(group) in turn.
 #'
 #' @param multisample_stats dataframe with at least the sample means as column 'mean' and associated errormargin(s)
 #' @param scenario_def Dataframe that defines the scenarios (one row per scenario).
