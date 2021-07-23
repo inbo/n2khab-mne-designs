@@ -626,8 +626,8 @@ calculate_power_of_scenarios <- function(multisample_stats,
                 {if (!merge_pops) . else {
                     summarise(., across(matches("^power_at_conflevel"),
                                         ~str_c(median(.) %>% round(2), " (",
-                                               quantile(., 0.25), " | ",
-                                               quantile(., 0.75), ")")))
+                                               quantile(., 0.25) %>% round(2), " | ",
+                                               quantile(., 0.75) %>% round(2), ")")))
                 }})
     } else {
         assertthat::assert_that(!missing(scenario_def))
