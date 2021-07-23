@@ -266,12 +266,12 @@ statusdata <-
   group_by(scenario, population, spatial_sample, type, location, population_size) %>% 
   summarise(targetvar = mean(response)) %>% 
   ungroup
-status_res_overall <- 
-  statusdata %>% 
-  compute_status_persample("overall")
 status_res_per_type <- 
   statusdata %>% 
   compute_status_persample("type")
+status_res_overall <- 
+  compute_status_persample(level = "overall",
+                           typeresult = status_res_per_type)
 ```
 
 ```{r}
@@ -414,16 +414,14 @@ if (params$simulate_obs | !file.exists(rds_filepath_trend_estimateslocal)) {
 ```
 
 ```{r}
-trend_res_overall <- 
-  trend_estimateslocal %>% 
-  compute_status_persample("overall",
-                           targetvar = "beta_loc",
-                           extra_se_var = "se_loc")
 trend_res_per_type <- 
   trend_estimateslocal %>% 
   compute_status_persample("type",
                            targetvar = "beta_loc",
                            extra_se_var = "se_loc")
+trend_res_overall <- 
+  compute_status_persample(level = "overall",
+                           typeresult = trend_res_per_type)
 ```
 
 ```{r fig.width=7, fig.height=7, warning=FALSE, fig.caption="Visualisatie van het gemiddelde en het 5-95% bereik van de geschatte trendmultiplicatiefactor over 12 jaar, over de steekproeven per populatie (één populatie is één horizontale lijn)."}
@@ -453,7 +451,13 @@ trend_res_per_type %>%
   scroll_box(height = "500px")
 ```
 
-```{r fig.height=8, fig.width=8, fig.cap="Jitter plots van de power, per scenario en populatie, voor het tweezijdig toetsen van de trend t.o.v. een nultrend. De grafieken zijn ondermeer opgesplitst volgens het betrouwbaarheidsniveau van de toets. De scenario's zijn vertegenwoordigd door het aantal locaties en de grootte van de gesimuleerde trend. Elk bolletje betreft één populatie volgens één scenario; de mediaan per scenario is weergegeven door een kruisje."}
+```{r fig.cap="Jitter plots van de power, per scenario en populatie, voor het tweezijdig toetsen van de trend t.o.v. een nultrend. De grafieken zijn ondermeer opgesplitst volgens het betrouwbaarheidsniveau van de toets. De scenario's zijn vertegenwoordigd door het aantal locaties en de grootte van de gesimuleerde trend. Elk bolletje betreft één populatie volgens één scenario; de mediaan per scenario is weergegeven door een kruisje."}
+trend_res_overall %>% 
+  calculate_power_of_scenarios(scenario_def = scen,
+                               plot = TRUE)
+```
+
+```{r fig.height=8, fig.width=8, fig.cap="Jitter plots van de power, per scenario en populatie, voor het tweezijdig toetsen van de trend t.o.v. een nultrend. De grafieken zijn opgesplitst volgens het betrouwbaarheidsniveau van de toets en volgens type. De scenario's zijn vertegenwoordigd door het aantal locaties en de grootte van de gesimuleerde trend. Elk bolletje betreft één populatie volgens één scenario; de mediaan per scenario is weergegeven door een kruisje."}
 trend_res_per_type %>% 
   calculate_power_of_scenarios(scenario_def = scen,
                                plot = TRUE)

@@ -473,26 +473,50 @@ visualize_trends <- function(sample_definition,
 #' @param level Level at which the status estimate must be computed.
 #' For levels higher than type, the design is always stratified according to
 #' type.
+#' @param weighted_mean Logical; only relevant for level higher than type.
+#' Should means be calculated according to a stratified design, i.e. weighing
+#' types according to their relative population size?
+#' The default (FALSE) gives equal weight to types and standard error is
+#' calculated accordingly (equal weights of the type standard errors).
+#' This is done since it is the global quantity of primary interest.
 #' @param targetvar String. Name of the target variable.
 #' @param extra_se_var String (NULL by default).
 #' Name of a variable containing the standard errors
 #' associated with the values of targetvar, and which should be incorporated
 #' into the standard error of the spatial or spatiotemporal mean.
+#' @param typeresult The outputted dataframe of the function for level="type"
+#' can be inputted again; will be used to shortcut calculations if
+#' weighted_mean = FALSE and level is higher than type.
+#' In this case, statusdata is not needed.
 #'
-compute_status_persample <- function(statusdata,
+compute_status_persample <- function(statusdata = NULL,
                                      level = c("typegroup", "type", "overall"),
+                                     weighted_mean = FALSE,
                                      targetvar = "targetvar",
-                                     extra_se_var = NULL) {
+                                     extra_se_var = NULL,
+                                     typeresult = NULL) {
+
+    add_rel <- function(df) {
+        mutate(df,
+               twosided_errmarg80_rel =
+                   twosided_errmarg80 / abs(mean),
+               twosided_errmarg90_rel =
+                   twosided_errmarg90 / abs(mean))
+    }
+
+    if (is.null(typeresult) | level == "type" | weighted_mean) {
+
     mean_se <-
         statusdata %>%
-        {switch(level,
-                "overall" =
-                    nest(., data = -c(scenario, population, spatial_sample)),
-                "type" =
-                    nest(., data = -c(scenario, population, spatial_sample, type))
-        )} %>%
+        {if (!weighted_mean | level == "type") {
+            nest(., data = -c(scenario, population, spatial_sample, type))
+        } else if (level == "overall") {
+            nest(., data = -c(scenario, population, spatial_sample))
+        } else {
+            nest(., data = -c(scenario, population, spatial_sample, typegroup))
+        }} %>%
         mutate(design = map(data, ~svydesign(ids = ~1,
-                                             strata = if(level == "type") NULL else ~type,
+                                             strata = if(!weighted_mean) NULL else ~type,
                                              fpc = ~population_size,
                                              data = .)),
                mean_svystat = map(design, ~svymean(paste0("~", targetvar) %>%
@@ -514,14 +538,33 @@ compute_status_persample <- function(statusdata,
                    se = sqrt(mean_local_variance + variance_spatial_mean))
     }
 
-    mean_se %>%
-        mutate(twosided_errmarg80 = se * qt(1 - 0.2 / 2, df = deg_freedom),
-               twosided_errmarg90 = se * qt(1 - 0.1 / 2, df = deg_freedom),
-               twosided_errmarg80_rel =
-                   twosided_errmarg80 / abs(mean),
-               twosided_errmarg90_rel =
-                   twosided_errmarg90 / abs(mean)) %>%
+    mean_se <-
+        mean_se %>%
         select(-data, -design, -mean_svystat)
+
+    if (weighted_mean | level == "type") {
+        return(
+            mean_se %>%
+                mutate(twosided_errmarg80 = se * qt(1 - 0.2 / 2, df = deg_freedom),
+                       twosided_errmarg90 = se * qt(1 - 0.1 / 2, df = deg_freedom)) %>%
+                add_rel
+        )
+    }
+
+    } else {
+        mean_se <- typeresult
+    }
+
+    # calculating unweighted mean of types (overall or typegroup level):
+    mean_se %>%
+        group_by(scenario, population, spatial_sample) %>%
+        {if (level == "typegroup") group_by(., typegroup) else .} %>%
+        summarise(mean = mean(mean),
+                  se = sqrt(sum(se^2)) / n()) %>%
+        ungroup %>%
+        mutate(twosided_errmarg80 = se * qnorm(1 - 0.2 / 2),
+               twosided_errmarg90 = se * qnorm(1 - 0.1 / 2)) %>%
+        add_rel
 }
 
 
