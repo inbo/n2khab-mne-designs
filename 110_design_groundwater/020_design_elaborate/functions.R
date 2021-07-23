@@ -588,6 +588,92 @@ summarise_status_of_samples <- function(multisample_stats,
 
 
 
+#' Calculate power within and among populations
+#'
+#' For a given sample statistic, calculates median and percentiles of
+#' power, where each power value is based on the simulated samples from one
+#' population. The power is for a two-sided test for comparison with zero.
+#'
+#' @param multisample_stats dataframe with at least the sample means as column 'mean' and associated errormargin(s)
+#' @param scenario_def Dataframe that defines the scenarios (one row per scenario).
+#' Has at least columns "scenario", "avg_nrlocs_pertype_infpop" and a column trend_*.
+#' One row per scenario.
+#' @param merge_pops Results can be given as power per population or
+#' aggregated (the default).
+#' Ignored if plot is TRUE.
+#' @param plot Logical. Optionally returns a plot.
+#'
+calculate_power_of_scenarios <- function(multisample_stats,
+                                         scenario_def = NULL,
+                                         merge_pops = TRUE,
+                                         plot = FALSE) {
+    result <-
+        multisample_stats %>%
+        mutate(across(matches("errmarg\\d{2}$"),
+                      ~mean - . > 0 | mean + . < 0,
+                      .names = "trend_sign_{.col}")) %>%
+        rename_with(.cols = matches("^trend_sign_"),
+                    .fn = ~str_remove(., "twosided_errmarg")) %>%
+        group_by(across(c(scenario, contains("type"), population))) %>%
+        summarise(across(matches("^trend_sign_"), ~sum(.)/n())) %>%
+        rename_with(~str_replace(., "trend_sign", "power_at_conflevel"))
+
+    if(!plot) {
+        return(
+            result %>%
+                {if (!merge_pops) . else {
+                    summarise(., across(matches("^power_at_conflevel"),
+                                        ~str_c(median(.) %>% round(2), " (",
+                                               quantile(., 0.25), " | ",
+                                               quantile(., 0.75), ")")))
+                }})
+    } else {
+        assertthat::assert_that(!missing(scenario_def))
+        trend_colname <-
+            colnames(scenario_def) %>%
+            {.[str_detect(., "trend_")]}
+        type_typegroup_colname <-
+            colnames(result) %>%
+            {.[str_detect(., "type")]}
+        result %>%
+            ungroup %>%
+            inner_join(scenario_def, by = "scenario") %>%
+            rename_with(~str_remove(., "power_at_")) %>%
+            pivot_longer(cols = matches("^conflevel"),
+                         names_to = "conflevel",
+                         values_to = "power") %>%
+            mutate({{trend_colname}} := factor(.data[[trend_colname]])) %>%
+            (function(df) {
+                df_summ <-
+                    df %>%
+                    group_by(across(c(scenario,
+                                      avg_nrlocs_pertype_infpop,
+                                      matches("^trend_"),
+                                      contains("type"),
+                                      conflevel))) %>%
+                    summarise(power = median(power))
+
+                ggplot(df, aes(x = avg_nrlocs_pertype_infpop,
+                               y = power,
+                               colour = .data[[trend_colname]],
+                               group = .data[[trend_colname]])) +
+                    geom_jitter(alpha = 0.4, width = 3, height = 0) +
+                    geom_line(data = df_summ) +
+                    geom_point(data = df_summ,
+                               shape = 3,
+                               colour = "black") +
+                    facet_wrap(formula(ifelse(length(type_typegroup_colname) == 0,
+                                              "~conflevel",
+                                              str_c("~conflevel + ",
+                                                    type_typegroup_colname)))) +
+                    xlab("average number of locations per type\n(before adjusting for spatial variance and population size)") +
+                    theme(legend.position = "bottom")
+            })
+    }
+}
+
+
+
 
 
 
