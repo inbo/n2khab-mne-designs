@@ -372,26 +372,36 @@ rds_filepath_trend_estimateslocal <- file.path(datapath, "binary/simobs",
 ```
 
 ```{r eval=(params$simulate_obs | !file.exists(rds_filepath_trend_estimateslocal))}
+registerDoParallel(cores = 5)
 system.time(
 trend_estimateslocal <-
   inputdata_trend %>% 
-  nest(data = -c(scenario, population, spatial_sample, type)) %>% 
-  # slice(1:300) %>%
+  # filter(scenario == "GW_05.1_aq_S01", 
+  #        str_sub(population, -4L) %>% as.numeric %in% 1:4) %>% 
+  nest(datacontainer = -c(scenario, population)) %>% 
+  # slice(1:4) %>%
+  mutate(result = foreach(dc = .$datacontainer) %dopar% {
+    nest(dc, data = -c(spatial_sample, type)) %>% 
   mutate(location_estim = 
            map(data, function(df) {
              lme(logresp ~ -1 + hydroyear_std:location,
                  random = ~ 1 | location,
-                 data = df) %>% 
+                 data = df,
+                 control = lmeControl(opt = "optim")) %>% 
                summary %>% 
                {tibble(distinct(.$groups),
                        beta_loc = .$tTable[, "Value"],
                        se_loc = .$tTable[, "Std.Error"])}
            }
-           )) %>% 
+           ))  %>% 
   select(-data) %>% 
   unnest(cols = location_estim) %>% 
-  inner_join(type_attrib %>% select(type, population_size), by = "type")
+  inner_join(type_attrib %>% select(type, population_size), by = "type") 
+    }) %>% 
+  select(-datacontainer) %>% 
+  unnest(cols = result)
 )
+stopImplicitCluster()
 ```
 
 
