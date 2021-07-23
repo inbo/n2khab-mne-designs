@@ -544,7 +544,6 @@ summarise_status_of_samples <- function(multisample_stats,
                                         ylim = c(0, 1),
                                         facet_scales = "free_x") {
     stopifnot(between(conflevel, 0, 1))
-    q <- qnorm(p = 1 - (1 - conflevel) / 2)
     result <-
         multisample_stats %>%
         nest(data = -c(scenario, contains("type"))) %>%
