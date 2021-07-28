@@ -54,7 +54,7 @@ hmt_pol_obliggwdep %>% nrow
 
 ```{r warning=FALSE, results="hide", eval=!grass_areal_exists}
 hmt_pol_obliggwdep %>% 
-    writeVECT("hmt_pol_obliggwdep")
+    writeVECT("hmt_pol_obliggwdep", "overwrite")
 ```
 
 
@@ -63,7 +63,8 @@ execGRASS("v.in.ogr",
           input = normalizePath(file.path(fileman_up("n2khab_data"),
                                           "10_raw/shallowgroundwater")),
           output = "shallow_gw",
-          flags = "o" # assume CRS is same as from GRASS, i.e. set CRS as epsg:31370
+          flags = c("o", # assume CRS is same as from GRASS, i.e. set CRS as EPSG:31370
+                    "overwrite")
           )
 ```
 
@@ -89,7 +90,7 @@ We voeren een union operatie uit en lezen het resultaat terug in R.
 Dit resultaat is ook beschikbaar als een GeoPackage `shallow_obliggwdep.gpkg`, met inbegrip van het veld `description_orig` (afkomstig van `habitatmap`) zodat dit in kaartverkenningen gebruikt kan worden.
 
 ```{r eval=!grass_areal_exists}
-execshell("v.overlay ainput=shallow_gw binput=hmt_pol_obliggwdep operator=or output=shallow_obliggwdep")
+execshell("v.overlay --overwrite ainput=shallow_gw binput=hmt_pol_obliggwdep operator=or output=shallow_obliggwdep")
 ```
 
 ```{r eval=!grass_areal_exists}
@@ -105,6 +106,7 @@ execshell("db.columns table=shallow_obliggwdep")
 # writing GPKG permanently, because the step takes too long if it is to 
 # be done each time in a temporary way (by calling readVECT)
 execGRASS("v.out.ogr",
+          "overwrite",
           input = "shallow_obliggwdep",
           output = file.path(projroot, "shallow_obliggwdep.gpkg"),
           format = "GPKG")
