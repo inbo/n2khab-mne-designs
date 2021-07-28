@@ -19,19 +19,19 @@ De 'fractie van locaties' is daarbij het best oppervlaktegebaseerd, i.e. rekenin
 Indien de beperking tot locaties met ondiep grondwater niet a priori wordt toegepast, impliceert dit dat de steekproef hier niet op voorhand door wordt gestuurd.
 In dat geval zouden op terrein vaker locaties moeten worden bezocht (met facultatief grondwaterafhankelijke types) die geen ondiep grondwater hebben.
 
-We lezen de lijst van obligaat grondwaterafhankelijke types in en beperken deze tot zij die voorkomen in de standaardlijst van types.
+We stellen de lijst van obligaat grondwaterafhankelijke types op die beschouwd worden in MNM, inclusief overeenkomstige hoofd- en subcodes, waar relevant voor optimale koppeling met `habitatmap_terr`.
 
 ```{r message = FALSE, warning = FALSE}
 types_obliggwdep <-
     read_types() %>% 
     filter(groundw_dep == "GD2") %>%
     select(type) %>% 
-    semi_join(scheme_types_mne, by = "type")
+    semi_join(scheme_types_mne_expanded, by = "type")
 ```
 
 (Voor vroegere analysen omtrent de grondwaterafhankelijkheidsklassen, verwijzen we ook naar een eerder [R notebook](https://drive.google.com/uc?export=download&id=0B-DYcTNHFnIXWDM0aGtvWnczRnM).)
 
-We filteren de databron `habitatmap_terr` volgens het voorkomen van obligaat grondwaterafhankelijke, terrestrische types - kortweg 'obliggwdep-types'.
+We filteren de databron `habitatmap_terr` (exclusief aquatische types) volgens het voorkomen van obligaat grondwaterafhankelijke types - kortweg 'obliggwdep-types'.
 
 ```{r}
 hmt_occ_obliggwdep <- 
@@ -39,7 +39,8 @@ hmt_occ_obliggwdep <-
     semi_join(types_obliggwdep,  
               by = "type")
 hmt_pol_obliggwdep <- 
-    hmt_pol %>% 
+    hmt$habitatmap_terr_polygons %>% 
+    select(polygon_id, description_orig) %>% 
     semi_join(hmt_occ_obliggwdep,
               by = "polygon_id")
 ```
@@ -85,6 +86,7 @@ execshell("db.columns table=shallow_gw")
 ```
 
 We voeren een union operatie uit en lezen het resultaat terug in R.
+Dit resultaat is ook beschikbaar als een GeoPackage `shallow_obliggwdep.gpkg`, met inbegrip van het veld `description_orig` (afkomstig van `habitatmap`) zodat dit in kaartverkenningen gebruikt kan worden.
 
 ```{r eval=!grass_areal_exists}
 execshell("v.overlay ainput=shallow_gw binput=hmt_pol_obliggwdep operator=or output=shallow_obliggwdep")
@@ -94,6 +96,7 @@ execshell("v.overlay ainput=shallow_gw binput=hmt_pol_obliggwdep operator=or out
 execshell("db.columns table=shallow_obliggwdep")
 execshell("v.db.renamecolumn map=shallow_obliggwdep column=a_cat,shallow_gw
         v.db.renamecolumn map=shallow_obliggwdep column=b_polygon_id,polygon_id
+        v.db.renamecolumn map=shallow_obliggwdep column=b_description_orig,description_orig
         v.db.dropcolumn map=shallow_obliggwdep column=b_cat")
 execshell("db.columns table=shallow_obliggwdep")
 ```
@@ -117,6 +120,7 @@ shallow_obliggwdep <-
     read_sf("shallow_obliggwdep.gpkg") %>% 
     mutate(shallow_gw = !is.na(shallow_gw)) %>% 
     select(polygon_id,
+           description_orig,
            shallow_gw)
 ```
 
@@ -128,7 +132,7 @@ shallow_obliggwdep %>%
     filter(!is.na(polygon_id)) %>% 
     mutate(area = st_area(.) %>% set_units("ha")) %>% 
     st_drop_geometry %>% 
-    group_by(polygon_id, shallow_gw) %>% 
+    group_by(polygon_id, description_orig, shallow_gw) %>% 
     # polygon areas, for each polygon_id x inside/outside shallow_gw:
     summarise(area = sum(area)) %>% 
     ungroup %>% 
