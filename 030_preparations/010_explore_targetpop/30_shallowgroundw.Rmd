@@ -126,10 +126,17 @@ shallow_obliggwdep <-
            shallow_gw)
 ```
 
-De oppervlaktes ingenomen door obliggwdep-types, respectievelijk buiten en binnen de `shallowgroundwater` laag, zijn:
+Binnen `shallow_obliggwdep` zijn we specifiek geïnteresseerd in de polygonen met obliggwdep-types - komende van `hmt_pol_obliggwdep` en herkenbaar aan de aanwezigheid van `polygon_id`.
+De interesse gaat meer bepaald naar de oppervlakte obliggwdep-types die deze polygonen bevatten en hoe deze oppervlakte verdeeld is over de intersectie met `shallowgroundwater`.
+
+Voor polygonen van `hmt_pol_obliggwdep` is het mogelijk dat de oppervlakte niet volledig is ingenomen door obliggwdep-types (`phab` < 100).
+Wanneer een dergelijke polygoon gedeeltelijk overlapt met `shallowgroundwater`, dan wijzen we de (via `phab` berekende) oppervlakte obliggwdep-types in de polygoon maximaal toe aan de deelpolygoon die in `shallowgroundwater` ligt.
+
+De oppervlaktes aldus ingenomen door obliggwdep-types, respectievelijk buiten en binnen de `shallowgroundwater` laag, zijn:
 
 ```{r}
-shallow_obliggwdep %>% 
+shallow_obliggwdep_aggr <- 
+    shallow_obliggwdep %>% 
     # only interested in polygons with obliggwdep types
     filter(!is.na(polygon_id)) %>% 
     mutate(area = st_area(.) %>% set_units("ha")) %>% 
@@ -137,8 +144,14 @@ shallow_obliggwdep %>%
     group_by(polygon_id, description_orig, shallow_gw) %>% 
     # polygon areas, for each polygon_id x inside/outside shallow_gw:
     summarise(area = sum(area)) %>% 
-    ungroup %>% 
-    # attaching PHAB information of the obliggwdep types:
+    ungroup
+```
+
+
+```{r}
+shallow_obliggwdep_aggr2 <- 
+    shallow_obliggwdep_aggr %>% 
+    # adding summed PHAB information of the obliggwdep types:
     inner_join(
         hmt_occ_obliggwdep %>% 
             mutate(polygon_id = as.character(polygon_id)) %>% 
@@ -153,53 +166,69 @@ shallow_obliggwdep %>%
                               areal_frac_obliggwdep)),
         by = "polygon_id"
             ) %>% 
-    # calculating area occupied by obliggwdep types:
-    mutate(area_obliggwdep = areal_frac_obliggwdep * area) %>% 
-    # totals for inside/outside shallow_gw:
+    group_by(polygon_id) %>% 
+    mutate(area_obliggwdep = 
+               # per polygon_id, maximally attribute area_obliggwdep_pol to shallow_gw
+               ifelse(shallow_gw,
+                      min(sum(area) * first(areal_frac_obliggwdep),
+                          area[.data$shallow_gw]),
+                      0) %>% 
+               set_units("ha"),
+           area_obliggwdep = 
+               # per polygon_id, add remaining area_obliggwdep_pol to !shallow_gw
+               ifelse(shallow_gw,
+                      area_obliggwdep,
+                      sum(area) * first(areal_frac_obliggwdep) - sum(area_obliggwdep)) %>% 
+               set_units("ha")
+    ) %>% 
+    ungroup %>% 
+    # adjusted obliggwdep-fraction per intersection polygon:
+    mutate(areal_frac_obliggwdep_adj = (area_obliggwdep / area) %>% drop_units)
+```
+
+
+```{r}
+# totals for inside/outside shallow_gw:
+shallow_obliggwdep_aggr2 %>% 
     group_by(shallow_gw) %>% 
     summarise(area_obliggwdep = sum(area_obliggwdep)) %>% 
     mutate(area_pct = ((area_obliggwdep / sum(area_obliggwdep)) %>% 
                            as.numeric * 100) %>% round(1))
 ```
 
-Dit betekent dat ca. 1/5 van de 'obliggwdep' oppervlakte niet gedekt is door de `shallowgroundwater` laag.
+Dit betekent dat bijna 1/5 van de 'obliggwdep' oppervlakte niet gedekt is door de `shallowgroundwater` laag.
 Dit is nog een te grote afwijking om het steekproefkader mee in te perken.
 
-Inspectie van 'obliggwdep' polygonen buiten de `shallowgroundwater` laag:
+Inspectie van 'obliggwdep' polygonen buiten de `shallowgroundwater` laag (`areal_frac_obliggwdep_adj` is het oppervlakte-aandeel in elke intersectiepolygoon, dat verondersteld wordt ingenomen te zijn door obliggwdep-types):
 
 ```{r out.width='800px', out.height='500px'}
 shallow_not_obliggwdep <- 
     shallow_obliggwdep %>% 
-    filter(!is.na(polygon_id), !shallow_gw)
+    filter(!is.na(polygon_id), !shallow_gw) %>% 
+    inner_join(
+        shallow_obliggwdep_aggr2 %>% 
+            select(polygon_id, shallow_gw, areal_frac_obliggwdep_adj),
+        by = c("polygon_id", "shallow_gw")
+    ) %>% 
+    filter(areal_frac_obliggwdep_adj > 0)
 shallow_not_obliggwdep %>% 
-    st_transform(4326) %>% 
-    leaflet() %>% 
-    addTiles() %>% 
-    addPolygons(color = "red", 
-                fill = FALSE,
-                weight = 2,
-                opacity = 1)
+    mapview(zcol = "areal_frac_obliggwdep_adj",
+            col.regions = function(n) heat.colors(n, rev = TRUE),
+            color = "grey30")
 ```
 
-
-```{r eval=FALSE, include=FALSE}
-shallow_not_obliggwdep %>%
-    mapview::mapView(., color = "red", fill = FALSE)
-```
-
-Verdeling van de obliggwdep-types binnen en buiten de `shallowgroundwater` laag:
+We berekenen de overeenkomstige oppervlakteverdeling van de obliggwdep-types binnen en buiten de `shallowgroundwater` laag, en geven dit weer op grafiek.
+Daarbij maken we binnen elke polygoon van `hmt_pol_obliggwdep` gebruik van de hoger bekomen verdeelsleutel.
 
 ```{r}
 shallow_obliggwdep_typesarea <- 
-    shallow_obliggwdep %>% 
-    # only interested in polygons with obliggwdep types
-    filter(!is.na(polygon_id)) %>% 
-    mutate(area = st_area(.) %>% set_units("ha")) %>% 
-    st_drop_geometry %>% 
-    group_by(polygon_id, shallow_gw) %>% 
-    # polygon areas, for each polygon_id x inside/outside shallow_gw:
-    summarise(area = sum(area)) %>% 
-    ungroup %>% 
+    shallow_obliggwdep_aggr2 %>% 
+    select(polygon_id, 
+           shallow_gw, 
+           area, 
+           areal_frac_obliggwdep,
+           areal_frac_obliggwdep_adj) %>% 
+    filter(areal_frac_obliggwdep > 0) %>% 
     # attaching the obliggwdep types:
     inner_join(
         hmt_occ_obliggwdep %>% 
@@ -207,9 +236,10 @@ shallow_obliggwdep_typesarea <-
             select(polygon_id, type, phab),
         by = "polygon_id"
     ) %>% 
-    mutate(area = area * phab / 100) %>% 
+    mutate(redistribution_ratio = areal_frac_obliggwdep_adj / areal_frac_obliggwdep,
+           area_type = area * phab / 100 * redistribution_ratio) %>% 
     group_by(type, shallow_gw) %>% 
-    summarise(area = sum(area)) %>% 
+    summarise(area = sum(area_type)) %>% 
     ungroup
 ```
 
