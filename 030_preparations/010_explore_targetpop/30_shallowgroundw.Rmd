@@ -72,7 +72,7 @@ execGRASS("g.list", type = "vector", flags = "p")
 ```
 
 ```{r warning=FALSE, results="hide", eval=!grass_areal_exists}
-system("db.columns table=shallow_gw | grep -v cat | 
+execshell("db.columns table=shallow_gw | grep -v cat | 
        while read line; do
          db.dropcolumn -f shallow_gw column=$line
        done")
@@ -81,21 +81,21 @@ system("db.columns table=shallow_gw | grep -v cat |
 We behouden in GRASS alleen nog de unieke id-variable 'cat' over in `shallow_gw`:
 
 ```{r}
-system("db.columns table=shallow_gw")
+execshell("db.columns table=shallow_gw")
 ```
 
 We voeren een union operatie uit en lezen het resultaat terug in R.
 
 ```{r eval=!grass_areal_exists}
-system("v.overlay ainput=shallow_gw binput=hmt_pol_obliggwdep operator=or output=shallow_obliggwdep")
+execshell("v.overlay ainput=shallow_gw binput=hmt_pol_obliggwdep operator=or output=shallow_obliggwdep")
 ```
 
 ```{r eval=!grass_areal_exists}
-system("db.columns table=shallow_obliggwdep")
-system("v.db.renamecolumn map=shallow_obliggwdep column=a_cat,shallow_gw
+execshell("db.columns table=shallow_obliggwdep")
+execshell("v.db.renamecolumn map=shallow_obliggwdep column=a_cat,shallow_gw
         v.db.renamecolumn map=shallow_obliggwdep column=b_polygon_id,polygon_id
         v.db.dropcolumn map=shallow_obliggwdep column=b_cat")
-system("db.columns table=shallow_obliggwdep")
+execshell("db.columns table=shallow_obliggwdep")
 ```
 
 ```{r warning=FALSE, results="hide", eval=!file.exists("shallow_obliggwdep.gpkg") | params$regenerate_large_files}
