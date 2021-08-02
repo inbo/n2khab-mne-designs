@@ -102,7 +102,12 @@ execshell("v.db.renamecolumn map=shallow_obliggwdep column=a_cat,shallow_gw
 execshell("db.columns table=shallow_obliggwdep")
 ```
 
-```{r warning=FALSE, results="hide", eval=!file.exists("shallow_obliggwdep.gpkg") | params$regenerate_large_files}
+```{r}
+gpkg_exists <- file.exists("shallow_obliggwdep.gpkg")
+```
+
+
+```{r warning=FALSE, results="hide", eval=!gpkg_exists | params$regenerate_large_files}
 # writing GPKG permanently, because the step takes too long if it is to 
 # be done each time in a temporary way (by calling readVECT)
 execGRASS("v.out.ogr",
@@ -215,6 +220,20 @@ shallow_not_obliggwdep %>%
     mapview(zcol = "areal_frac_obliggwdep_adj",
             col.regions = function(n) heat.colors(n, rev = TRUE),
             color = "grey30")
+```
+
+```{r eval=!gpkg_exists}
+# Adding shallow_obliggwdep with polygon_id == TRUE as a second layer to 
+# shallow_obliggwdep.gpkg, including the extra column areal_frac_obliggwdep_adj
+shallow_obliggwdep %>% 
+    filter(!is.na(polygon_id)) %>% 
+    inner_join(
+        shallow_obliggwdep_aggr2 %>% 
+            select(polygon_id, shallow_gw, areal_frac_obliggwdep_adj),
+        by = c("polygon_id", "shallow_gw")
+    ) %>% 
+    st_write("shallow_obliggwdep.gpkg",
+             layer = "subset_with_nonmissing_polygon_id_and_extracolumn_added")
 ```
 
 We berekenen de overeenkomstige oppervlakteverdeling van de obliggwdep-types binnen en buiten de `shallowgroundwater` laag, en geven dit weer op grafiek.
