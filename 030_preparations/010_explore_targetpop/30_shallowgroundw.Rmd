@@ -259,7 +259,14 @@ shallow_obliggwdep_typesarea <-
            area_type = area * phab / 100 * redistribution_ratio) %>% 
     group_by(type, shallow_gw) %>% 
     summarise(area = sum(area_type)) %>% 
-    ungroup
+    ungroup %>% 
+    right_join(
+        shallow_obliggwdep_typesarea %>% 
+            expand(crossing(type = droplevels(type), shallow_gw)),
+        by = c("type", "shallow_gw")
+        ) %>% 
+    arrange(type, shallow_gw) %>% 
+    mutate(area = ifelse(is.na(area), 0, area) %>% set_units("ha"))
 ```
 
 ```{r fig.width=8, fig.height=6}
