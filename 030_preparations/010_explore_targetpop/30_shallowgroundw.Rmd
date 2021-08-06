@@ -58,10 +58,10 @@ hmt_pol_obliggwdep %>%
 ```
 
 
-```{r warning=FALSE, results="hide", eval=!grass_areal_exists}
+```{r warning=FALSE, results="hide", eval=!grass_areal_exists || params$repopulate_grass_areal_shallowgw}
 execGRASS("v.in.ogr",
           input = normalizePath(file.path(fileman_up("n2khab_data"),
-                                          "10_raw/shallowgroundwater")),
+                                          "10_raw/shallowgroundwater/shallowgroundwater.gpkg")),
           output = "shallow_gw",
           flags = c("o", # assume CRS is same as from GRASS, i.e. set CRS as EPSG:31370
                     "overwrite")
@@ -73,7 +73,7 @@ execGRASS("v.in.ogr",
 execGRASS("g.list", type = "vector", flags = "p")
 ```
 
-```{r warning=FALSE, results="hide", eval=!grass_areal_exists}
+```{r warning=FALSE, results="hide", eval=!grass_areal_exists || params$repopulate_grass_areal_shallowgw}
 execshell("db.columns table=shallow_gw | grep -v cat | 
        while read line; do
          db.dropcolumn -f shallow_gw column=$line
@@ -89,11 +89,11 @@ execshell("db.columns table=shallow_gw")
 We voeren een union operatie uit en lezen het resultaat terug in R.
 Dit resultaat is ook beschikbaar als een GeoPackage `shallow_obliggwdep.gpkg`, met inbegrip van het veld `description_orig` (afkomstig van `habitatmap`) zodat dit in kaartverkenningen gebruikt kan worden.
 
-```{r eval=!grass_areal_exists}
+```{r eval=!grass_areal_exists || params$repopulate_grass_areal_shallowgw}
 execshell("v.overlay --overwrite ainput=shallow_gw binput=hmt_pol_obliggwdep operator=or output=shallow_obliggwdep")
 ```
 
-```{r eval=!grass_areal_exists}
+```{r eval=!grass_areal_exists || params$repopulate_grass_areal_shallowgw}
 execshell("db.columns table=shallow_obliggwdep")
 execshell("v.db.renamecolumn map=shallow_obliggwdep column=a_cat,shallow_gw
         v.db.renamecolumn map=shallow_obliggwdep column=b_polygon_id,polygon_id
@@ -107,7 +107,7 @@ gpkg_exists <- file.exists("shallow_obliggwdep.gpkg")
 ```
 
 
-```{r warning=FALSE, results="hide", eval=!gpkg_exists | params$regenerate_large_files}
+```{r warning=FALSE, results="hide", eval=!gpkg_exists || params$regenerate_large_files || params$repopulate_grass_areal_shallowgw}
 # writing GPKG permanently, because the step takes too long if it is to 
 # be done each time in a temporary way (by calling readVECT)
 execGRASS("v.out.ogr",
@@ -222,7 +222,7 @@ shallow_not_obliggwdep %>%
             color = "grey30")
 ```
 
-```{r eval=!gpkg_exists}
+```{r eval=!gpkg_exists || params$regenerate_large_files || params$repopulate_grass_areal_shallowgw}
 # Adding shallow_obliggwdep with polygon_id == TRUE as a second layer to 
 # shallow_obliggwdep.gpkg, including the extra column areal_frac_obliggwdep_adj
 shallow_obliggwdep %>% 
