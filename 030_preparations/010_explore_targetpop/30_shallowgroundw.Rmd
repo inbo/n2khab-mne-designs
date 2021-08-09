@@ -12,6 +12,8 @@ read_schemes() %>%
 We inspecteren in dit verband de laag `shallowgroundwater` die door Dries Adriaens werd samengesteld.
 Meer achtergrond over de totstandkoming van de databron is [hier](https://docs.google.com/document/d/1EGwZ3MB6bVvRXSvgva_6HSz7eQ95MN0sjGkun7cENXw) te vinden.
 
+## Evaluatie op basis van de (bijna) overal grondwaterafhankelijke types
+
 Meer bepaald gaan we na of de laag voldoende betrouwbaar lijkt voor een toepassing a priori, door de spatiale relatie na te gaan tussen deze laag en de verspreiding van de (bijna) overal grondwaterafhankelijke, (semi-)terrestrische types (voorheen ook benoemd als 'obligaat' grondwaterafhankelijk):
 omvat de laag `shallowgroundwater` alle (de meeste) locaties met (bijna) overal grondwaterafhankelijke, terrestrische types?
 De 'fractie van locaties' is daarbij het best oppervlaktegebaseerd, i.e. rekening houdend met PHAB.
@@ -306,3 +308,179 @@ shallow_obliggwdep_typesarea %>%
 ```
 
 
+
+## Evaluatie op basis van piëzometers met ondiep grondwater (in habitat/RBB)
+
+Omdat de 'obbliggwdep' types een rol zijn gaan spelen in de totstandkoming van bepaalde versies van `shallowgroundwater`, is de interpretatie van een evaluatie op basis van de verspreiding van 'obbliggwdep' types moeilijk.
+
+```{r}
+threshold <- -1.5
+```
+
+Om die reden wordt ook een onafhankelijke evaluatie toegevoegd, namelijk op basis van een van de datasets die gebruikt worden in het kader van het ontwerp van het grondwatermeetnet in MNM/MNE.
+Het betreft de jaarlijkse LG3-waarden (t.o.v. maaiveld) ter hoogte van piëzometers in terrestrisch habitat/RBB.
+Voor de evaluatie van `shallowgroundwater` gebruiken we enkel de piëzometers met een mediane LG3 die ondieper is dan `r -threshold` meter onder maaiveld, voor piëzometers met minstens 4 LG3-waarden.
+We laten daarnaast piëzometers toe met slechts 3 LG3-waarden (3 jaren), op voorwaarde dat de laagst gemeten LG3 ondieper is dan `r -threshold` meter onder maaiveld.
+
+```{r}
+gitroot <- find_root(is_git_root)
+thisrepo <- git2rdata::repository(gitroot)
+################################################################################
+#WARNING: this project needs access to a git repository with non-public data. It
+#is a clone of inbo/n2khab-mne-nonpublicdata and the clone needs to sit NEXT to
+#the current git repository, and must be named 'n2khab-mne-nonpublicdata'.
+#Branch 'master' must track the remote branch 'master'. Please arrange all this
+#beforehand, because the code does not setup this clone.
+#For the code to run, you must be connected to the internet.
+nonpublicrepo <- git2rdata::repository(file.path(gitroot, 
+                                      "..", 
+                                      "n2khab-mne-nonpublicdata"))
+if (git2r::repository_head(nonpublicrepo)$name != "master") {
+  git2r::checkout(nonpublicrepo, "master")
+}
+out <- git2r::pull(nonpublicrepo)
+if (out$conflicts) {
+  stop("Please first fix merge conflicts in n2khab-mne-nonpublicdata",
+       " (locally), in order to complete the git pull, and then try again. ",
+       "While doing this, keep an eye on any messages from `git status`.")
+}
+################################################################################
+gw51t <- 
+  git2rdata::read_vc("design_gw/gw51t",
+           root = nonpublicrepo) %>% 
+  as_tibble
+lg3_data <- 
+    gw51t %>% 
+    distinct(loc_code, hydroyear, lg3_lcl, x, y)
+```
+
+Verdeling van de locaties over het aantal beschikbare LG3-waarden (jaren) per locatie, in de oorspronkelijke dataset:
+
+```{r out.width='70%'}
+lg3_data %>% 
+    count(loc_code, name = "count_datayears") %>% 
+    ggplot(aes(x = count_datayears)) +
+    geom_bar(fill = "white", colour = "grey70")
+```
+
+Hierop passen we de hogervermelde condities toe.
+
+```{r}
+evaluation_locs <- 
+    lg3_data %>% 
+    group_by(loc_code, x, y) %>% 
+    summarise(count_datayears = n(),
+              median_lg3 = median(lg3_lcl),
+              min_lg3 = min(lg3_lcl)) %>% 
+    ungroup %>% 
+    filter((count_datayears > 3 & median_lg3 >= threshold) |
+               (count_datayears == 3 & min_lg3 >= threshold)) %>% 
+    watina::as_points(remove = TRUE, warn_dupl = FALSE)
+```
+
+Dit resulteert in `r nrow(evaluation_locs)` locaties (`r (nrow(evaluation_locs) / nrow(lg3_data %>% distinct(loc_code)) * 100) %>% round(1)`% van de oorspronkelijke locaties).
+
+```{r}
+sg <- read_sf(file.path(fileman_up("n2khab_data"),
+                        "10_raw/shallowgroundwater/shallowgroundwater.gpkg"))
+# sg_orig <- read_sf(file.path(fileman_up("n2khab_data"),
+#                         "10_raw/shallowgroundwater_orig/"), 
+#                    crs = 31370)
+```
+
+```{r}
+locs_eval <- 
+    evaluation_locs[sg, , drop = TRUE] %>% 
+    select(loc_code) %>% 
+    mutate(shallow_gw = TRUE) %>% 
+    left_join(evaluation_locs %>% st_drop_geometry, ., by = "loc_code") %>% 
+    mutate(shallow_gw = ifelse(is.na(shallow_gw), FALSE, shallow_gw))
+```
+
+De toetsing aan `shallowgroundwater` levert het volgende, meer genuanceerde beeld op:
+
+
+```{r}
+locs_eval %>% 
+    group_by(shallow_gw) %>% 
+    summarise(nr_locs = n()) %>% 
+    mutate(pct = ((nr_locs / sum(nr_locs)) %>% 
+                      as.numeric * 100) %>% round(1))
+```
+
+Er kan dus worden gepoogd om dit cijfer te verbeteren.
+Er moet wel worden opgemerkt dat de set betrokken piëzometers niet kan worden beschouwd als een evenwichtige vertegenwoordiging van de zones met ondiep grondwater.
+Desondanks dienen we wel een zo goed mogelijk resultaat na te streven.
+
+De grafieken hieronder tonen de relatie tot de betrokken types.
+Houd er rekening mee dat niet alle grondwaterafhankelijke types zijn vertegenwoordigd in deze dataset, noch dat de locaties per type evenwichtig zijn verdeeld in functie van de Vlaamse verspreiding ervan.
+
+```{r out.width='80%', fig.width=8, fig.height=6}
+locs_eval_type <- 
+    locs_eval %>% 
+    inner_join(gw51t %>% distinct(loc_code, type), 
+               by = "loc_code") %>% 
+    inner_join(read_types() %>% select(type, groundw_dep_shortname),
+               by = "type")
+typelev_shallow2 <- 
+    locs_eval_type %>% 
+    mutate(val = 1) %>% 
+    pivot_wider(names_from = shallow_gw,
+                names_prefix = "sg_",
+                values_from = val,
+                values_fill = 0) %>% 
+    group_by(type) %>% 
+    summarise(across(starts_with("sg_"), sum)) %>% 
+    arrange(sg_FALSE, sg_TRUE) %>% 
+    .$type %>% 
+    as.character
+locs_eval_type %>% 
+    mutate(type = factor(type, levels = typelev_shallow2),
+           shallow_gw = factor(shallow_gw) %>% fct_rev) %>% 
+    rename(in_shallow_gw = shallow_gw) %>% 
+    ggplot(aes(x = type, fill = in_shallow_gw)) +
+    geom_bar() +
+    scale_fill_manual(values = c("green3", "red3")) +
+    geom_point(aes(y = -10, x = type, colour = groundw_dep_shortname),
+               size = 2) +
+    scale_colour_manual(values = c("grey70", "grey30")) +
+    coord_flip() +
+    ggtitle("number of piezometers inside & outside of shallowgroundwater") +
+    theme(panel.background = element_blank())
+```
+
+
+Dezelfde data worden hieronder voor elk type relatief weergegeven (types in dezelfde volgorde als bovenstaande grafiek):
+
+```{r out.width='80%', fig.width=8, fig.height=6}
+locs_eval_type %>% 
+    mutate(type = factor(type, levels = typelev_shallow2),
+           shallow_gw = factor(shallow_gw) %>% fct_rev) %>% 
+    rename(in_shallow_gw = shallow_gw) %>% 
+    ggplot(aes(x = type, fill = in_shallow_gw)) +
+    geom_bar(position = "fill") +
+    scale_fill_manual(values = c("green3", "red3")) +
+    ylab("fraction") +
+    geom_point(aes(y = -0.05, x = type, colour = groundw_dep_shortname),
+               size = 2) +
+    scale_colour_manual(values = c("grey70", "grey30")) +
+    coord_flip() +
+    ggtitle("relative number of piezometers inside & outside of shallowgroundwater") +
+    theme(panel.background = element_blank())
+```
+
+Het blijkt duidelijk dat hoofdzakelijk lokaal grondwaterafhankelijke types slecht scoren.
+Het gaat typisch om duinen en ten dele graslanden.
+
+In deze evaluatie zijn de volgende (semi-)terrestrische types, met gedeeltelijke tot volledige grondwaterafhankelijkheid, niet getoetst (geen piëzometers die voldoen aan de criteria):
+
+```{r}
+read_types(lang = "nl") %>% 
+    filter(groundw_dep %in% c("GD1", "GD2")) %>%
+    select(groundw_dep_shortname, type, type_shortname) %>% 
+    semi_join(scheme_types_mne %>% filter(scheme == "GW_05.1_terr"), 
+              by = "type") %>% 
+    anti_join(locs_eval_type %>% distinct(type), by = "type") %>% 
+    arrange(groundw_dep_shortname) %>% 
+    kable
+```
