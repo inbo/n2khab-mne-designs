@@ -93,7 +93,7 @@ wsh_area %>%
 ```
 
 
-### Watervlaktypes: aantal polygonen (per oppervlakteklasse) {#nrpolygons}
+### Watervlaktypes: aantal polygonen per oppervlakteklasse {#nrpolygons}
 
 Verdeling van een aantal oppervlakteklassen van de watervlakken, in termen van het aantal polygonen `n`:
 
@@ -117,7 +117,7 @@ wsh_area %>%
 
 De vergelijking met verdeling volgens oppervlakte benadrukt dat een relatief beperkt aantal grotere watervlakken een groot aandeel van de oppervlakte bestrijken.
 
-Verdeling per type:
+Verdeling van het aantal polygonen per type:
 
 ```{r fig.height=6, fig.width=12}
 typesw_levels <- 
@@ -141,6 +141,20 @@ wsh_occ %>%
 
 Dit bevestigt dat kleine watervlakken in zeer grote mate de ruimtelijke verspreiding van de meeste habitattypes bepalen.
 De volgorde van meest naar minst aantal polygonen is duidelijk anders dan volgens oppervlakte.
+
+Een verdeling volgens het logaritme van de polygoonoppervlakte houdt meer het midden tussen de beide verdelingen, weliswaar met de proportie van klasse (0, 1] ongeveer even groot als in de oppervlakteverdeling:
+
+```{r watsurf-areaclasses-logarea, fig.width=10, fig.height=2, fig.cap="Verdeling van oppervlakteklassen van watervlakken, volgens het aandeel van de log(oppervlakte)."}
+wsh_area %>% 
+  mutate(area_class_ha = cut_sw(area) %>% fct_rev) %>% 
+  group_by(area_class_ha) %>% 
+  summarise(area = sum(area) %>% as.numeric) %>% 
+  ggplot(aes(x = "surfacewater types", y = log(area), fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    labs(x = NULL, y = "log(area) distribution") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
 
 
 
@@ -362,9 +376,9 @@ Bij een ruimtelijk constante inclusiekans per type, d.w.z. zonder rekening te ho
 Het lijkt daarom niet aangewezen om het SBZ-H-netwerk te overbemonsteren.
 Een equal probability design, zonder a priori domeinstructuur, heeft trouwens voor monitoring sowieso de voorkeur, omdat het zorgt voor eenvoud en flexibiliteit tgo. veranderingen in de toekomst.
 
-Voor de watervlaktypes:
+#### Watervlaktypes
 
-- volgens oppervlakte:
+Verdeling volgens oppervlakte:
 
 ```{r}
 wshsac_area %>% 
@@ -377,14 +391,17 @@ wshsac_area %>%
          )
 ```
 
-- volgens aantal polygonen:
-  - totaal binnen en buiten SBZ-H:
+Verdeling volgens aantal polygonen:
+
+- totaal binnen en buiten SBZ-H:
+
 ```{r}
 wshsac_area %>% 
   count(in_sac) %>% 
   mutate(pct_targetpop = (n / sum(n) * 100) %>% round(1))
 ```
-  - met verdeling van oppervlakteklassen:
+
+- met verdeling van oppervlakteklassen:
   
 ```{r}
 wshsac_area %>% 
