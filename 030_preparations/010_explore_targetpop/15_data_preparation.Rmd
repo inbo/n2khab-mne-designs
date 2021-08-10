@@ -115,15 +115,30 @@ wsh_occ %>%
 ```
 
 
-- We lezen de spatiale data ook in voor type 3260.
+- We lezen de spatiale data ook in voor de 'bijzondere' types 3260, 7220 en 8310, die elk hun eigen databron hebben.
 
 ```{r}
 habstream <- read_habitatstreams()
 ```
 
 ```{r}
+flanders_buffer <- 
+    read_admin_areas(dsn = "flanders") %>% 
+    st_buffer(40)
+habspring <- 
+    read_habitatsprings(units_7220 = TRUE) %>% 
+            # note that the one 7230 point is covered by habitatmap_terr
+    .[flanders_buffer, ]
+```
+
+```{r}
+# this automatically restricts to Flemish polygons:
+habquarries <- read_habitatquarries(filter_hab = TRUE)
+```
+
+```{r}
 types_mne_expanded %>%
-    filter(type == "3260")
+    filter(type %in% c("3260", "7220", "8310"))
 ```
 
 Voor zwaardere geospatiale berekeningen rekenen we op [GRASS](https://grass.osgeo.org/), via de packages `link2GI` en `rgrass7` en soms via bash-commando's.
