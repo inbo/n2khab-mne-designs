@@ -44,9 +44,11 @@ De aanwezigheid van het type 3260 _binnen_ het segment is de voorwaarde voor een
 - **voor type 7220**: de volledige habitatvlek (met variabele oppervlakte).
 De populatie-eenheid komt daarmee overeen met een unieke waarde van de kolom `unit_id` in de `habitatsprings` databron (zie ook `n2khab::read_habitatsprings(unit_level = TRUE)`).
 Deze benadering wordt gevolgd voor zowel de beek- als de semi-terrestrische vormen van 7220.
+De reden is dat de milieukenmerken binnen zo'n populatie-eenheid doorgaans veel minder zullen verschillen dan tussen populatie-eenheden, en omdat deze benadering praktisch meer voor de hand ligt gegeven de puntenlaag `habitatsprings`.
 - **voor type 8310**: een volledige mergelgroeve of een zo groot mogelijk deel daarvan (dus met variabele oppervlakte), met als randvoorwaarde dat het binnenklimaat van de populatie-eenheid (temperatuur en luchtvochtigheid) als één geheel kan worden beschouwd voor vergelijking met andere populatie-eenheden.
 Deze definitie laat ruimte voor een _geleidelijke_ gradiënt binnen een populatie-eenheid, die bv. via subsampling bemeten kan worden en tot één waarde geaggregeerd voor vergelijking met andere eenheden.
 Atmosferisch (quasi) van elkaar geïsoleerde ruimten geven daarentegen aanleiding tot een ander binnenklimaat en zijn daarom verschillende populatie-eenheden.
+Op deze manier kunnen populatie-eenheden zinvol klimatologisch worden gemonitord en onderling vergeleken.
 De populatie-eenheden zijn praktisch geïmplementeerd als de unieke waarden van de kolom `unit_id` in de `habitatquarries` databron, waarbij we polygonen buiten het Vlaams Gewest negeren (zie ook `n2khab::read_habitatquarries(filter_hab = TRUE)`).
 
 De koppelingswijze met het GRTS-raster, nodig om aan elke steekproefeenheid een uniek GRTS-rangnummer toe te kennen:
@@ -66,14 +68,14 @@ Aan het punt wordt het GRTS-adres toegewezen van de cel waar het punt in valt.
 
 ## Fijnstelling spatiale opzet i.v.m. het praktisch omgaan met onzekerheden in het steekproefkader {#vervang}
 
-Het steekproefkader wordt in eerste instantie afgeleid van de databronnen `habitatmap_terr`, `watersurfaces_hab`, `habitatstreams` en `habitatsprings`.
+Het steekproefkader wordt in eerste instantie afgeleid van de databronnen `habitatmap_terr`, `watersurfaces_hab`, `habitatstreams`, `habitatsprings` en `habitatquarries`.
 Voor meer informatie over deze databronnen, zie de documentatie van het R-package [n2khab](https://inbo.github.io/n2khab) (vignette over data sources) en de daar gerefereerde Zenodo-collecties.
 
 Het steekproefkader voor de terrestrische types bevat een groot aandeel cellen waarover onzekerheid is over het reële optreden van het type (default: in het centroïd).
 Deze onzekerheid wordt vooral weerspiegeld door het phab-attribuut (Figuur \@ref(fig:typecover), rechterzijde); dit is het bedekkingspercentage van het type in de polygoon.
 Dit maakt dat een steekproeftrekking onvermijdelijk een aandeel cellen zal bevatten waarin het type niet optreedt.
 
-Ook voor de aquatische types, en voor terrestrische types met phab = 100%, is het mogelijk dat een type niet op een geselecteerde locatie voorkomt.
+Ook voor de aquatische types, type 7220, type 8310, en voor terrestrische types met phab = 100%, is het mogelijk dat een type niet op een geselecteerde locatie voorkomt.
 Dit is bv. wegens ouderdom van de gebruikte informatie of omdat meerdere alternatieve types zijn aangeduid.
 
 **Verschillende stappen worden genomen om uit dit steekproefkader op een valide én praktisch haalbare manier een steekproef te kunnen bekomen en bemeten:**
@@ -91,7 +93,7 @@ De binomiale trekking gebeurt cel per cel in de volgorde van de GRTS-rangnummers
     We definiëren daartoe phab-klassen rond elk veelvoud van 5%: [0, 2.5], (2.5, 7.5], (7.5, 12.5], ..., (97.5, 100].
     Veelvouden van 5% komen het vaakst voor, maar in het geheel komen heel wat meer waarden voor.
 
-- Voor **alle andere types** wordt louter gekoppeld tussen enerzijds het GRTS-raster en anderzijds terrestrische polygonen of aquatische punten (die plassen, segmenten of bronnen vertegenwoordigen).
+- Voor **alle andere types** wordt louter gekoppeld tussen enerzijds het GRTS-raster en anderzijds (terrestrische) polygonen ofwel punten (die waterplassen, segmenten 3260 of andere populatie-eenheden (7220, 8310) vertegenwoordigen).
 
 ### Bij het terreinbezoek
 
@@ -135,7 +137,7 @@ Kortom zijn de volgende combinaties beschikbaar:
 
 |          | GRTS-toev.  | pol-constrained | pol-constrained + transl. | level-constrained |
 |:--------|:--------------:|:--------:|:--------:|:--------:|
-|aquatisch |      X      |            |            |  X |
+|aquatisch + 7220 + 8310 |      X      |            |            |  X |
 |terrestrisch, centroïd |            |      X      |      (X)      |  |
 |terrestrisch, cell-based |     X       |      X      |            |  X |
 
@@ -258,7 +260,7 @@ Het zijn deze kwaliteitscriteria die bepalend zullen zijn voor de steekproefgroo
 ### Het domein 'SBZ-H-netwerk'
 
 Concreet toegepast op de MNM is het om bovenstaande redenen, in vergelijking met het biotisch meetnet, interessant om geen overbemonstering toe te passen in het **SBZ-H netwerk**.
-Er zal daardoor voor _terrestrische_ types gemiddeld een gelijkaardige precisie ontstaan binnen en buiten het SBZ-H-netwerk  (want evenveel oppervlakte binnen als buiten), en zo'n 30% kleinere foutmarge binnen SBZ-H t.o.v. erbuiten voor _stilstaande wateren_ (want dubbel zoveel plassen binnen als buiten).
+Er zal daardoor voor _terrestrische_ types gemiddeld een gelijkaardige precisie ontstaan binnen en buiten het SBZ-H-netwerk  (want evenveel oppervlakte binnen als buiten), en gemiddeld zo'n 30% tot > 50% kleinere foutmarge binnen SBZ-H t.o.v. erbuiten voor heel wat _andere types_ (bv. dubbel zoveel plassen, drie keer zoveel kalktufbronnen en vijf keer zoveel mergelgroeve-eenheden binnen SBZ-H t.o.v. erbuiten).
 Dit patroon varieert sterk per type: bepaalde types komen vooral voor binnen en andere vooral buiten SBZ-H.
 Het is op zich logisch dat de monitoringinspanning voor types die vooral buiten SBZ-H liggen, ook meer buiten SBZ is gesitueerd.
 Het SBZ-H netwerk zelf vertegenwoordigt slechts 7.7% van Vlaanderen, dus er is de facto reeds veel aandacht voor omdat er een verhoudingsgewijs groot oppervlakte-aandeel van de doelpopulatie binnen ligt.
@@ -284,4 +286,28 @@ Gezien het grote oppervlakte-aandeel zouden ook model-assisted methoden (met pos
 De oppervlaktestrata komen overeen met de 4 klassen in het biotisch meetnet.
 
 Het is daarnaast een derde optie om uitspraken te wegen volgens de vierkantswortel van de plasoppervlakte: dit houdt rekening met beide aspecten (aantal plassen en grootte van de plassen, per oppervlaktestratum; Fig. \@ref(fig:watsurf-areaclasses-sqrtarea)).
+
+
+### Oppervlakteklassen van de mergelgroeven
+
+Voor type 8310 is de populatie-eenheid een gehele mergelgroeve, of een welbepaald deel ervan, en dit ongeacht de grootte (zie paragraaf \@ref(sample-support)).
+
+Omdat grotere populatie-eenheden ook een grotere levensgemeenschap herbergen, is de meest zinvolle inferentie in dit geval één die rekening houdt met de oppervlakte van hun overeenkomstige polygonen (of idealiter, met de wandoppervlakte die geschikt is voor vleermuispopulaties).
+
+Evenwel wensen we te voorkomen dat oppervlakte lineair doorwerkt in de inferentie, in het bijzonder omdat één grote populatie-eenheid bijna de helft van de oppervlakte bepaalt.
+De milieuproblematiek van de respectievelijke populatie-eenheden blijft immers ook een belangrijk element voor het natuurbeleid, in het kader van de ruimtelijke verspreiding van het habitattype.
+
+Om deze redenen beschouwen we een inferentie die de populatie-eenheden weegt op basis van de vierkantswortel van de polygoonoppervlakte als meest interessant (Fig. \@ref(fig:quarries-areaclasses-sqrtarea)).
+Aanvullend kunnen de eenheidgebaseerde en de oppervlaktegebaseerde inferentie ook nuttig blijven.
+
+Om de precisie van een dergelijke inferentie op typeniveau onder controle te houden, stratificeren we de populatie-eenheden volgens drie oppervlakteklassen, met de bedoeling om ze elk gelijkwaardig te bemonsteren (i.e. met oog op een gelijkaardige precisie per stratum).
+Zonder te stratificeren is de kans immers te groot dat de zeldzame, grote populatie-eenheden onvoldoende voorkomen in de steekproef, waardoor de foutenmarge onnodig groot zou worden.
+
+Op basis van Fig. \@ref(fig:quarries-areaclasses-sqrtarea) onderscheiden we drie **oppervlaktestrata**:
+
+- ≤ 2 ha
+- \> 2 ha en ≤ 6 ha
+- \> 6 ha
+
+
 
