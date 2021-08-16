@@ -509,7 +509,11 @@ compute_status_persample <- function(statusdata = NULL,
     mean_se <-
         statusdata %>%
         {if (!weighted_mean | level == "type") {
-            nest(., data = -c(scenario, population, spatial_sample, type))
+            nest(., data = -c(scenario,
+                              population,
+                              spatial_sample,
+                              type, # type is required
+                              starts_with("type"))) # typegroup is possibly present
         } else if (level == "overall") {
             nest(., data = -c(scenario, population, spatial_sample))
         } else {
