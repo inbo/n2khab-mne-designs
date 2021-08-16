@@ -558,7 +558,7 @@ compute_status_persample <- function(statusdata = NULL,
     # calculating unweighted mean of types (overall or typegroup level):
     mean_se %>%
         group_by(scenario, population, spatial_sample) %>%
-        {if (level == "typegroup") group_by(., typegroup) else .} %>%
+        {if (level == "typegroup") group_by(., typegroup, .add = TRUE) else .} %>%
         summarise(mean = mean(mean),
                   se = sqrt(sum(se^2)) / n()) %>%
         ungroup %>%
