@@ -348,7 +348,13 @@ In figuur XXXX is te zien dat de absolute foutenmarge voor dit type juist heel k
 
 #### Trend
 
-```{r}
+```{r include=FALSE}
+rds_filepath_trend_estimateslocal <- file.path(datapath, "binary/simobs",
+                          str_c(filepath_sub, respvar,
+                                "_trend_estimateslocal.rds"))
+```
+
+```{r eval=(params$simulate_obs | !file.exists(rds_filepath_trend_estimateslocal))}
 inputdata_trend <- 
   if (any(simsamples$response < 0)) {
     simsamples %>% 
@@ -363,15 +369,7 @@ inputdata_trend <-
         simsamples %>% 
           mutate(logresp = log10(response))
         }
-```
 
-```{r include=FALSE}
-rds_filepath_trend_estimateslocal <- file.path(datapath, "binary/simobs",
-                          str_c(filepath_sub, respvar,
-                                "_trend_estimateslocal.rds"))
-```
-
-```{r eval=(params$simulate_obs | !file.exists(rds_filepath_trend_estimateslocal))}
 registerDoParallel(cores = 5)
 system.time(
 trend_estimateslocal <-
