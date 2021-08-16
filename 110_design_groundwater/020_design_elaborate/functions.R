@@ -474,8 +474,8 @@ visualize_trends <- function(sample_definition,
 #' For levels higher than type, the design is always stratified according to
 #' type.
 #' @param weighted_mean Logical; only relevant for level higher than type.
-#' Should means be calculated according to a stratified design, i.e. weighing
-#' types according to their relative population size?
+#' Should means be calculated as usual in a stratified design, i.e.
+#' weighing types according to their relative population size?
 #' The default (FALSE) gives equal weight to types and standard error is
 #' calculated accordingly (equal weights of the type standard errors).
 #' This is done since it is the global quantity of primary interest.
@@ -632,7 +632,7 @@ summarise_status_of_samples <- function(multisample_stats,
 
 
 
-#' Calculate power for each population and among populations
+#' Calculate power for each population and power distribution among populations
 #'
 #' For a given sample statistic, calculates median and percentiles of
 #' power, where each power value is based on the simulated samples from one
