@@ -567,12 +567,182 @@ pop_size %>%
 ```
 
 
+### Populatiegrootte onder restrictie van `shallowgroundwater`
+
+Aangezien we voor verschillende meetnetten de populatiegroottes nodig hebben binnen `shallowgroundwater` (zie hoofdstuk \@ref(shallow)), rekenen we ook dit resultaat uit, zowel centroïd- als celgebaseerd.
+
+Concreet beperken we:
+
+- de centroïdgebaseerde 'phab'-rasters met behulp van een centroïdgebaseerd raster, afgeleid van `shallowgroundwater`
+- de celgebaseerde 'max'-rasters met behulp van een celgebaseerd raster, afgeleid van `shallowgroundwater`
+
+Het resultaat wordt niet verder in dit rapport gebruikt.
+
+```{r results="hide", eval=!grass_grts_join}
+fileman_up("n2khab_data") %>% 
+    file.path("10_raw/shallowgroundwater/shallowgroundwater.gpkg") %>% 
+    execGRASS("v.in.ogr",
+              input = .,
+              output = "shallowgroundwater",
+              flags = c("overwrite", "o"))
+```
+
+```{r results="hide"}
+# test for correct resolution
+reg <- execGRASS("g.region", flags = c("m", "quiet"))
+stopifnot(attr(reg, "resOut")[11] == "cells=21041043")
+```
+
+```{r results="hide", eval=!grass_grts_join}
+execshell("v.to.rast input=shallowgroundwater use=val value=1 output=sg memory=4000 --overwrite")
+```
+
+```{r eval=!grass_grts_join}
+# use bbox of GRTSmh, 10-fold higher resolution:
+execshell("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=3.2")
+```
 
 
+```{r eval=!grass_grts_join}
+execshell("g.region -p
+           g.proj -w")
+```
+
+```{r results="hide", eval=!grass_grts_join}
+# rasterization of shallowgroundwater, on a 10-fold resolution of GRTSmh
+execshell("v.to.rast input=shallowgroundwater use=val value=1 output=sg3.2 memory=4000 --overwrite")
+```
+
+```{r eval=!grass_grts_join, echo=FALSE}
+# use bbox & resolution of GRTSmh:
+execshell("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+execshell("g.region -p
+           g.proj -w")
+```
+
+```{r results="hide"}
+# test for correct resolution
+reg <- execGRASS("g.region", flags = c("m", "quiet"))
+stopifnot(attr(reg, "resOut")[11] == "cells=21041043")
+```
+
+```{r results="hide", eval=!grass_grts_join}
+# maximum of sg3.2 values (res 3.2) per cell at current resolution (32)
+execshell("r.resamp.stats input=sg3.2 output=sg_cell method=maximum --overwrite")
+```
+
+```{r results="hide", eval=!grass_grts_join}
+# calculating shallowgroundwater-restricted versions of phab_xxx and max_xxx (32 m)
+execshell("shellscripts/shellscript_06_r.mapcalc_sg_parallel.sh")
+```
+
+```{r message=FALSE, results="hide"}
+# summing phab-values (as fractions) at centroids:
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.univar",
+                     flags = "t",
+                     map = str_c("phab_sg_", types_hmt[i]),
+                     separator = "comma")
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        str_c(collapse = "\n") %>% 
+        read_csv %>% 
+        # divide by 100 to get phab as fraction
+        # the sum statistic is the sum of phab *, so:
+        mutate(phab_sum = sum / 100,
+               count = non_null_cells,
+               type = types_hmt[i]) %>% 
+        select(type,
+               phab_sum,
+               count)
+    
+    if (i == 1) {
+        hmt_sg_popsize_centroid <- type_result
+        } else {
+        hmt_sg_popsize_centroid <- 
+            hmt_sg_popsize_centroid %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+hmt_sg_popsize_centroid <- 
+    hmt_sg_popsize_centroid %>% 
+    mutate(phab_sum = ifelse(is.na(phab_sum), 0, phab_sum))
+# * phab_sg_xxxx: phab-values of cells, restricted by centroid-based shallowgroundwater, i.e. for centroid at resolution 32 m (GRTSmh)
+```
 
 
+```{r message=FALSE, results="hide"}
+# summing maximum phab-values (as fractions) - i.e. for joining at cell level:
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.univar",
+                     flags = "t",
+                     map = str_c("max_sg_", types_hmt[i]),
+                     separator = "comma")
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        str_c(collapse = "\n") %>% 
+        read_csv %>% 
+        # divide by 100 to get phab as fraction
+        # the sum statistic is the sum of phabs-max *, so:
+        mutate(detprob_sum = sum / 100,
+               type = types_hmt[i]) %>% 
+        select(type,
+               detprob_sum)
+    
+    if (i == 1) {
+        hmt_sg_popsize_cells <- type_result
+        } else {
+        hmt_sg_popsize_cells <- 
+            hmt_sg_popsize_cells %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+hmt_sg_popsize_cells <- 
+    hmt_sg_popsize_cells %>% 
+    mutate(detprob_sum = ifelse(is.na(detprob_sum), 0, detprob_sum))
+# * max_sg_xxxx: maximum of phabs-subcell values, restricted by cell-based shallowgroundwater, at resolution 32 m (GRTSmh)
+```
 
+We combineren beide resultaten en schrijven dit weg.
 
+```{r}
+pop_size_sg <- 
+    hmt_sg_popsize_cells %>% 
+    rename(cellbased = detprob_sum) %>% 
+    inner_join(hmt_sg_popsize_centroid %>% 
+                select(type,
+                       centroidbased = phab_sum), 
+               by = "type") %>% 
+    pivot_longer(cols = 2:3,
+                 names_to = "count_method",
+                 values_to = "population_size")
+pop_size_sg %>% git2rdata::write_vc("pop_size_terr_sg", 
+                                    sorting = c("type", "count_method"))
+```
+
+Het verband tussen populatiegrootte zonder en met restrictie:
+
+```{r warning=FALSE, fig.cap="Spreiding in de relatie tussen populatiegrootte zonder en met restrictie door `shallowgroundwater`. 'population_size_sg' vertegenwoordigt de ingeperkte populatiegrootte. De lijn is de eerste bissectrice. Zowel celgebaseerd als centroïdgekoppeld."}
+pop_size %>% 
+    inner_join(pop_size_sg %>% 
+                   rename(population_size_sg = population_size),
+               by = c("type", "count_method")) %>% 
+    ggplot(aes(x = population_size, 
+               y = population_size_sg, 
+               colour = count_method)) +
+    geom_abline() +
+    geom_point() +
+    scale_x_log10() +
+    scale_y_log10()
+```
 
 
 
