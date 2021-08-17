@@ -663,7 +663,7 @@ calculate_power_of_scenarios <- function(multisample_stats,
                       .names = "trend_sign_{.col}")) %>%
         rename_with(.cols = matches("^trend_sign_"),
                     .fn = ~str_remove(., "twosided_errmarg")) %>%
-        group_by(across(c(scenario, contains("type"), population))) %>%
+        group_by(across(c(contains("type"), scenario, population))) %>%
         summarise(across(matches("^trend_sign_"), ~sum(.)/n())) %>%
         rename_with(~str_replace(., "trend_sign", "power_at_conflevel"))
 
