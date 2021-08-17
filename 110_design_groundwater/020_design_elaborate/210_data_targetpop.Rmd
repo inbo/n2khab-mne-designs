@@ -181,8 +181,6 @@ We nemen de oppervlaktestrata daarom reeds op.
 
 ```{r}
 # not yet applying the restriction by shallow_groundwater!! XXXXX
-# not yet incorporating 8310 ! XXXXX
-# not yet updated to the 2020 habitatmap & watersurfaces !!
 pop_size_terr <- 
     read_vc("030_preparations/010_explore_targetpop/pop_size_terr", 
             root = find_root(is_git_root)) %>% 
@@ -229,6 +227,16 @@ pop_size_lentic <-
     inner_join(wsh_occ, by = "polygon_id", .) %>% 
     semi_join(targetpop, by = "type") %>% 
     count(type, stratum, name = "population_size")
+pop_size_8310 <- 
+    read_habitatquarries(filter_hab = TRUE) %>% # is restricted to Flanders
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    select(type, area) %>% 
+    mutate(stratum = 
+               area %>% 
+               cut(c(0, 2, 6, 40)) %>% 
+               as.character) %>% 
+    count(type, stratum, name = "population_size")
 ```
 
 
@@ -251,7 +259,8 @@ targetpop_stratumsize <-
     bind_rows(pop_size_terr,
               pop_size_7220,
               pop_size_3260,
-              pop_size_lentic) %>% 
+              pop_size_lentic,
+              pop_size_8310) %>% 
     join_targetpop
 ```
 
