@@ -715,7 +715,7 @@ calculate_power_of_scenarios <- function(multisample_stats,
                                               "~conflevel",
                                               str_c("~conflevel + ",
                                                     type_typegroup_colname)))) +
-                    xlab("average number of locations per type\n(before adjusting for spatial variance and population size)") +
+                    xlab("average number of locations per type\n(before adjusting for spatial variance, population size and typegroup size)") +
                     theme(legend.position = "bottom")
             })
     }

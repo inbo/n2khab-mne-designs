@@ -164,17 +164,24 @@ scen <-
 sample_definition <- 
   scen %>% 
   crossing(spatvar) %>% 
+  left_join(type_attrib %>% 
+              select(type, 
+                     typegroup,
+                     popsize_spatial = population_size),
+            by = "type") %>% 
+  group_by(scenario, typegroup) %>% 
+  mutate(nrtypes_per_typegroup = n()) %>% 
   group_by(scenario) %>% 
-  mutate(n_infpop_spatial = spatvar_generalized / sum(spatvar_generalized) * 
+  mutate(n_infpop_spatial = 
+           (spatvar_generalized / nrtypes_per_typegroup) / 
+           sum(spatvar_generalized / nrtypes_per_typegroup) * 
            sum(avg_nrlocs_pertype_infpop)) %>% 
   rowwise %>% 
   mutate(n_infpop_spatial = max(n_infpop_spatial, avg_nrlocs_pertype_infpop * 0.2)) %>% 
   ungroup %>% 
-  select(-starts_with("spatvar"), -avg_nrlocs_pertype_infpop) %>% 
-  left_join(type_attrib %>% 
-              select(type, 
-                     popsize_spatial = population_size),
-            by = "type") %>% 
+  select(-starts_with("spatvar"), 
+         -avg_nrlocs_pertype_infpop, 
+         -contains("typegroup")) %>% 
   mutate(n_finitepop_spatial = 
                n_infpop_spatial * popsize_spatial / 
                (popsize_spatial - 1 + n_infpop_spatial),
@@ -348,6 +355,9 @@ status_res_per_type %>%
 
 We stellen vast:
 
+- de relatieve foutenmarge is gelijkaardig tussen de typegroepen.
+Verschillen hebben te maken met verschillen tussen types in de niet-spatiale variantiecomponenten.
+- de absolute en relatieve foutenmarge van een type is groter naarmate de typegroep waartoe het behoort, meer types bevat.
 - de relatieve foutenmarge neemt licht af bij scenario's met een toenemende trend.
 Dit komt omdat de trend in absolute termen heel klein is ten opzichte van de relatief grote ruis die aan de tijdsreeksen wordt toegevoegd.
 Hierdoor is enerzijds de absolute foutenmarge vrijwel gelijk tussen de scenario's.
@@ -413,6 +423,8 @@ trend_estimateslocal <-
   select(-datacontainer) %>% 
   unnest(cols = result)
 )
+#     user   system  elapsed 
+# 3678.782    7.155  934.525 
 stopImplicitCluster()
 ```
 
@@ -492,10 +504,13 @@ trend_res_per_type %>%
 
 
 We kunnen zien dat de geschatte trend zeer verschillend kan zijn tussen populaties.
-Vooral bij types met een grotere spatiale variantie zien we deze verschillen, wat dan in een groter aantal populaties overeenkomt met een lage trenddetectie (power).
-Wanneer locaties van een type onderling sterker verschillen in grondwaterpeil, varieert de verhouding tussen de extra grondwaterdaling (trendsimulatie) en de vaste temporele ruis ook sterker tussen locaties.
-Vermoedelijk is dit de reden waarom dan op minder locaties een trend als significant kan worden gedetecteerd.
+Vooral bij types met een grotere spatiale variantie zien we deze verschillen.
 
+De mediane power wordt in de eerste plaats beïnvloed door de grootte van de toegevoegde trend en in mindere mate door het aantal locaties.
+
+Bij types waarvoor de doelvariabele meestal dicht bij nul ligt, is het effect van een relatieve trend (lineaire trend op logaritmische schaal) klein ten opzichte van de temporele ruis.
+Dit verklaart waarom voor een aantal types de power (meestal) nul blijft, zelfs bij een groter aantal locaties.
+We kunnen voor deze types besluiten dat grotere relatieve trends (maar dus niet: grote absolute trends) nodig zijn om ze te kunnen detecteren.
 
 
 
