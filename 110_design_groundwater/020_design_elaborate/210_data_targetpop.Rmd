@@ -168,6 +168,8 @@ Een stratum in een meetnet betreft een type, ofwel een combinatie type x oppervl
 
 Bij deze schatting wordt het voorkomen van terrestrische types steeds ingeperkt volgens het optreden van ondiep grondwater, behalve voor de '(bijna) overal grondwaterafhankelijke' types.
 Voorts wordt het type 7220 ingeperkt tot de moerassystemen (inclusief systeemtype 'ongekend') voor meetnet GW_05.1_terr en tot de beeksystemen (inclusief systeemtype 'ongekend') voor meetnet GW_05.1_aq.
+De oppervlakte die volgens de brongegevens is opgegeven voor `r types_expanded %>% filter(unresolved) %>% semi_join(hmt_occ, by = "type") %>% pull(type) %>% paste(sep = ",", collapse = TRUE)` (ontbreekt in de definitie van de doelpopulatie) wordt verdeeld over (bijgeteld bij) alle overeenkomstige subtypes, alvorens de subtypes te beperken tot deze van de doelpopulatie.
+Deze bijtelling gebeurt volgens de oppervlakteproportie van de subtypes vóór bijtelling.
 
 ```{r}
 habspring_units <- read_habitatsprings(units_7220 = TRUE)
@@ -180,20 +182,67 @@ Deze oppervlaktestrata worden wel aangewend in de eigenlijke steekproeftrekking 
 We nemen de oppervlaktestrata daarom reeds op.
 
 ```{r}
-# not yet applying the restriction by shallow_groundwater!! XXXXX
-pop_size_terr <- 
+pop_size_terr_all_approaches <- 
     read_vc("030_preparations/010_explore_targetpop/pop_size_terr", 
             root = find_root(is_git_root)) %>% 
+    mutate(sg_restricted = FALSE) %>% 
+    bind_rows(
+        read_vc("030_preparations/010_explore_targetpop/pop_size_terr_sg", 
+                root = find_root(is_git_root)) %>% 
+            mutate(sg_restricted = TRUE)
+    ) %>% 
+    as_tibble %>% 
+    inner_join(read_types() %>% 
+                   select(type, typelevel, main_type),
+               by = "type")
+pop_size_terr <- 
+    # first isolate unresolved main types from target population and join them
+    # to corresponding subtypes:
+    pop_size_terr_all_approaches %>% 
+    filter(main_type %in% 
+               (pop_size_terr_all_approaches %>% 
+                    inner_join(types_expanded, 
+                               by = "type") %>%
+                    filter(unresolved) %>% 
+                    distinct(type) %>% 
+                    pull(type))) %>% 
+    inner_join(filter(., typelevel == "main_type") %>% 
+                   select(type, 
+                          count_method, 
+                          sg_restricted, 
+                          popsize_main = population_size),
+               by = c("main_type" = "type", "count_method", "sg_restricted")) %>% 
+    filter(typelevel == "subtype") %>% 
+    # add these main types' popsize proportionally to corresponding subtype
+    # popsizes
+    group_by(main_type, count_method, sg_restricted) %>% 
+    mutate(addition = population_size / sum(population_size) * popsize_main,
+           population_size = population_size + addition) %>% 
+    select(-addition, -popsize_main) %>% 
+    ungroup %>% 
+    # re-adding all other popsizes:
+    bind_rows(anti_join(pop_size_terr_all_approaches, .,
+                        by = c("type", "count_method", "sg_restricted"))) %>% 
+    # restrict to resolved types from target population:
+    semi_join(types_expanded %>% filter(!unresolved), 
+              by = "type") %>% 
+    # retain the one appropriate count_method for each type
     inner_join(
         read_vc("030_preparations/010_explore_targetpop/type_approaches", 
                 root = find_root(is_git_root)),
         by = "type") %>% 
     filter(count_method == "cellbased" & approach_cellbased |
                count_method == "centroidbased" & !approach_cellbased) %>% 
-    semi_join(targetpop, by = "type") %>% 
+    select(-c(typelevel, main_type, approach_cellbased)) %>% 
+    # restrict with shallowgroundwater, or not, depending on groundw_dep
+    inner_join(read_types() %>% select(type, groundw_dep), 
+               by = "type") %>% 
+    filter((groundw_dep == "GD2" & !sg_restricted) | 
+               (groundw_dep != "GD2" & sg_restricted)) %>% 
     mutate(stratum = NA_character_,
            population_size = round(population_size)) %>% 
-    select(type, stratum, population_size)
+    select(type, stratum, population_size) %>% 
+    arrange(type, stratum)
 pop_size_7220 <-
     habspring_units %>% 
     st_drop_geometry %>% 
