@@ -64,7 +64,8 @@ hmt_occ <-
 hmt_pol <-
     hmt$habitatmap_terr_polygons %>%
     semi_join(hmt_occ, by = "polygon_id") %>% 
-    select(polygon_id)
+    select(polygon_id) %>% 
+    st_make_valid
 ```
 
 <!-- - We doen hetzelfde voor de stilstaande wateren (d.w.z. aquatische types uitgezonderd 3260 en 7220 partim beken): -->
@@ -389,6 +390,10 @@ We beschouwen de spatiale verdeling van de types volgens _bodemklasse_ (vier kla
 De spatiale verdeling zal immers relevant zijn voor de simulatie van realistische steekproeven.
 In de modellen zal steeds maar één van deze variabelen worden opgenomen (beperking van het aantal te schatten parameters), zodat we de interactie niet zullen onderzoeken.
 
+Bij de terrestrische types houden we er rekening mee dat de doelpopulatie beperkt is tot locaties met een relatief ondiepe grondwaterstand in de droge periode van het jaar (Tabel \@ref(tab:schemes)).
+
+Type 8310 wordt niet beschouwd; het wordt niet betrokken in de modellen en de vernoemde spatiale factoren zijn er minder relevant.
+
 ```{r}
 soilmap <- 
     read_soilmap() %>% 
@@ -410,11 +415,26 @@ ecoregions <-
     st_cast("MULTIPOLYGON")
 ```
 
+```{r results="hide", message=FALSE}
+sg_path <- 
+    fileman_up("n2khab_data") %>% 
+    file.path("10_raw/shallowgroundwater/shallowgroundwater.gpkg")
+
+hmt_pol_sg <- 
+    hmt_pol %>%
+    qgis_run_algorithm("native:extractbylocation",
+                       INPUT = .,
+                       PREDICATE = 0,
+                       INTERSECT = sg_path) %>% 
+    .$OUTPUT %>% 
+    read_sf
+```
 
 
 ```{r include=FALSE, eval=!grass_exists|params$regenerate_binary_files}
-system.time(
-hmt_pol %>% # not yet applying the restriction by shallow_groundwater!!
+system.time({
+pol <- 
+    hmt_pol_sg %>% 
     rbind(wsh_pol_ring) %>% 
     rbind(habstream_buff %>% 
               as_tibble %>% 
@@ -422,34 +442,27 @@ hmt_pol %>% # not yet applying the restriction by shallow_groundwater!!
                                        "geom")) %>% 
               st_as_sf %>% 
               st_cast("MULTIPOLYGON") %>% 
-              select(polygon_id = type)) %>% 
+              select(polygon_id = type))
+pol %>% 
     writeVECT("pol",
               v.in.ogr_flags = c("overwrite", "o"))
-)
+})
+#    user  system elapsed 
+# 135.163  34.189 204.223 
 ```
 
-
-```{r include=FALSE, eval=!grass_exists}
-system.time(
-soilmap %>% 
-    writeVECT("soilmap",
-              v.in.ogr_flags = c("overwrite", "o"))
-)
+```{r include=FALSE, eval=!grass_exists|params$regenerate_binary_files}
+soilmap_pol_temppath <- 
+    qgis_run_algorithm("native:extractbylocation",
+                       INPUT = soilmap,
+                       PREDICATE = 0,
+                       INTERSECT = pol) %>% 
+    .$OUTPUT
+execGRASS("v.in.ogr", c("o", "overwrite"),
+          input = soilmap_pol_temppath,
+          output = "soilmap_pol")
 ```
 
-<!-- ----------------------------------------------------- -->
-<!-- 270552 input polygons -->
-<!-- Total area: 1.37435E+10 (276009 areas) -->
-<!-- Overlapping area: 0.0141306 (1707 areas) -->
-<!-- Area without category: 252717 (1528 areas) -->
-<!-- ----------------------------------------------------- -->
-<!-- WARNING: The output contains topological errors: -->
-<!--          Unable to calculate a centroid for 2221 areas -->
-<!-- The input could be cleaned by snapping vertices to each other. -->
-<!-- Estimated range of snapping threshold: [1e-10, 0.1] -->
-<!-- Try to import again, snapping with 1e-06: 'snap=1e-06' -->
-<!--     user   system  elapsed  -->
-<!--  376.185  125.341 1245.433  -->
 
 ```{r include=FALSE, eval=!grass_exists}
 system.time(
@@ -482,17 +495,17 @@ execshell("v.overlay --overwrite ainput=pol operator=and binput=ecoregions outpu
 )
 ```
 
-<!--    user  system elapsed  -->
-<!--  70.014  37.018 115.327  -->
+ <!--   user  system elapsed  -->
+ <!-- 92.097  49.529 139.111  -->
 
 ```{r include=FALSE, eval=!grass_exists|params$regenerate_binary_files}
 system.time(
-execshell("v.overlay --overwrite ainput=pol_ecoregion operator=and binput=soilmap output=pol_spfact")
+execshell("v.overlay --overwrite ainput=pol_ecoregion operator=and binput=soilmap_pol output=pol_spfact")
 )
 ```
 
-<!-- WARNING: Number of incorrect boundaries: 8 -->
-<!-- WARNING: Number of duplicate centroids: 77 -->
+<!-- WARNING: Number of incorrect boundaries: 14 -->
+<!-- WARNING: Number of duplicate centroids: 57 -->
 <!-- v.overlay complete. -->
 <!--    user  system elapsed  -->
 <!-- 272.537  70.569 397.391 -->
@@ -536,7 +549,7 @@ Eerst wordt daarvoor wel de waarde vastgesteld op de individuele puntlocaties, e
 ```{r paged.print=FALSE, message=FALSE}
 spfact_distr_terr <- 
     pol_spfact %>% 
-    semi_join(hmt_pol %>% st_drop_geometry,
+    semi_join(hmt_pol_sg %>% st_drop_geometry,
               by = "polygon_id") %>% 
     mutate(area = st_area(.)) %>% 
     st_drop_geometry %>% 
