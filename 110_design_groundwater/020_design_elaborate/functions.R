@@ -301,7 +301,8 @@ simulate_detrended_pops <-
 #'
 #' @param sample_definition Data frame that defines the constitution of a sample for each scenario.
 #' Minimal columns needed: scenario, trend_12yearly_multiplier, type, n_finitepop_spatial
-#' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, hydroyear_std, prediction_fixed, response and modelname.
+#' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, {{var_time}}, prediction_fixed, response and modelname.
+#' @param var_time String. The name of the time variable in `population_data`.
 #' @param npops Number of populations to select from population_data (the first `npops` populations are used)
 #' @param pops Optional character vector of population names to select.
 #' If specified, npops is ignored.
@@ -312,6 +313,7 @@ simulate_detrended_pops <-
 #'
 simulate_trended_spatial_samples <- function(sample_definition,
                                              population_data,
+                                             var_time,
                                              npops = length(unique(population_data$population)),
                                              pops = NULL,
                                              nsamples_per_pop = 20,
@@ -351,7 +353,7 @@ simulate_trended_spatial_samples <- function(sample_definition,
                            by = "type") %>%
                 mutate(prediction_spatial = eval(str2lang(prediction_spatial_term)),
                        spatial_term = prediction_spatial *
-                           (trend_12yearly_multiplier^(.data[[timevar]]/12)),
+                           (trend_12yearly_multiplier^(.data[[var_time]]/12)),
                        response =
                            response -
                            prediction_spatial +
@@ -418,7 +420,7 @@ visualize_trends <- function(sample_definition,
                              population_data,
                              population,
                              ntypes = 9,
-                             timevar,
+                             var_time,
                              seed = NULL) {
 
     if (!is.null(seed)) set.seed(seed)
@@ -433,6 +435,7 @@ visualize_trends <- function(sample_definition,
         # add the trends to 1 simulated population:
         simulate_trended_spatial_samples(population_data = population_data,
                                          pops = population,
+                                         var_time = var_time,
                                          sampling = FALSE) %>%
         # use only 2 locations per type and ntypes types
         select(-population) %>%
@@ -446,7 +449,7 @@ visualize_trends <- function(sample_definition,
         unnest(type_data) %>%
         arrange(type, location, scenario) %>%
         split(~type, drop = TRUE) %>%
-        map(~ggplot(., aes(x = .data[[timevar]],
+        map(~ggplot(., aes(x = .data[[var_time]],
                            y = response,
                            colour = scenario,
                            group = scenario:location)) +
