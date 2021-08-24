@@ -2,22 +2,20 @@
 
 ### Toegepast model
 
-```{r include=FALSE}
-rds_filepath <- file.path(datapath, "binary/simmodels",
-                          str_c("model_", filepath_sub, respvar, ".rds"))
-modelname <- basename(rds_filepath) %>% str_remove(".rds")
-if (exists(modelname)) {
-  M1 <- modelname %>% as.name %>% eval
-} else {
-  M1 <- readRDS(rds_filepath)
-  assign(modelname, M1)
-}
-```
-
 De modelvorm die werd gefit ten behoeve van simulaties, ziet er uit als volgt:
 
 ```{r}
-M1$.args$formula
+walk(modelnames$modelname, function(mn) {
+  if (!exists(mn)) {
+  rds_filepath <- file.path(datapath, "binary/simmodels",
+                            str_c(mn, ".rds"))
+  assign(mn, readRDS(rds_filepath), envir = .GlobalEnv)
+  }
+  M1 <- mn %>% as.name %>% eval
+  cat("Modelname:", mn, "\n")
+  print(M1$.args$formula)
+  cat("\n")
+})
 ```
 
 ### Basisset van gesimuleerde populaties zonder trend
@@ -25,19 +23,19 @@ M1$.args$formula
 
 ```{r}
 type_attrib <- 
-    targetpop %>% 
-    filter(scheme == scheme_sel) %>% 
-    distinct(type, typegroup) %>% 
-    arrange(type) %>% 
-    mutate(across(starts_with("type"), droplevels),
-           modelterm_type = 
-             case_when(type == "3110" ~ "3130_aom", 
-                       type == "7220" ~ "3150", 
-                       TRUE ~ as.character(type)) %>% 
-             factor(levels = levels(type)) %>% 
-             droplevels) %>% 
-  relocate(typegroup, .after = last_col()) %>% 
-  mutate(modelname = modelname %>% factor) %>% 
+  targetpop %>% 
+  filter(scheme == scheme_sel) %>% 
+  distinct(type, typegroup) %>% 
+  arrange(type) %>% 
+  inner_join(modeltypes, ., by = "type") %>% 
+  rename(modelterm_type = type_model) %>% 
+  rowwise %>%
+  mutate(modelname = 
+           ifelse(nrow(modelnames) == 1,
+                  modelnames$modelname,
+                  str_subset(modelnames$modelname, typegroup %>% as.character)) %>% 
+         factor(levels = modelnames$modelname)) %>% 
+  ungroup %>% 
   inner_join(
     targetpop_stratumsize %>% 
       filter(scheme == scheme_sel) %>% 
@@ -45,6 +43,20 @@ type_attrib <-
       summarize(population_size = sum(population_size)),
     by = "type"
   ) %>% 
+  {if (is.na(spfact)) . else {
+    left_join(.,
+              switch(spfact,
+                     "soilclass" = targetpop_soilclass_distr,
+                     "ecoregion" = targetpop_ecoregion_distr) %>% 
+                filter(scheme == scheme_sel) %>% 
+                select(type, {{spfact}}, proportion),
+              by = "type") %>% 
+      group_by(type) %>% 
+      mutate(population_size = (first(population_size) * proportion) %>% round) %>% 
+      ungroup %>% 
+      select(-proportion) %>% 
+      relocate(population_size, .after = last_col())
+  }} %>% 
   mutate(type = droplevels(type))
 ```
 
@@ -60,6 +72,9 @@ rds_filepath_500 <- file.path(datapath, "binary/simobs",
 design_matrix <- 
   type_attrib %>% 
   select(-matches("typegroup")) %>% 
+  rowwise %>% 
+  mutate(population_size = min(population_size, 3000)) %>% 
+  ungroup %>% 
   uncount(population_size) %>% 
   add_st(time = 0:12)
 
@@ -67,8 +82,6 @@ simpops <-
   simulate_detrended_pops(design_matrix = design_matrix,
                           npop = 50, 
                           var_time = timevar,
-                          var_stratum = stratumvar, 
-                          var_stratum_ = ts_stratumvar,
                           seed = 20210422,
                           keep_ranef = TRUE,
                           keep_predfixed = TRUE)
@@ -80,8 +93,6 @@ simpops_500locs <-
   add_st(time = 1:6) %>% 
   simulate_detrended_pops(npop = 100, 
                           var_time = timevar,
-                          var_stratum = stratumvar, 
-                          var_stratum_ = ts_stratumvar,
                           seed = 20210422)
 ```
 

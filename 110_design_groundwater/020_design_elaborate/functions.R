@@ -161,8 +161,6 @@ simulate_detrended_pops <-
     function(design_matrix,
              npop = 20,
              var_time,
-             var_stratum,
-             var_stratum_,
              keep_ranef = FALSE,
              keep_predfixed = FALSE,
              seed = NULL) {
@@ -172,7 +170,6 @@ simulate_detrended_pops <-
         # model$.args$data
         # latent_names <- model$misc$configs$contents$tag
         if (!is.null(seed)) set.seed(seed)
-        if (var_stratum == "type") var_stratum <- "modelterm_type"
 
         design_matrix %>%
             nest(design_matrix = -c(type, modelname)) %>%
@@ -181,13 +178,38 @@ simulate_detrended_pops <-
                 model = list(modelname %>% as.character %>% str2lang %>% eval)) %>%
             ungroup %>%
             mutate(
-                design_matrix = map2(design_matrix, model, function(dm, model) {
+                design_matrix = map2(design_matrix, model,
+                                      function(dm, model) {
+                      var_stratum_ <-
+                          if (any(str_detect(colnames(model$model.matrix),
+                                             "stratum_(light|heavy|peat)"))) {
+                              "soilclass"
+                          } else if (any(str_detect(colnames(model$model.matrix),
+                                                    "stratum_.*(polders|Kempen)"))) {
+                              "ecoregion"
+                          } else "type"
+
+                      var_stratum <-
+                          if (any(str_detect(names(model$summary.random),
+                                             "light|heavy|peat"))) {
+                              "soilclass"
+                          } else if (any(str_detect(names(model$summary.random),
+                                                    "polders|Kempen"))) {
+                              "ecoregion"
+                          } else "type"
+
                     dm %>%
                         rename(type = modelterm_type) %>%
                         `colnames<-`(colnames(.) %>% replace(. == "time", var_time)) %>%
-                        mutate(stratum_ =
-                                   .data[[var_stratum_]] %>%
-                                   factor(levels = levels(model$.args$data$stratum_))) %>%
+                        mutate(type =
+                                   type %>%
+                                   factor(levels = levels(model$.args$data$type)),
+                               stratum_ =
+                                   .[[var_stratum_]] %>%
+                                   factor(levels = levels(model$.args$data$stratum_)),
+                               stratum =
+                                   .[[var_stratum]] %>%
+                                   factor(levels = levels(model$.args$data[[var_stratum]]))) %>%
                         {if (any(is.na(.$stratum_))) select(., -stratum_) else .}
                 }),
                 formula_fixed =
@@ -263,10 +285,10 @@ simulate_detrended_pops <-
                                                     rnorm(1,
                                                           sd = invsqrt(model$summary.hyperpar[str_c("Precision for ", var_time, "_stratum_", stratum_), "mean"])))} else .} %>%
                                  # residual noise
-                                 group_by(.data[[var_stratum]]) %>%
+                                 group_by(stratum) %>%
                                  mutate(resid_noise =
                                             rnorm(n(),
-                                                  sd = invsqrt(model$summary.hyperpar[str_c("Stratum ", .data[[var_stratum]], ": Precision of residuals"), "mean"]))) %>%
+                                                  sd = invsqrt(model$summary.hyperpar[str_c("Stratum ", stratum, ": Precision of residuals"), "mean"]))) %>%
                                  ungroup %>%
                                  # calculate response
                                  mutate(response =
@@ -275,7 +297,7 @@ simulate_detrended_pops <-
                                                 starts_with("ranef"),
                                                 ends_with("noise"))))
                                  ) %>%
-                                 select(-modelterm_type, -stratum_)
+                                 select(-modelterm_type, -stratum_, -stratum)
 
             }
             )) %>%
