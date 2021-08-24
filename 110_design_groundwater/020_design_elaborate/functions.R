@@ -134,8 +134,7 @@ add_st <- function(type_attrib, time = 1:12) {
                          8, pad = "0")) %>%
            as.factor) %>%
     relocate(location) %>%
-    tidyr::expand(nesting(location, type, modelterm_type, modelname),
-                  time = time)
+    crossing(time = time)
 }
 
 
