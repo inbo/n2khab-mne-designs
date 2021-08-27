@@ -160,13 +160,12 @@ names(lincomb_newdata) <- NULL
 ```
 
 
-```{r results="hide", eval=params$fit_simmodels}
-cont_comp <- 
-  if (params$largemodel_diagn_eval || params$write_simmodels) {
-    list(waic = TRUE, dic = TRUE, cpo = TRUE, config = TRUE)
-  } else {
-    list(waic = TRUE, dic = TRUE)
-  }
+```{r results="hide", eval=params$fit_simmodels && params$write_simmodels}
+cont_comp <- list(waic = TRUE, dic = TRUE)
+```
+
+
+```{r gw51t-lg3-{{subdataset_name}}-fitmodel, results="hide", eval=params$fit_simmodels && params$write_simmodels}
 system.time(
     M1 <- inla(modformula,
                family = rep("gaussian", length(strata)),
@@ -175,10 +174,6 @@ system.time(
                control.compute = cont_comp,
                control.inla = list(force.diagonal = TRUE))
 )
-```
-
-
-```{r eval=params$fit_simmodels}
 hypernames <- rownames(M1$summary.hyperpar)
 rownames(M1$summary.hyperpar)[str_detect(hypernames, "Gaussian")] <-
     str_c("Stratum ", strata, ": Precision of residuals")
@@ -187,20 +182,39 @@ names(M1$marginals.hyperpar)[str_detect(hypernames, "Gaussian")] <-
 ```
 
 ```{r include=FALSE}
-if (!params$fit_simmodels) {
-  modelname <- basename(rds_filepath) %>% str_remove(".rds")
-  if (exists(modelname)) {
-    M1 <- modelname %>% as.name %>% eval
-  } else {
-    M1 <- readRDS(rds_filepath)
-    assign(modelname, M1)
-}}
 if (!params$fit_simmodels && params$write_simmodels) {
   warning("No simulation model fitted - so not overwriting. ",
           "You probably misspecified a YAML parameter.")
 }
-if (params$fit_simmodels && params$write_simmodels) {
-  saveRDS(M1, rds_filepath)
+```
+
+```{r eval=params$fit_simmodels && params$write_simmodels}
+saveRDS(M1, rds_filepath)
+```
+
+```{r results="hide", eval=(params$fit_simmodels && !params$write_simmodels) || params$largemodel_diagn_eval}
+cont_comp <- 
+  if (params$largemodel_diagn_eval) {
+    list(waic = TRUE, dic = TRUE, cpo = TRUE, config = TRUE)
+  } else {
+    list(waic = TRUE, dic = TRUE)
+  }
+```
+
+```{r results="hide", eval=(params$fit_simmodels && !params$write_simmodels) || params$largemodel_diagn_eval, ref.label="gw51t-lg3-{{subdataset_name}}-fitmodel"}
+```
+
+```{r include=FALSE, eval=!params$largemodel_diagn_eval && !params$fit_simmodels}
+modelname <- basename(rds_filepath) %>% str_remove(".rds")
+if (exists(modelname)) {
+  M1 <- modelname %>% as.name %>% eval
+} else {
+  if (!file.exists(rds_filepath)) {
+    stop("Fitted model not found on disk. ",
+         "Fit model with params$fit_simmodels = TRUE")
+  }
+  M1 <- readRDS(rds_filepath)
+  assign(modelname, M1)
 }
 ```
 
