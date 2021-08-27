@@ -43,20 +43,6 @@ type_attrib <-
       summarize(population_size = sum(population_size)),
     by = "type"
   ) %>% 
-  {if (is.na(spfact)) . else {
-    left_join(.,
-              switch(spfact,
-                     "soilclass" = targetpop_soilclass_distr,
-                     "ecoregion" = targetpop_ecoregion_distr) %>% 
-                filter(scheme == scheme_sel) %>% 
-                select(type, {{spfact}}, proportion),
-              by = "type") %>% 
-      group_by(type) %>% 
-      mutate(population_size = (first(population_size) * proportion) %>% round) %>% 
-      ungroup %>% 
-      select(-proportion) %>% 
-      relocate(population_size, .after = last_col())
-  }} %>% 
   mutate(type = droplevels(type))
 ```
 
@@ -71,14 +57,12 @@ rds_filepath_500 <- file.path(datapath, "binary/simobs",
 # design matrix for each simulated population (each will apply one series of random values for random effect levels):
 design_matrix <- 
   type_attrib %>% 
+  {if (is.na(spfact)) . else split_popsize(., spfact)} %>% 
   select(-matches("typegroup")) %>% 
-  rowwise %>% 
-  mutate(population_size = min(population_size, 3000)) %>% 
-  ungroup %>% 
-  uncount(population_size) %>% 
+  uncount_limited(5000) %>% 
   add_st(time = 0:12)
 
-simpops <- 
+simpops <-
   simulate_detrended_pops(design_matrix = design_matrix,
                           npop = 50, 
                           var_time = timevar,
@@ -88,8 +72,9 @@ simpops <-
 
 simpops_500locs <- 
   type_attrib %>% 
-  select(-population_size, -matches("typegroup")) %>% 
-  uncount(500) %>% 
+  {if (is.na(spfact)) . else split_popsize(., spfact)} %>% 
+  select(-matches("typegroup")) %>% 
+  uncount_limited(500, fixed = TRUE) %>% 
   add_st(time = 1:6) %>% 
   simulate_detrended_pops(npop = 100, 
                           var_time = timevar,

@@ -125,7 +125,41 @@ invsqrt <- function(x) 1 / sqrt(x)
 # Functions used to aid reproducible scenario simulation
 
 
+#' Split spatial population size proportional to the distribution along a spatial factor
+#'
+#' @param spfact Currently "soilclass" and "ecoregion" are supported
+split_popsize <- function(df, spfact) {
+    left_join(df,
+              switch(spfact,
+                     "soilclass" = targetpop_soilclass_distr,
+                     "ecoregion" = targetpop_ecoregion_distr) %>%
+                  filter(scheme == scheme_sel) %>%
+                  select(type, {{spfact}}, proportion),
+              by = "type") %>%
+        mutate(type = droplevels(type)) %>%
+        group_by(type) %>%
+        mutate(population_size = (first(population_size) * proportion) %>% round) %>%
+        ungroup %>%
+        select(-proportion) %>%
+        relocate(population_size, .after = last_col())
+}
 
+
+#' Uncount population_size but limit population_size, taking into account distribution over spatial factor (for each type)
+#' @param fixed If TRUE, substitute sum(population_size) over the spatial factor with the limit value (insisting on equal population_sizes, apart from rounding error)
+uncount_limited <- function(df, limit, fixed = FALSE) {
+    df %>%
+        group_by(type) %>%
+        mutate(population_size =
+                   round(ifelse(fixed, limit, min(sum(population_size), limit)) *
+                             population_size / sum(population_size))) %>%
+        ungroup %>%
+        uncount(population_size)
+}
+
+
+
+#' Define location IDs and unfold temporal dimension
 add_st <- function(type_attrib, time = 1:12) {
     type_attrib %>%
     mutate(location =
