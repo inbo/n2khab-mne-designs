@@ -398,7 +398,7 @@ simulate_trended_spatial_samples <- function(sample_definition,
                                     as.numeric <= npops)
                      }} %>%
                      select(-c(modelname,
-                               matches("ranef_time|resid_noise"))) %>%
+                               matches("ranef_time|temporal_noise|resid_noise"))) %>%
                      nest(pop_data = -population)) %>%
         # adding trend to predicted value per location (this intermediate result is
         # below called spatial_term):
