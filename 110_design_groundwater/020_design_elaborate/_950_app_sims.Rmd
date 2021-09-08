@@ -97,7 +97,7 @@ design_matrix <-
 
 simpops <-
   simulate_detrended_pops(design_matrix = design_matrix,
-                          npop = 50, 
+                          npop = 15, 
                           var_time = timevar,
                           seed = 20210422,
                           keep_ranef = TRUE,
@@ -137,13 +137,13 @@ glimpse(simpops)
 ```{r message=FALSE}
 spatvar <- 
   simpops_500locs %>% 
-  group_by(population, type, location) %>% 
+  group_by(population, modelname, type, location) %>% 
   summarise(spatresp = mean(response)) %>% 
   {if (errmarg_rel) {
     summarise(., spatvar = ifelse(-spatresp < 0, .01, -spatresp) %>% log10 %>% var)
   } else summarise(., spatvar = var(spatresp))
     } %>% 
-  group_by(type) %>% 
+  group_by(modelname, type) %>% 
   summarise(spatvar_estimate = mean(spatvar),
             spatvar_se = sd(spatvar) / sqrt(n())) %>% 
   mutate(spatvar_group = 
@@ -153,10 +153,11 @@ spatvar <-
            cutree(h = ifelse(max(spatvar_estimate) / min(spatvar_estimate) < 1.2,
                              max(spatvar_estimate),
                              (max(spatvar_estimate) - min(spatvar_estimate)) / 5))) %>% 
-  group_by(spatvar_group) %>% 
+  group_by(modelname, spatvar_group) %>% 
   mutate(spatvar_generalized = mean(spatvar_estimate)) %>% 
   ungroup %>% 
-  select(-spatvar_group)
+  select(-c(spatvar_group, modelname)) %>% 
+  arrange(type)
 spatvar %>% mutate(across(where(is.numeric), ~round(., 3))) %>% 
   kable(caption = str_c("De geschatte spatiale variantie per type, met de standaardfout. ",
                         ifelse(errmarg_rel, "De waarden hebben betrekking op de log~10~-getransformeerde spatiale variabele omdat we tussen de types een gelijkaardige _relatieve_ foutenmarge willen bekomen. ", ""),
