@@ -11,6 +11,23 @@ execshell <- function(commandstring, intern = FALSE) {
     if (!intern) cat(res, sep = "\n") else return(res)
 }
 
+
+####
+# A logging function for debugging parallel code in an interactive session.
+
+log_socket <- function(text, ..., .cat = FALSE, .socket) {
+    msg <- sprintf(paste0(as.character(Sys.time()), ": ", text, "\n"), ...)
+    if (.cat) cat(msg)
+    write.socket(.socket, msg)
+}
+
+# insert something like this in your code:
+# log_socket("Processing block %d of %d", i, j, .socket = logsocket)
+####
+
+
+
+
 #####################################################################
 #corvif() FUNCTION.
 #From:

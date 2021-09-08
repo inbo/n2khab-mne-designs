@@ -402,16 +402,23 @@ In figuur XXXX is te zien dat de absolute foutenmarge voor dit type juist heel k
 #### Trend
 
 ```{r include=FALSE}
-rds_filepath_trend_estimateslocal <- file.path(datapath, "binary/simobs",
-                          str_c(filepath_sub, respvar,
-                                "_trend_estimateslocal.rds"))
+rds_filepath_inputdata_trend <- 
+  file.path(datapath, "binary/simobs",
+            str_c(filepath_sub, respvar,
+                  "_inputdata_trend.rds"))
 ```
 
-```{r eval=(params$simulate_obs | !file.exists(rds_filepath_trend_estimateslocal))}
+
+```{r eval=(params$simulate_obs || (!file.exists(rds_filepath_inputdata_trend) && !file.exists(rds_filepath_trend_estimateslocal)))}
 inputdata_trend <- 
-  if (any(simsamples$response < 0)) {
-    simsamples %>% 
-      group_by(scenario, population, spatial_sample, type, location) %>% 
+  simsamples %>% 
+  # nest(datacontainer = -c(scenario, population)) %>% 
+  # group_by(scenario) %>% 
+  # slice(1:2) %>%
+  # ungroup %>% 
+  # unnest(datacontainer) %>% 
+  {if (any(.$response < 0)) {
+      group_by(., scenario, population, spatial_sample, type, location) %>% 
       mutate(negresp = -response,
              minresp = min(negresp),
              logresp = ifelse(minresp <=0, 
@@ -419,30 +426,49 @@ inputdata_trend <-
                               log10(negresp))) %>% 
       select(-minresp, -negresp) %>% 
       ungroup} else {
-        simsamples %>% 
-          mutate(logresp = log10(response))
-        }
+        mutate(., logresp = log10(response))
+      }}
+```
 
-registerDoParallel(cores = 5)
+```{r include=FALSE}
+if (params$simulate_obs || (!file.exists(rds_filepath_inputdata_trend) && !file.exists(rds_filepath_trend_estimateslocal))) {
+    saveRDS(inputdata_trend, rds_filepath_inputdata_trend)
+} else if (!file.exists(rds_filepath_trend_estimateslocal)) {
+  inputdata_trend <- readRDS(rds_filepath_inputdata_trend)
+}
+```
+
+```{r include=FALSE}
+rds_filepath_trend_estimateslocal <- file.path(datapath, "binary/simresults",
+                          str_c(filepath_sub, respvar,
+                                "_trend_estimateslocal.rds"))
+```
+
+```{r eval=(params$simulate_obs || !file.exists(rds_filepath_trend_estimateslocal))}
+
+# logsocket <- make.socket(port=4000) # only runs after doing `nc -l 4000` in shell
+
+registerDoParallel(cores = cpu_cores_trend)
 system.time(
 trend_estimateslocal <-
   inputdata_trend %>% 
-  # filter(scenario == "GW_05.1_aq_S01", 
-  #        str_sub(population, -4L) %>% as.numeric %in% 1:4) %>% 
   nest(datacontainer = -c(scenario, population)) %>% 
-  # slice(1:4) %>%
   mutate(result = foreach(dc = .$datacontainer) %dopar% {
     nest(dc, data = -c(spatial_sample, type)) %>% 
   mutate(location_estim = 
-           map(data, function(df) {
-             lme(logresp ~ -1 + hydroyear_std:location,
+           pmap(list(data, spatial_sample, type), function(df, ss, tp) {
+             # log_socket("Fitting model for %s in sample %s in population %s in scenario %s...", tp, ss, first(df$pop), first(df$scen), .socket = logsocket)
+             if (n_distinct(df$location) == 1L) {
+               fm <- logresp ~ hydroyear_std
+             } else fm <- logresp ~ hydroyear_std:location
+             lme(fm,
                  random = ~ 1 | location,
                  data = df,
                  control = lmeControl(opt = "optim")) %>% 
                summary %>% 
                {tibble(distinct(.$groups),
-                       beta_loc = .$tTable[, "Value"],
-                       se_loc = .$tTable[, "Std.Error"])}
+                       beta_loc = .$tTable[-1, "Value"],
+                       se_loc = .$tTable[-1, "Std.Error"])}
            }
            ))  %>% 
   select(-data) %>% 
@@ -454,8 +480,12 @@ trend_estimateslocal <-
   select(-datacontainer) %>% 
   unnest(cols = result)
 )
+# gw51t_lg3_lcl:
+#      user    system   elapsed 
+# 17623.303    25.420  8888.728
+# gw51a_lg3_std:
 #     user   system  elapsed 
-# 3678.782    7.155  934.525 
+# 5623.294    9.510 1421.316
 stopImplicitCluster()
 ```
 
