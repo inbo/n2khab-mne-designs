@@ -658,6 +658,7 @@ compute_status_persample <- function(statusdata = NULL,
 #' @param plot Logical. Optionally returns a plot on condition that merge_pops = FALSE.
 #' @param ylim NULL or a numeric vector of length 2. If a vector (has a default), is applied as y-limits in the plot.
 #' @param facet_scales String. Always applied but only relevant if ylim = NULL.
+#' @param ... Arguments passed to `facet_wrap()`.
 #'
 summarise_status_of_samples <- function(multisample_stats,
                                         statistic,
@@ -665,7 +666,8 @@ summarise_status_of_samples <- function(multisample_stats,
                                         merge_pops = TRUE,
                                         plot = FALSE,
                                         ylim = c(0, 1),
-                                        facet_scales = "free_x") {
+                                        facet_scales = "free_x",
+                                        ...) {
     stopifnot(between(conflevel, 0, 1))
     result <-
         multisample_stats %>%
@@ -700,7 +702,11 @@ summarise_status_of_samples <- function(multisample_stats,
             geom_point(size = 0.5, colour = "black", alpha = 0.4) +
             {if (!is.null(ylim)) lims(y = ylim) else NULL} +
             coord_flip() +
-            {if("type" %in% colnames(result)) facet_wrap(~type, scales = facet_scales) else if("typegroup" %in% colnames(result)) facet_wrap(~typegroup, scales = facet_scales) else NULL} +
+            {if("type" %in% colnames(result)) {
+                facet_wrap(~type, scales = facet_scales, ...)
+            } else if("typegroup" %in% colnames(result)) {
+                facet_wrap(~typegroup, scales = facet_scales, ...)
+            } else NULL} +
             theme(axis.text.y = element_blank(),
                   axis.ticks.y = element_blank()) +
             labs(x = "simulated populations", y = statistic)}
@@ -726,11 +732,13 @@ summarise_status_of_samples <- function(multisample_stats,
 #' aggregated (the default).
 #' Ignored if plot is TRUE.
 #' @param plot Logical. Optionally returns a plot.
+#' @param ... Arguments passed to `facet_wrap()`.
 #'
 calculate_power_of_scenarios <- function(multisample_stats,
                                          scenario_def = NULL,
                                          merge_pops = TRUE,
-                                         plot = FALSE) {
+                                         plot = FALSE,
+                                         ...) {
     result <-
         multisample_stats %>%
         mutate(across(matches("errmarg\\d{2}$"),
@@ -788,8 +796,10 @@ calculate_power_of_scenarios <- function(multisample_stats,
                                colour = "black") +
                     facet_wrap(formula(ifelse(length(type_typegroup_colname) == 0,
                                               "~conflevel",
-                                              str_c("~conflevel + ",
-                                                    type_typegroup_colname)))) +
+                                              str_c("~",
+                                                    type_typegroup_colname,
+                                                    " + conflevel"))),
+                               ...) +
                     xlab("average number of locations per type\n(before adjusting for spatial variance, population size and typegroup size)") +
                     theme(legend.position = "bottom")
             })
