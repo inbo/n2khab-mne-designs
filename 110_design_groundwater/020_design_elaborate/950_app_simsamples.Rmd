@@ -177,7 +177,8 @@ scheme_respvar <-
     read_schemes() %>% 
     filter(str_detect(scheme, "GW_05\\.1_(terr|aq)|GW_03\\.3")) %>% 
     select(scheme) %>% 
-    mutate(filepath_sub = c("gw33_", "gw51a_", "gw51t_"),
+    mutate(scheme_sel_label = str_replace_all(scheme, "_|\\.", "-"),
+           filepath_sub = c("gw33_", "gw51a_", "gw51t_"),
            timevar = c("hydroyear", rep("hydroyear_std", 2)),
            errmarg_rel = TRUE,
            submodels = c(FALSE, FALSE, TRUE),
@@ -191,6 +192,7 @@ scheme_respvar <-
            respvar = list(c("no3", "nh4", "po4"),
                           c("lg3_std", "hg3_std"),
                           c("lg3_lcl", "hg3_lcl")),
+           respvar_label = map(respvar, ~str_replace_all(., "_|\\.", "-")),
            spfact = c(NA_character_, NA_character_, "soilclass"),
            scen_def = list(
                NULL,
@@ -218,7 +220,7 @@ scheme_respvar <-
                                  select(type, type_model) %>% 
                                  as_tibble)) %>% 
     unnest(specifics) %>% 
-    relocate(scheme, respvar)
+    relocate(scheme, scheme_sel_label, respvar, respvar_label)
 ```
 
 
@@ -226,7 +228,9 @@ scheme_respvar <-
 ```{r results="asis", warning=FALSE, message=FALSE}
 scheme_respvar %>% 
     pwalk(function(scheme_sel,
+                   scheme_sel_label,
                    respvar,
+                   respvar_label,
                    filepath_sub,
                    timevar,
                    errmarg_rel, # should the error margins be evaluated relative to the estimated value?
