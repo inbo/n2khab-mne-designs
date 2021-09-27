@@ -204,6 +204,9 @@ scheme_respvar <-
                           c("lg3_std", "hg3_std"),
                           c("lg3_lcl", "hg3_lcl")),
            respvar_label = map(respvar, ~str_replace_all(., "_|\\.", "-")),
+           qual_std = list(rep(list(c(0.15, 0.1)), 3),
+                           list(c(0.1, 0.05), 0.05),
+                           list(c(0.1, 0.05), 0.05)),
            spfact = c(NA_character_, NA_character_, "soilclass"),
            scen_def = list(
                NULL,
@@ -214,13 +217,13 @@ scheme_respvar <-
            ),
            cpu_cores_trend = c(3, 5, 2)) %>% 
     unnest(submodelpop, keep_empty = TRUE) %>% 
-    unnest(c(respvar, respvar_label)) %>% 
+    unnest(c(respvar, respvar_label, qual_std)) %>% 
     mutate(modelname = str_c("model_", filepath_sub, respvar,
                              ifelse(is.na(submodelpop), "", 
                                     str_c("_", submodelpop)))) %>% 
     select(-contains("submodel")) %>% 
     nest(modelnames = modelname) %>% 
-    nest(specifics = c(respvar, respvar_label, modelnames)) %>% 
+    nest(specifics = c(respvar, respvar_label, qual_std, modelnames)) %>% 
     mutate(modeltypes = list(NULL, 
                              read_vc("typeclusters_gw51a",
                                      root = "data/10_input") %>% 
@@ -245,6 +248,7 @@ scheme_respvar %>%
                    filepath_sub,
                    timevar,
                    errmarg_rel, # should the error margins be evaluated relative to the estimated value?
+                   qual_std,
                    spfact,
                    scen_def,
                    cpu_cores_trend,

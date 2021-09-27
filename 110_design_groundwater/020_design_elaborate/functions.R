@@ -655,6 +655,8 @@ compute_status_persample <- function(statusdata = NULL,
 #' The calculation is done for each scenario and type(group) in turn.
 #'
 #' @param merge_pops Results can be given per population or as an overall average (the default).
+#' @param conflevel_pctiles The confidence level (between 0 and 1) that defines lower and upper percentiles (with probabilitie arranged symmetrically around P = 0.5).
+#' @param qual_std Optional vector of one or more values of a targeted quality standard, i.e. one or more target values of the statistic, for which left-sided probabilities will be estimated from the ECDF.
 #' @param plot Logical. Optionally returns a plot on condition that merge_pops = FALSE.
 #' @param ylim NULL or a numeric vector of length 2. If a vector (has a default), is applied as y-limits in the plot.
 #' @param facet_scales String. Always applied but only relevant if ylim = NULL.
@@ -662,13 +664,15 @@ compute_status_persample <- function(statusdata = NULL,
 #'
 summarise_status_of_samples <- function(multisample_stats,
                                         statistic,
-                                        conflevel = 0.9,
+                                        conflevel_pctiles = 0.9,
+                                        qual_std = NULL,
                                         merge_pops = TRUE,
                                         plot = FALSE,
                                         ylim = c(0, 1),
                                         facet_scales = "free_x",
                                         ...) {
-    stopifnot(between(conflevel, 0, 1))
+    stopifnot(between(conflevel_pctiles, 0, 1))
+    stopifnot(is.numeric(qual_std) || is.null(qual_std))
     result <-
         multisample_stats %>%
         nest(data = -c(scenario, contains("type"))) %>%
@@ -677,8 +681,14 @@ summarise_status_of_samples <- function(multisample_stats,
                 select(population, !!statistic) %>%
                 group_by(population) %>%
                 summarise(avg = mean(.data[[statistic]]),
-                          pctile_l = quantile(.data[[statistic]], (1 - conflevel) / 2),
-                          pctile_u = quantile(.data[[statistic]], 1 - (1 - conflevel) / 2)) %>%
+                          pctile_l = quantile(.data[[statistic]], (1 - conflevel_pctiles) / 2),
+                          pctile_u = quantile(.data[[statistic]], 1 - (1 - conflevel_pctiles) / 2),
+                          if (!is.null(qual_std)) {
+                              across(.data[[statistic]],
+                                 map(qual_std, ~function(x) ecdf(x)(.)) %>%
+                                     set_names(str_c("p(stat<", qual_std, ")")),
+                                 .names = "{.fn}")
+                              }) %>%
                 {if(merge_pops) summarise(., across(-population, ~mean(.))) else .}
         })) %>%
         select(-data) %>%
