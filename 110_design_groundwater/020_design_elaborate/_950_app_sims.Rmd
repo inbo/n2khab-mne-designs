@@ -324,11 +324,31 @@ status_res_per_typegroup <-
 De typegroepen waren benoemd in Tabel \@ref(tab:typegroups).
 Welke types tot welke typegroep behoren, is opgelijst in Tabel \@ref(tab:typegroups-ext).
 
-```{r}
-status_res_per_typegroup %>% 
+```{r include=FALSE}
+relpath_status_summary_typegroup <- 
+  file.path("20_intermediate1",
+            str_c(filepath_sub, respvar,
+                  "_status_summary"))
+```
+
+```{r results="hide"}
+status_summary_typegroup <- 
+  status_res_per_typegroup %>% 
   summarise_status_of_samples("twosided_errmarg90_rel",
                               conflevel_pctiles = 0.9,
-                              qual_std = qual_std_status) %>% 
+                              qual_std = qual_std_status)
+scen %>% 
+  inner_join(status_summary_typegroup, by = "scenario") %>% 
+  write_vc(relpath_status_summary_typegroup,
+           root = datapath,
+           sorting = c("scenario", "typegroup"),
+           strict = FALSE,
+           optimize = FALSE)
+```
+
+
+```{r}
+status_summary_typegroup %>% 
   mutate(across(where(is.numeric), ~round(., 3))) %>% 
   kable(caption = "De _relatieve_ foutenmarge op de schatting van de doelparameter (voor 90% betrouwbaarheid) per scenario, voor een uitspraak per typegroep. `avg` is de verwachte waarde van deze foutenmarge, op basis van diens distributie over alle gesimuleerde steekproeven van een populatie (en vervolgens gemiddeld over de gesimuleerde populaties). De percentielen zijn de 5% en 95% percentielen van deze distributie, wat een beeld geeft van de onzekerheid over de verwachte waarde.") %>% 
   kable_styling() %>% 
