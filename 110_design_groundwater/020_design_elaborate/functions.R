@@ -754,6 +754,11 @@ summarise_status_of_samples <- function(multisample_stats,
 #' @param scenario_def Dataframe that defines the scenarios (one row per scenario).
 #' Has at least columns "scenario", "avg_nrlocs_pertype_infpop" and a column trend_*.
 #' One row per scenario.
+#' Only used (and needed) if `plot = TRUE`.
+#' @param qual_std Optional numeric vector of targeted power values (quality standards)
+#' for which right-sided probabilities will be estimated from the ECDF.
+#' The vector elements _must_ be named after the power_conf column names that appear
+#' with `qual_std=NULL`.
 #' @param merge_pops Results can be given as power per population or
 #' aggregated (the default).
 #' Ignored if plot is TRUE.
@@ -762,9 +767,12 @@ summarise_status_of_samples <- function(multisample_stats,
 #'
 calculate_power_of_scenarios <- function(multisample_stats,
                                          scenario_def = NULL,
+                                         qual_std = NULL,
                                          merge_pops = TRUE,
                                          plot = FALSE,
                                          ...) {
+    stopifnot(is.numeric(qual_std) || is.null(qual_std))
+
     result <-
         multisample_stats %>%
         mutate(across(matches("errmarg\\d{2}$"),
@@ -774,17 +782,50 @@ calculate_power_of_scenarios <- function(multisample_stats,
                     .fn = ~str_remove(., "twosided_errmarg")) %>%
         group_by(across(c(contains("type"), scenario, population))) %>%
         summarise(across(matches("^trend_sign_"), ~sum(.)/n())) %>%
-        rename_with(~str_replace(., "trend_sign", "power_at_conflevel"))
+        rename_with(~str_replace(., "trend_sign_", "power_conf"))
 
     if(!plot) {
         return(
-            result %>%
-                {if (!merge_pops) . else {
-                    summarise(., across(matches("^power_at_conflevel"),
-                                        ~str_c(median(.) %>% round(2), " (",
-                                               quantile(., 0.25) %>% round(2), " | ",
-                                               quantile(., 0.75) %>% round(2), ")")))
-                }})
+            if (!merge_pops) ungroup(result) else {
+                result %>%
+                    pivot_longer(cols = matches("^power_conf"),
+                                 names_to = "conflevel",
+                                 values_to = "power") %>%
+                    {if (is.null(qual_std)) . else {
+                        inner_join(., tibble(conflevel = names(qual_std),
+                                             threshold = qual_std),
+                                   by = "conflevel")
+                        }} %>%
+                    group_by(across(c(conflevel,
+                                      matches("^threshold$"))), .add = TRUE) %>%
+                    summarise(quartiles = str_c(median(power) %>% round(2),
+                                                " (",
+                                                quantile(power, 0.25) %>% round(2),
+                                                " | ",
+                                                quantile(power, 0.75) %>% round(2),
+                                                ")"),
+                              prob_threshold_exceedance = if (!is.null(qual_std)) {
+                                  1 - ecdf(power)(first(threshold))}
+                                  ) %>%
+                    ungroup %>%
+                    (function(df) {
+                        if (is.null(qual_std)) {
+                            pivot_wider(df,
+                                        names_from = conflevel,
+                                        values_from = quartiles)
+                        } else {
+                        spec1 <-
+                            build_wider_spec(df,
+                                         names_from = c(conflevel, threshold),
+                                         values_from = c(quartiles,
+                                                         prob_threshold_exceedance)) %>%
+                            mutate(.name = ifelse(str_detect(.name, "^quartiles"),
+                                                  conflevel,
+                                                  str_c("p(", conflevel, "≥",
+                                                        threshold, ")")
+                                                  ))
+                        pivot_wider_spec(df, spec = spec1)}})
+            })
     } else {
         assertthat::assert_that(!missing(scenario_def))
         trend_colname <-
@@ -796,8 +837,8 @@ calculate_power_of_scenarios <- function(multisample_stats,
         result %>%
             ungroup %>%
             inner_join(scenario_def, by = "scenario") %>%
-            rename_with(~str_remove(., "power_at_")) %>%
-            pivot_longer(cols = matches("^conflevel"),
+            rename_with(~str_remove(., "power_")) %>%
+            pivot_longer(cols = matches("^conf"),
                          names_to = "conflevel",
                          values_to = "power") %>%
             mutate({{trend_colname}} := factor(.data[[trend_colname]])) %>%

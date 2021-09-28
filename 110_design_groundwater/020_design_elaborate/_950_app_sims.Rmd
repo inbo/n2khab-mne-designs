@@ -558,9 +558,30 @@ trend_res_per_type %>%
                               ncol = 4)
 ```
 
+```{r include=FALSE}
+relpath_trend_summary_typegroup <- 
+  file.path("20_intermediate1",
+            str_c(filepath_sub, respvar,
+                  "_trend_summary"))
+```
+
+```{r results="hide"}
+trend_summary_typegroup <- 
+  trend_res_per_typegroup %>% 
+  calculate_power_of_scenarios(qual_std = qual_std_trend)
+scen %>% 
+  inner_join(trend_summary_typegroup, by = "scenario") %>% 
+  write_vc(relpath_trend_summary_typegroup,
+           root = datapath,
+           sorting = c("scenario", "typegroup"),
+           strict = FALSE,
+           optimize = FALSE)
+```
+
+
 ```{r}
-trend_res_per_typegroup %>% 
-  calculate_power_of_scenarios() %>% 
+trend_summary_typegroup %>% 
+  mutate(across(where(is.numeric), ~round(., 3))) %>% 
   kable(caption = "De mediane power voor het tweezijdig toetsen van de trend t.o.v. een nultrend voor een uitspraak per typegroep en dit bij verschillende betrouwbaarheidsniveaus (kolommen). Het resultaat wordt gegeven voor de respectievelijke scenario's. Het betreft de mediaan van de powerwaarde per populatie; tussen haakjes het eerste en derde kwartiel.") %>% 
   kable_styling() %>% 
   scroll_box(height = "500px")
@@ -568,7 +589,8 @@ trend_res_per_typegroup %>%
 
 ```{r}
 trend_res_per_type %>% 
-  calculate_power_of_scenarios() %>% 
+  calculate_power_of_scenarios(qual_std = qual_std_trend) %>% 
+  mutate(across(where(is.numeric), ~round(., 3))) %>% 
   kable(caption = "De mediane power voor het tweezijdig toetsen van de trend t.o.v. een nultrend voor een uitspraak per type en dit bij verschillende betrouwbaarheidsniveaus (kolommen). Het resultaat wordt gegeven voor de respectievelijke scenario's. Het betreft de mediaan van de powerwaarde per populatie (voor het type in kwestie); tussen haakjes het eerste en derde kwartiel.") %>% 
   kable_styling() %>% 
   scroll_box(height = "500px")
