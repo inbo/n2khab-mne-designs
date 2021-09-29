@@ -880,3 +880,44 @@ calculate_power_of_scenarios <- function(multisample_stats,
 
 
 
+
+
+#' Read specific vc-data where special characters were converted to underscore
+#'
+#' This is tailored to have as input results of the scenario-evaluation
+read_vc_special <- function(...) {
+    read_vc(...) %>%
+        as_tibble %>%
+        rename(`n/N` = n_N) %>%
+        rename_with(~str_replace_all(., "^p_", "p(")) %>%
+        rename_with(~str_replace_all(., "_$", ")")) %>%
+        rename_with(~str_replace_all(., "(conf\\d+)_", "\\1≥")) %>%
+        rename_with(~str_replace_all(., "(stat)_", "\\1≤")) %>%
+        rename_with(~str_replace_all(., "stat", "twosided_errmarg90_rel"))
+}
+
+
+
+#' Make summary plot of scenario evaluation
+#'
+#' @param input A dataframe as returned by read_vc_special
+plot_summary <- function(input) {
+    input %>%
+        pivot_longer(cols = starts_with("p("),
+                     names_to = "distribution_threshold",
+                     values_to = "probability") %>%
+        {if (any(str_detect(unique(.$distribution_threshold), "errmarg"))) {
+            mutate(., distribution_threshold =
+                       factor(distribution_threshold) %>%
+                       fct_rev)
+        } else .} %>%
+        ggplot(aes(x = total_n_finitepop_spatial,
+                   y = probability,
+                   shape = distribution_threshold,
+                   linetype = distribution_threshold,
+                   colour = typegroup)) +
+        geom_line() +
+        geom_point() +
+        facet_wrap(~trend_12yearly_multiplier, labeller = "label_both")
+}
+
