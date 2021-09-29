@@ -210,13 +210,18 @@ sample_definition <-
 ```
 
 ```{r}
-sample_definition %>% 
+scen_n_spatial <- 
+  sample_definition %>% 
   select(-trend_12yearly_multiplier) %>% 
   group_by(scenario) %>% 
-  summarise(`n/N` = str_c(sum(n_finitepop_spatial), "/", sum(popsize_spatial))) %>% 
+  summarise(total_n_finitepop_spatial = sum(n_finitepop_spatial),
+            total_popsize_spatial = sum(popsize_spatial),
+            `n/N` = str_c(total_n_finitepop_spatial, "/", total_popsize_spatial)) %>% 
   inner_join(scen, ., by = "scenario") %>% 
   relocate(trend_12yearly_multiplier, 
-           .before = avg_nrlocs_pertype_infpop) %>% 
+           .before = avg_nrlocs_pertype_infpop)
+scen_n_spatial %>% 
+  select(-starts_with("total")) %>% 
   kable(caption = "Kenmerken van de scenario's. Behalve door de artificieel toegevoegde trend, wordt een scenario gedefinieerd door het gemiddelde aantal locaties dat per type wordt weerhouden, bij trekking uit een oneindige spatiale populatie. De uiteindelijke spatiale steekproefgroottes (voor alle types samen), vergezeld van de totale spatiale populatiegrootte, staan in de laatste kolom als respectievelijk teller en noemer (n/N).") %>% 
   kable_styling()
 ```
@@ -331,14 +336,19 @@ relpath_status_summary_typegroup <-
                   "_status_summary"))
 ```
 
-```{r results="hide"}
+```{r}
 status_summary_typegroup <- 
   status_res_per_typegroup %>% 
   summarise_status_of_samples("twosided_errmarg90_rel",
                               conflevel_pctiles = 0.9,
                               qual_std = qual_std_status)
-scen %>% 
+```
+
+
+```{r results="hide", eval=params$write_scenariofiles}
+scen_n_spatial %>% 
   inner_join(status_summary_typegroup, by = "scenario") %>% 
+  rename_with(.fn = ~str_replace_all(., "\\(|\\)|≤|≥|/", "_")) %>% 
   write_vc(relpath_status_summary_typegroup,
            root = datapath,
            sorting = c("scenario", "typegroup"),
@@ -565,12 +575,17 @@ relpath_trend_summary_typegroup <-
                   "_trend_summary"))
 ```
 
-```{r results="hide"}
+```{r}
 trend_summary_typegroup <- 
   trend_res_per_typegroup %>% 
   calculate_power_of_scenarios(qual_std = qual_std_trend)
-scen %>% 
+```
+
+
+```{r results="hide", eval=params$write_scenariofiles}
+scen_n_spatial %>% 
   inner_join(trend_summary_typegroup, by = "scenario") %>% 
+  rename_with(.fn = ~str_replace_all(., "\\(|\\)|≤|≥|/", "_")) %>% 
   write_vc(relpath_trend_summary_typegroup,
            root = datapath,
            sorting = c("scenario", "typegroup"),
