@@ -170,40 +170,23 @@ status_estimates <- function(statusdf, poststrat_year = FALSE) {
                                                     "estimate",
                                                     Estimator_parameter)) %>% 
                 bind_rows(
-                    status_quantiles$quantiles %>% 
-                            as_tibble(rownames = NA) %>% 
-                            rownames_to_column %>% 
-                            gather(key = "Estimated_parameter", value = "Value", 2:4) %>% 
-                            mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
-                                   Estimator_parameter = "estimate") %>% 
-                            select(rowname, Estimated_parameter, Estimator_parameter, Value)
-                    ) %>% 
-                bind_rows(
                     status_quantiles %>% 
-                        SE %>% 
-                        t %>% 
-                        as_tibble(rownames = NA) %>% 
-                        rownames_to_column %>% 
-                        gather(key = "Estimated_parameter", value = "Value", 2:4) %>% 
-                        mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
-                               Estimator_parameter = "SE") %>% 
-                        select(rowname, Estimated_parameter, Estimator_parameter, Value)
-                ) %>% 
-                bind_rows(
-                    map_dfr(1:2, function(x) {
-                        status_quantiles$CIs[x,,] %>% 
-                            t %>% 
-                            as_tibble(rownames = NA) %>% 
-                            rownames_to_column %>% 
-                            gather(key = "Estimated_parameter", value = "Value", 2:4) %>% 
-                            mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
-                                   Estimator_parameter = 
-                                       ifelse(x == 1, "lower", "upper") %>% 
-                                       str_c("CI90_", .)
-                                       ) %>% 
-                            select(rowname, Estimated_parameter, Estimator_parameter, Value)
-                        })
-                    )
+                      map2_dfr(names(.), function(dfq, dfqn) {
+                        dfq %>% 
+                          as_tibble(rownames = NA) %>% 
+                          rownames_to_column(var = "Estimated_parameter") %>% 
+                          rename(estimate = quantile,
+                                 SE = se, 
+                                 CI90_lower = ci.5,
+                                 CI90_upper = ci.95) %>% 
+                          mutate(Estimated_parameter = str_c("Q_", Estimated_parameter),
+                                 rowname = dfqn) %>% 
+                          pivot_longer(cols = estimate:SE,
+                                       names_to = "Estimator_parameter",
+                                       values_to = "Value") %>% 
+                          relocate(rowname)
+                      })
+                    ) 
         }) %>% 
         mutate(Type = df$Type %>% first) %>% 
         rename(Variable = rowname) %>% 
