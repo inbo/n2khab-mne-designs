@@ -1,16 +1,17 @@
 library(rprojroot)
 
 gitroot <- find_root(is_git_root)
-projectroot <- file.path(gitroot, "010_making_choices_website")
-sitesourceroot <- file.path(projectroot, "source/site")
+choicesroot <- file.path(gitroot, "010_making_choices_website")
+sourceroot <- file.path(choicesroot, "source")
+sitesourceroot <- file.path(choicesroot, "source/site")
 stopifnot(dir.exists(sitesourceroot))
 
-# renv::restore(project = projectroot)
+renv::restore(project = sourceroot)
 
 library(rmarkdown)
 library(purrr)
 
-unlink(file.path(projectroot, "docs"), recursive = TRUE)
+unlink(file.path(choicesroot, "docs"), recursive = TRUE)
 
 # create HTML website
 oldwd <- setwd(sitesourceroot)
@@ -27,10 +28,10 @@ detailed_filenames <-
       "systeemschema_details.Rmd"
     )
 
-source_dirs <- file.path(projectroot, "source/detailed",
+source_dirs <- file.path(choicesroot, "source/detailed",
                            detailed)
 
-files_dirs <- file.path(projectroot, "docs/site/files", detailed)
+files_dirs <- file.path(choicesroot, "docs/site/files", detailed)
 walk(files_dirs, ~dir.create(., showWarnings = FALSE))
 
 pwalk(list(source_dirs, files_dirs, detailed_filenames),
