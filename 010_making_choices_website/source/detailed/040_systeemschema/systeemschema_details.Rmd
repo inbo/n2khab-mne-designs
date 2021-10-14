@@ -45,7 +45,10 @@ library(knitr)
 library(tidyverse)
 library(ggplot2)
 library(n2khab)
+library(pander)
 uitvoer <- knitr::opts_knit$get("rmarkdown.pandoc.to")
+panderOptions("table.continues.affix", "(Zie verder voor meer kolommen)")
+panderOptions("table.continues", "Vervolg tabel.")
 opts_chunk$set(
   echo = knitr::is_html_output(),
   dpi = 300
@@ -124,7 +127,10 @@ Voor specifieke uitleg bij de respectievelijke milieudrukken verwijzen we naar [
 read_env_pressures(lang = "nl") %>% 
   select(ep_name) %>% 
   rename("Milieudruk" = "ep_name") %>% 
-  knitr::kable()
+  pandoc.table(caption = "(\\#tab:mildrukken)Lijst van milieudrukken.",
+               split.tables = Inf,
+               split.cells = 100,
+               justify = "left")
 ```
 
 ## Milieuverstoringsketen {#anchor-DPSIR}
@@ -546,13 +552,21 @@ Deze informatie is ook beschikbaar als een [google spreadsheet](https://docs.goo
 
 De nummering van de milieudrukken is afgeleid uit de nummering van de effect(sub)groepen van het vergunningenbeleid.
 
-```{r bijlage-milieudrukken, message=FALSE, echo=FALSE, warning=FALSE}
+\blandscape
+
+```{r bijlage-milieudrukken, message=FALSE, echo=FALSE, warning=FALSE, results='asis'}
 milieudrukken_def <- read_env_pressures(lang = "nl") %>% 
   select(ep_name, explanation) %>% 
   rename("Milieudruk" = "ep_name", "Betekenis" = "explanation")
 
-knitr::kable(milieudrukken_def)
+pandoc.table(milieudrukken_def,
+             caption = "(\\#tab:mildrukken2)Verklarende lijst van milieudrukken.",
+             split.tables = Inf,
+             # split.cells = 100,
+             justify = "left")
 ```
+
+\elandscape
 
 # Bijlage 2 - Structuur van de MS Access databank van het systeemschema van de standplaats  {- #anchor-structuur-db}
 
@@ -562,7 +576,9 @@ Relatie tussen de entiteiten (tabellen)
 
 Onderstaande tabel geeft voor elke entiteit van de databank een lijst van de velden en hun belangrijkste kenmerken (o.a. type gegevens, lengte, al dan niet verplichte karakter, eventuele validatieregel, beschrijving).
 
-```{r db_structuur, message=FALSE, echo=FALSE, warning=FALSE, results='asis'}
+\blandscape
+
+```{r db-structuur, message=FALSE, echo=FALSE, warning=FALSE, results='asis'}
 systs_fields <- read_csv2("../../../data/040_systschema_fields.txt") %>% 
   filter(!str_detect(SourceTable, "^MSys")) %>% 
   mutate(Type = case_when(
@@ -582,10 +598,17 @@ systs_fields <- read_csv2("../../../data/040_systschema_fields.txt") %>%
   select(-c(SourceField, CollatingOrder, DataUpdatable, OrdinalPosition,
          ColumnHidden, ColumnOrder, ColumnWidth, DecimalPlaces)) %>% 
   rename("FieldName" = "Name", "TableName" = "SourceTable") %>% 
-   select(TableName, everything())
+  select(TableName, everything()) %>% 
+  inborutils::convertdf_enc(from = "latin1")
 
-knitr::kable(systs_fields)
+pandoc.table(systs_fields,
+             caption = "(\\#tab:db-structuur)Velden van de databankentiteiten en hun belangrijkste kenmerken.",
+             missing = "",
+             split.tables = if (uitvoer %in% c("latex", "docx")) 130 else Inf,
+             justify = "left")
 
 ```
+
+\elandscape
 
 # Referenties {-}
