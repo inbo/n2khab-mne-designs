@@ -59,8 +59,8 @@ if (FALSE) {
 
 # code to interactively build a html page for the detailed files as well
 if (FALSE) {
-    pwalk(list(source_dirs, files_dirs, detailed_filenames),
-          function(sd, fd, fn) {
+    pwalk(list(source_dirs, detailed_filenames),
+          function(sd, fn) {
               setwd(sd)
               render(input = fn,
                      output_format = "bookdown::html_document2",
