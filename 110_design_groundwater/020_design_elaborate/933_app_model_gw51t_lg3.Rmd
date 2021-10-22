@@ -31,9 +31,7 @@ dataset_nested <-
   distinct %>% 
   rename(type = type_model) %>% 
   inner_join(dataset, ., by = "type") %>% 
-  group_by(subdataset_name, subdataset_label) %>% 
-  nest() %>% 
-  ungroup %>% 
+  nest(data = -c(subdataset_name, subdataset_label)) %>% 
   arrange(subdataset_name) %>% 
   mutate(data = map(data, ~mutate(., type = droplevels(type))))
 ```
@@ -62,4 +60,12 @@ pwalk(list(dataset_nested$data,
       })
 ```
 
+
+```{r eval=FALSE}
+# for manual testing one line of dataset_nested
+i <- 4
+dataset <- dataset_nested$data[[i]]
+subdataset_name <- dataset_nested$subdataset_name[[i]]
+subdataset_label <- dataset_nested$subdataset_label[[i]]
+```
 
