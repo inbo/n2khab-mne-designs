@@ -13,6 +13,15 @@ citecolor: link.colour
 urlcolor: link.colour
 site: bookdown::bookdown_site
 output:
+  bookdown::pdf_document2:
+    fig_caption: yes
+    keep_tex: yes
+    toc: no
+    toc_depth: 3
+    latex_engine: xelatex
+    number_sections: true
+    includes:
+        in_header: "../../header.tex"
   bookdown::html_document2:
     number_sections: yes
     keep_md: TRUE
@@ -23,15 +32,6 @@ output:
       smooth_scroll: FALSE
     includes:
         in_header: "../../header.html"
-  bookdown::pdf_document2:
-    fig_caption: yes
-    keep_tex: yes
-    toc: no
-    toc_depth: 3
-    latex_engine: xelatex
-    number_sections: true
-    includes:
-        in_header: "../../header.tex"
 csl: https://raw.githubusercontent.com/citation-style-language/styles/master/research-institute-for-nature-and-forest.csl
 bibliography: ../../mnm_keuzes.bib
 ---
@@ -552,30 +552,37 @@ Tabel \@ref(tab:db-structuur) geeft voor elke entiteit van de databank een lijst
 systs_fields <- read_csv2("../../../data/040_systschema_fields.txt") %>% 
   filter(!str_detect(SourceTable, "^MSys")) %>% 
   mutate(Type = case_when(
-  Type == 1 ~ "dbBoolean",
-  Type == 3 ~ "dbInteger",
-  Type == 4 ~ "dbLong",
-  Type == 8 ~ "dbDate",
-  Type == 10 ~ "dbText",
-  Type == 12 ~ "dbMemo",
+  Type == 1 ~ "Boolean",
+  Type == 3 ~ "Integer",
+  Type == 4 ~ "Long",
+  Type == 8 ~ "Date",
+  Type == 10 ~ "Text",
+  Type == 12 ~ "Memo",
   TRUE ~ as.character(Type)),
   Attributes = case_when(
   Attributes == 1 ~ "dbFixedField",
   Attributes == 2 ~ "dbVariableField",
-  Attributes == 17 ~ "dbAutoIncrField+dbFixedField",
-  Attributes == 18 ~ "dbAutoIncrField+dbVariableField",
+  Attributes == 17 ~ "dbAutoIncrField + dbFixedField",
+  Attributes == 18 ~ "dbAutoIncrField + dbVariableField",
   TRUE ~ as.character(Attributes))) %>% 
+    rename('Default Value' = DefaultValue, 
+           'Validation Rule' = ValidationRule,
+           'Validation Text' = ValidationText, 
+           'Allow Zero Length' = AllowZeroLength) %>% 
+  mutate('Table Name.Field Name' = paste0(SourceTable, ". ", Name),
+         'Type (Size)' = paste0(Type, " (", Size, ")")) %>% 
   select(-c(SourceField, CollatingOrder, DataUpdatable, OrdinalPosition,
          ColumnHidden, ColumnOrder, ColumnWidth, DecimalPlaces, Format, 
-         InputMask, Caption)) %>% 
-  rename("FieldName" = "Name", "TableName" = "SourceTable") %>% 
-  select(TableName, everything()) %>% 
+         InputMask, Caption, SourceTable, Name, Type, Size, Required)) %>% 
+  select('Table Name.Field Name', Description, 'Type (Size)', everything()) %>% 
+    mutate_all(~ ifelse(is.na(.),., paste('\\scriptsize', .))) %>% 
   n2khab:::convertdf_enc(from = "latin1")
 
 pandoc.table(systs_fields,
              caption = "(\\#tab:db-structuur)Velden van de databankentiteiten en hun belangrijkste kenmerken.",
              missing = "",
-             split.tables = if (uitvoer %in% c("latex", "docx")) 130 else Inf,
+             split.cells = 10,
+             split.tables = Inf,
              justify = "left")
 
 ```
