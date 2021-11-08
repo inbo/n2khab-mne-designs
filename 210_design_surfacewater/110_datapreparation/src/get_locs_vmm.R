@@ -107,15 +107,7 @@
                     locs = locs%>% filter(river_name %like% paste0("%",stream,"%"))}}
         if(nrow(locs%>% collect(n=1))==0){stop("No locs where found. If a stream was specified, check spelling (case insensitive) or try guess = T")}
 
-        if (collect_HT3260 == FALSE){locs}else{
-            #filter cannot be used as long as there are differences between VMM and geodatabase!
-            #if(!is.null(stream)){
-                #if (guess == TRUE) {geodata = geodatabase%>%
-                    #filter(str_detect(naam,toupper(stream)))
-                #} else {geodata = geodatabase%>%
-                    #filter(naam == toupper(stream))}
-            #}else {
-                geodata=geodatabase}
+        if (collect_HT3260 == FALSE){locs}else{geodata=geodatabase
             geodata=geodata%>%rownames_to_column()
            collected_locs= locs%>% select(loc_code, x, y)%>% distinct()%>%collect%>%
                 st_as_sf(coords= c("x","y"),crs = 31370)
@@ -141,14 +133,15 @@
                 #only keep the closest stream (if point is within different stream buffers)
                 filter(nearest==rowname)%>%
                 filter(date >= period_min & date <= period_max)}
-                if(FALSE %in% link_data_buffer$check_location){warning("VMM database and geodatabase use different name for same location")
+                if(FALSE %in% link_data_buffer$check_location){warning("VMM database and geodatabase use different name for same stream segment")
                 difference = link_data_buffer %>% filter (check_location == FALSE) %>%
                     select(c(loc_code,vhas_code, river_name, naam, source))%>% unique
-                print(st_set_geometry(difference,NULL))}
+                print(paste0(capture.output(st_set_geometry(difference,NULL)), collapse = "\n"))}
 
             link_data_buffer
 
         }
+    }
 
 
 

@@ -25,13 +25,13 @@ get_chem_aquachem <- function(locs,
 
 
 
-
     chem <-
         tbl(con, "FactResultAqua") %>%
         select(.data$FieldSampleID,
                .data$FieldSamplingDate,
                 .data$Component,
                loc_code = .data$CODE,
+               habfield = .data$HabtypeVel,
                .data$ResultFormattedNumeric,
                .data$Unit,
                #.data$MeetwaardeMEQ,
@@ -41,6 +41,7 @@ get_chem_aquachem <- function(locs,
     if (!is.null(parameter)) {
         chem <-
             chem %>%
-            filter(.data$Component %in% parameter)}
+            filter(.data$Component %in% parameter)}else{
+                chem}
 
 }
