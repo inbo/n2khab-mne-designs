@@ -83,21 +83,31 @@ stratasplit <-
     dataset %>%
     cbind(matrix(data = NA_real_,
                  nrow = nrow(.),
-                 ncol = length(strata),
-                 dimnames = list(NULL, str_c("resp_stratum_", strata)))) %>%
+                 ncol = length(strata) * 2,
+                 dimnames = list(NULL, str_c(rep(c("respbin_stratum_", "respgam_stratum_"),
+                                                   each = length(strata)), 
+                                             strata)))) %>%
     as_tibble
+stratasplit_bin <- stratasplit
+stratasplit_gam <- stratasplit
 for (stratum in strata) {
-    stratasplit[[str_c("resp_stratum_", stratum)]] <-
+    stratasplit_bin[[str_c("respbin_stratum_", stratum)]] <-
         ifelse(stratasplit[[stratumvar]] == stratum,
-               stratasplit[[respvar]],
+               as.numeric(stratasplit[[respvar]] < 0),
+               NA_real_)
+    stratasplit_gam[[str_c("respgam_stratum_", stratum)]] <-
+        ifelse(stratasplit[[stratumvar]] == stratum & stratasplit[[respvar]] < 0,
+               stratasplit[[respvar]] * (-1),
                NA_real_)
 }
+stratasplit <-
+    bind_rows(stratasplit_bin, stratasplit_gam)
 resp <-
     stratasplit %>%
-    select(contains("resp_stratum_"))
+    select(matches("^resp.+_stratum_"))
 covariates <-
     stratasplit %>%
-    select(!contains("resp_stratum_"))
+    select(!matches("^resp.+_stratum_"))
 ```
 
 #### Model
@@ -168,11 +178,12 @@ cont_comp <- list(waic = TRUE, dic = TRUE)
 ```{r gw51t-hg3-{{subdataset_name}}-fitmodel, results="hide", eval=params$fit_simmodels && params$write_simmodels}
 system.time(
     M1 <- inla(modformula,
-               family = rep("gaussian", length(strata)),
+               family = rep(c("binomial", "gamma"), each = length(strata)),
                data = moddata,
                lincomb = lincomb_newdata,
                control.compute = cont_comp,
-               control.inla = list(force.diagonal = TRUE))
+               control.inla = list(force.diagonal = TRUE),
+               control.predictor = list(link = 1))
 )
 hypernames <- rownames(M1$summary.hyperpar)
 rownames(M1$summary.hyperpar)[str_detect(hypernames, "Gaussian")] <-
