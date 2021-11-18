@@ -59,13 +59,15 @@ dataset <-
            ifelse(stratum_ %in% strata_ts, 
                   stratum_,
                   NA_character_) %>% 
-           factor(levels = strata_ts))
+           factor(levels = strata_ts),
+         intercept = 1)
 # Beside that, stratum_ is used to predict 
 # values for polynomial trends:
 newdata <- 
   nesting(!!ts_stratumvar := dataset[[ts_stratumvar]],
           stratum_ = dataset$stratum_) %>%
-  crossing(hydroyear_std = full_seq(dataset$hydroyear_std, 1))
+  crossing(intercept = 1,
+           hydroyear_std = full_seq(dataset$hydroyear_std, 1))
 newdata <- 
     newdata %>% 
     magrittr::set_colnames(str_c(colnames(.), "_b")) %>% 
@@ -123,7 +125,8 @@ covariates <- bind_rows(covariates_b, covariates_g)
 
 ```{r eval=params$fit_simmodels}
 modformula <-
-    Y ~ type_b + soilclass_b +
+    Y ~ -1 + intercept_b + intercept_g +
+        type_b + soilclass_b +
         type_g + soilclass_g +
         # polynomial trend per stratum:
         stratum__b:(hydroyear_std_b + I(hydroyear_std_b^2)) +
@@ -138,7 +141,8 @@ modformula <-
 moddata <-
     splice(Y = resp,
            as.list(covariates %>% 
-                       select(starts_with(c("type",
+                       select(starts_with(c("intercept",
+                                            "type",
                                             "soilclass",
                                             "loc_code",
                                             "cluster_id",
@@ -148,7 +152,7 @@ moddata <-
 # linear combinations to compute posterior of predicted fixed effects:
 lincomb_newdata <- 
   newdata %>% 
-  model.matrix(formula(paste("~", 
+  model.matrix(formula(paste("~ -1 + intercept_b + intercept_g +", 
                              str_c(ts_stratumvar, c("_b + ", "_g"), 
                                    collapse = ""), 
                              "+ stratum__b:(hydroyear_std_b + I(hydroyear_std_b^2))",
@@ -161,7 +165,7 @@ lincomb_newdata <-
     c(., 
       newdata %>% 
         filter(is.na(stratum_)) %>% 
-        model.matrix(formula(paste("~", 
+        model.matrix(formula(paste("~ -1 + intercept_b + intercept_g +", 
                                    str_c(ts_stratumvar, c("_b + ", "_g"), 
                                          collapse = ""))),
                      data = .) %>% 
