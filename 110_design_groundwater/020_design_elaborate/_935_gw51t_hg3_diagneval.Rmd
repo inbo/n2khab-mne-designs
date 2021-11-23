@@ -1,0 +1,397 @@
+#### Modeldiagnose
+
+```{r}
+shapes <-
+    M1$summary.hyperpar %>% 
+    .[str_detect(rownames(M1$summary.hyperpar), "shape"), ] %>% 
+    select(shape_g = mean) %>% 
+    rownames_to_column("stratum") %>% 
+    as_tibble %>% 
+    mutate(stratum = 
+               str_match(stratum, "^Stratum\\s(.+):")[, 2] %>% 
+               factor(levels = levels(dataset$type)))
+M1_diagn <-
+    dataset %>%
+    mutate(fitted_b = M1$summary.fitted.values$mean[1:nrow(resp_b)],
+           obs_b = as.numeric(.data[[respvar]] < 0),
+           fitted_g = M1$summary.fitted.values$mean[nrow(resp_b) + 1:nrow(resp_g)]) %>% 
+    inner_join(shapes, by = c("type" = "stratum")) %>% 
+    mutate(fitted_g_na = ifelse(.data[[respvar]] == 0,
+                                NA_real_,
+                                fitted_g), # for gamma diagnosis
+           obs_g_na = ifelse(.data[[respvar]] == 0,
+                                NA_real_,
+                                .data[[respvar]] * -1),
+           resid_g = fitted_g_na - obs_g_na,
+           sd_res_g = fitted_g_na / sqrt(shape_g), # var_g = mu²/shape
+           resid_std_gamma = resid_g / sd_res_g,
+           fitted = fitted_b * fitted_g,
+           obs = .data[[respvar]] * -1,
+           resid = fitted - obs,
+           # var_hurdlegamma = mu² * (pi - pi² + pi/shape) (Zuur & Ieno 2018)
+           sd_res = sqrt(fitted_g^2 * (fitted_b - fitted_b^2 + fitted_b / shape_g)),
+           resid_std = resid / sd_res
+    )
+```
+
+
+##### Residuele analyse van het gamma submodel
+
+```{r resid-fitted-gamma-{{subdataset_label}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted_g_na, y = resid_std_gamma)) +
+    geom_point() +
+    geom_smooth()
+```
+
+
+```{r message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = resid_std_gamma)) + geom_histogram(fill = "white", colour = "grey70")
+```
+
+De residuele heterogeniteit is beperkt dankzij de stratumafhankelijke residuele hyperparameter.
+Door een temporele component in het model te specifiëren is de overall tijdsafhankelijkheid beperkt.
+
+```{r resid-covar-gamma-{{subdataset_label}}, message=FALSE, out.width='70%'}
+c("hydroyear_std", "type", "soilclass") %>%
+    walk(function(quosvar) {
+        M1_diagn %>%
+            {ggplot(data = ., aes(x = .data[[quosvar]], y = resid_std_gamma)) +
+                    geom_point() +
+                    geom_smooth()} %>%
+            print
+    })
+```
+
+Ondanks de integratie van een temporele trend blijft nog heel wat autocorrelatie over op het lokale niveau - hieronder voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven).
+
+```{r}
+lagcorr <-
+    M1_diagn %>%
+    semi_join(
+        dataset %>% count(loc_code, type) %>% filter(n >= 10),
+        by = c("loc_code", "type")) %>%
+    pivot_wider(id_cols = hydroyear_std,
+                names_from = c(loc_code, type),
+                values_from = resid_std_gamma) %>%
+    arrange(hydroyear_std) %>%
+    left_join(tidyr::expand(., hydroyear_std = full_seq(hydroyear_std, 1)),
+              .,
+              by = "hydroyear_std") %>%
+    select(-hydroyear_std) %>%
+    map2_df(names(.), function (x, name) {
+        result <- acf(x, na.action = na.pass, plot = FALSE)
+        presult <- acf(x, na.action = na.pass, type = "partial", plot = FALSE)
+        tibble(locxtype = name,
+               lag = result$lag[,1,1],
+               acf = result$acf[,1,1],
+               pacf = c(1, presult$acf[,1,1]))
+    }) %>%
+    filter(lag > 0, lag < 7)
+```
+
+Grafiek met nadruk op het patroon van de autocorrelatiefunctie (1 lijn correspondeert met 1 tijdsreeks).
+
+```{r fig.height=5, fig.width=6, out.width='70%'}
+lagcorr %>%
+    inner_join(lagcorr %>%
+                   distinct(locxtype) %>%
+                   mutate(subset = rep(1:15, each = ceiling(n() / 15))[1:n()]) %>%
+                   group_by(subset) %>%
+                   mutate(id = factor(1:n())) %>%
+                   ungroup,
+               by = "locxtype") %>%
+    ggplot(aes(x = lag, y = acf, group = id, colour = id)) +
+    geom_line() +
+    theme(legend.position = "none") +
+    facet_wrap(~subset, labeller = "label_both")
+```
+
+Een beperkt aantal tijdsreeksen toont geen autocorrelatie.
+Andere vertonen een afnemende autocorrelatie, wat wijst op een geleidelijke trend.
+Nog andere vertonen een wisselend positieve en negatieve autocorrelatie, wat wijst op een cyclische trend.
+
+We zien geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
+
+Residuele spatiale correlatie op verschillende schalen:
+
+```{r eval=!("read-provinces" %in% knitr::all_labels())}
+provinces <-
+    read_admin_areas(dsn = "provinces") %>%
+    select(province = name)
+```
+
+```{r}
+M1_diagn %>%
+    as_points(warn_dupl = FALSE) %>%
+    ggplot() +
+    geom_sf(data = provinces, fill = "grey70") +
+    geom_sf(aes(colour = resid_std_gamma)) +
+    scale_colour_gradientn(colours = rainbow(10)) +
+    coord_sf(datum = st_crs(31370)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          legend.position = "bottom",
+          legend.key.width = unit(0.08, "npc"))
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    drop_na %>% 
+    {gstat::variogram(resid_std_gamma ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 500,
+                      cutoff = 5e3)}
+plot_vg(vg)
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    drop_na %>% 
+    {gstat::variogram(resid_std_gamma ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 1000,
+                      cutoff = 15e3)}
+plot_vg(vg)
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    drop_na %>% 
+    {gstat::variogram(resid_std_gamma ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 5000,
+                      cutoff = 75e3)}
+plot_vg(vg)
+```
+
+
+
+##### Residuele analyse van het hurdle gamma model
+
+```{r resid-fitted-hurdle-{{subdataset_label}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted, y = resid_std)) +
+    geom_point() +
+    geom_smooth()
+```
+
+
+```{r message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = resid_std)) + geom_histogram(fill = "white", colour = "grey70")
+```
+
+Inspectie van de resterende residuele heterogeniteit.
+Door een temporele component in het model te specifiëren verkleint de overall tijdsafhankelijkheid.
+
+```{r resid-covar-hurdle-{{subdataset_label}}, message=FALSE, out.width='70%'}
+c("hydroyear_std", "type", "soilclass") %>%
+    walk(function(quosvar) {
+        M1_diagn %>%
+            {ggplot(data = ., aes(x = .data[[quosvar]], y = resid_std)) +
+                    geom_point() +
+                    geom_smooth()} %>%
+            print
+    })
+```
+
+Resterende temporele autocorrelatie over op het lokale niveau voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven).
+
+```{r}
+lagcorr <-
+    M1_diagn %>%
+    semi_join(
+        dataset %>% count(loc_code, type) %>% filter(n >= 10),
+        by = c("loc_code", "type")) %>%
+    pivot_wider(id_cols = hydroyear_std,
+                names_from = c(loc_code, type),
+                values_from = resid_std) %>%
+    arrange(hydroyear_std) %>%
+    left_join(tidyr::expand(., hydroyear_std = full_seq(hydroyear_std, 1)),
+              .,
+              by = "hydroyear_std") %>%
+    select(-hydroyear_std) %>%
+    map2_df(names(.), function (x, name) {
+        result <- acf(x, na.action = na.pass, plot = FALSE)
+        presult <- acf(x, na.action = na.pass, type = "partial", plot = FALSE)
+        tibble(locxtype = name,
+               lag = result$lag[,1,1],
+               acf = result$acf[,1,1],
+               pacf = c(1, presult$acf[,1,1]))
+    }) %>%
+    filter(lag > 0, lag < 7)
+```
+
+Grafiek met nadruk op het patroon van de autocorrelatiefunctie (1 lijn correspondeert met 1 tijdsreeks).
+
+```{r fig.height=5, fig.width=6, out.width='70%'}
+lagcorr %>%
+    inner_join(lagcorr %>%
+                   distinct(locxtype) %>%
+                   mutate(subset = rep(1:15, each = ceiling(n() / 15))[1:n()]) %>%
+                   group_by(subset) %>%
+                   mutate(id = factor(1:n())) %>%
+                   ungroup,
+               by = "locxtype") %>%
+    ggplot(aes(x = lag, y = acf, group = id, colour = id)) +
+    geom_line() +
+    theme(legend.position = "none") +
+    facet_wrap(~subset, labeller = "label_both")
+```
+
+Een beperkt aantal tijdsreeksen toont geen autocorrelatie.
+Andere vertonen een afnemende autocorrelatie, wat wijst op een geleidelijke trend.
+Nog andere vertonen een wisselend positieve en negatieve autocorrelatie, wat wijst op een cyclische trend.
+
+We zien geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
+
+Residuele spatiale correlatie op verschillende schalen:
+
+```{r}
+M1_diagn %>%
+    as_points(warn_dupl = FALSE) %>%
+    ggplot() +
+    geom_sf(data = provinces, fill = "grey70") +
+    geom_sf(aes(colour = resid_std)) +
+    scale_colour_gradientn(colours = rainbow(10)) +
+    coord_sf(datum = st_crs(31370)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          legend.position = "bottom",
+          legend.key.width = unit(0.08, "npc"))
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    drop_na %>% 
+    {gstat::variogram(resid_std_gamma ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 500,
+                      cutoff = 5e3)}
+plot_vg(vg)
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    drop_na %>% 
+    {gstat::variogram(resid_std_gamma ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 1000,
+                      cutoff = 15e3)}
+plot_vg(vg)
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    drop_na %>% 
+    {gstat::variogram(resid_std_gamma ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 5000,
+                      cutoff = 75e3)}
+plot_vg(vg)
+```
+
+
+
+#### Evaluatie van het binomiaal submodel
+
+We berekenen de AUC (oppervlakte onder de ROC-curve) als threshold-onafhankelijke maat voor de goodness of fit.
+AUC-waarden liggen steeds tussen 0.5 (onbruikbaar model) en 1 (perfecte fit).
+
+```{r message=FALSE, fig.width=5, fig.height=5, out.width='50%'}
+with(M1_diagn, pROC::roc(response = obs_b, 
+                         predictor = fitted_b,
+                         ci = TRUE,
+                         plot = TRUE,
+                         quiet = TRUE))
+```
+
+De confusion matrix bij een threshold van 0.5 (modelclassificatie positief (1) indien de gefitte kans > 0.5):
+
+```{r}
+M1_diagn %>% 
+    mutate(predicted = ifelse(fitted_b >= 0.5, 1, 0),
+           observed = str_c("observed_", obs_b)) %>% 
+    count(predicted, observed) %>% 
+    pivot_wider(names_from = observed, values_from = n)
+```
+
+Spreiding van de geschatte kans op een waarde van de responsvariabele verschillend van nul, in functie van de waarde van covariaten.
+Zowel de jitter- als boxplot geven de gefitte modelwaarden weer.
+
+```{r out.width='70%'}
+c("hydroyear_std", "type", "soilclass") %>%
+    walk(function(quosvar) {
+        M1_diagn %>%
+            {ggplot(data = ., aes(x = .data[[quosvar]], 
+                                  y = fitted_b,
+                                  group = .data[[quosvar]])) +
+                    geom_boxplot(fill = NA, 
+                                 outlier.alpha = 0, 
+                                 colour = "grey80") +
+                    geom_jitter(alpha = 0.1, 
+                                height = 0,
+                                width = 0.2) +
+                    theme_bw() +
+                    theme(panel.grid = element_blank()) +
+                    ylab("fitted probability of a non-zero value")
+                    } %>%
+            print
+    })
+```
+
+
+#### Evaluatie van het gamma submodel
+
+We vergelijken de gefitte waarden met de geobserveerde waarden.
+Daarbij negeren we de observaties waar de responsvariabele nul is.
+
+```{r fitted-obs-gamma-{{subdataset_label}}, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = obs_g_na, y = fitted_g_na)) +
+    geom_point(size = 0.3) +
+    geom_abline(colour = "red") +
+    coord_equal()
+```
+
+```{r fitted-obs-type-gamma-{{subdataset_label}}, out.width='70%', fig.width=7, fig.height=6}
+M1_diagn %>%
+    ggplot(aes(x = obs_g_na, y = fitted_g_na)) +
+    geom_point(size = 0.3) +
+    geom_abline(colour = "grey70") +
+    coord_equal() +
+    facet_wrap(~type)
+```
+
+
+
+#### Evaluatie van het hurdle gamma model
+
+We vergelijken de gefitte waarden met de geobserveerde waarden.
+
+```{r fitted-obs-hurdle-{{subdataset_label}}, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = obs, y = fitted)) +
+    geom_point(size = 0.3) +
+    geom_abline(colour = "red") +
+    coord_equal()
+```
+
+```{r fitted-obs-type-hurdle-{{subdataset_label}}, out.width='70%', fig.width=7, fig.height=6}
+M1_diagn %>%
+    ggplot(aes(x = obs, y = fitted)) +
+    geom_point(size = 0.3) +
+    geom_abline(colour = "grey70") +
+    coord_equal() +
+    facet_wrap(~type)
+```
+
+
