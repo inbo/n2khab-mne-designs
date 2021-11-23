@@ -139,6 +139,27 @@ invsqrt <- function(x) 1 / sqrt(x)
 
 ################################################################################
 
+# Functions to aid model diagnosis & evaluation
+
+#' Plot a gstat variogram object
+#' @param vg A gstat variogram object
+plot_vg <- function(vg) {
+    vg %>%
+        rename(semivariance = gamma,
+               distance = dist) %>%
+        ggplot(aes(x = distance, y = semivariance, fill = np, label = np)) +
+        geom_smooth(colour = "grey70", se = FALSE) +
+        geom_point(size = 3, shape = 21) +
+        ylim(0, NA) +
+        scale_fill_viridis_c("Number of\npointpairs", option = "D", direction = -1) +
+        geom_text(vjust = -1, size = 3, colour = "grey30") +
+        theme_bw() +
+        theme(legend.position = "bottom",
+              legend.key.width = unit(0.08, "npc"))
+}
+
+################################################################################
+
 # Functions used to aid reproducible scenario simulation
 
 
