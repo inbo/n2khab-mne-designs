@@ -33,6 +33,7 @@ gw51t <-
                by = "type") %>%
     mutate(type = type_model) %>%
     filter(use_data_in_model) %>%
+    distinct %>%
     select(-type_model, -use_data_in_model)
 
 ## ---- envdata-dropfactorlevels
