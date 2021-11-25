@@ -83,18 +83,16 @@ strata <- dataset[[stratumvar]] %>% unique %>% sort
 resp <-
     matrix(data = NA_real_,
                  nrow = nrow(dataset),
-                 ncol = length(strata) * 2,
-                 dimnames = list(NULL, str_c(rep(c("respb_stratum_", "respg_stratum_"),
-                                                   each = length(strata)), 
-                                             strata))) %>%
+                 ncol = length(strata) + 1,
+                 dimnames = list(NULL, c("respb",
+                                         str_c(rep("respg_stratum_",
+                                                   length(strata)), 
+                                               strata)))) %>%
     as_tibble
 resp_b <- resp
 resp_g <- resp
+resp_b[["respb"]] <- as.numeric(dataset[[respvar]] < 0)
 for (stratum in strata) {
-    resp_b[[str_c("respb_stratum_", stratum)]] <-
-        ifelse(dataset[[stratumvar]] == stratum,
-               as.numeric(dataset[[respvar]] < 0),
-               NA_real_)
     resp_g[[str_c("respg_stratum_", stratum)]] <-
         ifelse(dataset[[stratumvar]] == stratum & dataset[[respvar]] < 0,
                dataset[[respvar]] * (-1),
@@ -184,7 +182,7 @@ cont_comp <- list(waic = TRUE, dic = TRUE)
 ```{r gw51t-hg3-{{subdataset_name}}-fitmodel, results="hide", eval=params$fit_simmodels && params$write_simmodels}
 system.time(
     M1 <- inla(modformula,
-               family = rep(c("binomial", "gamma"), each = length(strata)),
+               family = c("binomial", rep("gamma", length(strata))),
                data = moddata,
                lincomb = lincomb_newdata,
                control.compute = cont_comp,
