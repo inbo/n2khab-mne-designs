@@ -283,20 +283,20 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
     theme(strip.text = element_text(hjust = 0))
 ```
 
-Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties), met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele:
+Gemodelleerd lange-termijntijdseffect in het gamma submodel (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties), met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele.
+Opgelet, de respons is op de schaal van de lineaire predictor (log).
 
 ```{r out.width='70%'}
 newdata %>% 
-  arrange(is.na(stratum_)) %>% 
-  select(stratum = .data[[ts_stratumvar]], 
-         hydroyear_std) %>% 
+  arrange(is.na(stratum__g)) %>% 
+  select(stratum = .data[[str_c(ts_stratumvar, "_g")]], 
+         hydroyear_std = hydroyear_std_g) %>% 
   bind_cols(M1$summary.lincomb.derived) %>% 
   ggplot(aes(x = hydroyear_std)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
               alpha = 0.2) +
   geom_line(aes(y = mean), colour = "blue") +
-  ylim(-1.5, 0.5) +
   labs(y = str_c("posterior mean fixed effect of hydroyear_std + ",
                  ts_stratumvar)) + 
   facet_wrap(~stratum)
