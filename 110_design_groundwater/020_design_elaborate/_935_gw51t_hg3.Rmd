@@ -60,6 +60,8 @@ dataset <-
                   stratum_,
                   NA_character_) %>% 
            factor(levels = strata_ts),
+         loc_code_idnum = as.integer(loc_code),
+         cluster_idnum = as.integer(cluster_id),
          intercept = 1)
 # model-specific extra covariates:
 dataset <-
@@ -137,12 +139,15 @@ tempnoise_b <-
               strata_ts,
               "_b, model = 'iid')", collapse = " + ") %>%
             str2lang
+# copy the binomial random effects in the gamma RE, with a scaling factor:
 tempnoise_g <-
         str_c("f(hydroyear_std_stratum_",
               strata_ts,
               "_g, stratum_",
               strata_ts,
-              "_g, model = 'iid')", collapse = " + ") %>%
+              "_g, copy = 'hydroyear_std_stratum_",
+              strata_ts,
+              "_b', fixed = FALSE)", collapse = " + ") %>%
             str2lang
 modformula <-
     substitute(Y ~ -1 + intercept_b + intercept_g +
@@ -152,12 +157,12 @@ modformula <-
                    stratum__b:(hydroyear_std_b + I(hydroyear_std_b^2)) +
                    stratum__g:(hydroyear_std_g + I(hydroyear_std_g^2)) +
                    # remaining short-term temporal variation:
-                   # stratumtempnoise_b +
+                   stratumtempnoise_b +
                    stratumtempnoise_g +
-                   f(loc_code_b, model = "iid") + 
-                   f(loc_code_g, model = "iid") + 
-                   f(cluster_id_b, model = "iid") + 
-                   f(cluster_id_g, model = "iid"),
+                   f(loc_code_idnum_b, model = "iid") + 
+                   f(loc_code_idnum_g, copy = "loc_code_idnum_b", fixed = FALSE) + 
+                   f(cluster_idnum_b, model = "iid") + 
+                   f(cluster_idnum_g, copy = "cluster_idnum_b", fixed = FALSE),
                list(stratumtempnoise_b = tempnoise_b,
                     stratumtempnoise_g = tempnoise_g))
 moddata <-
@@ -166,8 +171,8 @@ moddata <-
                        select(starts_with(c("intercept",
                                             "type",
                                             "soilclass",
-                                            "loc_code",
-                                            "cluster_id",
+                                            "loc_code_idnum",
+                                            "cluster_idnum",
                                             "hydroyear_std",
                                             "stratum_"))
                      )))
@@ -311,6 +316,9 @@ precmargs <- M1$marginals.hyperpar[M1$marginals.hyperpar %>%
 shapemargs <- M1$marginals.hyperpar[M1$marginals.hyperpar %>%
                                        names %>%
                                        str_detect("shape")]
+betamargs <- M1$marginals.hyperpar[M1$marginals.hyperpar %>%
+                                       names %>%
+                                       str_detect("Beta")]
 pacfmargs <- M1$marginals.hyperpar[M1$marginals.hyperpar %>%
                                        names %>%
                                        str_detect("PACF")]
@@ -447,6 +455,34 @@ map_dfr(precmargs,
         theme(strip.text = element_text(hjust = 0))} %>% 
         print
   )
+```
+
+De beta hyperparameters zijn de schaalfactoren waarmee de bovenstaande random intercepten van het binomiaal submodel worden vermenigvuldigd om deze te bekomen van het gamma submodel:
+
+```{r hyperpar-beta-summary-{{subdataset_label}}, warning=FALSE}
+map_dfr(betamargs,
+        function(marg){
+            sink(tempfile())
+            summ <-
+                inla.zmarginal(marg)
+            sink()
+            summ %>%
+                as_tibble()
+        },
+        .id = "beta_hyperparameter") %>%
+    mutate_if(is_numeric, ~ round(., 4)) %>%
+    kable(caption = "Karakteristieken van de posterior distributie van de beta hyperparameters. Voorbeeld: 'mean' is de verwachte waarde van de betreffende hyperparameter.") %>%
+    kable_styling()
+```
+
+```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(betamargs)/3)*6/7}
+map_dfr(betamargs,
+        ~ as_tibble(.),
+        .id = "hyperpar") %>%
+    ggplot(., aes(x = x, y = y)) + geom_line() +
+        labs(x = "beta", y = "density") +
+        facet_wrap(~hyperpar, ncol = 3, scales = "free_y") +
+        theme(strip.text = element_text(hjust = 0))
 ```
 
 ```{r results="asis", warning=FALSE, message=FALSE, eval=params$largemodel_diagn_eval}
