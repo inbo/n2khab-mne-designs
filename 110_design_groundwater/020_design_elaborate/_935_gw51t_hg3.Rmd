@@ -148,13 +148,11 @@ moddata <-
                                             "stratum_"))
                      )))
 # linear combinations to compute posterior of predicted fixed effects:
-lincomb_newdata <- 
+lincomb_newdata_b <- 
   newdata %>% 
-  model.matrix(formula(paste("~ -1 + intercept_b + intercept_g +", 
-                             str_c(ts_stratumvar, c("_b + ", "_g"), 
-                                   collapse = ""), 
-                             "+ stratum__b:(hydroyear_std_b + I(hydroyear_std_b^2))",
-                             "+ stratum__g:(hydroyear_std_g + I(hydroyear_std_g^2))"
+  model.matrix(formula(paste("~ -1 + intercept_b +", 
+                             str_c(ts_stratumvar, "_b"), 
+                             "+ stratum__b:(hydroyear_std_b + I(hydroyear_std_b^2))"
                              )),
                data = .) %>% 
   as_tibble %>% 
@@ -162,15 +160,38 @@ lincomb_newdata <-
   {if (nrow(drop_na(newdata)) == nrow(newdata)) . else {
     c(., 
       newdata %>% 
-        filter(is.na(stratum__g)) %>% 
-        model.matrix(formula(paste("~ -1 + intercept_b + intercept_g +", 
-                                   str_c(ts_stratumvar, c("_b + ", "_g"), 
-                                         collapse = ""))),
+        filter(is.na(stratum__b)) %>% 
+        model.matrix(formula(paste("~ -1 + intercept_b +", 
+                                   str_c(ts_stratumvar, "_b"))), 
                      data = .) %>% 
         as_tibble %>% 
         inla.make.lincombs)
   }}
-names(lincomb_newdata) <- NULL
+names(lincomb_newdata_b) <- NULL
+
+lincomb_newdata_g <- 
+  newdata %>% 
+  model.matrix(formula(paste("~ -1 + intercept_g +", 
+                             str_c(ts_stratumvar, "_g"), 
+                             "+ stratum__g:(hydroyear_std_g + I(hydroyear_std_g^2))"
+                             )),
+               data = .) %>% 
+  as_tibble %>% 
+  select(-2) %>% # the first type is not present in the model,
+                 # but included in intercept_g
+  inla.make.lincombs %>% 
+  {if (nrow(drop_na(newdata)) == nrow(newdata)) . else {
+    c(., 
+      newdata %>% 
+        filter(is.na(stratum__g)) %>% 
+        model.matrix(formula(paste("~ -1 + intercept_g +", 
+                                   str_c(ts_stratumvar, "_g"))), 
+                     data = .) %>% 
+        as_tibble %>% 
+        select(-2) %>% 
+        inla.make.lincombs)
+  }}
+names(lincomb_newdata_g) <- NULL
 ```
 
 
@@ -184,7 +205,7 @@ system.time(
     M1 <- inla(modformula,
                family = c("binomial", rep("gamma", length(strata))),
                data = moddata,
-               lincomb = lincomb_newdata,
+               lincomb = c(lincomb_newdata_b, lincomb_newdata_g),
                control.compute = cont_comp,
                control.inla = list(force.diagonal = TRUE,
                                    int.strategy = "eb"),
@@ -283,26 +304,46 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
     theme(strip.text = element_text(hjust = 0))
 ```
 
-Gemodelleerd lange-termijntijdseffect in het gamma submodel (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties), met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele.
-Opgelet, de respons is op de schaal van de lineaire predictor (log).
+Gemodelleerd lange-termijntijdseffect in het binomiaal resp. het gamma submodel, met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele.
+Beide zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties.
+Opgelet, de respons is op de schaal van de lineaire predictor.
+
+```{r out.width='70%'}
+newdata %>% 
+  arrange(is.na(stratum__b)) %>% 
+  select(stratum = .data[[str_c(ts_stratumvar, "_b")]], 
+         hydroyear_std = hydroyear_std_b) %>% 
+  bind_cols(M1$summary.lincomb.derived %>% slice_head(n = nrow(newdata))) %>% 
+  ggplot(aes(x = hydroyear_std)) +
+  geom_ribbon(aes(ymin = `0.025quant`,
+                  ymax = `0.975quant`),
+              alpha = 0.2) +
+  geom_line(aes(y = mean), colour = "blue") +
+  labs(y = str_c("posterior mean fixed effect of\nhydroyear_std + ",
+                 ts_stratumvar,
+                 " (binomial submodel)")) + 
+  facet_wrap(~stratum)
+```
+
 
 ```{r out.width='70%'}
 newdata %>% 
   arrange(is.na(stratum__g)) %>% 
   select(stratum = .data[[str_c(ts_stratumvar, "_g")]], 
          hydroyear_std = hydroyear_std_g) %>% 
-  bind_cols(M1$summary.lincomb.derived) %>% 
+  bind_cols(M1$summary.lincomb.derived %>% slice_tail(n = nrow(newdata))) %>% 
   ggplot(aes(x = hydroyear_std)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
               alpha = 0.2) +
   geom_line(aes(y = mean), colour = "blue") +
-  labs(y = str_c("posterior mean fixed effect of hydroyear_std + ",
-                 ts_stratumvar)) + 
+  labs(y = str_c("posterior mean fixed effect of\nhydroyear_std + ",
+                 ts_stratumvar,
+                 " (gamma submodel)")) + 
   facet_wrap(~stratum)
 ```
 
-Resterend korte-termijntijdseffect:
+Resterend korte-termijntijdseffect (respons op de schaal van de lineaire predictor):
 
 ```{r out.width='70%'}
 M1$summary.random[str_detect(names(M1$summary.random), 
