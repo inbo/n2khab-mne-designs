@@ -61,6 +61,14 @@ dataset <-
                   NA_character_) %>% 
            factor(levels = strata_ts),
          intercept = 1)
+# model-specific extra covariates:
+dataset <-
+  bind_cols(dataset,
+    map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts)), 
+             ~as.integer(dataset[[ts_stratumvar]] == .)),
+    map_dfc(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)), 
+             ~dataset$hydroyear_std)
+  )
 # Beside that, stratum_ is used to predict 
 # values for polynomial trends:
 newdata <- 
@@ -122,20 +130,36 @@ covariates <- bind_rows(covariates_b, covariates_g)
 #### Model
 
 ```{r eval=params$fit_simmodels}
+tempnoise_b <-
+        str_c("f(hydroyear_std_stratum_",
+              strata_ts,
+              "_b, stratum_",
+              strata_ts,
+              "_b, model = 'iid')", collapse = " + ") %>%
+            str2lang
+tempnoise_g <-
+        str_c("f(hydroyear_std_stratum_",
+              strata_ts,
+              "_g, stratum_",
+              strata_ts,
+              "_g, model = 'iid')", collapse = " + ") %>%
+            str2lang
 modformula <-
-    Y ~ -1 + intercept_b + intercept_g +
-        type_b + soilclass_b +
-        type_g + soilclass_g +
-        # polynomial trend per stratum:
-        stratum__b:(hydroyear_std_b + I(hydroyear_std_b^2)) +
-        stratum__g:(hydroyear_std_g + I(hydroyear_std_g^2)) +
-        # remaining short-term temporal variation:
-        f(hydroyear_std_b, model = "iid") +
-        f(hydroyear_std_g, model = "iid") +
-        f(loc_code_b, model = "iid") + 
-        f(loc_code_g, model = "iid") + 
-        f(cluster_id_b, model = "iid") + 
-        f(cluster_id_g, model = "iid")
+    substitute(Y ~ -1 + intercept_b + intercept_g +
+                   type_b + soilclass_b +
+                   type_g + soilclass_g +
+                   # polynomial trend per stratum:
+                   stratum__b:(hydroyear_std_b + I(hydroyear_std_b^2)) +
+                   stratum__g:(hydroyear_std_g + I(hydroyear_std_g^2)) +
+                   # remaining short-term temporal variation:
+                   # stratumtempnoise_b +
+                   stratumtempnoise_g +
+                   f(loc_code_b, model = "iid") + 
+                   f(loc_code_g, model = "iid") + 
+                   f(cluster_id_b, model = "iid") + 
+                   f(cluster_id_g, model = "iid"),
+               list(stratumtempnoise_b = tempnoise_b,
+                    stratumtempnoise_g = tempnoise_g))
 moddata <-
     splice(Y = resp,
            as.list(covariates %>% 
