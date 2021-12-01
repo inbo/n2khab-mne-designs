@@ -5,17 +5,17 @@ shapes <-
     M1$summary.hyperpar %>% 
     .[str_detect(rownames(M1$summary.hyperpar), "shape"), ] %>% 
     select(shape_g = mean) %>% 
-    rownames_to_column("stratum") %>% 
+    rownames_to_column(stratumvar) %>% 
     as_tibble %>% 
-    mutate(stratum = 
-               str_match(stratum, "^Stratum\\s(.+):")[, 2] %>% 
-               factor(levels = levels(dataset$type)))
+    mutate({{stratumvar}} := 
+               str_match(.data[[stratumvar]], "^Stratum\\s(.+):")[, 2] %>% 
+               factor(levels = levels(dataset[[stratumvar]])))
 M1_diagn <-
     dataset %>%
     mutate(fitted_b = M1$summary.fitted.values$mean[1:nrow(resp_b)],
            obs_b = as.numeric(.data[[respvar]] < 0),
            fitted_g = M1$summary.fitted.values$mean[nrow(resp_b) + 1:nrow(resp_g)]) %>% 
-    inner_join(shapes, by = c("type" = "stratum")) %>% 
+    inner_join(shapes, by = stratumvar) %>% 
     mutate(fitted_g_na = ifelse(.data[[respvar]] == 0,
                                 NA_real_,
                                 fitted_g), # for gamma diagnosis

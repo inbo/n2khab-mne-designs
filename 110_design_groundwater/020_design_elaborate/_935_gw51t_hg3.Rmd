@@ -185,6 +185,9 @@ lincomb_newdata_b <-
                              )),
                data = .) %>% 
   as_tibble %>% 
+      # the first non-type stratumvariable is not present in the model,
+      # but included in intercept_b:
+  {if (ts_stratumvar != "type") select(., -2) else .} %>% 
   inla.make.lincombs %>% 
   {if (nrow(drop_na(newdata)) == nrow(newdata)) . else {
     c(., 
@@ -194,6 +197,7 @@ lincomb_newdata_b <-
                                    str_c(ts_stratumvar, "_b"))), 
                      data = .) %>% 
         as_tibble %>% 
+        {if (ts_stratumvar != "type") select(., -2) else .} %>% 
         inla.make.lincombs)
   }}
 names(lincomb_newdata_b) <- NULL
@@ -206,7 +210,7 @@ lincomb_newdata_g <-
                              )),
                data = .) %>% 
   as_tibble %>% 
-  select(-2) %>% # the first type is not present in the model,
+  select(-2) %>% # the first stratumvariable is not present in the model,
                  # but included in intercept_g
   inla.make.lincombs %>% 
   {if (nrow(drop_na(newdata)) == nrow(newdata)) . else {
