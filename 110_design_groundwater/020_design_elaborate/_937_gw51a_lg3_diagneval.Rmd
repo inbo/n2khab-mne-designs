@@ -10,9 +10,7 @@ M1_diagn <-
     mutate(fitted = M1$summary.fitted.values$mean,
            resid = fitted - .data[[respvar]],
            sd_res = sd_res_glob[.data[[stratumvar]]],
-           resid_std = resid / sd_res,
-           cpo = M1$cpo$cpo,
-           cpo_failed = M1$cpo$failure >= 0.2
+           resid_std = resid / sd_res
     )
 ```
 
@@ -192,104 +190,5 @@ cat("RMSE:", M1_diagn$resid^2 %>% mean %>% sqrt %>% round(3))
 ```
 
 (Noot: RMSE penaliseert de modelcomplexiteit niet; DIC en WAIC geven daarom overall een beter beeld voor robuuste modelselectie)
-
-#### CPO
-
-De CPO van een observatie is de kansdichtheidswaarde van de observatie volgens een leave-one-out model.
-
-Voor waarnemingen met een onbetrouwbare CPO-berekening kunnen we de fit niet evalueren:
-
-```{r out.width='70%'}
-M1_diagn %>%
-    filter(cpo_failed) %>%
-    ggplot(aes(x = .data[[respvar]], y = fitted, fill = type)) +
-    geom_abline(colour = "grey70") +
-    geom_point(shape = 21) +
-    coord_equal()
-```
-
-De verdeling van de fit van observaties op basis van de CPO:
-
-```{r message=FALSE, out.width='70%'}
-M1_diagn %>%
-    filter(!cpo_failed) %>%
-    ggplot(aes(x = cpo)) +
-    geom_histogram(fill = "white", colour = "grey70", boundary = 0)
-```
-
-Hier zien we een brede verdeling, waarbij een meerderheid van de waarden niet zeer klein is.
-
-
-#### Simulaties
-
-```{r}
-set.seed(123456)
-nsim <- 1000
-# the below code is preferred over 'n=1000' because otherwise
-# the sampled hyperparameter values remain constant among posterior samples
-simdata <- map(1:nsim, ~(inla.posterior.sample(n = 1, result = M1))[[1]])
-```
-
-```{r}
-set.seed(123456)
-nrobs <- nrow(dataset)
-nrstrata <- length(strata)
-evaluation <-
-    map(simdata, ~.$latent[1:nrobs]) %>%
-    do.call(cbind, .) %>%
-    as_tibble(.name_repair = "minimal") %>%
-    magrittr::set_colnames(str_c("sample_", 1:nsim)) %>%
-    mutate(obs = 1:nrobs) %>%
-    # adding stratumvariable, type and observed responses to the sampled latent values:
-    bind_cols(select(dataset, .data[[stratumvar]], type, .data[[respvar]])) %>%
-    relocate(obs, .data[[stratumvar]], type, .data[[respvar]]) %>%
-    pivot_longer(cols = c(-.data[[stratumvar]], -type, -obs, -.data[[respvar]]),
-                 names_to = "sample",
-                 values_to = "latent_sim") %>%
-    # joining the sampled values of latent with the sampled residual precision (stratum-specific):
-    left_join(map(simdata, ~.$hyper[1:nrstrata]) %>%
-                  do.call(cbind, .) %>%
-                  as_tibble(.name_repair = "minimal") %>%
-                  magrittr::set_colnames(str_c("sample_", 1:nsim)) %>%
-                  mutate(!!stratumvar := strata) %>%
-                  relocate(.data[[stratumvar]]) %>%
-                  pivot_longer(cols = -.data[[stratumvar]],
-                               names_to = "sample",
-                               values_to = "precision_sim") %>%
-                  mutate(sd_sim = 1 / sqrt(precision_sim), .keep = "unused"),
-              by = c(stratumvar, "sample")) %>%
-    # simulating response values (nsim per observation) by sampling from a normal distribution (which is different for each row); actually it's unneeded here as we will use the p-values and corresponding quantile that we determine for each normal distribution:
-    mutate(response_sim = rnorm(mean = latent_sim, sd = sd_sim, n = nsim * nrobs),
-           pval = pnorm(q = .data[[respvar]], mean = latent_sim, sd = sd_sim),
-           z = qnorm(pval)) %>%
-    group_by(obs, type) %>%
-    summarise(pval_avg = mean(pval),
-              z_avg = mean(z),
-              .groups = "drop")
-```
-
-Voor elke observatie is, op basis van zijn covariaatwaarden en op basis van 1000 gesimuleerde waarden voor de fixed en random parameters (incl. random walks) op basis van hun posterior distributies, een gemiddelde waarde bepaald van de standaard normale kwantielfunctie.
-Met andere woorden: `z_avg` geeft aan met welke z-waarde de observatie gemiddeld overeenstemt, gegeven de 1000 gesimuleerde responsen (voor dezelfde covariaatwaarden als de observatie) met telkens een gesimuleerde foutdistributie.
-
-De onderstaande figuren vergelijken de geobserveerde verdeling van `z_avg` (histogram voor alle observaties) met de verwachte verdeling volgens de standaard normale verdeling (volle lijn).
-
-```{r out.width='70%'}
-z_distr <- tibble(quant = seq(-5, 5, 0.05)) %>% mutate(dens = dnorm(quant))
-ggplot(evaluation, aes(x = z_avg)) +
-    geom_histogram(aes(y = stat(density)),
-                   fill = "skyblue3", boundary = 0, binwidth = 0.1) +
-    geom_line(data = z_distr, aes(x = quant, y = dens), alpha = 0.4)
-```
-
-```{r}
-ggplot(evaluation, aes(x = z_avg)) +
-    geom_histogram(aes(y = stat(density)),
-                   fill = "skyblue3", boundary = 0, binwidth = 0.1) +
-    geom_line(data = z_distr, aes(x = quant, y = dens), alpha = 0.4) +
-    facet_wrap(~type, scales = "free_y")
-```
-
-Het blijkt dat het model de geobserveerde waarden goed ondersteunt: vaker dan verwacht volgens de normale foutverdeling, liggen de geobserveerde waarden nabij de gesimuleerde waarde.
-
 
 
