@@ -123,7 +123,11 @@ polynom <-
   "stratum_:(hydroyear_std + I(hydroyear_std^2))" %>% 
   str2lang
 tempnoise <- 
-    "f(hydroyear_std, model = 'iid')" %>% 
+    str_c("f(hydroyear_std_stratum_",
+          strata_ts,
+          ", stratum_", 
+          strata_ts,
+          ", model = 'iid')", collapse = " + ") %>% 
     str2lang
 clus_sub <- 
   str_c("f(cluster_stratum_",
@@ -188,7 +192,8 @@ M1 <- inla(modformula,
              data = moddata,
              lincomb = lincomb_newdata,
              control.compute = cont_comp,
-             control.inla = list(force.diagonal = TRUE))
+             control.inla = list(force.diagonal = TRUE,
+                                 int.strategy = "eb"))
 )
 hypernames <- rownames(M1$summary.hyperpar)
 rownames(M1$summary.hyperpar)[str_detect(hypernames, "Gaussian")] <- 
@@ -357,15 +362,18 @@ trends_rel %>%
 Resterend korte-termijntijdseffect:
 
 ```{r out.width='70%'}
-M1$summary.random[["hydroyear_std"]] %>% 
-  select(ID, mean, matches("025|975")) %>% 
+M1$summary.random[str_detect(names(M1$summary.random), 
+                              "hydroyear_std_stratum_")] %>% 
+  map_dfr(~select(., ID, mean, matches("025|975")),
+          .id = "stratum") %>% 
   ggplot(aes(x = ID)) +
   geom_ribbon(aes(ymin = `0.025quant`,
                   ymax = `0.975quant`),
               alpha = 0.2) +
   geom_line(aes(y = mean), colour = "blue") +
   ylim(-1.5, 0.5) +
-  labs(x = "hydroyear_std", y = "posterior mean effect")
+  labs(x = "hydroyear_std", y = "posterior mean effect") + 
+  facet_wrap(~stratum)
 ```
 
 
