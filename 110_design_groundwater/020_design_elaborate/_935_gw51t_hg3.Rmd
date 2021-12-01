@@ -328,12 +328,16 @@ fittedmargs <- M1$marginals.fitted.values
 
 Posterior density plots voor fixed parameters:
 
-```{r warning=FALSE, fig.width=8, fig.height=4/3*ceiling(length(fixedmargs)/4)}
+```{r warning=FALSE, fig.width=8, fig.height=2/3*ceiling(length(fixedmargs)/4)}
 map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
-    ggplot(aes(x = x, y = y)) + geom_line() +
-    labs(x = "effectsize", y = "density") +
-    facet_wrap(~effect, ncol = 4, scales = "free_y") +
-    theme(strip.text = element_text(hjust = 0))
+    split(str_detect(.$effect, "year")) %>% 
+    walk(~
+         {ggplot(., aes(x = x, y = y)) + geom_line() +
+                 labs(x = "effectsize", y = "density") +
+                 facet_wrap(~effect, ncol = 4, scales = "free_y") +
+                 theme(strip.text = element_text(hjust = 0))} %>% 
+         print
+    )
 ```
 
 Gemodelleerd lange-termijntijdseffect in het binomiaal resp. het gamma submodel, met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele.
@@ -411,7 +415,7 @@ map_dfr(shapemargs,
     kable_styling()
 ```
 
-```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(shapemargs)/3)*6/7}
+```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(shapemargs)/3)*1.5}
 map_dfr(shapemargs,
         ~ as_tibble(.),
         .id = "hyperpar") %>%
@@ -475,7 +479,7 @@ map_dfr(betamargs,
     kable_styling()
 ```
 
-```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(betamargs)/3)*6/7}
+```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(betamargs)/3)*1.5}
 map_dfr(betamargs,
         ~ as_tibble(.),
         .id = "hyperpar") %>%
