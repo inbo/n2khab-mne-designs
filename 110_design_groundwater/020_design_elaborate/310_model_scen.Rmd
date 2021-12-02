@@ -2,9 +2,83 @@
 
 # Modellen voor steekproefsimulaties
 
-## Modelvorm
+In verdere hoofdstukken komen de resultaten van scenario's aan bod waarin het effect is doorgerekend van steekproefgrootte, meetfrequentie en/of herbezoekpatroon, alsook van een hypothetische (lineaire of loglineaire) trend.
+Het doorrekenen van het effect van scenariokeuzes doen we door herhaaldelijk waarden van doelpopulaties en steekproeven na te bootsen (te simuleren).
+Dergelijke gesimuleerde data worden gecreëerd met behulp van een statistisch model dat de waarde van een responsvariabele (primaire milieuvariabele) schat in functie van covariaten zoals type, jaar en bodemklasse.
+Elk model beschrijft één responsvariabele en is daartoe gefit (gecalibreerd) aan één van de analysedatasets die samengesteld werden in Hoofdstuk \@ref(datasets).
 
+De modellen in dit rapport betreffen 'generalized linear mixed models' (GLMMs) die uitgedrukt kunnen worden als 'latent Gaussian Markov random fields' (GMRF) [@zuur_beginners_2017; @zuur_beginners_2018].
+Ze zijn Bayesiaans gefit met behulp van het R-package INLA, dat een groot aantal GRMF-specificaties toelaat [@rue_bayesian_2017; @lindgren_bayesian_2015; @bakka_spatial_2018].
+In Bijlage \@ref(app:models) is meer detail terug te vinden over de specificatie van deze modellen in R, de modelschattingen, enkele diagnostische kenmerken en een evaluatie van de fit.
 
+In dit hoofdstuk gaan we in op de aard (betekenis) van de modellen zelf, die te beschouwen zijn als het 'gereedschap' om data mee te na te bootsen (scenario's).
+We definiëren met name de mathematische modelvorm, omdat deze weergeeft hoe we de variatie in de responsvariabele structureren.
+Daarbij wordt ook ingegaan op enkele gemaakte technische keuzes, in relatie tot de analysedatasets.
+Voorts worden enkele elementen van modelevaluatie samengevat en wordt een kwalitatieve beoordeling gegeven van de bruikbaarheid van het model.
+
+## Gemeenschappelijke bepalingen voor de modellen
+
+### Modelvorm: algemeen
+
+Het model van de respons $Y_i$ voor een (hypothetische) observatie $i$ omvat een lineaire predictor $\eta_i$, een linkfunctie $g$ en een kansdichtheidsfunctie $f$.
+
+$$Y_i \sim f(\mu_i, ...)$$
+$$\eta_i = g(\mu_i) = X_i \cdot \beta + Z_i$$
+
+- De **lineaire predictor** $\eta_i$ is de som van:
+    - een **systematisch deel** $X_i \cdot \beta$, dat de verwachte waarde van de respons weergeeft in de schaal van de lineaire predictor $\eta_i$.
+    Het is een lineaire combinatie van covariaten (verklarende factoren) waarvoor de waarden concreet bekend moeten zijn (en dus vooropgesteld voor gesimuleerde data), bv. `type`, `year` of `soilclass` (de zg. 'fixed effects').
+    De parameters van de fixed effects zijn de coëfficiënten van deze lineaire combinatie en worden geschat door het model.
+    Ze zijn vervat in de vector (kolommatrix) $\beta$.
+    $X_i$ is de matrix met waarden van de covariaten.
+    - een **random deel** $Z_i$, te zien als een som van één of meer ruistermen waarvoor de verwachte waarde nul is (gemiddelde waarde van een oneindige populatie).
+    Het vertegenwoordigt variabele effecten ('random effects') van bv. locatie of tijdstip, waarvan de waarde gemeenschappelijk kan zijn aan meerdere observaties.
+    Elk random effect (ruisterm) wordt beschreven door een zg. _latent model_, dat verondersteld wordt gerespecteerd te zijn bij elke mogelijke observatie, en waarmee dus een nieuwe waarde kan worden gesimuleerd om een nieuwe observatie samen te stellen.
+    De parameters van het latent model worden geschat door R-INLA volgens een op te geven type latent model (bv. Gaussian random effects, Random walk of order 1, ...).
+- De **linkfunctie** $g$ definieert een transformatie tussen de respons en de lineaire predictor.
+Bij een 'identity link' is er geen transformatie.
+Bij een 'log link' schat de lineaire predictor de natuurlijke logaritme van de respons, dus $\eta_i = ln(\mu_i)$ of $\mu_i = e^{\eta_i}$.
+- De **kansdichtheidsfunctie** (distributiefunctie) $f$ van de respons definieert de verdeling van $Y_i$ op basis van de geschatte waarde $\mu_i$, dus op de schaal van de respons.
+Voor veel types van responsvariabelen (maar bv. niet voor binaire responsvariabelen) dicteert deze distributiefunctie in essentie de _resterende_ (residuele) variatie tussen _individuele observaties_ t.o.v. een bepaalde schatting $\mu_i$, i.e. de verdeling van $\epsilon_i$ in $Y_i = \mu_i + \epsilon_i$.
+Afhankelijk van de distributiefamilie (gaussiaans, gamma, ...) is $f$ behalve door $\mu_i$ ook gedefinieerd door een of meer extra parameters ('$...$'), bv. een variantie $\sigma^2$ bij een gaussiaanse = normale distributie.
+
+Soms wordt een respons beschreven door een zg. 'joint model', wat betekent dat de respons samengesteld is uit twee responsen (bv. het product van beide).
+Elk van de deelresponsen kan dan worden gemodelleerd op bovenstaande wijze, maar daarbij kunnen delen van de lineaire predictor gemeenschappelijk worden geschat [@gomez-rubio_bayesian_2021; @krainski_advanced_2021].
+
+### Uitgangspunten
+
+De volgende uitgangspunten zijn aangenomen:
+
+- Elk model houdt rekening met minstens één covariaat die de ruimtelijke positie vertegenwoordigt, impliciet (bv. `loc_code`) of expliciet (geografische coördinaten).
+Dit vertegenwoordigt de variatie die het gevolg is van dataverzameling op verschillende locaties.
+- Elk model houdt rekening met minstens één covariaat die het tijdstip vertegenwoordigt, bv. jaar of datum.
+Dit vertegenwoordigt de variatie die het gevolg is van dataverzameling op verschillende tijdstippen.
+- Elk model maakt bovendien onderscheid tussen een meerjarentrend en korte-termijnvariatie (rond de meerjarentrend).
+Omdat we in de simulaties zelf een meerjarentrend opleggen, is het immers noodzakelijk om de korte-termijnvariatie apart in de simulaties te behouden, en de gefitte meerjarentrend te elimineren (detrending).
+
+### Verdere keuzes
+
+In de meeste (of alle) gevallen wordt er naar gestreefd om deels typespecifiek te werken bij de specificatie van het systematisch en/of random deel van de lineaire predictor.
+Op die manier is het bv. mogelijk om in steekproefscenario's rekening te houden met verschillende variatiestructuur tussen types, bij het kiezen van steekproefgrootte in ruimte of tijd.
+Typespecifiek werken is mogelijk door het opnemen van de covariaat `type` in het model, of van een covariaat waarvoor de verdeling per type gekend is (bv. `soilclass`).
+In het random deel en in de kansdichtheidsfunctie van de respons is dit mogelijk door een interactie te voorzien met voornoemde covariaat, d.w.z. dat bv. de korte-termijnvariatie (een ruisterm in de lineaire predictor) beschreven wordt door een aparte kansdichtheidsfunctie op maat van elk type.
+Dit is natuurlijk enkel mogelijk voor types met voldoende data.
+
+Omwille van specifieke kenmerken van de analysedataset werden enkele aanpassingen gedaan aan de analysedataset alvorens een model te fitten:
+
+- Omdat hoge waarden van een covariaat de modelschattingen kunnen bemoeilijken, is ervoor gekozen om het jaar (variabele `hydroyear` of `year`) te standaardiseren door het verschil te nemen met 1989.
+De resulterende variabelen zijn `hydroyear_std` en `year_std`, met waarden van 0 tot 29.
+- Omdat niet van elk type voldoende data van een milieuvariabele beschikbaar zijn voor typespecifieke modellering, is ervoor gekozen om bepaalde types waarvoor maar beperkte hoeveelheden data beschikbaar zijn, te lumpen met voor de milieuvariabele min of meer verwante types (expertoordeel) zodat elk type vertegenwoordigd kan zijn door een typecluster.
+Deze benadering is ook gevolgd voor types zonder gegevens over een milieuvariabele.
+In de modellen wordt nog steeds gesproken van de variabele `type`, maar de waarde krijgt een suffix `_clus` indien het om meerdere types gaat.
+Bv. het modeltype '9160_clus' is in de data vooral vertegenwoordigd door 9160 maar omvat ook XXX.
+
+Omdat we veelal gebruik maken van de default priors van R-INLA, passen we steeds 'model scaling' toe om de zg. hyperparameters van de latente modellen intern te herschalen  [@gomez-rubio_bayesian_2021].
+Dit maakt dat de default hyperpriors doorgaans meer toepasbaar zullen zijn.
+
+<!-- tabel toevoegen met typeclusters -->
+
+## Mathematische vorm van elk model
 
 ## Evaluatie van de simulatiemodellen
 
