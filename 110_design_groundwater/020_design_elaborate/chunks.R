@@ -26,15 +26,27 @@ gw51a <-
 
 ## ---- envdata-use-typeclusters-as-types-and-be-selective
 
-gw51t <-
+gw51t_temp <-
     gw51t %>%
     inner_join(read_vc("typeclusters_gw51t",
                        root = "data/10_input"),
-               by = "type") %>%
+               by = "type")
+if (sum(is.na(gw51t_temp$use_data_in_model)) > 0) {
+    stop("gw51t provides data of types for which it's unclear whether ",
+         "the data have to be used or not. ",
+         "Make this clear in the typeclusters_gw51t table please ",
+         "(use_data_in_model).\n",
+         "It's about following type(s) and number of observations: \n",
+         gw51t_temp %>% filter(is.na(use_data_in_model)) %>% count(type) %>%
+             as.matrix %>% paste(collapse = " "))
+}
+gw51t <-
+    gw51t_temp %>%
     mutate(type = type_model) %>%
     filter(use_data_in_model) %>%
     distinct %>%
     select(-type_model, -use_data_in_model)
+rm(gw51t_temp)
 
 ## ---- envdata-dropfactorlevels
 
