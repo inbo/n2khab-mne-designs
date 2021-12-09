@@ -165,6 +165,19 @@ extract_observed <- function(y) {
     apply(y, 1, function(x) x[!is.na(x)])
 }
 
+#' Give the error 'model objects are missing'
+error_missing_modelobjects <- function() {
+    stop("Please rerun this report the first time setting appropriate ",
+         "loadmodels_* parameters as FALSE, and with fit_simmodels and ",
+         "write_simmodels as TRUE. ",
+         "The model objects are created in the appendices.\n",
+         "Probably you will also want to set simulate_obs and ",
+         "write_scenariofiles as TRUE for similar reasons (next chapter).\n",
+         "Be prepared for a long period (potentially hours) of fitting ",
+         "and simulating. After that, the objects are created, and you can ",
+         "recompile the report with default parameter settings.")
+}
+
 
 ################################################################################
 
