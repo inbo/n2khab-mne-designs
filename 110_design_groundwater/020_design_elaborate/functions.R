@@ -136,7 +136,6 @@ enclose <- function(x, y) paste0(y, x, y)
 
 invsqrt <- function(x) 1 / sqrt(x)
 
-
 ################################################################################
 
 # Functions to aid model diagnosis & evaluation
@@ -157,6 +156,15 @@ plot_vg <- function(vg) {
         theme(legend.position = "bottom",
               legend.key.width = unit(0.08, "npc"))
 }
+
+
+#' Return observed values of a multiresponse model from R-INLA
+#'
+#' @param y The response element of the data element stored in the inla object's .args element
+extract_observed <- function(y) {
+    apply(y, 1, function(x) x[!is.na(x)])
+}
+
 
 ################################################################################
 

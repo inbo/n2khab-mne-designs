@@ -132,3 +132,121 @@ file.path(datapath,
         }
     })
 ```
+
+Voor meer uitgebreide uitkomsten, zie Bijlage \@ref(app:models).
+
+### GW_05.1_terr: lg3_lcl
+
+Op basis van de spreiding vann de responsvariabele en het beperkte aantal nullen is gekozen voor gaussiaanse modellen.
+Dit wil zeggen dat de responsvariabele een normale verdeling volgt waarbij de ligging (het gemiddelde) afhangt van de waarde van covariaten.
+
+Omwille van de grote dataset is één afzonderlijk model gefit _per typegroep_ (cf. Tabel \@ref(tab:typegroups)).
+
+Modelvorm:
+
+$$Y_i \sim \mathcal{N}(\mu_i, \sigma^2_{q_i})$$
+$$\mu_i = \beta_0 + c_i + s_i + \beta_{t,q_i} \cdot t_i + \beta_{t^2,q_i} \cdot t^2_i + u_i + v_i + w_i$$
+$$u_i \sim \mathcal{N}(0,\sigma^2_{u,q_i})$$
+$$v_i \sim \mathcal{N}(0,\sigma^2_v)$$
+$$w_i \sim \mathcal{N}(0,\sigma^2_w)$$
+
+Met:
+
+::: {.largefonttable}
+
+|
+:-|:---------------
+$i$ | _index_ die een unieke (hypothetische) observatie identificeert
+$\beta_0$ | intercept
+$c_i$ | fixed effect van `type` (typecluster)
+$s_i$ | fixed effect van `soilclass`
+$q_i$ | _index_ die het stratum aanduidt waartoe de observatie behoort. Afhankelijk van het model is de stratumvariabele `type` of `soilclass`. Het gebruik van deze index geeft aan dat de parameter afhangt van $q_i$.
+$t_i$ | `hydroyear_std`, de variabele in de tweedegraadspolynoom (lange-termijntrend; fixed effect)
+$\beta_{t,q_i}$, $\beta_{t^2,q_i}$ | parameters van de tweedegraadspolynoom
+$u_i$ | random effect van `hydroyear_std` (korte-termijnvariatie)
+$v_i$ | random effect van `loc_code` (locatie)
+$w_i$ | random effect van `cluster_id` (locatiecluster)
+
+:::
+
+De gefitte modellen zijn:
+
+```{r results="asis"}
+gw51t_modelnames %>% 
+    str_subset("lg3") %>% 
+    str_c("- `", ., "`") %>% 
+    cat(sep = "\n")
+```
+
+
+De figuren geven een idee van de modelfit.
+
+```{r results="asis"}
+gw51t_modelnames %>% 
+    str_subset("lg3") %>% 
+    walk(function(mn) {
+        M1 <- eval(as.name(mn))
+        M1_diagn <- 
+            tibble(observed = extract_observed(M1$.args$data$Y),
+                   fitted = M1$summary.fitted.values$mean) %>% 
+            mutate(resid = fitted - observed)
+        p <- 
+            M1_diagn %>%
+            ggplot(aes(x = observed, y = fitted)) +
+            geom_point(size = 0.3) +
+            geom_abline(colour = "red") +
+            coord_equal() +
+            labs(subtitle = paste("RMSE:", 
+                                  M1_diagn$resid^2 %>% 
+                                      mean %>% 
+                                      sqrt %>% 
+                                      round(3))) +
+            theme(plot.subtitle = element_text(hjust = 1))
+        if (interactive()) print(p) else {
+            modelname_hyphen <- str_replace_all(mn, "_|\\.", "-")
+            knit_expand(text = c(paste("```{r modelfit-{{modelname_hyphen}},",
+                                       "fig.cap = 'Globale fit en RMSE",
+                                       "voor model `{{mn}}`.',",
+                                       "out.width='70%',",
+                                       "warning=FALSE}"), 
+                                 "print(p)",
+                                 "```")) %>% 
+                {knit_child(text = ., 
+                            quiet = TRUE,
+                            envir =  environment())} %>% 
+                cat(sep = '\n')
+        }
+    })
+```
+
+We kunnen besluiten dat deze modellen de variatie in de milieuvariabele redelijkerwijze beschrijven voor wat de analysedataset betreft.
+We sommen de voornaamste mogelijke zwaktes op om met deze modellen doelpopulaties te simuleren:
+
+- onevenwichtige spatiale en temporele dekking in de analysedata, op typeniveau tevens te zien in de vertegenwoordiging van bodemklassen en ecoregio's in vergelijking met de doelpopulatie;
+- de aannames om bepaalde types bij elkaar te mogen lumpen.
+
+### GW_05.1_terr: hg3_lcl
+
+
+
+### GW_05.1_aq: lg3_std
+
+
+
+### GW_05.1_aq: hg3_std
+
+
+
+### GW_03.3: no3
+
+
+
+### GW_03.3: nh4
+
+
+
+### GW_03.3: po4
+
+
+
+
