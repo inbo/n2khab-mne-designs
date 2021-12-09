@@ -2,6 +2,52 @@
 
 # Modellen voor steekproefsimulaties
 
+<!-- Onderstaande chunks vereisen dat verder gebruikte modelobjectfiles (rds) reeds op schijf beschikbaar zijn. -->
+<!-- Om tijd te besparen in partial runs, zet de overeenkomstige 'load' parameters op FALSE in bookdown::render_book(). -->
+
+```{r eval=params$loadmodels_GW_05.1_terr, include=FALSE}
+# GW_05.1_terr
+subdataset_name <- 
+    read_scheme_types(lang = "nl") %>% 
+    filter(scheme == "GW_05.1_terr") %>% 
+    distinct(typegroup) %>% 
+    mutate(subdataset_name = droplevels(typegroup)) %>% 
+    arrange(subdataset_name) %>% 
+    pull(subdataset_name)
+respvar <- c("lg3_lcl", "hg3_lcl")
+gw51t_modelnames <- 
+    str_c("model_gw51t_", 
+          crossing(respvar, subdataset_name) %>% 
+              unite("submodel") %>% 
+              pull("submodel"))
+file.path(datapath, 
+          "binary/simmodels",
+          str_c(gw51t_modelnames, 
+                ".rds")) %>% 
+    walk(function(path) {
+        if (file.exists(path)) {
+            modelname <- basename(path) %>% str_remove(".rds")
+            assign(modelname, readRDS(path), envir = .GlobalEnv)
+        }
+    })
+```
+
+```{r eval=params$loadmodels_GW_05.1_aq, include=FALSE}
+# GW_05.1_aq
+respvar <- c("lg3_std", "hg3_std")
+file.path(datapath, 
+          "binary/simmodels",
+          str_c("model_gw51a_", 
+                respvar, 
+                ".rds")) %>% 
+    walk(function(path) {
+        if (file.exists(path)) {
+            modelname <- basename(path) %>% str_remove(".rds")
+            assign(modelname, readRDS(path), envir = .GlobalEnv)
+        }
+    })
+```
+
 In verdere hoofdstukken komen de resultaten van scenario's aan bod, waarbij het effect is doorgerekend van verschillende steekproefgrootte, meetfrequentie en/of herbezoekpatroon, alsook van een hypothetische (lineaire of exponentiële) trend.
 Het doorrekenen van het effect van scenariokeuzes doen we door herhaaldelijk waarden van doelpopulaties en steekproeven na te bootsen (te simuleren).
 Steekproeven worden daarbij uit een gesimuleerde doelpopulatie getrokken in overeenstemming met de kenmerken van een scenario.
@@ -86,52 +132,6 @@ Dit maakt dat de default hyperpriors doorgaans meer toepasbaar zullen zijn.
 <!-- tabel toevoegen met typeclusters -->
 
 ## Mathematische vorm van elk model en modelevaluatie
-
-<!-- Onderstaande chunks vereisen dat verder gebruikte modelobjectfiles (rds) reeds op schijf beschikbaar zijn. -->
-<!-- Om tijd te besparen in partial runs, zet de overeenkomstige 'load' parameters op FALSE in bookdown::render_book(). -->
-
-```{r eval=params$loadmodels_GW_05.1_terr, include=FALSE}
-# GW_05.1_terr
-subdataset_name <- 
-    read_scheme_types(lang = "nl") %>% 
-    filter(scheme == "GW_05.1_terr") %>% 
-    distinct(typegroup) %>% 
-    mutate(subdataset_name = droplevels(typegroup)) %>% 
-    arrange(subdataset_name) %>% 
-    pull(subdataset_name)
-respvar <- c("lg3_lcl", "hg3_lcl")
-gw51t_modelnames <- 
-    str_c("model_gw51t_", 
-          crossing(respvar, subdataset_name) %>% 
-              unite("submodel") %>% 
-              pull("submodel"))
-file.path(datapath, 
-          "binary/simmodels",
-          str_c(gw51t_modelnames, 
-                ".rds")) %>% 
-    walk(function(path) {
-        if (file.exists(path)) {
-            modelname <- basename(path) %>% str_remove(".rds")
-            assign(modelname, readRDS(path), envir = .GlobalEnv)
-        }
-    })
-```
-
-```{r eval=params$loadmodels_GW_05.1_aq, include=FALSE}
-# GW_05.1_aq
-respvar <- c("lg3_std", "hg3_std")
-file.path(datapath, 
-          "binary/simmodels",
-          str_c("model_gw51a_", 
-                respvar, 
-                ".rds")) %>% 
-    walk(function(path) {
-        if (file.exists(path)) {
-            modelname <- basename(path) %>% str_remove(".rds")
-            assign(modelname, readRDS(path), envir = .GlobalEnv)
-        }
-    })
-```
 
 Voor meer uitgebreide uitkomsten, zie Bijlage \@ref(app:models).
 
