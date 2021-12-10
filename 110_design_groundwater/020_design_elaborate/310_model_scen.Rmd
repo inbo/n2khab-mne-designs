@@ -180,7 +180,7 @@ gw51t_modelnames %>%
 ```
 
 
-De figuren geven een idee van de modelfit.
+De figuren geven een idee van de fit en de robuustheid van het model.
 
 ```{r eval=params$loadmodels_GW_05.1_terr, results="asis"}
 gw51t_modelnames %>% 
@@ -197,11 +197,14 @@ gw51t_modelnames %>%
             geom_point(size = 0.3) +
             geom_abline(colour = "red") +
             coord_equal() +
-            labs(subtitle = paste("RMSE:", 
-                                  M1_diagn$resid^2 %>% 
-                                      mean %>% 
-                                      sqrt %>% 
-                                      round(3))) +
+            labs(subtitle = paste0("RMSE: ", 
+                                   M1_diagn$resid^2 %>% 
+                                       mean %>% 
+                                       sqrt %>% 
+                                       round(3),
+                                   "\nNr of equivalent replicates: ",
+                                   summary(M1)$neffp["Number of equivalent replicates", ]
+            )) +
             theme(plot.subtitle = element_text(hjust = 1))
         if (interactive()) print(p) else {
             modelname_hyphen <- str_replace_all(mn, "_|\\.", "-")
@@ -220,8 +223,12 @@ gw51t_modelnames %>%
     })
 ```
 
-We kunnen besluiten dat deze modellen de variatie in de milieuvariabele redelijkerwijze beschrijven voor wat de analysedataset betreft.
-We sommen de voornaamste mogelijke zwaktes op om met deze modellen doelpopulaties te simuleren:
+Het aantal 'equivalent replicates' is bij deze modellen aan de lage kant, wat maakt dat de parameterschattingen minder betrouwbaar worden.
+Bij de modelselectie is echter vooral voortgegaan op de informatietheoretische criteria WAIC en DIC, die de balans beschouwen tussen de fit (beter bij meer parameters en dus minder 'equivalent replicates') en de spaarzaamheid (beter bij minder parameters).
+Ondanks het lagere aantal 'equivalent replicates' wezen deze criteria dus uit dat deze modellen beter zijn dan modellen met minder parameters.
+
+Op basis van de resultaten kunnen we besluiten dat deze modellen de variatie van de milieuvariabele in de analysedataset redelijkerwijze generaliseren.
+We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpopulaties te simuleren:
 
 - onevenwichtige spatiale en temporele dekking in de analysedata, op typeniveau tevens te zien in de vertegenwoordiging van bodemklassen en ecoregio's in vergelijking met de doelpopulatie;
 - de aannames om bepaalde types bij elkaar te mogen lumpen.
