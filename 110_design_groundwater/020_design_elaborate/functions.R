@@ -162,7 +162,8 @@ plot_vg <- function(vg) {
 #'
 #' @param y The response element of the data element stored in the inla object's .args element
 extract_observed <- function(y) {
-    apply(y, 1, function(x) x[!is.na(x)])
+    apply(y, 1, function(x) x[!is.na(x)]) %>%
+        as.numeric
 }
 
 #' Give the error 'model objects are missing'

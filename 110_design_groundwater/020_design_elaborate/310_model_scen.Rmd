@@ -246,7 +246,117 @@ We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpo
 
 ### GW_05.1_terr: hg3_lcl
 
+Op basis van het grote aantal nullen en de scheve spreiding van de responsvariabele is gekozen voor hurdle gamma modellen, i.e. een _joint_ bernouilli + gamma model.
+Dit wil zeggen dat de responsvariabele wordt ontleed in twee factoren, die met elkaar vermenigvuldigd kunnen worden:
 
+- een binaire respons (0 of 1) waarbij de waarde 1 betekent dat de responsvariabele verschilt van 0 (en vice-versa).
+Deze responsvariabele volgt een bernoulli kansverdeling (een binomiale kansverdeling met parameter $n = 1$);
+- een respons die steeds verschillend is van 0.
+Deze wordt gefit met een gamma kansverdeling volgt waarbij de ligging (het gemiddelde) afhangt van de waarde van covariaten.
+
+Bovendien draaien we het teken om van de steeds negatieve responsvariabele `hg3_lcl`, aangezien de gamma distributie betrekking heeft op (strikt) positieve waarden.
+
+Merk op dat alleen het gamma submodel toelaat om de grootte van de residuele ruis apart te specifiëren (schatten), dit met behulp van de vormparameter ('shape').
+In een bernouilli distributie volgt de spreiding volledig uit de waarde van de kansparameter.
+
+Omwille van de grote dataset is één joint model gefit _per typegroep_ (cf. Tabel \@ref(tab:typegroups)).
+
+Modelvorm:
+
+$$-Y_i = Y_{b,i} \cdot Y_{g,i}$$
+$$Y_{b,i} \sim Ber(\pi_i) \quad , \quad Y_{g,i} \sim Gamma(\mu_i, \nu_{q_i})$$
+$$\eta_{b,i} = ln(\frac{\pi_i}{1 - \pi_i}) = \beta_{b,0} + c_{b,i} + s_{b,i} + \beta_{b,t,q_i} \cdot t_i + \beta_{b,t^2,q_i} \cdot t^2_i + u_{b,i} + v_{b,i} + w_{b,i}$$
+$$\eta_{g,i} = ln(\mu_i) = \beta_{g,0} + c_{g,i} + s_{g,i} + \beta_{g,t,q_i} \cdot t_i + \beta_{g,t^2,q_i} \cdot t^2_i + u_{g,i} + v_{g,i} + w_{g,i}$$
+$$u_{b,i} \sim \mathcal{N}(0,\sigma^2_{u_b,q_i}) \quad , \quad u_{g,i} = \beta_{u,q_i} \cdot u_{b,i}$$
+$$v_{b,i} \sim \mathcal{N}(0,\sigma^2_{v_b}) \quad , \quad v_{g,i} = \beta_v \cdot v_{b,i}$$
+$$w_{b,i} \sim \mathcal{N}(0,\sigma^2_{w_b}) \quad , \quad w_{g,i} = \beta_w \cdot w_{b,i}$$
+
+Met:
+
+::: {.largefonttable}
+
+|
+:-|:-------------
+$Ber$ | bernouilli distributiefunctie, gedefinieerd door één parameter $\pi$: de kans op waarde 1
+$Gamma$ | gamma distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en vorm ($\nu$).^[Een alternatieve parametrisatie is mogelijk met de parameters vorm en schaal, waarbij $gemiddelde = schaal \cdot vorm$.] De vormparameter verwijst naar de vorm van de distributiefunctie en is bepalend voor de variantie.
+$i$ | _index_ die een unieke (hypothetische) observatie identificeert
+$Y_{b,i}$, $Y_{g,i}$ | bernouilli (0 of 1) resp. gamma respons
+$\eta_{b,i}$, $\eta_{g,i}$ | lineaire predictor van de bernouilli resp. gamma respons
+$\beta_{b,0}$, $\beta_{g,0}$ | intercept in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$c_{b,i}$, $c_{g,i}$ | fixed effect van `type` (typecluster) in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$s_{b,i}$, $s_{g,i}$ | fixed effect van `soilclass` in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$q_i$ | _index_ die het stratum aanduidt waartoe de observatie behoort. Afhankelijk van het model is de stratumvariabele `type` of `soilclass`. Het gebruik van deze index geeft aan dat de parameter afhangt van $q_i$.
+$t_i$ | `hydroyear_std`, de variabele in de tweedegraadspolynoom (lange-termijntrend; fixed effect)
+$\beta_{b,t,q_i}$, $\beta_{b,t^2,q_i}$, $\beta_{g,t,q_i}$, $\beta_{g,t^2,q_i}$ | parameters van de tweedegraadspolynoom, in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$u_{b,i}$, $u_{g,i}$ | random effect van `hydroyear_std` (korte-termijnvariatie) in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$v_{b,i}$, $v_{g,i}$ | random effect van `loc_code` (locatie) in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$w_{b,i}$, $w_{g,i}$ | random effect van `cluster_id` (locatiecluster) in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$\beta_{u,q_i}$, $\beta_v$, $\beta_w$ | vaste schaalfactor om de random componenten in $\eta_{g,i}$ af te leiden uit deze in $\eta_{b,i}$. Op deze manier brengen we de random effecten van beide deelresponsen in onderling verband (correlatie), desgevallend afhankelijk van het stratum $q_i$
+
+:::
+
+De gefitte modellen zijn:
+
+```{r eval=params$loadmodels_GW_05.1_terr, results="asis"}
+if (!any(str_detect(gw51t_modelnames, "hg3"))) error_missing_modelobjects()
+gw51t_modelnames %>% 
+    str_subset("hg3") %>% 
+    str_c("- `", ., "`") %>% 
+    cat(sep = "\n")
+```
+
+
+De figuren geven een idee van de fit en de robuustheid van het model.
+
+```{r eval=params$loadmodels_GW_05.1_terr, results="asis"}
+gw51t_modelnames %>% 
+    str_subset("hg3") %>% 
+    walk(function(mn) {
+        M1 <- eval(as.name(mn))
+        nr_obs <- nrow(M1$.args$data$Y) / 2
+        M1_diagn <- 
+            tibble(observed = 
+                       extract_observed(M1$.args$data$Y) %>% 
+                       matrix(ncol = 2, dimnames = list(NULL, c("b", "g"))) %>% 
+                       as_tibble %>% 
+                       mutate(obs = ifelse(b == 1, -b * g, 0)) %>% 
+                       pull(obs),
+                   fitted_b = M1$summary.fitted.values$mean[seq_len(nr_obs)],
+                   fitted_g = M1$summary.fitted.values$mean[nr_obs + seq_len(nr_obs)],
+                   fitted = fitted_b * fitted_g * -1,
+                   resid = fitted - observed)
+        plot_modelevaluation(M1, M1_diagn, mn)
+    })
+```
+
+Het aantal 'equivalent replicates' is bij deze modellen ietwat laag, wat maakt dat de parameterschattingen iets minder betrouwbaar worden.
+Het aantal is wel iets hoger dan bij `lg3_lcl`.
+Bij de modelselectie is echter vooral voortgegaan op de informatietheoretische criteria WAIC en DIC, die de balans beschouwen tussen de fit (beter bij meer parameters en dus minder 'equivalent replicates') en de spaarzaamheid (beter bij minder parameters).
+Ondanks het iets lagere aantal 'equivalent replicates' wezen deze criteria dus uit dat deze modellen beter zijn dan modellen met minder parameters.
+
+Bij het inspecteren van de modelresultaten in Bijlage \@ref(app:models), moet ermee rekening worden gehouden dat de gamma respons een tegengesteld teken heeft t.o.v. de `hg3_lcl` responsvariabele.
+Bijgevolg moeten de fixed parameters in de omgekeerde richting worden geïnterpreteerd.
+
+_Algemeen resultaat voor de fixed effects:_
+
+De volgende effecten zien we zowel bij het bernouilli als het gamma submodel:
+
+- veelal wijken bepaalde types en bodemklassen significant af van het gemeenschappelijke intercept voor bernouilli of gamma.
+Welke bodemklasse significant is, hangt af van de typegroep, maar een algemeen patroon is dat lichte bodems een lagere HG3 hebben;
+- in de dataset treedt over de volledige tijdsspanne (30 jaar) geregeld een stijgende lange-termijntrend op.
+
+_Algemeen resultaat voor de random effects:_
+
+- de spatiale ruis is groter dan de temporele ruis, en wordt in het bernouilli submodel grotendeels opgeslorpt door de locatiecluster (`cluster_id`).
+In het gamma submodel hebben locatie (`loc_code`) en locatiecluster vaker een evenwaardige rol;
+- de temporele ruis loopt duidelijk uiteen tussen strata;
+- er zijn duidelijke verschillen tussen strata in de residuele ruis (observatieniveau) in het gamma submodel: de vormparameter ('shape') hangt duidelijk af van het stratum.
+
+Op basis van de resultaten kunnen we **besluiten** dat deze modellen de variatie van de milieuvariabele in de analysedataset redelijkerwijze generaliseren.
+We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpopulaties te simuleren:
+
+- onevenwichtige spatiale en temporele dekking in de analysedata, op typeniveau tevens te zien in de vertegenwoordiging van bodemklassen en ecoregio's in vergelijking met de doelpopulatie;
+- de aannames om bepaalde types bij elkaar te mogen lumpen.
 
 ### GW_05.1_aq: lg3_std
 
