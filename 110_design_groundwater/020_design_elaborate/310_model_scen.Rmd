@@ -121,15 +121,42 @@ Omwille van specifieke kenmerken van de analysedataset werden enkele aanpassinge
 - Omdat hoge waarden van een covariaat de parameterschattingen kunnen bemoeilijken, is ervoor gekozen om het jaar (variabele `hydroyear` of `year`) te standaardiseren door het verschil te nemen met 1989.
 De resulterende variabelen zijn `hydroyear_std` en `year_std`, met waarden van 0 tot 29.
 - Omdat niet van elk type voldoende data van een milieuvariabele beschikbaar zijn voor typespecifieke modellering (paragraaf \@ref(vert-types)), is ervoor gekozen om bepaalde types (met beperkte data) te lumpen met voor de milieuvariabele min of meer verwante types (expertoordeel).
+De gebruikte typeclusters zijn weergegeven in Tabel \@ref(tab:typeclusters).
 Elk type wordt dus nog steeds vertegenwoordigd, maar dit kan gebeuren via een typecluster.
 Deze benadering is ook gevolgd voor types zonder gegevens over een milieuvariabele.
-In de modellen wordt nog steeds gesproken van de variabele `type`, maar de waarde krijgt een suffix `_clus` indien het om meerdere types gaat.
+In de modellen wordt nog steeds gesproken van de variabele `type`, maar de waarde krijgt bv. een suffix `_clus` indien het om meerdere types gaat.
 Bv. het modeltype '9160_clus' is in de data meest vertegenwoordigd door 9160 maar omvat ook 9130_end, 91F0 en 1310_zv.
 
 Omdat we veelal gebruik maken van de default priors van R-INLA, passen we steeds 'model scaling' toe om de zg. hyperparameters van de latente modellen intern te herschalen  [@gomez-rubio_bayesian_2021].
 Dit maakt dat de default hyperpriors doorgaans meer toepasbaar zullen zijn.
 
-<!-- tabel toevoegen met typeclusters -->
+```{r typeclusters}
+read_vc("typeclusters_gw51t",
+        root = "data/10_input") %>% 
+    as_tibble %>% 
+    filter(str_detect(type_model, "_clus$")) %>% 
+    mutate(scheme = "GW_05.1_terr") %>% 
+    select(scheme,
+           typecluster = type_model,
+           type) %>% 
+    bind_rows(
+        read_vc("typeclusters_gw51a",
+                root = "data/10_input") %>% 
+            as_tibble %>% 
+            group_by(type_model) %>% 
+            mutate(scheme = "GW_05.1_aq",
+                   nr_types = n()) %>% 
+            ungroup %>% 
+            filter(nr_types >1) %>% 
+            select(scheme,
+                   typecluster = type_model,
+                   type)
+    ) %>% 
+    arrange(across()) %>% 
+    kable(caption = "Typeclusters om overeenkomstige types te generaliseren bij modelbouw of simulaties, bij gebrek aan voldoende data.") %>% 
+    kable_styling(full_width = FALSE)
+```
+
 
 ## Mathematische vorm van elk model en modelevaluatie
 
