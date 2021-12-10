@@ -215,39 +215,9 @@ gw51t_modelnames %>%
         M1 <- eval(as.name(mn))
         M1_diagn <- 
             tibble(observed = extract_observed(M1$.args$data$Y),
-                   fitted = M1$summary.fitted.values$mean) %>% 
-            mutate(resid = fitted - observed)
-        p <- 
-            M1_diagn %>%
-            ggplot(aes(x = observed, y = fitted)) +
-            geom_point(size = 0.3) +
-            geom_abline(colour = "red") +
-            coord_equal() +
-            labs(subtitle = paste0("RMSE: ", 
-                                   M1_diagn$resid^2 %>% 
-                                       mean %>% 
-                                       sqrt %>% 
-                                       round(3),
-                                   "\nNr of equivalent replicates: ",
-                                   summary(M1)$neffp["Number of equivalent replicates", ]
-            )) +
-            theme(plot.subtitle = element_text(hjust = 1))
-        if (interactive()) print(p) else {
-            modelname_hyphen <- str_replace_all(mn, "_|\\.", "-")
-            knit_expand(text = c(paste("```{r modelfit-{{modelname_hyphen}},",
-                                       "fig.cap = 'Globale fit,",
-                                       "_root-mean-square error_ (RMSE)",
-                                       "en aantal _equivalent replicates_",
-                                       "voor model `{{mn}}`.',",
-                                       "out.width='70%',",
-                                       "warning=FALSE}"), 
-                                 "print(p)",
-                                 "```")) %>% 
-                {knit_child(text = ., 
-                            quiet = TRUE,
-                            envir =  environment())} %>% 
-                cat(sep = '\n')
-        }
+                   fitted = M1$summary.fitted.values$mean,
+                   resid = fitted - observed)
+        plot_modelevaluation(M1, M1_diagn, mn)
     })
 ```
 

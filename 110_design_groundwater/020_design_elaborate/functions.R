@@ -179,6 +179,48 @@ error_missing_modelobjects <- function() {
 }
 
 
+
+#' Multimodel evaluation plot
+#'
+#' Prints plots of observed vs. fitted, given a model object, a model diagnosis
+#' object (dataframe with columns observed, fitted and resid) and a model name.
+#'
+plot_modelevaluation <- function(model, diagn, mn) {
+    p <-
+        diagn %>%
+        ggplot(aes(x = observed, y = fitted)) +
+        geom_point(size = 0.3) +
+        geom_abline(colour = "red") +
+        coord_equal() +
+        labs(subtitle = paste0("RMSE: ",
+                               diagn$resid^2 %>%
+                                   mean %>%
+                                   sqrt %>%
+                                   round(3),
+                               "\nNr of equivalent replicates: ",
+                               summary(model)$neffp["Number of equivalent replicates", ]
+        )) +
+        theme(plot.subtitle = element_text(hjust = 1))
+    if (interactive()) print(p) else {
+        modelname_hyphen <- str_replace_all(mn, "_|\\.", "-")
+        knit_expand(text = c(paste("```{r modelfit-{{modelname_hyphen}},",
+                                   "fig.cap = 'Globale fit,",
+                                   "_root-mean-square error_ (RMSE)",
+                                   "en aantal _equivalent replicates_",
+                                   "voor model `{{mn}}`.',",
+                                   "out.width='70%',",
+                                   "warning=FALSE}"),
+                             "print(p)",
+                             "```")) %>%
+            {knit_child(text = .,
+                        quiet = TRUE,
+                        envir =  environment())} %>%
+            cat(sep = '\n')
+    }
+
+}
+
+
 ################################################################################
 
 # Functions used to aid reproducible scenario simulation
