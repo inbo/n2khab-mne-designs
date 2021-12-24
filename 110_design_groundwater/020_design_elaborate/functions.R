@@ -242,6 +242,7 @@ split_popsize <- function(df, spfact) {
         group_by(type) %>%
         mutate(population_size = (first(population_size) * proportion) %>% round) %>%
         ungroup %>%
+        filter(population_size > 0) %>%
         select(-proportion) %>%
         relocate(population_size, .after = last_col())
 }
