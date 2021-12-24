@@ -327,11 +327,11 @@ simulate_detrended_pops <-
                           } else "type"
 
                       var_stratum <-
-                          if (any(str_detect(names(model$summary.random),
-                                             "light|heavy|peat"))) {
+                          if (any(str_detect(rownames(model$summary.hyperpar),
+                                             "^Stratum.*light|heavy|peat"))) {
                               "soilclass"
-                          } else if (any(str_detect(names(model$summary.random),
-                                                    "polders|Kempen"))) {
+                          } else if (any(str_detect(rownames(model$summary.hyperpar),
+                                                    "^Stratum.*polders|Kempen"))) {
                               "ecoregion"
                           } else "type"
 
