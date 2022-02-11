@@ -455,6 +455,80 @@ simulate_detrended_pops <-
 
 
 
+
+
+
+
+
+
+#' Extract sd parameter from INLA-model based on regex
+#'
+#' Also supports submodels of joint model, where for the second (and further)
+#' submodel a Beta is provided to rescale the corresponding random effect of the
+#' first submodel.
+#'
+#' @param regex_no_suffix string that will be used within a regex. This should
+#'   correspond to the identifying random effect name
+#' @inheritParams simulate_detrended_pops_singlemodel
+#'
+sd_extract <- function(model,
+                       regex_no_suffix,
+                       suffixes_joint,
+                       index_joint) {
+
+    if (!any(str_detect(
+        names(model$summary.random),
+        str_c(regex_no_suffix, suffixes_joint[index_joint]))
+        )) return(NA)
+
+    selectrow_1 <-
+        rownames(model$summary.hyperpar) %>%
+        str_detect(str_c("Precision for.*",
+                         regex_no_suffix,
+                         suffixes_joint[1]))
+    if (sum(selectrow_1) != 1) {
+        stop("Regex '",
+             regex_no_suffix,
+             "' is insufficiently unique. ",
+             "Following 'Precision' matches occur: \n",
+             rownames(model$summary.hyperpar)[selectrow_1])
+        }
+
+    if (index_joint == 1) {
+        sd_estim <- invsqrt(model$summary.hyperpar[selectrow_1, "mean"])
+    } else {
+        selectrow <-
+            rownames(model$summary.hyperpar) %>%
+            str_detect(str_c("Beta for.*",
+                             regex_no_suffix,
+                             suffixes_joint[index_joint]))
+        if (sum(selectrow) != 1) {
+            stop("Regex '",
+                 regex_no_suffix,
+                 "' is insufficiently unique. ",
+                 "Following 'Beta' matches occur: \n",
+                 rownames(model$summary.hyperpar)[selectrow])
+        }
+        sd_estim <-
+            invsqrt(model$summary.hyperpar[selectrow_1, "mean"]) *
+            model$summary.hyperpar[selectrow, "mean"]
+    }
+
+    return(sd_estim)
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
 #' Simulate spatial samples from given populations and sample definitions (including artificial trend)
 #'
 #' @param sample_definition Data frame that defines the constitution of a sample for each scenario.
