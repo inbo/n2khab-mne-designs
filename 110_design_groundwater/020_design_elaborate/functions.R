@@ -474,44 +474,55 @@ simulate_detrended_pops <-
 sd_extract <- function(model,
                        regex_no_suffix,
                        suffixes_joint,
-                       index_joint) {
+                       index_joint,
+                       prefix = "Precision for.*") {
 
     if (!any(str_detect(
         names(model$summary.random),
         str_c(regex_no_suffix, suffixes_joint[index_joint]))
         )) return(NA)
 
-    selectrow_1 <-
-        rownames(model$summary.hyperpar) %>%
-        str_detect(str_c("Precision for.*",
+    selection_1 <-
+        names(model$marginals.hyperpar) %>%
+        str_detect(str_c(prefix,
                          regex_no_suffix,
                          suffixes_joint[1]))
-    if (sum(selectrow_1) != 1) {
+    if (sum(selection_1) != 1) {
         stop("Regex '",
              regex_no_suffix,
              "' is insufficiently unique. ",
              "Following 'Precision' matches occur: \n",
-             rownames(model$summary.hyperpar)[selectrow_1])
+             names(model$marginals.hyperpar)[selection_1])
         }
 
     if (index_joint == 1) {
-        sd_estim <- invsqrt(model$summary.hyperpar[selectrow_1, "mean"])
+        sink(tempfile())
+        sd_estim <-
+            inla.tmarginal(invsqrt,
+                           model$marginals.hyperpar[selection_1][[1]]) %>%
+            inla.zmarginal %>%
+            .[["mean"]]
+        sink()
     } else {
-        selectrow <-
+        selection <-
             rownames(model$summary.hyperpar) %>%
             str_detect(str_c("Beta for.*",
                              regex_no_suffix,
                              suffixes_joint[index_joint]))
-        if (sum(selectrow) != 1) {
+        if (sum(selection) != 1) {
             stop("Regex '",
                  regex_no_suffix,
                  "' is insufficiently unique. ",
                  "Following 'Beta' matches occur: \n",
-                 rownames(model$summary.hyperpar)[selectrow])
+                 rownames(model$summary.hyperpar)[selection])
         }
+        sink(tempfile())
         sd_estim <-
-            invsqrt(model$summary.hyperpar[selectrow_1, "mean"]) *
-            model$summary.hyperpar[selectrow, "mean"]
+            inla.tmarginal(invsqrt,
+                           model$marginals.hyperpar[selection_1][[1]]) %>%
+            inla.zmarginal %>%
+            {.[["mean"]] * model$summary.hyperpar[selection, "mean"]}
+        sink()
     }
 
     return(sd_estim)
