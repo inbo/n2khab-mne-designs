@@ -456,6 +456,22 @@ simulate_detrended_pops <-
 
 
 
+#' Add model list column in tibble based on modelname column
+#'
+#' @param x tibble
+#' @param modelname_column variable name that refers the column with modelnames
+#'
+add_model_column <- function(x, modelname_column) {
+    x %>%
+        rowwise %>%
+        mutate(
+            model = list(.data[[modelname_column]] %>% as.character %>% str2lang %>% eval)) %>%
+        ungroup
+}
+
+
+
+
 
 
 
