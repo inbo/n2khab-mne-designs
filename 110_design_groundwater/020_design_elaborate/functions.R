@@ -281,74 +281,155 @@ add_st <- function(type_attrib, time = 1:12) {
 #' This function also omits the long-term trend component.
 #'
 #'
+#' @param design_matrix defines the size and fixed + random level configuration
+#' of one (and each) population
+#' @param var_time the name of the temporal variable in design_matrix
+#' @param ... arguments passed to simulate_detrended_pops_singlemodel()
+
+simulate_detrended_pops <-
+    function(design_matrix,
+             var_time,
+             seed = NULL,
+             ...) {
+
+        if (!is.null(seed)) set.seed(seed)
+
+    design_matrix_nested <-
+        design_matrix %>%
+        rename(orig_type = type) %>%
+        nest(design_matrix = -modelname) %>%
+        add_model_column("modelname") %>%
+        mutate(
+            design_matrix = map2(design_matrix, model,
+                                 function(dm, model) {
+
+                 # var_stratum_: variable by which temporal or spatial variation
+                 # is stratified; it can have less levels than the orginal
+                 # variable it is based on, because certain levels don't have
+                 # enough timeseries data
+
+                 var_stratum_ <-
+                     if (any(str_detect(colnames(model$model.matrix),
+                                        "stratum_+\\D?(light|heavy|peat)"))) {
+                         "soilclass"
+                     } else if (any(str_detect(colnames(model$model.matrix),
+                                               "stratum_+\\D?.*(polders|Kempen)"))) {
+                         "ecoregion"
+                     } else "type"
+
+                 # var_stratum: variable by which residual distribution has been split
+                 var_stratum <-
+                     if (any(str_detect(rownames(model$summary.hyperpar),
+                                        "^Stratum.*(light|heavy|peat)"))) {
+                         "soilclass"
+                     } else if (any(str_detect(rownames(model$summary.hyperpar),
+                                               "^Stratum.*(polders|Kempen)"))) {
+                         "ecoregion"
+                     } else "type"
+
+                 mdata <- model$.args$data
+
+                 dm %>%
+                     rename(type = modelterm_type) %>%
+                     `colnames<-`(colnames(.) %>% replace(. == "time", var_time)) %>%
+                     mutate(
+                         type =
+                             type %>%
+                             factor(levels =
+                                        levels(mdata[str_detect(names(mdata), "^type")][[1]])),
+                         stratum_ =
+                             .[[var_stratum_]] %>%
+                             factor(levels = levels(mdata[str_detect(names(mdata), "^stratum_+\\D?$")][[1]])),
+                         stratum =
+                             .[[var_stratum]] %>%
+                             factor(levels = levels(mdata[str_detect(names(mdata), paste0("^", var_stratum, "(_\\D)?$"))][[1]]))
+                     ) %>%
+                     {if (any(is.na(.$stratum_))) select(., -stratum_) else .}
+                                 }),
+            likelihood_family = map(model,
+                             ~unique(.$.args$family)),
+            link = map(likelihood_family,
+                       ~map_chr(.,
+                                ~inla.models()$likelihood[[.]]$link[2]))) %>%
+        arrange(modelname)
+
+    if (length(design_matrix_nested$likelihood_family[[1]]) == 1L) {
+        # single model approach
+        simulate_detrended_pops_singlemodel(design_matrix_nested =
+                                                  design_matrix_nested,
+                                              var_time = var_time,
+                                              ...)
+    } else {
+        # joint model approach
+        suffixes_joint <-
+            str_sub(design_matrix_nested$likelihood_family[[1]], 1, 1) %>%
+            str_c("_", .)
+        # In simulate_detrended_pops_singlemodel(), separate "residual noise"
+        # from the linear predictor. And add the link in between, which is now
+        # provided in design_matrix_nested.
+        # For the "residual noise", make use of the likelihood_family, provided here in
+        # design_matrix_nested
+
+        # Use the suffixes to filter fixed and random
+        # effects in simulate_detrended_pops_singlemodel(); to be called from here twice for a joint model after which the response value can be calculated.
+    }
+
+
+    }
+
+
+
+
+
+
+
+#' Simulate populations from posterior mean fixed and hyperparameter values
+#'
+#' This function also omits the long-term trend component.
+#' Only intended for single models, i.e. not for a joint model.
+#'
 #' @param npop number of populations to simulate.
 #' They only differ by their used random effect values, which still originate
 #' from the same set of parameters (posterior means of fixed and
 #' hyperparameters)
-#' @param design_matrix defines the size and fixed + random level configuration
-#' of one (and each) population
-#' @param var_stratum variable by which residual distribution has been split
-#' @param var_stratum_ variable by which temporal or spatial variation is
-#' stratified; it can have less levels than the orginal variable it is based on,
-#' because certain levels don't have enough timeseries data.
+#' @param suffixes_joint Only relevant in the context of a joint model.
+#' The vector of likelihood_family suffixes that is used in the
+#' model effect names to denote the submodel (following the format like '_b'
+#'  for bernouilli, '_g' for gamma)
+#' @param index_joint numeric index indicating the submodel (1 for first,
+#' 2 for second, etc)
 #' @param keep_ranef should the result contain the separate
 #' random effects and residuals?
 #' @param keep_predfixed should the result contain the total fixed effect?
-simulate_detrended_pops <-
-    function(design_matrix,
+#' Note that this result is given on the scale of the linear predictor
+#' @inheritParams simulate_detrended_pops
+#'
+simulate_detrended_pops_singlemodel <-
+    function(design_matrix_nested,
              npop = 20,
              var_time,
+             suffixes_joint = "",
+             index_joint = 1,
              keep_ranef = FALSE,
-             keep_predfixed = FALSE,
-             seed = NULL) {
+             keep_predfixed = FALSE) {
         # colnames(model$model.matrix)
         # rownames(model$summary.fixed)
+        # names(model$summary.random)
+        # rownames(model$summary.hyperpar)
         # model$names.fixed
         # model$.args$data
+        # model$.args$family
+        # inla.models()$likelihood[["gamma"]]$link
         # latent_names <- model$misc$configs$contents$tag
-        if (!is.null(seed)) set.seed(seed)
+        suffix <- suffixes_joint[index_joint]
+        append_suffix <- function(x) str_c(x, suffix, "$")
+        sd_extract2 <- function(m, r) sd_extract(m,
+                                                 r,
+                                                 suffixes_joint,
+                                                 index_joint)
 
-        design_matrix %>%
-            nest(design_matrix = -c(type, modelname)) %>%
-            rowwise %>%
+        design_matrix_nested %>%
             mutate(
-                model = list(modelname %>% as.character %>% str2lang %>% eval)) %>%
-            ungroup %>%
-            mutate(
-                design_matrix = map2(design_matrix, model,
-                                      function(dm, model) {
-                      var_stratum_ <-
-                          if (any(str_detect(colnames(model$model.matrix),
-                                             "stratum_(light|heavy|peat)"))) {
-                              "soilclass"
-                          } else if (any(str_detect(colnames(model$model.matrix),
-                                                    "stratum_.*(polders|Kempen)"))) {
-                              "ecoregion"
-                          } else "type"
-
-                      var_stratum <-
-                          if (any(str_detect(rownames(model$summary.hyperpar),
-                                             "^Stratum.*light|heavy|peat"))) {
-                              "soilclass"
-                          } else if (any(str_detect(rownames(model$summary.hyperpar),
-                                                    "^Stratum.*polders|Kempen"))) {
-                              "ecoregion"
-                          } else "type"
-
-                    dm %>%
-                        rename(type = modelterm_type) %>%
-                        `colnames<-`(colnames(.) %>% replace(. == "time", var_time)) %>%
-                        mutate(type =
-                                   type %>%
-                                   factor(levels = levels(model$.args$data$type)),
-                               stratum_ =
-                                   .[[var_stratum_]] %>%
-                                   factor(levels = levels(model$.args$data$stratum_)),
-                               stratum =
-                                   .[[var_stratum]] %>%
-                                   factor(levels = levels(model$.args$data[[var_stratum]]))) %>%
-                        {if (any(is.na(.$stratum_))) select(., -stratum_) else .}
-                }),
                 formula_fixed =
                     map2(design_matrix, model, function(dm, model) {
                         model$.args$formula %>%
@@ -358,95 +439,227 @@ simulate_detrended_pops <-
                             .[!str_detect(.,
                                           # keeping only fixed effects, and excluding long-term
                                           # trend:
-                                          "f\\(|:.*year|I\\(.*year|year_std$")] %>%
+                                          "f\\(|:.*year|I\\(.*year|year_std(_\\D)?$")] %>%
+                            # select terms using suffix
+                            .[str_detect(., str_c(suffix, "$"))] %>%
+
                             {if ("stratum_" %in% colnames(dm)) . else .[!str_detect(., "stratum_")]} %>%
                             paste(collapse = " + ") %>%
                             {if ("(Intercept)" %in% model$names.fixed) {
                                 paste("~", .) } else paste("~-1 +", .)
                             } %>%
                             as.formula}),
+                design_matrix = map2(design_matrix, formula_fixed,
+                                     function(dm, ff) {
+                                         if (str_detect(paste(ff, collapse = " "),
+                                                        "intercept")) {
+                                             dm <- mutate(dm, intercept = 1)
+                                         }
+                                         if (nchar(suffix) > 0) {
+                                             cnind <- colnames(dm) != "orig_type"
+                                             colnames(dm)[cnind] <-
+                                                 str_c(colnames(dm)[cnind], suffix)
+                                         }
+                                         dm
+                                     }
+                                    ),
                 model_matrix = map2(design_matrix, formula_fixed,
                                     ~model.matrix(.y, data = .x)),
                 # calculate fixed part
-                prediction_fixed = map2(model_matrix, model,
-                                       function(mm, model) {
-                                           if(any(rownames(model$summary.fixed)[rownames(model$summary.fixed) %in% colnames(mm)] != colnames(mm))) stop("The order of model matrix columns does not match that of the fixed effects.")
-                                           pars_fixed <- model$summary.fixed[
-                                               rownames(model$summary.fixed) %in% colnames(mm), "mean"]
-                                           as.numeric(mm %*% pars_fixed)
+                "prediction_fixed{suffix}" := map2(model_matrix, model,
+                                        function(mm, model) {
+                                            if(any(rownames(model$summary.fixed)[rownames(model$summary.fixed) %in% colnames(mm)] != colnames(mm))) stop("The order of model matrix columns does not match that of the fixed effects.")
+                                            pars_fixed <- model$summary.fixed[
+                                                rownames(model$summary.fixed) %in% colnames(mm), "mean"]
+                                            as.numeric(mm %*% pars_fixed)
 
-                                       }),
-                design_matrix = map(design_matrix, ~rename(., modelterm_type = type))
+                                        }),
+                design_matrix =
+                    map(design_matrix,
+                        ~rename_with(
+                            .,
+                            .cols = matches("^type(_\\D)?$"),
+                            .fn = ~str_c("modelterm_", .)
+                        ) %>%
+                            rename(type = orig_type) %>%
+                            select(-starts_with("intercept")))
             ) %>%
             select(-formula_fixed, -model_matrix, -model) %>%
-            nest(design_modelres = -modelname) %>%
+            nest(design_modelres = -c(modelname, likelihood_family, link)) %>%
             mutate(design_modelres = map(design_modelres,
-                                    ~unnest(., c(design_matrix, prediction_fixed)))) %>%
-            crossing(population = str_c("population_", str_pad(1:npop, 5, pad = "0")) %>% as.factor) %>%
-            rowwise %>%
+                                    ~unnest(., c(design_matrix,
+                                                 str_c("prediction_fixed",
+                                                       suffix))))) %>%
+            add_model_column("modelname") %>%
+            # extracting model-level standard deviations:
             mutate(
-                model = list(modelname %>% as.character %>% str2lang %>% eval)) %>%
-            ungroup %>%
-# different populations only need to be accommodated from this point on (they share their fixed prediction). Also there's the need to implement modelnames (within population)
+                model_sd = map(model, function(model) {
+                    c(
+                        ranef_loc_sd = sd_extract2(model, "loc_code_?[a-z]*"),
+                        ranef_clus_sd = sd_extract2(model, "cluster_id[a-z]*"),
+                        ranef_time = sd_extract2(model, var_time)
+                    )
+                }),
+                design_modelres =
+                    map(design_modelres,
+                        ~nest(., design_modelres =
+                                  -str_c(c("stratum", "stratum_"),
+                                         suffix)))
+            ) %>%
+            unnest(design_modelres) %>%
+            # extracting `stratum_`-level standard deviations and
+            # `stratum`-level likelihood parameters:
+            mutate(
+                model_sd_strat = pmap(list(model,
+                                           .data[[str_c("stratum", suffix)]],
+                                           .data[[str_c("stratum_", suffix)]]),
+                function(model, stratum, stratum_) {
+                    c(
+                        ranef_clus_stratum_sd =
+                            sd_extract2(model, str_c("cluster_stratum_",
+                                                     stratum_)),
+                        ranef_time_stratum_sd =
+                            sd_extract2(model, str_c(var_time,
+                                                     "_stratum_",
+                                                     stratum_)),
+                        llhfam_param2_gaussian =
+                            sd_extract(model,
+                                       str_c("^Stratum ",
+                                             stratum,
+                                             ": Precision of residuals"),
+                                       "", 1, "")^2,
+                        llhfam_param2_gamma =
+                            model$summary.hyperpar[str_c("Stratum ",
+                                                         stratum,
+                                                         ": Gamma shape"),
+                                                   "mean"]
+                    )
+                })
+            ) %>%
+            select(-model) %>%
+            crossing(population = str_c("population_", str_pad(1:npop, 5, pad = "0")) %>% as.factor) %>%
+            add_model_column("modelname") %>%
+# different populations only need to be accommodated from this point on (they share their fixed prediction)
             mutate(
                 design_modelres =
-                    map2(design_modelres, model,
-                         function(design_modelres, model) {
-                             design_modelres %>%
-                                 # spatial noise
-                                 group_by(location) %>%
-                                 {if ("loc_code" %in% names(model$summary.random)) {
-                                 mutate(., ranef_loc =
-                                            rnorm(1,
-                                                  sd = invsqrt(model$summary.hyperpar["Precision for loc_code", "mean"])))} else .} %>%
-                                 {if ("cluster_id" %in% names(model$summary.random)) {
-                                     mutate(., ranef_clus =
-                                                rnorm(1,
-                                                      sd = invsqrt(model$summary.hyperpar["Precision for cluster_id", "mean"])))} else .} %>%
-                                 {if (any(str_detect(names(model$summary.random),
-                                                     "cluster_stratum_"))) {
-                                     group_by(., location, stratum_) %>%
-                                         mutate(spatial_noise =
-                                                    rnorm(1,
-                                                          sd = invsqrt(model$summary.hyperpar[str_c("Precision for cluster_stratum_", stratum_), "mean"])))} else .} %>%
-                                 # temporal noise
-                                 {if (var_time %in% names(model$summary.random)) {
-                                     group_by(., .data[[var_time]]) %>%
-                                     mutate(ranef_time =
-                                                rnorm(1,
-                                                      sd = invsqrt(model$summary.hyperpar[str_c("Precision for ", var_time), "mean"])))} else .} %>%
-                                 {if (any(str_detect(names(model$summary.random),
-                                                     str_c(var_time, "_stratum_")))) {
-                                     group_by(., .data[[var_time]], stratum_) %>%
-                                         mutate(temporal_noise =
-                                                    rnorm(1,
-                                                          sd = invsqrt(model$summary.hyperpar[str_c("Precision for ", var_time, "_stratum_", stratum_), "mean"])))} else .} %>%
-                                 # residual noise
-                                 group_by(stratum) %>%
-                                 mutate(resid_noise =
+                    pmap(list(design_modelres,
+                              model,
+                              model_sd,
+                              model_sd_strat,
+                              likelihood_family,
+                              link),
+                         function(design_modelres,
+                                  model,
+                                  model_sd,
+                                  model_sd_strat,
+                                  likelihood_family,
+                                  link) {
+                     design_modelres %>%
+                         # spatial noise
+                         group_by(across(str_c("location", suffix))) %>%
+
+                         {if (!is.na(model_sd["ranef_loc_sd"])) {
+                             mutate(., "ranef_loc{suffix}" :=
+                                        rnorm(1, sd = model_sd["ranef_loc_sd"])
+                                    )} else .} %>%
+
+                         {if (!is.na(model_sd["ranef_clus_sd"])) {
+                             mutate(., "ranef_clus{suffix}" :=
+                                        rnorm(1, sd = model_sd["ranef_clus_sd"])
+                             )} else .} %>%
+
+                         {if (!is.na(model_sd_strat["ranef_clus_stratum_sd"])) {
+                             # group_by(.,
+                             #          across(
+                             #              c(str_c("location", suffix),
+                             #                str_c("stratum_", suffix)))) %>%
+                             mutate(., "spatial_noise{suffix}" :=
+                                        rnorm(1, sd = model_sd_strat["ranef_clus_stratum_sd"])
+                             )} else .} %>%
+
+                         group_by(across(c(str_c(var_time, suffix)))) %>%
+
+                         # temporal noise
+                         {if (!is.na(model_sd["ranef_time_sd"])) {
+                                 mutate(., "ranef_time{suffix}" :=
+                                            rnorm(1, sd = model_sd["ranef_time_sd"])
+                                 )} else .} %>%
+
+                         {if (!is.na(model_sd_strat["ranef_time_stratum_sd"])) {
+                             # group_by(.,
+                             #          across(
+                             #              c(str_c(var_time, suffix),
+                             #                str_c("stratum_", suffix)))) %>%
+                                 mutate(., "temporal_noise{suffix}" :=
+                                            rnorm(1, sd =  model_sd_strat["ranef_time_stratum_sd"])
+                                 )} else .} %>%
+
+                         ungroup %>%
+                         # calculate linpred and first parameter of likelihood family (usually: the expected response)
+                         mutate("linpred{suffix}" :=
+                                    rowSums(across(c(
+                                        str_c("prediction_fixed", suffix),
+                                        starts_with("ranef"),
+                                        ends_with(str_c("noise", suffix))))),
+                                "llhfam_param1{suffix}" :=
+                                    .data[[str_c("linpred",suffix)]]  %>%
+                                    {switch(
+                                        link[index_joint],
+                                        "identity" = .,
+                                        "log" = exp(.),
+                                        "logit" = exp(.) / (1 + exp(.))
+                                           )}
+                         ) %>%
+                         # second parameter of likelihood family
+                         mutate("llhfam_param2{suffix}" :=
+                                    switch(
+                            likelihood_family[index_joint],
+                            "gaussian" =
+                                model_sd_strat["llhfam_param2_gaussian"],
+                            "binomial" = NA,
+                            "gamma" =
+                                model_sd_strat["llhfam_param2_gamma"]
+                                           )
+                         ) %>%
+                         mutate("response{suffix}" :=
+                                    switch(
+                                        likelihood_family[index_joint],
+                                        "gaussian" =
                                             rnorm(n(),
-                                                  sd = invsqrt(model$summary.hyperpar[str_c("Stratum ", stratum, ": Precision of residuals"), "mean"]))) %>%
-                                 ungroup %>%
-                                 # calculate response
-                                 mutate(response =
-                                            rowSums(across(c(
-                                                prediction_fixed,
-                                                starts_with("ranef"),
-                                                ends_with("noise"))))
-                                 ) %>%
-                                 select(-modelterm_type, -stratum_, -stratum)
+                                                  .data[[str_c("llhfam_param1", suffix)]],
+                                                  sqrt(.data[[str_c("llhfam_param2", suffix)]])),
+                                        "binomial" =
+                                            rbinom(n(),
+                                                   size = 1,
+                                                   .data[[str_c("llhfam_param1", suffix)]]),
+                                        "gamma" =
+                                            rgamma(n(),
+                                                   shape = .data[[str_c("llhfam_param2", suffix)]],
+                                                   scale = .data[[str_c("llhfam_param1", suffix)]] / .data[[str_c("llhfam_param2", suffix)]])
+                                        )) %>%
+                         select(-str_c("modelterm_type", suffix)) %>%
+                         rename_with(
+                             .cols = ends_with(suffix) &
+                                 !(str_c("prediction_fixed", suffix):last_col()),
+                             .fn = ~str_remove(., str_c(suffix, "$"))
+                             )
 
             }
             )) %>%
-            select(-model) %>%
+            select(-c(model, model_sd, model_sd_strat, likelihood_family, link),
+                   -str_c(c("stratum_",
+                            "stratum"),
+                          suffix)) %>%
             unnest(design_modelres) %>%
             relocate(population) %>%
             relocate(modelname, .after = last_col()) %>%
             {if (keep_ranef) . else {
-                select(., -starts_with("ranef"), -ends_with("noise"))
+                select(.,
+                       -starts_with("ranef"),
+                       -ends_with(str_c("noise", suffix)))
             }} %>%
             {if (keep_predfixed) . else {
-                select(., -prediction_fixed)
+                select(., -str_c("prediction_fixed", suffix))
             }} %>%
             arrange(population, location, .data[[var_time]])
 
