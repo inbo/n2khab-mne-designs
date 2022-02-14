@@ -569,10 +569,6 @@ simulate_detrended_pops_singlemodel <-
                              )} else .} %>%
 
                          {if (!is.na(model_sd_strat["ranef_clus_stratum_sd"])) {
-                             # group_by(.,
-                             #          across(
-                             #              c(str_c("location", suffix),
-                             #                str_c("stratum_", suffix)))) %>%
                              mutate(., "spatial_noise{suffix}" :=
                                         rnorm(1, sd = model_sd_strat["ranef_clus_stratum_sd"])
                              )} else .} %>%
@@ -586,10 +582,6 @@ simulate_detrended_pops_singlemodel <-
                                  )} else .} %>%
 
                          {if (!is.na(model_sd_strat["ranef_time_stratum_sd"])) {
-                             # group_by(.,
-                             #          across(
-                             #              c(str_c(var_time, suffix),
-                             #                str_c("stratum_", suffix)))) %>%
                                  mutate(., "temporal_noise{suffix}" :=
                                             rnorm(1, sd =  model_sd_strat["ranef_time_stratum_sd"])
                                  )} else .} %>%
