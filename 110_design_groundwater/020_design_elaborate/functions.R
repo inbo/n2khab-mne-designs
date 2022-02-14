@@ -468,6 +468,12 @@ simulate_detrended_pops_singlemodel <-
                 # calculate fixed part
                 "prediction_fixed{suffix}" := map2(model_matrix, model,
                                         function(mm, model) {
+                                            mm <-
+                                                mm[, colnames(mm) %in%
+                                                       rownames(
+                                                           model$summary.fixed
+                                                           )
+                                                   ]
                                             if(any(rownames(model$summary.fixed)[rownames(model$summary.fixed) %in% colnames(mm)] != colnames(mm))) stop("The order of model matrix columns does not match that of the fixed effects.")
                                             pars_fixed <- model$summary.fixed[
                                                 rownames(model$summary.fixed) %in% colnames(mm), "mean"]
