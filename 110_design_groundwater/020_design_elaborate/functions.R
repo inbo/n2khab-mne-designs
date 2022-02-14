@@ -748,7 +748,7 @@ sd_extract <- function(model,
             inla.tmarginal(invsqrt,
                            model$marginals.hyperpar[selection_1][[1]]) %>%
             inla.zmarginal %>%
-            {.[["mean"]] * model$summary.hyperpar[selection, "mean"]}
+            {.[["mean"]] * abs(model$summary.hyperpar[selection, "mean"])}
         sink()
     }
 
