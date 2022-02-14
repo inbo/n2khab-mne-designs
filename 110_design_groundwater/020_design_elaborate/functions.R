@@ -497,7 +497,7 @@ simulate_detrended_pops_singlemodel <-
                     c(
                         ranef_loc_sd = sd_extract2(model, "loc_code_?[a-z]*"),
                         ranef_clus_sd = sd_extract2(model, "cluster_id[a-z]*"),
-                        ranef_time = sd_extract2(model, var_time)
+                        ranef_time_sd = sd_extract2(model, var_time)
                     )
                 }),
                 design_modelres =
