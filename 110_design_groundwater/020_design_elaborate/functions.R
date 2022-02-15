@@ -283,11 +283,13 @@ add_st <- function(type_attrib, time = 1:12) {
 #'
 #' @param design_matrix defines the size and fixed + random level configuration
 #' of one (and each) population
+#' @param sp_fact character vector of variable name(s) that represent the spatial variables in the design matrix
 #' @param var_time the name of the temporal variable in design_matrix
 #' @param ... arguments passed to simulate_detrended_pops_singlemodel()
 
 simulate_detrended_pops <-
     function(design_matrix,
+             spfact,
              var_time,
              seed = NULL,
              ...) {
@@ -364,17 +366,34 @@ simulate_detrended_pops <-
         suffixes_joint <-
             str_sub(design_matrix_nested$likelihood_family[[1]], 1, 1) %>%
             str_c("_", .)
-        # In simulate_detrended_pops_singlemodel(), separate "residual noise"
-        # from the linear predictor. And add the link in between, which is now
-        # provided in design_matrix_nested.
-        # For the "residual noise", make use of the likelihood_family, provided here in
-        # design_matrix_nested
-
-        # Use the suffixes to filter fixed and random
-        # effects in simulate_detrended_pops_singlemodel(); to be called from here twice for a joint model after which the response value can be calculated.
+        result_list <-
+            map(seq_along(suffixes_joint),
+                function(x) {
+                    simulate_detrended_pops_singlemodel(
+                        design_matrix_nested = design_matrix_nested,
+                        var_time = var_time,
+                        suffixes_joint = suffixes_joint,
+                        index_joint = x,
+                        ...
+                )})
+        result_list[[1]] %>%
+            inner_join(result_list[[2]],
+                       by = c("population",
+                              "location",
+                              "type",
+                              spfact,
+                              var_time,
+                              "modelname"
+                              )) %>%
+            ## below part is to be extended if more joint models are to be
+            ## supported
+            {if (all(c("response_b", "response_g") %in% colnames(.))) {
+                # response of hurdle gamma model:
+                mutate(., response = -response_b * response_g)
+            } else stop("Currently only the hurdle gamma model is supported. ",
+                        "Please extend the main function to calculate the ",
+                        "response for other joint models.")}
     }
-
-
     }
 
 
