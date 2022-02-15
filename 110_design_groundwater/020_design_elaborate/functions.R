@@ -417,10 +417,13 @@ simulate_detrended_pops <-
 #'  for bernouilli, '_g' for gamma)
 #' @param index_joint numeric index indicating the submodel (1 for first,
 #' 2 for second, etc)
-#' @param keep_ranef should the result contain the separate
-#' random effects and residuals?
-#' @param keep_predfixed should the result contain the total fixed effect?
-#' Note that this result is given on the scale of the linear predictor
+#' @param keep_linpred_parts Should the result keep the separate
+#' components of the linear predictor (total fixed effect, random effects and
+#' residuals)?
+#' Note that these results are given on the scale of the linear predictor.
+#' @param keep_resp_parts Should the result keep the final components that
+#' allowed the calculation of the response (linear predictor, likelihood
+#' family & associated parameters, link function)?
 #' @inheritParams simulate_detrended_pops
 #'
 simulate_detrended_pops_singlemodel <-
@@ -429,8 +432,8 @@ simulate_detrended_pops_singlemodel <-
              var_time,
              suffixes_joint = "",
              index_joint = 1,
-             keep_ranef = FALSE,
-             keep_predfixed = FALSE) {
+             keep_linpred_parts = FALSE,
+             keep_resp_parts = FALSE) {
         # colnames(model$model.matrix)
         # rownames(model$summary.fixed)
         # names(model$summary.random)
@@ -485,7 +488,7 @@ simulate_detrended_pops_singlemodel <-
                 model_matrix = map2(design_matrix, formula_fixed,
                                     ~model.matrix(.y, data = .x)),
                 # calculate fixed part
-                "prediction_fixed{suffix}" := map2(model_matrix, model,
+                "linpred_fixed{suffix}" := map2(model_matrix, model,
                                         function(mm, model) {
                                             nr_fe <- sum(rownames(model$summary.fixed) %in% colnames(mm))
                                             # allowing a difference of 1, which
@@ -523,7 +526,7 @@ simulate_detrended_pops_singlemodel <-
             nest(design_modelres = -c(modelname, likelihood_family, link)) %>%
             mutate(design_modelres = map(design_modelres,
                                     ~unnest(., c(design_matrix,
-                                                 str_c("prediction_fixed",
+                                                 str_c("linpred_fixed",
                                                        suffix))))) %>%
             add_model_column("modelname") %>%
             # extracting model-level standard deviations:
@@ -625,9 +628,13 @@ simulate_detrended_pops_singlemodel <-
                          # calculate linpred and first parameter of likelihood family (usually: the expected response)
                          mutate("linpred{suffix}" :=
                                     rowSums(across(c(
-                                        str_c("prediction_fixed", suffix),
+                                        str_c("linpred_fixed", suffix),
                                         starts_with("ranef"),
                                         ends_with(str_c("noise", suffix))))),
+                                "link{suffix}" :=
+                                    factor(link[index_joint]),
+                                "llhfam{suffix}" :=
+                                    factor(likelihood_family[index_joint]),
                                 "llhfam_param1{suffix}" :=
                                     .data[[str_c("linpred",suffix)]]  %>%
                                     {switch(
@@ -667,7 +674,7 @@ simulate_detrended_pops_singlemodel <-
                          select(-str_c("modelterm_type", suffix)) %>%
                          rename_with(
                              .cols = ends_with(suffix) &
-                                 !(str_c("prediction_fixed", suffix):last_col()),
+                                 !(str_c("linpred_fixed", suffix):last_col()),
                              .fn = ~str_remove(., str_c(suffix, "$"))
                              )
 
@@ -679,14 +686,18 @@ simulate_detrended_pops_singlemodel <-
                           suffix)) %>%
             unnest(design_modelres) %>%
             relocate(population) %>%
-            relocate(modelname, .after = last_col()) %>%
-            {if (keep_ranef) . else {
+            relocate(modelname, .after = type) %>%
+            {if (keep_linpred_parts) . else {
                 select(.,
                        -starts_with("ranef"),
-                       -ends_with(str_c("noise", suffix)))
+                       -ends_with(str_c("noise", suffix)),
+                       -str_c("linpred_fixed", suffix))
             }} %>%
-            {if (keep_predfixed) . else {
-                select(., -str_c("prediction_fixed", suffix))
+            {if (keep_resp_parts) . else {
+                select(.,
+                       -str_c("linpred", suffix),
+                       -starts_with("llhfam"),
+                       -starts_with("link"))
             }} %>%
             arrange(population, location, .data[[var_time]])
 
@@ -800,7 +811,7 @@ sd_extract <- function(model,
 #'
 #' @param sample_definition Data frame that defines the constitution of a sample for each scenario.
 #' Minimal columns needed: scenario, trend_12yearly_multiplier, type, n_finitepop_spatial
-#' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, {{var_time}}, prediction_fixed, response and modelname.
+#' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, {{var_time}}, linpred_fixed, response and modelname.
 #' @param var_time String. The name of the time variable in `population_data`.
 #' @param npops Number of populations to select from population_data (the first `npops` populations are used)
 #' @param pops Optional character vector of population names to select.
@@ -828,7 +839,7 @@ simulate_trended_spatial_samples <- function(sample_definition,
 
     prediction_spatial_term <-
         names(population_data) %>%
-        str_subset("prediction_fixed|spatial_|_loc|_clus") %>%
+        str_subset("linpred_fixed|spatial_|_loc|_clus") %>%
         paste(collapse = " + ")
 
     trended_pop_data <-
@@ -857,7 +868,7 @@ simulate_trended_spatial_samples <- function(sample_definition,
                            response -
                            prediction_spatial +
                            spatial_term) %>%
-                select(-c(prediction_fixed,
+                select(-c(linpred_fixed,
                           matches("spatial_noise|_loc|_clus"),
                           prediction_spatial,
                           trend_12yearly_multiplier)) %>%
