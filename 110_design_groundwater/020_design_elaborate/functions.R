@@ -468,6 +468,16 @@ simulate_detrended_pops_singlemodel <-
                 # calculate fixed part
                 "prediction_fixed{suffix}" := map2(model_matrix, model,
                                         function(mm, model) {
+                                            nr_fe <- sum(rownames(model$summary.fixed) %in% colnames(mm))
+                                            # allowing a difference of 1, which
+                                            # can occur in a second submodel of
+                                            # a joint model, where the manually
+                                            # added intercept is used to
+                                            # represent the first level of a
+                                            # fixed effect:
+                                            if (ncol(mm) - nr_fe > 1) {
+                                                warning("The model matrix has ", colnames(mm) - nr_fe, " columns that don't occur in the model's fixed effects. Something is probably going wrong, please debug.")
+                                            }
                                             mm <-
                                                 mm[, colnames(mm) %in%
                                                        rownames(
