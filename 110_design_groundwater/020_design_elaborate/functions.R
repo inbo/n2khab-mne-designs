@@ -417,6 +417,12 @@ simulate_detrended_pops <-
 #'  for bernouilli, '_g' for gamma)
 #' @param index_joint numeric index indicating the submodel (1 for first,
 #' 2 for second, etc)
+#' @param tt Tail truncation, expressed as a probability.
+#' In generating random quantiles from the distributions used for random effects
+#' and from the one used for the response, one or both tails of the
+#' distribution are by default truncated as definded by the probability `tt`
+#' in order to avoid rare but unrealistic extreme simulated values.
+#' In case of two-sided truncation, probability `tt` is applied to each tail.
 #' @param keep_linpred_parts Should the result keep the separate
 #' components of the linear predictor (total fixed effect, random effects and
 #' residuals)?
@@ -432,6 +438,7 @@ simulate_detrended_pops_singlemodel <-
              var_time,
              suffixes_joint = "",
              index_joint = 1,
+             tt = 0.001,
              keep_linpred_parts = FALSE,
              keep_resp_parts = FALSE) {
         # colnames(model$model.matrix)
@@ -598,17 +605,23 @@ simulate_detrended_pops_singlemodel <-
 
                          {if (!is.na(model_sd["ranef_loc_sd"])) {
                              mutate(., "ranef_loc{suffix}" :=
-                                        rnorm(1, sd = model_sd["ranef_loc_sd"])
+                                        rtrunc2(1, spec = "norm",
+                                                sd = model_sd["ranef_loc_sd"],
+                                                p_a = tt, p_b = 1 - tt)
                                     )} else .} %>%
 
                          {if (!is.na(model_sd["ranef_clus_sd"])) {
                              mutate(., "ranef_clus{suffix}" :=
-                                        rnorm(1, sd = model_sd["ranef_clus_sd"])
+                                        rtrunc2(1, spec = "norm",
+                                                sd = model_sd["ranef_clus_sd"],
+                                                p_a = tt, p_b = 1 - tt)
                              )} else .} %>%
 
                          {if (!is.na(model_sd_strat["ranef_clus_stratum_sd"])) {
                              mutate(., "spatial_noise{suffix}" :=
-                                        rnorm(1, sd = model_sd_strat["ranef_clus_stratum_sd"])
+                                        rtrunc2(1, spec = "norm",
+                                                sd = model_sd_strat["ranef_clus_stratum_sd"],
+                                                p_a = tt, p_b = 1 - tt)
                              )} else .} %>%
 
                          group_by(across(c(str_c(var_time, suffix)))) %>%
@@ -616,12 +629,16 @@ simulate_detrended_pops_singlemodel <-
                          # temporal noise
                          {if (!is.na(model_sd["ranef_time_sd"])) {
                                  mutate(., "ranef_time{suffix}" :=
-                                            rnorm(1, sd = model_sd["ranef_time_sd"])
+                                            rtrunc2(1, spec = "norm",
+                                                    sd = model_sd["ranef_time_sd"],
+                                                    p_a = tt, p_b = 1 - tt)
                                  )} else .} %>%
 
                          {if (!is.na(model_sd_strat["ranef_time_stratum_sd"])) {
                                  mutate(., "temporal_noise{suffix}" :=
-                                            rnorm(1, sd =  model_sd_strat["ranef_time_stratum_sd"])
+                                            rtrunc2(1, spec = "norm",
+                                                    sd =  model_sd_strat["ranef_time_stratum_sd"],
+                                                    p_a = tt, p_b = 1 - tt)
                                  )} else .} %>%
 
                          ungroup %>%
@@ -667,9 +684,10 @@ simulate_detrended_pops_singlemodel <-
                                                    size = 1,
                                                    .data[[str_c("llhfam_param1", suffix)]]),
                                         "gamma" =
-                                            rgamma(n(),
+                                            rtrunc2(n(), spec = "gamma",
                                                    shape = .data[[str_c("llhfam_param2", suffix)]],
-                                                   scale = .data[[str_c("llhfam_param1", suffix)]] / .data[[str_c("llhfam_param2", suffix)]])
+                                                   scale = .data[[str_c("llhfam_param1", suffix)]] / .data[[str_c("llhfam_param2", suffix)]],
+                                                   p_a = 0, p_b = 1 - tt)
                                         )) %>%
                          select(-str_c("modelterm_type", suffix)) %>%
                          rename_with(
@@ -798,6 +816,91 @@ sd_extract <- function(model,
 
 
 
+
+
+
+#' Generate quantiles of any truncated distribution
+#'
+#' The code is taken from:
+#' Nadarajah S. & Kotz S. (2006). R Programs for Truncated Distributions.
+#' Journal of Statistical Software 16: 1–8.
+#' https://doi.org/10.18637/jss.v016.c02.
+#'
+#' @param p Vector of probabilities
+#' @param spec String that defines the distribution, substitutable in p***() and
+#' q***() functions
+#' @param a Lower quantile limit to define the truncation
+#' @param b Upper quantile limit to define the truncation
+#' @param ... Further arguments passed to p***() and q***() functions
+#'
+qtrunc <- function(p, spec, a = -Inf, b = Inf, ...)
+{
+    tt <- p
+    G <- get(paste("p", spec, sep = ""), mode = "function")
+    Gin <- get(paste("q", spec, sep = ""), mode = "function")
+    tt <- Gin(G(a, ...) + p*(G(b, ...) - G(a, ...)), ...)
+    return(tt)
+}
+
+#' Generate quantiles of any truncated distribution
+#'
+#' This is a modified take on qtrunc(), where the truncation is based on
+#' probabilities instead of quantiles.
+#'
+#' The code is derived from:
+#' Nadarajah S. & Kotz S. (2006). R Programs for Truncated Distributions.
+#' Journal of Statistical Software 16: 1–8.
+#' https://doi.org/10.18637/jss.v016.c02.
+#'
+#' @param p_a Lower probability limit to define the truncation
+#' @param p_b Upper probability limit to define the truncation
+#' @inheritParams qtrunc
+#'
+qtrunc2 <- function(p, spec, p_a = 0, p_b = 1, ...)
+{
+    G <- get(paste0("p", spec), mode = "function")
+    Gin <- get(paste0("q", spec), mode = "function")
+    tt <- Gin(p_a + p*(p_b - p_a), ...)
+    return(tt)
+}
+
+#' Random generation for any truncated distribution
+#'
+#' The code is taken from:
+#' Nadarajah S. & Kotz S. (2006). R Programs for Truncated Distributions.
+#' Journal of Statistical Software 16: 1–8.
+#' https://doi.org/10.18637/jss.v016.c02.
+#'
+#' @param n Requested number of random deviates
+#' @inheritParams qtrunc
+#'
+rtrunc <- function(n, spec, a = -Inf, b = Inf, ...)
+{
+    x <- u <- runif(n, min = 0, max = 1)
+    x <- qtrunc(u, spec, a = a, b = b, ...)
+    return(x)
+}
+
+
+#' Random generation for any truncated distribution
+#'
+#' This is a modified take on rtrunc(), where the truncation is based on
+#' probabilities instead of quantiles.
+#'
+#' The code is taken from:
+#' Nadarajah S. & Kotz S. (2006). R Programs for Truncated Distributions.
+#' Journal of Statistical Software 16: 1–8.
+#' https://doi.org/10.18637/jss.v016.c02.
+#'
+#' @param n Requested number of random deviates
+#' @inheritParams qtrunc
+#'
+rtrunc2 <- function(n, spec, p_a = 0, p_b = 1, ...)
+{
+    u <- runif(n, min = 0, max = 1)
+    x <- qtrunc2(u, spec, p_a = p_a, p_b = p_b, ...)
+    return(x)
+}
 
 
 
