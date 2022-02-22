@@ -417,12 +417,26 @@ simulate_detrended_pops <-
 #'  for bernouilli, '_g' for gamma)
 #' @param index_joint numeric index indicating the submodel (1 for first,
 #' 2 for second, etc)
-#' @param tt Tail truncation, expressed as a probability.
-#' In generating random quantiles from the distributions used for random effects
-#' and from the one used for the response, one or both tails of the
-#' distribution are by default truncated as definded by the probability `tt`
-#' in order to avoid rare but unrealistic extreme simulated values.
-#' In case of two-sided truncation, probability `tt` is applied to each tail.
+#' @param uln_lp Upper quantile limit used in truncating a normal distribution
+#' with zero mean that is used inside the linear predictor.
+#' The distribution will be truncated symmetrically at both sides, i.e. all
+#' values outside [-uln_lp, uln_lp] will be replaced by new values inside the
+#' interval.
+#' Note that this parameter is used for random effects inside the linear
+#' predictor, hence must be regarded on the scale of the linear predictor.
+#' Also note this parameter will equally be applied to each submodel, in case
+#' of a joint model.
+#' A `NULL` or `NA` value will be converted to the default value.
+#' @param uln Upper quantile limit used in truncating a normal distribution
+#' that is used for the distribution of the response.
+#' A `NULL` or `NA` value will be converted to the default value.
+#' @param lln Lower quantile limit used in truncating a normal distribution
+#' that is used for the distribution of the response.
+#' A `NULL` or `NA` value will be converted to the default value.
+#' @param ulg Upper quantile limit used in truncating a gamma distribution
+#' that is used for the distribution of the response.
+#' The distribution will only be right-truncated.
+#' A `NULL` or `NA` value will be converted to the default value.
 #' @param keep_linpred_parts Should the result keep the separate
 #' components of the linear predictor (total fixed effect, random effects and
 #' residuals)?
@@ -438,7 +452,10 @@ simulate_detrended_pops_singlemodel <-
              var_time,
              suffixes_joint = "",
              index_joint = 1,
-             tt = 0.001,
+             uln_lp = Inf,
+             uln = Inf,
+             lln = -Inf,
+             ulg = Inf,
              keep_linpred_parts = FALSE,
              keep_resp_parts = FALSE) {
         # colnames(model$model.matrix)
@@ -456,6 +473,11 @@ simulate_detrended_pops_singlemodel <-
                                                  r,
                                                  suffixes_joint,
                                                  index_joint)
+
+        if (is.na(uln_lp) || is.null(uln_lp)) uln_lp <- formals()$uln_lp
+        if (is.na(uln) || is.null(uln)) uln <- formals()$uln
+        if (is.na(lln) || is.null(lln)) lln <- formals()$lln
+        if (is.na(ulg) || is.null(ulg)) ulg <- formals()$ulg
 
         design_matrix_nested %>%
             mutate(
@@ -605,23 +627,23 @@ simulate_detrended_pops_singlemodel <-
 
                          {if (!is.na(model_sd["ranef_loc_sd"])) {
                              mutate(., "ranef_loc{suffix}" :=
-                                        rtrunc2(1, spec = "norm",
-                                                sd = model_sd["ranef_loc_sd"],
-                                                p_a = tt, p_b = 1 - tt)
+                                        rtrunc(1, spec = "norm",
+                                               sd = model_sd["ranef_loc_sd"],
+                                               a = -uln_lp, b = uln_lp)
                                     )} else .} %>%
 
                          {if (!is.na(model_sd["ranef_clus_sd"])) {
                              mutate(., "ranef_clus{suffix}" :=
-                                        rtrunc2(1, spec = "norm",
-                                                sd = model_sd["ranef_clus_sd"],
-                                                p_a = tt, p_b = 1 - tt)
+                                        rtrunc(1, spec = "norm",
+                                               sd = model_sd["ranef_clus_sd"],
+                                               a = -uln_lp, b = uln_lp)
                              )} else .} %>%
 
                          {if (!is.na(model_sd_strat["ranef_clus_stratum_sd"])) {
                              mutate(., "spatial_noise{suffix}" :=
-                                        rtrunc2(1, spec = "norm",
-                                                sd = model_sd_strat["ranef_clus_stratum_sd"],
-                                                p_a = tt, p_b = 1 - tt)
+                                        rtrunc(1, spec = "norm",
+                                               sd = model_sd_strat["ranef_clus_stratum_sd"],
+                                               a = -uln_lp, b = uln_lp)
                              )} else .} %>%
 
                          group_by(across(c(str_c(var_time, suffix)))) %>%
@@ -629,16 +651,16 @@ simulate_detrended_pops_singlemodel <-
                          # temporal noise
                          {if (!is.na(model_sd["ranef_time_sd"])) {
                                  mutate(., "ranef_time{suffix}" :=
-                                            rtrunc2(1, spec = "norm",
-                                                    sd = model_sd["ranef_time_sd"],
-                                                    p_a = tt, p_b = 1 - tt)
+                                            rtrunc(1, spec = "norm",
+                                                   sd = model_sd["ranef_time_sd"],
+                                                   a = -uln_lp, b = uln_lp)
                                  )} else .} %>%
 
                          {if (!is.na(model_sd_strat["ranef_time_stratum_sd"])) {
                                  mutate(., "temporal_noise{suffix}" :=
-                                            rtrunc2(1, spec = "norm",
-                                                    sd =  model_sd_strat["ranef_time_stratum_sd"],
-                                                    p_a = tt, p_b = 1 - tt)
+                                            rtrunc(1, spec = "norm",
+                                                   sd =  model_sd_strat["ranef_time_stratum_sd"],
+                                                   a = -uln_lp, b = uln_lp)
                                  )} else .} %>%
 
                          ungroup %>%
@@ -676,18 +698,19 @@ simulate_detrended_pops_singlemodel <-
                                     switch(
                                         likelihood_family[index_joint],
                                         "gaussian" =
-                                            rnorm(n(),
-                                                  .data[[str_c("llhfam_param1", suffix)]],
-                                                  sqrt(.data[[str_c("llhfam_param2", suffix)]])),
+                                            rtrunc(n(), spec = "norm",
+                                                   mean = .data[[str_c("llhfam_param1", suffix)]],
+                                                   sd = sqrt(.data[[str_c("llhfam_param2", suffix)]]),
+                                                   a = lln, b = uln),
                                         "binomial" =
                                             rbinom(n(),
                                                    size = 1,
                                                    .data[[str_c("llhfam_param1", suffix)]]),
                                         "gamma" =
-                                            rtrunc2(n(), spec = "gamma",
+                                            rtrunc(n(), spec = "gamma",
                                                    shape = .data[[str_c("llhfam_param2", suffix)]],
                                                    scale = .data[[str_c("llhfam_param1", suffix)]] / .data[[str_c("llhfam_param2", suffix)]],
-                                                   p_a = 0, p_b = 1 - tt)
+                                                   a = 0, b = ulg)
                                         )) %>%
                          select(-str_c("modelterm_type", suffix)) %>%
                          rename_with(

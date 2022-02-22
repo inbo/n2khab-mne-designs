@@ -204,6 +204,9 @@ scheme_respvar <-
                           c("lg3_std", "hg3_std"),
                           c("lg3_lcl", "hg3_lcl")),
            respvar_label = map(respvar, ~str_replace_all(., "_|\\.", "-")),
+           sim_truncation = list(rep(list(NULL), 3),
+                                 rep(list(NULL), 2),
+                                 list(c(uln = 0), c(ulg = 7))),
            qual_std_status = list(rep(list(c(0.15, 0.1)), 3),
                                   list(c(0.1, 0.05), 0.05),
                                   list(c(0.1, 0.05), 0.05)),
@@ -219,7 +222,7 @@ scheme_respvar <-
            ),
            cpu_cores_trend = c(3, 5, 2)) %>% 
     unnest(submodelpop, keep_empty = TRUE) %>% 
-    unnest(c(respvar, respvar_label, qual_std_status)) %>% 
+    unnest(c(respvar, respvar_label, sim_truncation, qual_std_status)) %>% 
     mutate(modelname = str_c("model_", filepath_sub, respvar,
                              ifelse(is.na(submodelpop), "", 
                                     str_c("_", submodelpop)))) %>% 
@@ -227,6 +230,7 @@ scheme_respvar <-
     nest(modelnames = modelname) %>% 
     nest(specifics = c(respvar, 
                        respvar_label, 
+                       sim_truncation,
                        qual_std_status, 
                        qual_std_trend, 
                        modelnames)) %>% 
@@ -254,6 +258,7 @@ scheme_respvar %>%
                    filepath_sub,
                    timevar,
                    errmarg_rel, # should the error margins be evaluated relative to the estimated value?
+                   sim_truncation,
                    qual_std_status,
                    qual_std_trend,
                    spfact,
