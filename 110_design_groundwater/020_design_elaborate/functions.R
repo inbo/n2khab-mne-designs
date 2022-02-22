@@ -937,7 +937,7 @@ rtrunc2 <- function(n, spec, p_a = 0, p_b = 1, ...)
 #'
 #' @param sample_definition Data frame that defines the constitution of a sample for each scenario.
 #' Minimal columns needed: scenario, trend_12yearly_multiplier, type, n_finitepop_spatial
-#' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, {{var_time}}, linpred_fixed, response and modelname.
+#' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, {{var_time}} and response.
 #' @param var_time String. The name of the time variable in `population_data`.
 #' @param npops Number of populations to select from population_data (the first `npops` populations are used)
 #' @param pops Optional character vector of population names to select.
@@ -963,11 +963,6 @@ simulate_trended_spatial_samples <- function(sample_definition,
         warning("If you specify the populations with pops, then npops is ignored.")
     }
 
-    prediction_spatial_term <-
-        names(population_data) %>%
-        str_subset("linpred_fixed|spatial_|_loc|_clus") %>%
-        paste(collapse = " + ")
-
     trended_pop_data <-
         sample_definition %>%
         nest(scen_attrib = -scenario) %>%
@@ -979,7 +974,7 @@ simulate_trended_spatial_samples <- function(sample_definition,
                                     as.numeric <= npops)
                      }} %>%
                      select(-c(modelname,
-                               matches("ranef_time|temporal_noise|resid_noise"))) %>%
+                               matches("ranef_|_noise|linpred|link|llhfam|(_\\D$)"))) %>%
                      nest(pop_data = -population)) %>%
         # adding trend to predicted value per location (this intermediate result is
         # below called spatial_term):
@@ -987,16 +982,16 @@ simulate_trended_spatial_samples <- function(sample_definition,
             p %>%
                 inner_join(s %>% select(-popsize_spatial),
                            by = "type") %>%
-                mutate(prediction_spatial = eval(str2lang(prediction_spatial_term)),
-                       spatial_term = prediction_spatial *
+                group_by(location) %>%
+                mutate(prediction_spatial = mean(response)) %>%
+                ungroup %>%
+                mutate(spatial_term = prediction_spatial *
                            (trend_12yearly_multiplier^(.data[[var_time]]/12)),
                        response =
                            response -
                            prediction_spatial +
                            spatial_term) %>%
-                select(-c(linpred_fixed,
-                          matches("spatial_noise|_loc|_clus"),
-                          prediction_spatial,
+                select(-c(prediction_spatial,
                           trend_12yearly_multiplier)) %>%
                 relocate(response, .after = last_col())
         }))
