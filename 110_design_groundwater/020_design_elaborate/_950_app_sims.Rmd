@@ -43,7 +43,8 @@ type_attrib <-
       summarize(population_size = sum(population_size)),
     by = "type"
   ) %>% 
-  mutate(type = droplevels(type))
+  mutate(type = droplevels(type),
+         typegroup = droplevels(typegroup))
 ```
 
 ```{r eval=FALSE, include=FALSE}
@@ -136,6 +137,43 @@ De basisset van gesimuleerde populaties zonder trend is een dataset met volgende
 
 ```{r}
 glimpse(simpops)
+```
+
+Enkele percentielen van de gesimuleerde responsvariabele in deze basisset zijn te zien in Tabel \@ref(tab:pctiles-{{scheme_sel_label}}-{{respvar_label}}).
+De proportie nulwaarden is weergegeven in Tabel \@ref(tab:zeroes-{{scheme_sel_label}}-{{respvar_label}}).
+
+```{r pctiles-{{scheme_sel_label}}-{{respvar_label}}}
+pctnum <- c(0, 0.005, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.995, 1)
+pctnames <- names(quantile(0, pctnum))
+simpops %>% 
+    left_join(type_attrib %>% select(type, typegroup), by = "type") %>% 
+    split(~typegroup) %>% 
+    map2_dfc(., names(.), function(df, nm) {
+        res <-  quantile(df$response, pctnum)
+        names(res) <- nm
+        round(res, 2)
+    }) %>% 
+    mutate(pct = pctnames,
+           all = quantile(simpops$response, pctnum) %>% round(2)) %>% 
+    relocate(pct, all) %>% 
+    kable(caption = "Percentielen van de gesimuleerde responsvariabele, zowel voor het geheel (all) als opgesplitst per typegroep.") %>% 
+    kable_styling()
+```
+
+
+```{r zeroes-{{scheme_sel_label}}-{{respvar_label}}}
+simpops %>% 
+    left_join(type_attrib %>% select(type, typegroup), by = "type") %>% 
+    nest(data = -typegroup) %>% 
+    mutate(prop_zero = map(data, ~round(sum(.$response == 0) / nrow(.), 3))) %>% 
+    select(typegroup, prop_zero) %>% 
+    unnest(prop_zero) %>% 
+    arrange(typegroup) %>%
+    bind_rows(tibble(typegroup = "all", 
+                     prop_zero = round(sum(simpops$response == 0) / nrow(simpops), 3)),
+              .) %>% 
+    kable(caption = "Proportie nullen in de gesimuleerde responsvariabele, zowel voor het geheel (all) als opgesplitst per typegroep.") %>% 
+    kable_styling(full_width = FALSE)
 ```
 
 
