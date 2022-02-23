@@ -607,6 +607,8 @@ simulate_detrended_pops_singlemodel <-
             crossing(population = str_c("population_", str_pad(1:npop, 5, pad = "0")) %>% as.factor) %>%
             add_model_column("modelname") %>%
 # different populations only need to be accommodated from this point on (they share their fixed prediction)
+            # filter(population %in% c("population_00001", "population_00002")) %>%  # DEBUGGING ONLY
+            # slice(1:2) %>% # DEBUGGING ONLY
             mutate(
                 design_modelres =
                     pmap(list(design_modelres,
