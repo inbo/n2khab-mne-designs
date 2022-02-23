@@ -230,7 +230,7 @@ plot_modelevaluation <- function(model, diagn, mn) {
 #' Split spatial population size proportional to the distribution along a spatial factor
 #'
 #' @param spfact Currently "soilclass" and "ecoregion" are supported
-split_popsize <- function(df, spfact) {
+split_popsize <- function(df, spfact, scheme_sel) {
     left_join(df,
               switch(spfact,
                      "soilclass" = targetpop_soilclass_distr,
