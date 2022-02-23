@@ -967,6 +967,7 @@ simulate_trended_spatial_samples <- function(sample_definition,
 
     trended_pop_data <-
         sample_definition %>%
+        select(-popsize_spatial) %>%
         nest(scen_attrib = -scenario) %>%
         crossing(population_data %>%
                      {if (!pops_missing) {
@@ -975,18 +976,20 @@ simulate_trended_spatial_samples <- function(sample_definition,
                          filter(., str_sub(population, start = -5L) %>%
                                     as.numeric <= npops)
                      }} %>%
-                     select(-c(modelname,
-                               matches("ranef_|_noise|linpred|link|llhfam|(_\\D$)"))) %>%
+                     select(population,
+                            location,
+                            type,
+                            .data[[var_time]],
+                            response) %>%
+                     group_by(location) %>%
+                     mutate(prediction_spatial = mean(response)) %>%
+                     ungroup %>%
                      nest(pop_data = -population)) %>%
         # adding trend to predicted value per location (this intermediate result is
         # below called spatial_term):
         mutate(pop_data = map2(scen_attrib, pop_data, function(s, p) {
             p %>%
-                inner_join(s %>% select(-popsize_spatial),
-                           by = "type") %>%
-                group_by(location) %>%
-                mutate(prediction_spatial = mean(response)) %>%
-                ungroup %>%
+                inner_join(s, by = "type") %>%
                 mutate(spatial_term = prediction_spatial *
                            (trend_12yearly_multiplier^(.data[[var_time]]/12)),
                        response =
@@ -994,6 +997,7 @@ simulate_trended_spatial_samples <- function(sample_definition,
                            prediction_spatial +
                            spatial_term) %>%
                 select(-c(prediction_spatial,
+                          spatial_term,
                           trend_12yearly_multiplier)) %>%
                 relocate(response, .after = last_col())
         }))
@@ -1023,16 +1027,14 @@ simulate_trended_spatial_samples <- function(sample_definition,
                                              nest(locs = location) %>%
                                              mutate(sample = map2(locs, n_finitepop_spatial,
                                                                   ~slice_sample(.x, n = .y))) %>%
-                                             select(-locs, -n_finitepop_spatial) %>%
+                                             select(sample) %>%
                                              unnest(sample)
                                           ),
                                           data = map2(spatial_sample, units, ~
                                                           p %>%
-                                                          select(-n_finitepop_spatial,
-                                                                 -spatial_term) %>%
+                                                          select(-n_finitepop_spatial) %>%
                                                           semi_join(.y,
-                                                                    by = c("type",
-                                                                           "location"))
+                                                                    by = "location")
                                           )
                                           ) %>%
                                           select(-units) %>%
