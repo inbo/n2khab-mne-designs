@@ -458,15 +458,27 @@ status_res_per_type %>%
 ```
 
 ```{r eval=FALSE, fig.width=7, fig.height=6/10*n_distinct(status_res_per_type$type), out.width='80%', fig.cap="Visualisatie van het gemiddelde en het 5-95% bereik van de doelparameter, over de steekproeven per populatie (één populatie is één horizontale lijn)."}
-# graph only for interactive checks
+# graphs only for interactive checks
+suppressMessages(
+    status_res_per_typegroup %>% 
+        summarise_status_of_samples("mean",
+                                    conflevel_pctiles = 0.9,
+                                    merge_pops = FALSE,
+                                    plot = TRUE,
+                                    ylim = NULL)
+)
 suppressMessages(
   status_res_per_type %>% 
-    summarise_status_of_samples("mean",
-                                conflevel_pctiles = 0.9,
-                                merge_pops = FALSE,
-                                plot = TRUE,
-                                ylim = NULL,
-                                ncol = 4)
+    split(~typegroup) %>% 
+      walk(~summarise_status_of_samples(.,
+                                        "mean",
+                                        conflevel_pctiles = 0.9,
+                                        merge_pops = FALSE,
+                                        plot = TRUE,
+                                        ylim = NULL,
+                                        ncol = 4) %>% 
+               print
+      )
 )
 ```
 
