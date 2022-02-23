@@ -181,7 +181,14 @@ simpops %>%
 
 De verhouding tussen de typespecifieke -- maar achteraf gegeneraliseerde -- variantieschattingen wordt gebruikt als verhouding van steekproefgroottes per type bij trekking uit een oneindige populatie.
 
-```{r message=FALSE}
+```{r include=FALSE}
+relpath_spatvar <- 
+  file.path("20_intermediate1",
+            str_c(filepath_sub, respvar, "_spatvar"))
+abspath_spatvar <- file.path(datapath, str_c(relpath_spatvar, ".tsv"))
+```
+
+```{r message=FALSE, eval=(params$simulate_obs | !file.exists(abspath_spatvar))}
 spatvar <- 
   simpops_500locs %>% 
   group_by(population, modelname, type, location) %>% 
@@ -213,6 +220,18 @@ spatvar %>% mutate(across(where(is.numeric), ~round(., 3))) %>%
   scroll_box(height = "500px")
 ```
 
+```{r include=FALSE}
+if (params$simulate_obs | !file.exists(abspath_spatvar)) {
+    spatvar %>% 
+        write_vc(relpath_spatvar,
+                 root = datapath,
+                 sorting = "type",
+                 strict = FALSE,
+                 optimize = FALSE)
+} else {
+    spatvar <- read_vc(relpath_spatvar, root = datapath) %>% as_tibble
+}
+```
 
 ### Definitie van scenario's
 
