@@ -1247,8 +1247,8 @@ summarise_status_of_samples <- function(multisample_stats,
                 select(population, !!statistic) %>%
                 group_by(population) %>%
                 summarise(avg = mean(.data[[statistic]]),
-                          pctile_l = quantile(.data[[statistic]], (1 - conflevel_pctiles) / 2),
-                          pctile_u = quantile(.data[[statistic]], 1 - (1 - conflevel_pctiles) / 2),
+                          pctile_l = quantile(.data[[statistic]], (1 - conflevel_pctiles) / 2, na.rm = TRUE),
+                          pctile_u = quantile(.data[[statistic]], 1 - (1 - conflevel_pctiles) / 2, na.rm = TRUE),
                           if (!is.null(qual_std)) {
                               across(.data[[statistic]],
                                  map(!!qual_std,
