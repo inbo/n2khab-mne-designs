@@ -1455,8 +1455,7 @@ read_vc_special <- function(...) {
         rename_with(~str_replace_all(., "^p_", "p(")) %>%
         rename_with(~str_replace_all(., "_$", ")")) %>%
         rename_with(~str_replace_all(., "(conf\\d+)_", "\\1≥")) %>%
-        rename_with(~str_replace_all(., "(stat)_", "\\1≤")) %>%
-        rename_with(~str_replace_all(., "stat", "twosided_errmarg90_rel"))
+        rename_with(~str_replace_all(., "(stat)_", "\\1≤"))
 }
 
 
@@ -1464,7 +1463,17 @@ read_vc_special <- function(...) {
 #' Make summary plot of scenario evaluation
 #'
 #' @param input A dataframe as returned by read_vc_special
-plot_summary <- function(input) {
+#' @param stat Optional string for filtering the input dataframe.
+#' Required in case `input` has a column named `statistic`, which defines the
+#' statistic looked at.
+plot_summary <- function(input, stat = NULL) {
+    if (!is.null (stat)) {
+        input <-
+            input %>%
+            filter(statistic == stat) %>%
+            rename_with(~str_replace_all(., "(?<=p\\()stat", stat)) %>%
+            select(-statistic)
+    }
     input %>%
         pivot_longer(cols = starts_with("p("),
                      names_to = "distribution_threshold",
