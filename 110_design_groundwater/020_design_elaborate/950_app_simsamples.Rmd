@@ -211,9 +211,12 @@ scheme_respvar <-
            sim_truncation = list(rep(list(NULL), 3),
                                  rep(list(NULL), 2),
                                  list(c(uln = 0), c(ulg = 7))),
-           qual_std_status = list(rep(list(c(0.15, 0.1)), 3),
-                                  list(c(0.1, 0.05), 0.05),
-                                  list(c(0.1, 0.05), 0.05)),
+           qual_std_status_errmarg_rel = list(rep(list(c(0.15, 0.1)), 3),
+                                              rep(list(c(0.1, 0.05)), 2),
+                                              rep(list(c(0.1, 0.05)), 2)),
+           qual_std_status_errmarg = list(rep(list(NULL), 3),
+                                          rep(list(c(0.1, 0.05)), 2),
+                                          rep(list(c(0.1, 0.05)), 2)),
            qual_std_trend = list(c(power_conf80 = 0.8,
                                    power_conf90 = 0.9)),
            spfact = c(NA_character_, NA_character_, "soilclass"),
@@ -226,7 +229,7 @@ scheme_respvar <-
            ),
            cpu_cores_trend = c(3, 5, 2)) %>% 
     unnest(submodelpop, keep_empty = TRUE) %>% 
-    unnest(c(respvar, respvar_label, sim_truncation, qual_std_status)) %>% 
+    unnest(c(respvar, respvar_label, sim_truncation, starts_with("qual_std_status"))) %>% 
     mutate(modelname = str_c("model_", filepath_sub, respvar,
                              ifelse(is.na(submodelpop), "", 
                                     str_c("_", submodelpop)))) %>% 
@@ -235,7 +238,8 @@ scheme_respvar <-
     nest(specifics = c(respvar, 
                        respvar_label, 
                        sim_truncation,
-                       qual_std_status, 
+                       qual_std_status_errmarg_rel,
+                       qual_std_status_errmarg,
                        qual_std_trend, 
                        modelnames)) %>% 
     mutate(modeltypes = list(NULL, 
@@ -262,12 +266,13 @@ scheme_respvar %>%
                    filepath_sub,
                    timevar,
                    errmarg_rel, # should the error margins be evaluated relative to the estimated value?
-                   sim_truncation,
-                   qual_std_status,
-                   qual_std_trend,
                    spfact,
                    scen_def,
                    cpu_cores_trend,
+                   sim_truncation,
+                   qual_std_status_errmarg_rel,
+                   qual_std_status_errmarg,
+                   qual_std_trend,
                    modelnames,
                    modeltypes
                    ) { 
