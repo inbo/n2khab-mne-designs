@@ -803,7 +803,8 @@ sd_extract <- function(model,
              regex_no_suffix,
              "' is insufficiently unique. ",
              "Following 'Precision' matches occur: \n",
-             names(model$marginals.hyperpar)[selection_1])
+             paste(names(model$marginals.hyperpar)[selection_1],
+                   collapse = ", "))
         }
 
     if (index_joint == 1) {
@@ -826,7 +827,8 @@ sd_extract <- function(model,
                  regex_no_suffix,
                  "' is insufficiently unique. ",
                  "Following 'Beta' matches occur: \n",
-                 rownames(model$summary.hyperpar)[selection])
+                 paste(rownames(model$summary.hyperpar)[selection],
+                       collapse = ", "))
         }
         sink(tempfile())
         sd_estim <-
