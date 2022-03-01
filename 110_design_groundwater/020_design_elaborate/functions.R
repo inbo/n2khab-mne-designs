@@ -788,15 +788,16 @@ sd_extract <- function(model,
                        prefix = "Precision for.*") {
 
     if (!any(str_detect(
-        names(model$summary.random),
-        str_c(regex_no_suffix, suffixes_joint[index_joint]))
+        names(model$marginals.hyperpar),
+        str_c(regex_no_suffix, suffixes_joint[index_joint], "$"))
         )) return(NA)
 
     selection_1 <-
         names(model$marginals.hyperpar) %>%
         str_detect(str_c(prefix,
                          regex_no_suffix,
-                         suffixes_joint[1]))
+                         suffixes_joint[1],
+                         "$"))
     if (sum(selection_1) != 1) {
         stop("Regex '",
              regex_no_suffix,
@@ -818,7 +819,8 @@ sd_extract <- function(model,
             rownames(model$summary.hyperpar) %>%
             str_detect(str_c("Beta for.*",
                              regex_no_suffix,
-                             suffixes_joint[index_joint]))
+                             suffixes_joint[index_joint],
+                             "$"))
         if (sum(selection) != 1) {
             stop("Regex '",
                  regex_no_suffix,
