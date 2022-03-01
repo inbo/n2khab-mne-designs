@@ -622,7 +622,7 @@ simulate_detrended_pops_singlemodel <-
                                   model_sd,
                                   model_sd_strat,
                                   likelihood_family,
-                                  link) {
+                                  lnk) {
                      design_modelres %>%
                          # spatial noise
                          group_by(across(str_c("location", suffix))) %>%
@@ -673,13 +673,13 @@ simulate_detrended_pops_singlemodel <-
                                         starts_with("ranef"),
                                         ends_with(str_c("noise", suffix))))),
                                 "link{suffix}" :=
-                                    factor(link[index_joint]),
+                                    factor(lnk[index_joint]),
                                 "llhfam{suffix}" :=
                                     factor(likelihood_family[index_joint]),
                                 "llhfam_param1{suffix}" :=
                                     .data[[str_c("linpred",suffix)]]  %>%
                                     {switch(
-                                        link[index_joint],
+                                        lnk[index_joint],
                                         "identity" = .,
                                         "log" = exp(.),
                                         "logit" = exp(.) / (1 + exp(.))
@@ -716,7 +716,7 @@ simulate_detrended_pops_singlemodel <-
                                         )) %>%
                          select(-str_c("modelterm_type", suffix)) %>%
                          rename_with(
-                             .cols = ends_with(suffix) &
+                             .cols = matches(str_c(suffix, "$")) &
                                  !(str_c("linpred_fixed", suffix):last_col()),
                              .fn = ~str_remove(., str_c(suffix, "$"))
                              )
