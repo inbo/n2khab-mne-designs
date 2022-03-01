@@ -474,10 +474,10 @@ simulate_detrended_pops_singlemodel <-
                                                  suffixes_joint,
                                                  index_joint)
 
-        if (is.na(uln_lp) || is.null(uln_lp)) uln_lp <- formals()$uln_lp
-        if (is.na(uln) || is.null(uln)) uln <- formals()$uln
-        if (is.na(lln) || is.null(lln)) lln <- formals()$lln
-        if (is.na(ulg) || is.null(ulg)) ulg <- formals()$ulg
+        if (is.na(uln_lp) || is.null(uln_lp)) uln_lp <- eval(formals()$uln_lp)
+        if (is.na(uln) || is.null(uln)) uln <- eval(formals()$uln)
+        if (is.na(lln) || is.null(lln)) lln <- eval(formals()$lln)
+        if (is.na(ulg) || is.null(ulg)) ulg <- eval(formals()$ulg)
 
         design_matrix_nested %>%
             mutate(
