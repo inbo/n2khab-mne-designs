@@ -1260,12 +1260,13 @@ summarise_status_of_samples <- function(multisample_stats,
                                          function(x) {
                                          density(x,
                                                  bw = "SJ",
-                                                 from = !!density_left) %>%
+                                                 from = !!density_left,
+                                                 cut = 20) %>%
                                              approxfun(rule = 1:2) %>%
                                              integrate(!!density_left,
                                                        qs,
                                                        # subdivisions = 2000L,
-                                                       rel.tol=.Machine$double.eps^.05) %>%
+                                                       rel.tol=0.01) %>%
                                              .$value %>%
                                              min(1)
                                          }}) %>%
