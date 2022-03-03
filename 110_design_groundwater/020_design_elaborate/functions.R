@@ -1222,7 +1222,7 @@ compute_status_persample <- function(statusdata = NULL,
 #' The calculation is done for each scenario and type(group) in turn.
 #'
 #' @param merge_pops Results can be given per population or as an overall average (the default).
-#' @param conflevel_pctiles The confidence level (between 0 and 1) that defines lower and upper percentiles (with probabilitie arranged symmetrically around P = 0.5).
+#' @param conflevel_pctiles The confidence level (between 0 and 1) that defines lower and upper percentiles (with probabilities arranged symmetrically around P = 0.5).
 #' @param qual_std Optional vector of one or more values of a targeted quality standard, i.e. one or more target values of the statistic, for which left-sided probabilities will be estimated from the interpolated ECDF.
 #' @param density_left Left side cutoff in density calculation for the statistic, when calculating probabilities.
 #' The default is optimized for (absolute or relative) error margins, which are always positive.
