@@ -1258,18 +1258,11 @@ summarise_status_of_samples <- function(multisample_stats,
                                  map(!!qual_std,
                                      function(qs) {
                                          function(x) {
-                                         density(x,
-                                                 bw = "SJ",
-                                                 from = !!density_left,
-                                                 cut = 20) %>%
-                                             approxfun(rule = 1:2) %>%
-                                             integrate(!!density_left,
-                                                       qs,
-                                                       # subdivisions = 2000L,
-                                                       rel.tol=0.01) %>%
-                                             .$value %>%
-                                             min(1)
-                                         }}) %>%
+                                             lower_tailprob(
+                                                 x, qs, !!density_left
+                                             )
+                                         }
+                                         }) %>%
                                      set_names(str_c("p(stat≤", !!qual_std, ")")),
                                  .names = "{.fn}")
                               }) %>%
@@ -1308,6 +1301,34 @@ summarise_status_of_samples <- function(multisample_stats,
 }
 
 
+
+
+
+#' Calculate a left tail probability for a given quantile from a vector of observations
+#'
+#' First calculates a density (PDF) from the observation vector. Then a
+#' cumulative distribution function (CDF) is derived from that. Finally, the
+#' CDF value is returned for the given quantile.
+#'
+#' @note
+#' Inspired by https://stackoverflow.com/a/6976450 and https://stackoverflow.com/a/43570620.
+#'
+#' @param x Numeric vector of observations
+#' @param q A quantile (i.e. in the scale of the observations) for which the
+#' corresponding probability will be calculated
+#' @inheritParams summarise_status_of_samples
+#'
+lower_tailprob <- function(x, q, density_left) {
+    stopifnot(length(q) == 1L, is.numeric(q))
+    pdf <-
+        density(x,
+                bw = "SJ",
+                from = density_left,
+                cut = 20)
+    cdf <- cumsum(pdf$y * diff(pdf$x[1:2]))
+    cdf <- cdf / max(cdf)
+    approxfun(pdf$x, cdf, rule = 1:2)(q)
+}
 
 
 
