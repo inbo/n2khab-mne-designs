@@ -263,19 +263,50 @@ sample_definition <-
                      typegroup,
                      popsize_spatial = population_size),
             by = "type") %>% 
+    arrange(scenario, typegroup) %>% 
+    (
+        function(df) {
+            adjusted_by_typegroup <- 
+                df %>% 
+                group_by(scenario, typegroup, avg_nrlocs_pertype_infpop) %>% 
+           # note that: se_typegroup^2 = sum(se_type^2) / nrtypes_per_typegroup^2
+           # and: se_type^2 = spatvar_generalized / avg_nrlocs_pertype_infpop 
+           # so we now consider the 'constant' part of se_typegroup^2, i.e.
+           # without nr of locs per type, in order to adjust the latter _between
+           # typegroups_ in a first round!
+                summarise(
+                    nrtypes_per_typegroup = n(),
+                    se_typegroup_pp = 
+                        sum(spatvar_generalized) / nrtypes_per_typegroup^2
+                    ) %>% 
+                group_by(scenario) %>% 
+                mutate(adj_nrlocs_pertype_infpop = 
+                           sum(avg_nrlocs_pertype_infpop) *
+                           se_typegroup_pp / sum(se_typegroup_pp)) %>% 
+                ungroup %>% 
+                select(scenario, typegroup, adj_nrlocs_pertype_infpop)
+            
+            df %>% 
+                inner_join(adjusted_by_typegroup, by = c("scenario", "typegroup"))
+        }
+    ) %>% 
   group_by(scenario, typegroup) %>% 
-  mutate(nrtypes_per_typegroup = n()) %>% 
-  group_by(scenario) %>% 
+    # now we make that the different se_type^2 terms (in se_typegroup^2) are
+    # made equal _within each typegroup_ by further adjusting the number of locs
+    # per type (which are in the denominator)
   mutate(n_infpop_spatial = 
-           (spatvar_generalized / nrtypes_per_typegroup) / 
-           sum(spatvar_generalized / nrtypes_per_typegroup) * 
-           sum(avg_nrlocs_pertype_infpop)) %>% 
+           sum(adj_nrlocs_pertype_infpop) * 
+             spatvar_generalized / sum(spatvar_generalized)
+           ) %>% 
   rowwise %>% 
+    # then, we forbid type sample sizes smaller than 20% of
+    # avg_nrlocs_pertype_infpop
   mutate(n_infpop_spatial = max(n_infpop_spatial, avg_nrlocs_pertype_infpop * 0.2)) %>% 
   ungroup %>% 
   select(-starts_with("spatvar"), 
-         -avg_nrlocs_pertype_infpop, 
+         -contains("nrlocs_pertype_infpop"), 
          -contains("typegroup")) %>% 
+    # finally, we apply finite population correction
   mutate(n_finitepop_spatial = 
                n_infpop_spatial * popsize_spatial / 
                (popsize_spatial - 1 + n_infpop_spatial),
