@@ -197,7 +197,6 @@ scheme_respvar <-
     mutate(scheme_sel_label = str_replace_all(scheme, "_|\\.", "-"),
            filepath_sub = c("gw33_", "gw51a_", "gw51t_"),
            timevar = c("hydroyear", rep("hydroyear_std", 2)),
-           errmarg_rel = TRUE,
            submodels = c(FALSE, FALSE, TRUE),
            submodelpop = map2(scheme, submodels,
                             ~ if (!.y) NULL else {
@@ -210,6 +209,9 @@ scheme_respvar <-
                           c("lg3_std", "hg3_std"),
                           c("lg3_lcl", "hg3_lcl")),
            respvar_label = map(respvar, ~str_replace_all(., "_|\\.", "-")),
+           errmarg_rel = list(rep(TRUE, 3),
+                              rep(TRUE, 2),
+                              c(TRUE, FALSE)),
            sim_truncation = list(rep(list(NULL), 3),
                                  rep(list(NULL), 2),
                                  list(c(uln = 0), c(ulg = 7))),
@@ -231,7 +233,11 @@ scheme_respvar <-
            ),
            cpu_cores_trend = c(3, 5, 2)) %>% 
     unnest(submodelpop, keep_empty = TRUE) %>% 
-    unnest(c(respvar, respvar_label, sim_truncation, starts_with("qual_std_status"))) %>% 
+    unnest(c(respvar, 
+             respvar_label, 
+             errmarg_rel,
+             sim_truncation, 
+             starts_with("qual_std_status"))) %>% 
     mutate(modelname = str_c("model_", filepath_sub, respvar,
                              ifelse(is.na(submodelpop), "", 
                                     str_c("_", submodelpop)))) %>% 
@@ -239,6 +245,7 @@ scheme_respvar <-
     nest(modelnames = modelname) %>% 
     nest(specifics = c(respvar, 
                        respvar_label, 
+                       errmarg_rel,
                        sim_truncation,
                        qual_std_status_errmarg_rel,
                        qual_std_status_errmarg,
@@ -267,10 +274,10 @@ scheme_respvar %>%
                    respvar_label,
                    filepath_sub,
                    timevar,
-                   errmarg_rel, # should the error margins be evaluated relative to the estimated value?
                    spfact,
                    scen_def,
                    cpu_cores_trend,
+                   errmarg_rel, # should the error margins be evaluated relative to the estimated value?
                    sim_truncation,
                    qual_std_status_errmarg_rel,
                    qual_std_status_errmarg,
