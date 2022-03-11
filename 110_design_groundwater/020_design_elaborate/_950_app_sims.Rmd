@@ -640,14 +640,23 @@ trend_estimateslocal <-
              if (n_distinct(df$location) == 1L) {
                fm <- logresp ~ hydroyear_std
              } else fm <- logresp ~ hydroyear_std:location
-             lme(fm,
-                 random = ~ 1 | location,
-                 data = df,
-                 control = lmeControl(opt = "optim")) %>% 
-               summary %>% 
-               {tibble(distinct(.$groups),
-                       beta_loc = .$tTable[-1, "Value"],
-                       se_loc = .$tTable[-1, "Std.Error"])}
+             if (n_distinct(df$logresp) > 1L) {
+                 lme(fm,
+                     random = ~ 1 | location,
+                     data = df,
+                     control = lmeControl(opt = "optim")) %>% 
+                     summary %>% 
+                     {tibble(distinct(.$groups),
+                             beta_loc = .$tTable[-1, "Value"],
+                             se_loc = .$tTable[-1, "Std.Error"])}
+             } else {
+                 # lme always errors with a singular fit (constant response)
+                 lm(fm, data = df) %>% 
+                     summary %>% 
+                     {tibble(distinct(df, location),
+                             beta_loc = .$coefficients[-1, "Estimate"],
+                             se_loc = .$coefficients[-1, "Std. Error"])}
+             }
            }
            ))  %>% 
   select(-data) %>% 
