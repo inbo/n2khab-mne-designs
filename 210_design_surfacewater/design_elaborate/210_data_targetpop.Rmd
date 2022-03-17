@@ -1,0 +1,721 @@
+# (PART) Data voor het ontwerp van de meetnetten {-}
+
+# Spatiale data van de doelpopulaties van de meetnetten
+
+## Bufferpolygoonlagen voor selectie van piëzometers
+
+<!-- Expanderen van types per meetnet: -->
+<!-- Types die voorkomen in de geëxpandeerde lijst, met hun waterhuishoudingsklasse (`hydr_class`): -->
+<!-- De variabele `unresolved` is `TRUE` voor de extra types, toegevoegd door expansie van de lijst. -->
+<!-- Het betekent dat zulke types niet voorkomen in de definiërende typelijst van de doelpopulatie (als gevolg van hoofd- vs. subtypeniveau), maar dat polygonen met deze types in `habitatmap_terr` (geïnterpreteerde versie van het terrestrisch deel van de habitatkaart) vermoedelijk (of voor extra subtypes: zeker) _deel uitmaken_ van de doelpopulatie. -->
+<!-- Of een polygoon, met een hoofdtypecode waarvoor `unresolved == TRUE`, ook werkelijk deel uitmaakt van de doelpopulatie, zal op terrein moeten blijken. -->
+
+```{r}
+targetpop_expanded <-
+    targetpop %>%
+    group_by(scheme) %>%
+    expand_types %>%
+    ungroup
+types_expanded <-
+    targetpop_expanded %>%
+    distinct(type) %>%
+    arrange(type) %>%
+    mutate(unresolved = type %in% (targetpop_expanded %>% 
+                                       distinct(type) %>%
+                                       anti_join(targetpop,
+                                                 by = "type") %>%
+                                       .$type))
+```
+
+<!-- De volgende types werden toegevoegd als gevolg van de expansie: -->
+
+```{r eval=FALSE, include=FALSE}
+types_expanded %>%
+    filter(unresolved) %>% 
+    inner_join(read_types() %>% select(type, typelevel),
+               by = "type") %>% 
+    select(type, typelevel) %>% 
+    kable(caption = "Toegevoegde typecodes om optimaal te koppelen met de geïnterpreteerde kaartlaag van terrestrische types `habitatmap_terr`") %>% 
+    kable_styling(full_width = FALSE)
+```
+
+<!-- Indien de polygonen van het toegevoegde hoofdtype weinig piëzometers bevatten, dan zullen we dit type terug verwijderen: het is immers niet duidelijk met welk subtype dit in de analyse meest overeenkomt. -->
+<!-- Daarnaast worden de toegevoegde subtypes terug omgezet naar het hoofdtype, na koppeling met de geïnterpreteerde kaartlaag van terrestrische types `habitatmap_terr`. -->
+
+<!-- We lezen de ruimtelijke data in van de terrestrische types (incl. 'semi-terrestrisch'), met uitsluiting van resterende aquatische types (binnen deze potentieel terrestrische polygonen). -->
+<!-- Na de beperking tot de types in `types_expanded` mergen we tevens de geëxpandeerde subtypes terug in hun hoofdtype, aangezien in de MNM op dat niveau wordt gewerkt bij die types. -->
+
+```{r}
+wsh<-read_watersurfaces_hab(interpreted=T)
+wsh_occ <-wsh$watersurfaces_types %>%
+    semi_join(types_expanded,
+              by = "type") %>%
+    mutate(type = recode(type,
+                         "3130_aom" = "3130",
+                         "3130_na" = "3130",) %>%
+               as.character %>%
+               factor(levels = levels(types_expanded$type))
+           )
+wsh_pol <-
+    wsh$watersurfaces_polygons %>%
+    semi_join(wsh_occ, by = "polygon_id") %>% 
+    select(polygon_id) %>% 
+    st_make_valid
+```
+
+<!-- - We doen hetzelfde voor de stilstaande wateren (d.w.z. aquatische types uitgezonderd 3260 en 7220 partim beken): -->
+
+```{r}
+wsh <- read_watersurfaces_hab(interpreted = TRUE)
+wsh_occ <- 
+    wsh$watersurfaces_types %>% 
+    semi_join(types_expanded,
+              by = "type")
+wsh_pol <-
+    wsh$watersurfaces_polygons %>%
+    semi_join(wsh_occ, by = "polygon_id") %>% 
+    select(polygon_id)
+```
+
+<!-- - We lezen de spatiale data ook in voor types 3260 en 7220. -->
+
+```{r}
+habstream <- read_habitatstreams(file = file.path(fileman_up("n2khab_data"), "10_raw/habitatstreams"))
+flanders_buffer <- 
+    read_admin_areas(dsn = "flanders") %>% 
+    st_buffer(40)
+habspring <- 
+    read_habitatsprings(filter_hab = TRUE) %>% 
+    filter(type == "7220") %>% 
+            # note that the one 7230 point is covered by habitatmap_terr
+    .[flanders_buffer, ]
+```
+
+Op basis van de lijst van types die de doelpopulatie definiëren (paragraaf \@ref(meetnetten)) zijn verschillende spatiale datasets afgeleid voor het oppervlaktewatercompartiment, waar deze types voorkomen (behoudens onzekerheden in de databronnen):
+
+<!-- XXX referenties basislagen invoegen -->
+
+- polygonen van de geïnterpreteerde kaartlaag van types van stilstaande wateren;
+- waterloopsegmenten met type 3260;
+- punten met type 7220. (NOG TE BEHANDELEN!)
+
+Om een koppeling te maken tussen de waterloopsegmenten (lijnen) en de VMM-oppervlaktwaterdatabank (punten) wordt een buffer van 10 meter in rekening gebracht. 
+
+```{r}
+#wsh_pol_buff <- st_buffer(wsh_pol, 10)
+```
+
+```{r warning=FALSE, eval=!file.exists("data/binary/wsh_pol_ring.gpkg") | params$regenerate_binary_files}
+#wsh_pol_union <- st_union(wsh_pol)
+#wsh_pol_ring <- 
+    #wsh_pol %>% 
+    #st_buffer(30) %>% 
+    #st_difference(wsh_pol_union)
+#wsh_pol_ring %>% 
+    #st_write("./data/binary/wsh_pol_ring.gpkg",
+             #delete_dsn = TRUE)
+#rm(wsh_pol_ring)
+#mapview::mapView(list(wsh_pol, wsh_pol_ring))
+```
+
+```{r}
+#wsh_pol_ring <- 
+    #read_sf("data/binary/wsh_pol_ring.gpkg") %>% 
+    #mutate(polygon_id = factor(polygon_id))
+```
+
+
+```{r}
+#habstream_buff <- st_buffer(habstream, 30)
+#habspring_buff <- st_buffer(habspring, 40)
+# mapview::mapView(list(habstream_buff, habspring_buff))
+```
+
+Tabel \@ref(tab:buffer-area) geeft meer informatie over deze lagen.
+
+```{r buffer-area}
+tribble(~layer, ~surface_area, ~nr_features,
+        "Lentic types",
+        wsh_pol %>% st_area %>% sum %>% set_units("ha") %>% round(2),
+        nrow(wsh_pol),
+        "Type 7220",
+        habspring%>% st_area %>% sum %>% set_units("ha") %>% round(2),
+        nrow(habspring)
+) %>% 
+    kable(caption = "Oppervlakte en het aantal elementen van de polygoonlagen waarmee meetpunten worden geselecteerd.") %>% 
+    kable_styling(full_width = FALSE)
+tribble(~layer, ~surface_length, ~nr_features,
+        "Type 3260",
+        habstream %>% st_length %>% sum %>% set_units("m") %>% round(2),
+        nrow(habstream))%>%
+    kable(caption = "lengte en het aantal elementen van de polylinelaag waarmee meetpunten worden geselecteerd.") %>% 
+    kable_styling(full_width = FALSE)
+```
+
+
+## Geschatte spatiale populatiegroottes {#popsize}
+
+We schatten de spatiale populatiegrootte van elk stratum in elk meetnet.
+Een stratum in een meetnet betreft een type, ofwel een combinatie type x oppervlaktestratum in het geval van stilstaande wateren.
+
+Bij deze schatting wordt het voorkomen van terrestrische types steeds ingeperkt volgens het optreden van ondiep grondwater, behalve voor de '(bijna) overal grondwaterafhankelijke' types.
+Voorts wordt het type 7220 ingeperkt tot de moerassystemen (inclusief systeemtype 'ongekend') voor meetnet GW_05.1_terr en tot de beeksystemen (inclusief systeemtype 'ongekend') voor meetnet GW_05.1_aq.
+De oppervlakte die volgens de brongegevens is opgegeven voor `r types_expanded %>% filter(unresolved) %>% semi_join(hmt_occ, by = "type") %>% pull(type) %>% paste(collapse = ",")` (ontbreekt in de definitie van de doelpopulatie) wordt verdeeld over (bijgeteld bij) alle overeenkomstige subtypes, alvorens de subtypes te beperken tot deze van de doelpopulatie.
+Deze bijtelling gebeurt volgens de oppervlakteproportie van de subtypes vóór bijtelling.
+
+```{r}
+habspring_units <- read_habitatsprings(units_7220 = TRUE)
+```
+
+
+De spatiale populatiegroottes zijn relevant voor de gesimuleerde inferenties, nl. voor de toepassing van de correctie voor eindige populaties (finite-population-correction, FPC).
+Daarbij merken we op dat we voor de steekproefsimulaties abstractie zullen maken van het onderscheid tussen oppervlaktestrata van de stilstaande wateren.
+Deze oppervlaktestrata worden wel aangewend in de eigenlijke steekproeftrekking en in de latere inferentiestappen.
+We nemen de oppervlaktestrata daarom reeds op.
+
+```{r}
+pop_size_terr_all_approaches <- 
+    read_vc("030_preparations/010_explore_targetpop/pop_size_terr", 
+            root = find_root(is_git_root)) %>%
+    mutate(sg_restricted = FALSE) %>%
+    bind_rows(
+        read_vc("030_preparations/010_explore_targetpop/pop_size_terr_sg", 
+                root = find_root(is_git_root)) %>% 
+            mutate(sg_restricted = TRUE)
+    ) %>% 
+    as_tibble %>% 
+    inner_join(read_types() %>% 
+                   select(type, typelevel, main_type),
+               by = "type")
+pop_size_terr <- 
+    # first isolate unresolved main types from target population and join them
+    # to corresponding subtypes:
+    pop_size_terr_all_approaches %>% 
+    filter(main_type %in% 
+               (pop_size_terr_all_approaches %>% 
+                    inner_join(types_expanded, 
+                               by = "type") %>%
+                    filter(unresolved) %>% 
+                    distinct(type) %>% 
+                    pull(type))) %>% 
+    inner_join(filter(., typelevel == "main_type") %>% 
+                   select(type, 
+                          count_method, 
+                          sg_restricted, 
+                          popsize_main = population_size),
+               by = c("main_type" = "type", "count_method", "sg_restricted")) %>% 
+    filter(typelevel == "subtype") %>% 
+    # add these main types' popsize proportionally to corresponding subtype
+    # popsizes
+    group_by(main_type, count_method, sg_restricted) %>% 
+    mutate(addition = population_size / sum(population_size) * popsize_main,
+           population_size = population_size + addition) %>% 
+    select(-addition, -popsize_main) %>% 
+    ungroup %>% 
+    # re-adding all other popsizes:
+    bind_rows(anti_join(pop_size_terr_all_approaches, .,
+                        by = c("type", "count_method", "sg_restricted"))) %>% 
+    # restrict to resolved types from target population:
+    semi_join(types_expanded %>% filter(!unresolved), 
+              by = "type") %>% 
+    # retain the one appropriate count_method for each type
+    inner_join(
+        read_vc("030_preparations/010_explore_targetpop/type_approaches", 
+                root = find_root(is_git_root)),
+        by = "type") %>% 
+    filter(count_method == "cellbased" & approach_cellbased |
+               count_method == "centroidbased" & !approach_cellbased) %>% 
+    select(-c(typelevel, main_type, approach_cellbased)) %>% 
+    # restrict with shallowgroundwater, or not, depending on groundw_dep
+    inner_join(read_types() %>% select(type, groundw_dep), 
+               by = "type") %>% 
+    filter((groundw_dep == "GD2" & !sg_restricted) | 
+               (groundw_dep != "GD2" & sg_restricted)) %>% 
+    mutate(stratum = NA_character_,
+           population_size = round(population_size)) %>% 
+    select(type, stratum, population_size) %>% 
+    arrange(type, stratum)
+pop_size_7220 <-
+    habspring_units %>% 
+    st_drop_geometry %>% 
+    count(system_type) %>% 
+    pivot_wider(names_from = system_type,
+                values_from = n) %>% 
+    transmute(all = mire + rivulet + unknown,
+              terrestrial = mire + unknown,
+              aquatic = rivulet + unknown) %>% 
+    mutate(type = "7220")%>% #%>% factor(levels = levels(pop_size_terr$type))) %>% 
+    pivot_longer(cols = c("all", "terrestrial", "aquatic"),
+                 names_to = "stratum",
+                 values_to = "population_size")
+pop_size_3260 <- 
+    habstream %>% 
+    mutate(length = as.vector(st_length(.)),
+           population_size = ceiling(length / 100)) %>% 
+    st_drop_geometry()%>% 
+    summarise(type = first(type),
+              stratum = first(NA_character_),
+              population_size = sum(population_size))
+pop_size_lentic <- 
+    wsh_pol %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    select(polygon_id, area) %>% 
+    mutate(stratum = 
+               area %>% 
+               cut(c(0, 1, 5, 50, 150)) %>% 
+               as.character) %>% 
+    inner_join(wsh_occ, by = "polygon_id", .) %>% 
+    semi_join(targetpop, by = "type") %>% 
+    count(type, stratum, name = "population_size")
+
+```
+
+
+```{r}
+join_targetpop <- function(df) {
+    df  %>% 
+    inner_join(targetpop %>% 
+                   select(scheme, 
+                          type,
+                          contains("typegroup")), 
+               .,
+               by = "type") %>% 
+    filter(type != "7220" |
+               (type == "7220" & stratum == "all" & !str_detect(scheme, "aq|terr")) |
+               (type == "7220" & stratum == "aquatic" & str_detect(scheme, "aq")) | 
+               (type == "7220" & stratum == "terrestrial" & str_detect(scheme, "terr"))
+           )
+}
+targetpop_stratumsize <- 
+    bind_rows(pop_size_7220,
+              pop_size_3260,
+              pop_size_lentic) %>% 
+    join_targetpop
+```
+
+Figuur \@ref(fig:stratumsize) toont de verdeling van populatiegroottes per meetnet.
+De waarden lopen zeer sterk uiteen tussen verschillende strata.
+Dit geldt voor alle meetnetten.
+
+(ref:stratumsize) Distributie van de populatiegrootte van de verschillende strata per meetnet. Een stratum in een meetnet betreft een type, ofwel een combinatie type x oppervlaktestratum in het geval van stilstaande wateren.
+
+```{r stratumsize, fig.cap = "(ref:stratumsize)"}
+targetpop_stratumsize %>% 
+    ggplot(aes(x = population_size)) +
+    geom_density(fill = "grey", colour = NA) +
+    scale_x_log10() +
+    facet_wrap(~scheme, scales = "free")
+```
+
+In Figuur \@ref(fig:fpc) is te zien dat de FPC-correctie een grote invloed kan uitoefenen op de steekproefgrootte.
+De correctiefactor hangt af van de populatiegrootte en van de steekproefgrootte, berekend voor een oneindige populatie.
+In de figuur zien we bijvoorbeeld: als een steekproefgrootte wordt berekend van 50 eenheden, dan volstaat in realiteit een steekproef van 25 eenheden (FPC = 0.50) indien de populatie zelf maar 50 eenheden groot is.
+
+
+(ref:fpc) Het effect op de eindige-populatie-correctie `FPC`, van de populatiegrootte en van de steekproefgrootte berekend voor oneindige populaties (`n_infinitepop`).
+
+```{r fpc, fig.cap = "(ref:fpc)"}
+expand.grid(n_infinitepop = c(10, seq(25, 200, 25)) %>% factor,
+            population_size = 10^seq(1, 5, 0.05)) %>% 
+    mutate(n_infpop = n_infinitepop %>% as.character %>%  as.integer,
+        n_finitepop = 
+               n_infpop * population_size / 
+               (population_size - 1 + n_infpop),
+           FPC = n_finitepop / n_infpop) %>% 
+    ggplot(aes(x = population_size, 
+               y = FPC, 
+               colour = n_infinitepop, group = n_infinitepop)) +
+    geom_line() + 
+    scale_x_log10(minor_breaks = 
+                      seq(10, 90, 10) * 
+                      matrix(10^(0:3), 9, 4, byrow = TRUE) %>% 
+                      as.vector)
+```
+
+## Verdeling van types volgens bodemklasse en ecoregio {#spatiale-verdeling}
+
+
+```{r grass-setup2, include=FALSE}
+# CREATE or LINK to a permanent GRASS database
+rgrass7::initGRASS(gisBase = "C:/OSGeo4W/apps/grass/grass78",
+          home = tempdir(),
+          gisDbase = "C:/grassdata/", 
+          location = grass_location, 
+          mapset = "PERMANENT", 
+          override = TRUE)
+if (!grass_exists) execshell("g.proj -c --quiet epsg=31370")
+```
+
+```{r include=FALSE}
+assertthat::assert_that(file.exists(projfilepath),
+                        msg = "Please configure your GRASS setup first.")
+```
+
+```{r grass-misc, eval=FALSE}
+execshell("g.list type=vector -p")
+# opening GRASS manual:
+execshell("g.manual -i")
+# get argument to start grass CLI (grass --text XXXXX):
+execshell("g.gisenv get=GISDBASE,LOCATION_NAME,MAPSET sep='/'")
+# CRS info
+execshell("g.region -p
+           g.proj -w")
+gmeta()
+# launch GUI
+execshell("g.gui")
+```
+
+We beschouwen de spatiale verdeling van de types volgens _bodemklasse_ (vier klassen: zwaar, licht, veen, ongekend) en _ecoregio_ (12 klassen): deze informatie is beschikbaar voor de gehele doelpopulatie en uit eerder modelwerk (Jansen, unpubl.) bleken deze variabelen een verklarende waarde te hebben voor één of meerdere van de beschouwde milieuvariabelen.
+De spatiale verdeling zal immers relevant zijn voor de simulatie van realistische steekproeven.
+In de modellen zal steeds maar één van deze variabelen worden opgenomen (beperking van het aantal te schatten parameters), zodat we de interactie niet zullen onderzoeken.
+
+Bij de terrestrische types houden we er rekening mee dat de doelpopulatie beperkt is tot locaties met een relatief ondiepe grondwaterstand in de droge periode van het jaar (Tabel \@ref(tab:schemes)).
+
+Type 8310 wordt niet beschouwd; het wordt niet betrokken in de modellen en de vernoemde spatiale factoren zijn er minder relevant.
+
+```{r}
+soilmap <- 
+    read_soilmap() %>% 
+    transmute(soilclass = case_when(
+        str_detect(bsm_mo_tex, "V") ~ "peat",
+        str_detect(bsm_mo_tex, "^U") ~ "heavy",
+        str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+        str_detect(bsm_mo_tex, ".+") ~ "heavy",
+        TRUE ~ "unknown") %>% 
+            factor)
+```
+
+```{r paged.print=FALSE, message=FALSE}
+ecoregions <-
+    read_ecoregions() %>% 
+    select(ecoregion = region_name) %>% 
+    group_by(ecoregion) %>% 
+    summarise %>% 
+    st_cast("MULTIPOLYGON")
+```
+
+```{r results="hide", message=FALSE}
+options(qgisprocess.path = "path/to/qgis_process")
+sg_path <- 
+    fileman_up("n2khab_data") %>% 
+    file.path("10_raw/shallowgroundwater/shallowgroundwater.gpkg")
+
+hmt_pol_sg <- 
+    hmt_pol %>%
+    qgis_run_algorithm("native:extractbylocation",
+                       INPUT = .,
+                       PREDICATE = 0,
+                       INTERSECT = sg_path) %>% 
+    .$OUTPUT %>% 
+    read_sf
+```
+
+
+```{r include=FALSE, eval=!grass_exists|params$regenerate_binary_files}
+system.time({
+pol <- 
+    hmt_pol_sg %>% 
+    rbind(wsh_pol_ring) %>% 
+    rbind(habstream_buff %>% 
+              as_tibble %>% 
+              magrittr::set_colnames(c(head(colnames(.), -1),
+                                       "geom")) %>% 
+              st_as_sf %>% 
+              st_cast("MULTIPOLYGON") %>% 
+              select(polygon_id = type))
+pol %>% 
+    writeVECT("pol",
+              v.in.ogr_flags = c("overwrite", "o"))
+})
+#    user  system elapsed 
+# 135.163  34.189 204.223 
+```
+
+```{r include=FALSE, eval=!grass_exists|params$regenerate_binary_files}
+soilmap_pol_temppath <- 
+    qgis_run_algorithm("native:extractbylocation",
+                       INPUT = soilmap,
+                       PREDICATE = 0,
+                       INTERSECT = pol) %>% 
+    .$OUTPUT
+execGRASS("v.in.ogr", c("o", "overwrite"),
+          input = soilmap_pol_temppath,
+          output = "soilmap_pol")
+```
+
+
+```{r include=FALSE, eval=!grass_exists}
+system.time(
+ecoregions %>% 
+    writeVECT("ecoregions",
+              v.in.ogr_flags = c("overwrite", "o"))
+)
+```
+
+<!-- ----------------------------------------------------- -->
+<!-- 61 input polygons -->
+<!-- Total area: 1.37501E+10 (123 areas) -->
+<!-- Overlapping area: 1309.97 (39 areas) -->
+<!-- Area without category: 30748.9 (27 areas) -->
+<!-- ----------------------------------------------------- -->
+<!-- 39 areas represent multiple (overlapping) features, because polygons -->
+<!-- overlap in input layer(s). Such areas are linked to more than 1 row in -->
+<!-- attribute table. The number of features for those areas is stored as -->
+<!-- category in layer 2 -->
+<!-- ----------------------------------------------------- -->
+<!-- If overlapping is not desired, the input data can be cleaned by snapping -->
+<!-- vertices to each other. -->
+<!-- Estimated range of snapping threshold: [1e-10, 0.1] -->
+<!--    user  system elapsed  -->
+<!--   0.449   0.897   2.798  -->
+
+```{r include=FALSE, eval=!grass_exists|params$regenerate_binary_files}
+system.time(
+execshell("v.overlay --overwrite ainput=pol operator=and binput=ecoregions output=pol_ecoregion")
+)
+```
+
+ <!--   user  system elapsed  -->
+ <!-- 92.097  49.529 139.111  -->
+
+```{r include=FALSE, eval=!grass_exists|params$regenerate_binary_files}
+system.time(
+execshell("v.overlay --overwrite ainput=pol_ecoregion operator=and binput=soilmap_pol output=pol_spfact")
+)
+```
+
+<!-- WARNING: Number of incorrect boundaries: 14 -->
+<!-- WARNING: Number of duplicate centroids: 57 -->
+<!-- v.overlay complete. -->
+<!--    user  system elapsed  -->
+<!-- 272.537  70.569 397.391 -->
+
+```{r include=FALSE, eval=!grass_exists|params$regenerate_binary_files}
+execshell("v.out.ogr --overwrite input=pol_spfact output=data/binary/pol_spfact.gpkg format=GPKG")
+```
+
+<!-- Exporting 270241 areas (may take some time)... -->
+<!--  100% -->
+<!-- WARNING: 9716 features without category were skipped. Features without -->
+<!--          category are written only when -c flag is given. -->
+<!-- v.out.ogr complete. 344462 features (Polygon type) written to <pol_spfact> -->
+<!-- (GPKG format). -->
+
+```{r paged.print=FALSE, warning=FALSE, include=FALSE}
+assertthat::assert_that(file.exists("data/binary/pol_spfact.gpkg"))
+pol_spfact <- 
+    read_sf("data/binary/pol_spfact.gpkg", crs = 31370) %>% 
+    select(polygon_id = a_a_polygon_id,
+           ecoregion = a_b_ecoregion,
+           soilclass = b_soilclass) %>% 
+    mutate(ecoregion = factor(ecoregion),
+           soilclass = factor(soilclass))
+```
+
+
+We berekenen de verdeling van de spatiale doelpopulatie van elk type over de spatiale factoren als volgt:
+
+- voor type 3260 worden de bufferpolygonen geïntersecteerd met deze van de spatiale factoren.
+Vervolgens wordt de oppervlakteproportie van elke klasse berekend op niveau Vlaanderen.
+- voor terrestrische types worden hun polygonen op analoge wijze geïntersecteerd.
+Bij de berekening, per type, van de oppervlakteproportie van elke klasse gebeurt een correctie volgens de `phab` waarde^[Dit betreft de geschatte fractie van de polygoon die door het type is ingenomen.] van elk type in elke polygoon;
+- voor types van stilstaande wateren: omdat elke plas een populatie-eenheid is ongeacht de oppervlakte, wordt eerst van elke plas de oppervlakteproportie van de klassen berekend ter hoogte van de bufferzone (ringvormig gebied).
+Deze waarden zijn te beschouwen als een gestandaardiseerde oppervlakte waarbij de waarde 1 overeenkomt met één populatie-eenheid.
+Op basis hiervan wordt, per type, de proportie van elke klasse berekend op niveau Vlaanderen;
+- voor type 7220 werken we puntgebaseerd, aangezien de punten zelf het beste de doelpopulatie vertegenwoordigen.
+We beschouwen de verdeling over de categorieën van de spatiale covariaten volgens de populatie-eenheden, d.w.z. na eventuele samenvoeging van puntlocaties die tot dezelfde eenheid behoren.
+Eerst wordt daarvoor wel de waarde vastgesteld op de individuele puntlocaties, en daarna geaggregeerd.
+
+```{r paged.print=FALSE, message=FALSE}
+spfact_distr_terr <- 
+    pol_spfact %>% 
+    semi_join(hmt_pol_sg %>% st_drop_geometry,
+              by = "polygon_id") %>% 
+    mutate(area = st_area(.)) %>% 
+    st_drop_geometry %>% 
+    inner_join(hmt_occ %>% distinct(polygon_id, type, phab),
+               .,
+               by = "polygon_id") %>% 
+    mutate(area = area * phab / 100) %>% 
+    group_by(type, ecoregion, soilclass) %>% 
+    summarise(area = sum(area)) %>% 
+    group_by(type) %>% 
+    mutate(proportion = (area / sum(area)) %>% drop_units, 
+           stratum = NA_character_) %>% 
+    ungroup %>% 
+    select(type, stratum, ecoregion, soilclass, proportion)
+spfact_distr_7220 <- 
+    habspring %>% 
+    st_join(soilmap) %>% 
+    st_join(ecoregions) %>% 
+    st_drop_geometry %>% 
+    group_by(unit_id) %>% 
+    arrange(soilclass) %>% 
+    summarise(soilclass = first(soilclass),
+              ecoregion = first(ecoregion)) %>% 
+    inner_join(
+        habspring_units %>% st_drop_geometry,
+        .,
+        by = "unit_id") %>% 
+    select(system_type, soilclass, ecoregion) %>% 
+    mutate(all = system_type %in% c("mire", "rivulet", "unknown"),
+           terrestrial = system_type %in% c("mire", "unknown"),
+           aquatic = system_type %in% c("rivulet", "unknown"),
+           type = "7220" %>% factor(levels = levels(spfact_distr_terr$type))) %>% 
+    pivot_longer(cols = c("all", "terrestrial", "aquatic"),
+                 names_to = "stratum",
+                 values_to = "valid") %>% 
+    filter(valid) %>% 
+    group_by(type, stratum, ecoregion, soilclass) %>% 
+    summarise(n = n()) %>% 
+    group_by(type, stratum) %>% 
+    mutate(proportion = (n / sum(n))) %>% 
+    ungroup %>% 
+    select(type, stratum, ecoregion, soilclass, proportion)
+spfact_distr_3260 <- 
+    pol_spfact %>% 
+    filter(polygon_id == "3260") %>% 
+    mutate(area = st_area(.)) %>% 
+    st_drop_geometry %>% 
+    mutate(type = "3260" %>% factor(levels = levels(spfact_distr_terr$type))) %>% 
+    group_by(type, ecoregion, soilclass) %>% 
+    summarise(area = sum(area)) %>% 
+    ungroup %>% 
+    mutate(proportion = (area / sum(area)) %>% drop_units, 
+           stratum = NA_character_) %>% 
+    select(type, stratum, ecoregion, soilclass, proportion)
+spfact_distr_lentic <- 
+    pol_spfact %>% 
+    semi_join(wsh_pol %>% st_drop_geometry,
+              by = "polygon_id") %>% 
+    mutate(area = st_area(.)) %>% # this is area within rings!
+    st_drop_geometry %>% 
+    inner_join(wsh_occ %>% distinct(polygon_id, type),
+               .,
+               by = "polygon_id") %>% 
+    group_by(type, polygon_id, ecoregion, soilclass) %>% 
+    summarise(area = sum(area)) %>% 
+    group_by(type, polygon_id) %>% 
+    mutate(proportion_in_pol = (area / sum(area)) %>% drop_units) %>% 
+    group_by(type, ecoregion, soilclass) %>% 
+    summarise(proportions_in_pol = sum(proportion_in_pol)) %>% 
+    ungroup %>% 
+    group_by(type) %>% 
+    mutate(proportion = (proportions_in_pol / sum(proportions_in_pol)), 
+           stratum = NA_character_) %>% 
+    ungroup %>% 
+    select(type, stratum, ecoregion, soilclass, proportion)
+```
+
+
+```{r paged.print=FALSE, message=FALSE}
+spfact_distr <- 
+    bind_rows(spfact_distr_terr,
+              spfact_distr_7220,
+              spfact_distr_3260,
+              spfact_distr_lentic)
+targetpop_ecoregion_distr <- 
+    spfact_distr %>% 
+    group_by(type, stratum, ecoregion) %>% 
+    summarise(proportion = sum(proportion)) %>% 
+    ungroup %>% 
+    join_targetpop
+targetpop_soilclass_distr <- 
+    spfact_distr %>% 
+    group_by(type, stratum, soilclass) %>% 
+    summarise(proportion = sum(proportion)) %>% 
+    ungroup %>% 
+    join_targetpop
+```
+
+De meeste ecoregio's bestrijken voor een beperkt aantal types een groter aandeel van hun doelpopulatie (Figuur \@ref(fig:ecoregion-types)).
+De Ecoregio van de Kempen speelt voor heel wat types een grotere rol.
+Er zijn dus grote verschillen tussen de ruimtelijke doelpopulaties van de types.
+
+(ref:ecoregion-types) Verdeling van types over ecoregio's. De horizontale as is het aandeel dat een ecoregio heeft in de doelpopulatie van een type (één observatie per type). De weergegeven spreiding per ecoregio omvat telkens alle types.
+
+```{r ecoregion-types, fig.cap="(ref:ecoregion-types)", out.width='70%'}
+targetpop_ecoregion_distr %>% 
+    # we only consider the "all" case for 7220:
+    filter(stratum == "all" | is.na(stratum)) %>% 
+    distinct(type, ecoregion, proportion) %>% 
+    pivot_wider(names_from = ecoregion,
+                values_from = proportion,
+                values_fill = 0) %>% 
+    pivot_longer(cols = contains("Ecoregio"),
+                 names_to = "ecoregion",
+                 values_to = "proportion") %>% 
+    mutate(ecoregion = factor(ecoregion) %>% fct_rev) %>% 
+    ggplot(aes(x = ecoregion, y = proportion)) +
+    geom_boxplot() +
+    coord_flip() +
+    ylab("proportion of a type's target population")
+```
+
+Lichte bodems bestrijken voor de meeste types een groter aandeel van de doelpopulatie (Figuur \@ref(fig:soilclass-types)).
+Veenbodems zijn daarentegen specifiek voor een beperkt aantal types.
+Van verschillende types blijkt de doelpopulatie in grote mate voor te komen op locaties met ongekende bodemklasse (de outliers in de klasse 'unknown').
+
+(ref:soilclass-types) Verdeling van types over bodemklassen. De horizontale as is het aandeel dat een bodemklasse heeft in de doelpopulatie van een type (één observatie per type). De weergegeven spreiding per bodemklasse omvat telkens alle types.
+
+```{r soilclass-types, fig.cap="(ref:soilclass-types)", out.width='70%'}
+targetpop_soilclass_distr %>% 
+    # we only consider the "all" case for 7220:
+    filter(stratum == "all" | is.na(stratum)) %>% 
+    distinct(type, soilclass, proportion) %>% 
+    pivot_wider(names_from = soilclass,
+                values_from = proportion,
+                values_fill = 0) %>% 
+    pivot_longer(cols = c(heavy, light, peat, unknown),
+                 names_to = "soilclass",
+                 values_to = "proportion") %>% 
+    mutate(soilclass = factor(soilclass) %>% fct_rev) %>% 
+    ggplot(aes(x = soilclass, y = proportion)) +
+    geom_boxplot() +
+    coord_flip() +
+    ylab("proportion of a type's target population")
+```
+
+Beschouwen we de gezamenlijke doelpopulatie per meetnet, dan zijn de patronen vrij vergelijkbaar tussen de meetnetten (Figuren \@ref(fig:ecoregion-schemes) en \@ref(fig:soilclass-schemes)).
+Een uitzondering is meetnet GW_07.1, waar de betreffende types vooral voorkomen in de Ecoregio van de polders en de getijdenschelde, en vooral op zware bodems.
+
+(ref:ecoregion-schemes) Verdeling van gezamenlijke doelpopulatie per meetnet over de ecoregio's. Elk type heeft evenveel gewicht in de verdeling.
+
+```{r ecoregion-schemes, message=FALSE, fig.width=7, fig.height=5, fig.cap="(ref:ecoregion-schemes)"}
+targetpop_ecoregion_distr %>% 
+    group_by(scheme, ecoregion) %>% 
+    summarise(proportion = sum(proportion)) %>% 
+    ungroup %>% 
+    mutate(ecoregion = fct_rev(ecoregion),
+           scheme = fct_rev(scheme)) %>% 
+    ggplot(aes(x = scheme, y = proportion, fill = ecoregion)) +
+    geom_col(position = "fill") +
+    scale_fill_discrete(limits = levels(targetpop_ecoregion_distr$ecoregion)) +
+    scale_y_continuous(position = "right") +
+    ylab("overall distribution of target population\n(each type has equal weight)") +
+    guides(fill = guide_legend(ncol = 2,
+                               title.position = "top")) +
+    theme(legend.position = "bottom") +
+    coord_flip()
+```
+
+(ref:soilclass-schemes) Verdeling van gezamenlijke doelpopulatie per meetnet over de bodemklassen. Elk type heeft evenveel gewicht in de verdeling.
+
+```{r soilclass-schemes, message=FALSE, fig.cap="(ref:soilclass-schemes)", out.width='80%'}
+targetpop_soilclass_distr %>% 
+    group_by(scheme, soilclass) %>% 
+    summarise(proportion = sum(proportion)) %>% 
+    ungroup %>% 
+    mutate(soilclass = fct_rev(soilclass),
+           scheme = fct_rev(scheme)) %>% 
+    ggplot(aes(x = scheme, y = proportion, fill = soilclass)) +
+    geom_col(position = "fill") +
+    scale_fill_discrete(limits = levels(targetpop_soilclass_distr$soilclass)) +
+    scale_y_continuous(position = "right") +
+    ylab("overall distribution of target population\n(each type has equal weight)") +
+    theme(legend.position = "bottom") +
+    coord_flip()
+```
+
+

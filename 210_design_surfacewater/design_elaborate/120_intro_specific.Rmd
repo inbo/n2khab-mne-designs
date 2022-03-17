@@ -1,0 +1,197 @@
+```{r load-packages, include=FALSE}
+library(rmarkdown)
+library(tidyverse)
+library(n2khab)
+library(kableExtra)
+library(pander)
+library(git2rdata)
+library(inborutils)
+library(sf)
+library(units)
+library(rprojroot)
+library(mapview)
+library(qgisprocess)
+```
+
+
+
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+# Compartimentspecifieke elementen van het ontwerp
+
+## Meetnetten, types en milieuvariabelen {#meetnetten}
+
+### Meetnetten
+
+Tabel \@ref(tab:schemes) lijst de verschillende meetnetten op.
+Bijzonderheden:
+
+- Hoofdmeetnet SURF_03.4 is opgesplitst in functie van het type.
+
+
+```{r schemes}
+schemes <- 
+    read_schemes(lang = "nl") %>% 
+    filter(attribute_1 == "SURF",
+           programme == "MNE") %>% 
+    select(scheme_category = tag_1_name, 
+           scheme = scheme,
+           scheme_name, 
+           spatial_restriction,
+           attribute_2) %>% 
+    arrange(scheme_category, scheme)
+schemes %>% 
+  select(-attribute_2) %>% 
+  mutate(spatial_restriction = ifelse(is.na(spatial_restriction),
+                                            "",
+                                            spatial_restriction)) %>% 
+  kable(caption = "De verschillende meetnetten in het milieucompartiment oppervlaktewater.") %>% 
+    kable_styling()
+```
+
+De verklaring van de bijhorende milieudrukken is opgenomen in Tabel \@ref(tab:ep).
+
+```{r results='asis'}
+read_env_pressures(lang = "nl") %>% 
+  select(ep_code,
+         ep_abbrev, 
+         ep_name, 
+         explanation) %>% 
+  semi_join(schemes, by = c(ep_code = "attribute_2")) %>% 
+  select(-ep_code) %>% 
+  pandoc.table(caption = "(\\#tab:ep) Betekenis van de milieudrukcodes.",
+               justify = "lll")
+```
+
+### Types
+
+De types die de resp. doelpopulaties van de verschillende meetnetten in het compartiment oppervlaktewater definiëren, zijn weergegeven in Tabel \@ref(tab:targetpop).
+
+```{r targetpop}
+targetpop <-
+    read_scheme_types(lang = "nl") %>% 
+    filter(str_detect(scheme, "SURF_")) %>% 
+    inner_join(read_types(lang = "nl"), by = "type")
+targetpop %>% 
+    select(scheme, type) %>% 
+    mutate(present = "X") %>% 
+    pivot_wider(names_from = scheme,
+                values_from = present,
+                values_fill = list(present = "")) %>% 
+    arrange(type) %>% 
+    kable(caption = "Beoogde types in de beschouwde meetnetten.",
+          align = "lcccccccc") %>% 
+    kable_styling(font_size = 12) %>% 
+    scroll_box(height = "500px")
+```
+
+De namen van de types zijn te vinden in Bijlage \@ref(app:types).
+
+Het aantal types per meetnet is te zien in Tabel \@ref(tab:nr-types).
+
+```{r nr-types}
+targetpop %>% 
+  count(scheme, 
+        name = "nr_types") %>% 
+  kable(caption = "Het aantal types per meetnet.") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+De frequentie van waterhuishoudings- en grondwaterafhankelijkheidsklassen is te vinden in Tabel \@ref(tab:hydrclass).
+Op typeniveau is deze informatie te vinden in Bijlage \@ref(app:types).
+
+```{r hydrclass}
+targetpop %>%
+    distinct(type) %>%
+    inner_join(read_types(lang = "nl") %>% select(type, 
+                                                  hydr_class, 
+                                                  hydr_class_name,
+                                                  groundw_dep,
+                                                  groundw_dep_shortname),
+               by = "type") %>% 
+    count(hydr_class, 
+          hydr_class_name,
+          groundw_dep,
+          groundw_dep_shortname) %>% 
+    kable(caption = "Het aantal types per waterhuishoudings- en grondwaterafhankelijkheidsklasse.") %>% 
+    kable_styling(full_width = FALSE)
+```
+
+Wanneer we dit beperken tot de hoofdmeetnetten, dan is de verdeling nog steeds dezelfde (Tabel \@ref(tab:hydrclass-focal)).
+Dit impliceert dat de secundaire meetnetten geen eigen, extra types bestrijken.
+
+```{r hydrclass-focal}
+targetpop %>%
+    semi_join(schemes %>% filter(scheme_category == "Hoofdmeetnet"),
+              by = "scheme") %>% 
+    distinct(type) %>%
+    inner_join(read_types(lang = "nl") %>% select(type, 
+                                                  hydr_class, 
+                                                  hydr_class_name,
+                                                  groundw_dep,
+                                                  groundw_dep_shortname),
+               by = "type") %>% 
+    count(hydr_class, 
+          hydr_class_name,
+          groundw_dep,
+          groundw_dep_shortname) %>% 
+    kable(caption = "Het aantal types van de hoofdmeetnetten per waterhuishoudings- en grondwaterafhankelijkheidsklasse.") %>% 
+    kable_styling(full_width = FALSE)
+```
+
+Voor het meetnet SURF_03.4_lentic werden de types a priori gegroepeerd tot typegroepen.
+Het is op dit niveau dat een zekere informatiekwaliteit (precisie en betrouwbaarheid) wordt nagestreefd.
+De typegroepen zijn opgelijst in Tabel \@ref(tab:typegroups).
+Welke types tot welke typegroep behoren, is opgelijst in Tabel \@ref(tab:typegroups-ext).
+
+```{r typegroups}
+targetpop %>% 
+  filter(!is.na(typegroup)) %>% 
+  count(scheme, typegroup, typegroup_name,
+        name = "nr_types") %>% 
+  kable(caption = "Het aantal types per typegroep.") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+```{r typegroups-ext}
+targetpop %>% 
+  filter(!is.na(typegroup)) %>% 
+  select(scheme, 
+         typegroup, 
+         typegroup_name,
+         typeclass_name, 
+         type) %>% 
+  arrange(scheme, 
+         typegroup, 
+         typegroup_name,
+         typeclass_name, 
+         type) %>% 
+  kable(caption = "De types per typegroep.") %>% 
+  kable_styling() %>% 
+  collapse_rows(columns = 1:3, valign = "top") %>% 
+  scroll_box(height = "700px")
+```
+
+### Milieuvariabelen
+
+Voor de oppervlaktewatermeetnetten werden de primaire standplaatsfactoren geselecteerd die vermeld staan in Tabel \@ref(tab:envfact).
+Deze verkenning beperkt zich tot de twee hoofdmeetnetten SURF_03.4_lentic en SURF_03.4_lotic. 
+
+<!-- XXXXXX TABEL aanmaken XXX -->
+
+De hiermee gelinkte primaire milieuvariabelen zijn:
+
+- meetnet SURF_03.4_lentic: concentratie van NO3 (mg N / l), NH4 (mg N / l) en PO4 (mg P / l)
+- meetnet SURF_03.4_lotic: concentratie van NO3 (mg N / l), NH4 (mg N / l) en PO4 (mg P / l)
+
+## Doelparameters
+
+## Steekproefopzet en instelwaarden
+
+## Inferentiestrategie
+
+
+

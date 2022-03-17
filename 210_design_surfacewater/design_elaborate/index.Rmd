@@ -1,0 +1,150 @@
+---
+title: "Ontwerp van de Meetnetten Natuurlijk Milieu: milieudrukken via het grondwater"
+author: "Floris Vanderhaeghe, xyz"
+# reportnr: 
+date: "`r paste('Versie', lubridate::now())`"
+link-citations: true
+linkcolor: link.colour
+citecolor: link.colour
+urlcolor: link.colour
+geometry: margin=1in
+mainfont: "Calibri"
+fontsize: 11pt
+documentclass: "article"
+csl: https://raw.githubusercontent.com/citation-style-language/styles/master/research-institute-for-nature-and-forest.csl
+bibliography: ../../refs_mne_design.yaml
+site: bookdown::bookdown_site
+params:
+  regenerate_binary_files: FALSE
+  connect_watina: FALSE
+  write_analysisdata: TRUE
+  commit_nonpublic: TRUE
+  gisbase_grass: !r if (.Platform$OS.type == "windows") link2GI::paramGRASSw()$gisbase_GRASS[1] else link2GI::paramGRASSx()$gisbase_GRASS[1]
+output:
+  bookdown::pdf_book:
+    base_format: INBOmd::inbo_rapport
+    floatbarrier: subsubsection
+    citation_package: none
+    keep_tex: TRUE
+    keep_md: TRUE
+  bookdown::html_document2:
+    number_sections: yes
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_depth: 4
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: header.html
+  bookdown::gitbook:
+    split_by: "chapter+number"
+    template: !expr INBOmd::inbo_rapport_css("html")
+  bookdown::pdf_document2:
+    fig_caption: yes
+    keep_tex: yes
+    toc: yes
+    toc_depth: 4
+    latex_engine: xelatex
+    number_sections: true
+    includes:
+        in_header: ../../header.tex
+---
+
+```{r setup, include=FALSE}
+renv::restore()
+oldopt <- options(scipen = 999,
+                  yaml.eval.expr = TRUE)
+options(stringsAsFactors = FALSE,
+        dplyr.summarise.inform = FALSE)
+library(git2rdata)
+library(rprojroot)
+library(tidyverse)
+library(stringr)
+library(sf)
+library(rgdal)
+library(knitr)
+library(n2khab)
+library(units)
+library(lubridate)
+library(kableExtra)
+library(pander)
+library(GGally)
+library(gridExtra)
+library(watina)
+library(vegan)
+library(qgisprocess)
+uitvoer <- knitr::opts_knit$get("rmarkdown.pandoc.to")
+gitroot <- find_root(is_git_root)
+thisrepo <- repository(gitroot)
+projroot <- find_root(has_file("design_elaborate.Rproj"))
+
+################################################################################
+#WARNING: this project needs access to a git repository with non-public data. It
+#is a clone of inbo/n2khab-mne-nonpublicdata and the clone needs to sit NEXT to
+#the current git repository, and must be named 'n2khab-mne-nonpublicdata'.
+#Branch 'master' must track the remote branch 'master'. Please arrange all this
+#beforehand, because the code does not setup this clone.
+#For the code to run, you must be connected to the internet.
+
+nonpublicrepo <- repository(file.path(gitroot, 
+                                      "..", 
+                                      "n2khab-mne-nonpublicdata"))
+if (git2r::repository_head(nonpublicrepo)$name != "master") {
+  git2r::checkout(nonpublicrepo, "master")
+}
+out <- git2r::pull(nonpublicrepo)
+if (out$conflicts) {
+  stop("Please first fix merge conflicts in n2khab-mne-nonpublicdata",
+       " (locally), in order to complete the git pull, and then try again. ",
+       "While doing this, keep an eye on any messages from `git status`.")
+}
+################################################################################
+
+opts_chunk$set(
+  echo = FALSE,
+  dpi = 300,
+  fig.align = "center",
+  comment = ""
+)
+datapath <- file.path(projroot, "data")
+walk(c("binary", 
+       "10_input", 
+       "20_intermediate1",
+       "21_intermediate2",
+       "30_result",
+       "grass_gw"), 
+     function(subdir) {
+       path <- file.path(datapath, subdir)
+       if (!dir.exists(path)) dir.create(path, recursive = TRUE)
+     })
+read_chunk(file.path(projroot, "chunks.R"))
+source(file.path(projroot, "functions.R"))
+```
+
+
+```{r grass-setup1, include=FALSE}
+# preparing to use a GRASS database
+library(rgrass7)
+use_sf()
+if (.Platform$OS.type == "unix") {
+  Sys.setenv(GRASS_PYTHON = system("which python3", intern = TRUE))
+}
+gisbase_grass <- 
+  if (interactive()) {
+    if (.Platform$OS.type == "windows") link2GI::paramGRASSw()$gisbase_GRASS[1] else {
+      link2GI::paramGRASSx()$gisbase_GRASS[1]
+    }
+  } else params$gisbase_grass
+grass_location <- "grass_gw"
+grass_mapset_path <- file.path(datapath, grass_location, "PERMANENT")
+if (!dir.exists(grass_mapset_path)) dir.create(grass_mapset_path,
+                                               recursive = TRUE)
+projfilepath <- file.path(grass_mapset_path, "PROJ_INFO")
+grass_exists <- file.exists(projfilepath)
+```
+
+
+
+

@@ -1,0 +1,1119 @@
+# Datasets met primaire milieuvariabelen van de hoofdmeetnetten
+
+De hoofdmeetnetten betreffen:
+
+```{r results="asis"}
+schemes %>% 
+  filter(scheme_category == "Hoofdmeetnet") %>% 
+  select(scheme, scheme_name) %>% 
+  unite(scheme, sep = " (") %>%
+  mutate(scheme = str_c("- ", scheme, ")")) %>%
+  dplyr::pull(scheme)%>%
+  cat(sep = "\n")
+```
+
+We betrekken de beschikbare data van de periode **1989-2018**.
+Dit bestrijkt immers het overgrote deel van alle data in de Watina-databank, en zo vermijden we invloed van nog oudere data op analysen.
+De periode 1989-2018 bestrijkt precies 5 perioden van 6 jaar, gealigneerd volgens de periodiciteit van Natura 2000 monitoring.
+
+Bemerk dat dit voor de LG3- en HG3-variabelen betrekking heeft op de zg. hydrologische jaren, m.a.w. er is een verschuiving van 3 maand (het hydrologisch jaar start op 1 april).
+Met een temporele resolutie van zesjaarperioden in de monitoring hoeft deze verschuiving niet noodzakelijk problemen te geven voor de doelstellingen, maar we zouden het in de implementatie van de monitoring ook per kalenderjaar kunnen overwegen.
+Momenteel gebeuren de berekeningen in Watina per hydrologisch jaar.
+Het is namelijk de gewoonte om de (typisch) droogste en natste momenten van de jaarlijkse cycli in hun geheel binnen één jaarlijkse periode te kunnen evalueren.
+
+```{r eval=params$connect_watina}
+watina <- connect_watina()
+```
+
+## Samenstellen van de datasets
+
+### Locaties
+
+We maken voor meetnet GW_05.1 een onderscheid tussen de meetlocaties voor de aquatische resp. de terrestrische types.
+Dit is relevant voor het onderscheid tussen de (sub)meetnetten GW_05.1_terr en GW_05.1_aq, aangezien andere responsvariabelen worden beschouwd.
+Voor het meetnet GW_03.3 is het onderscheid niet nodig.
+
+Merk op dat we in dit stadium nog alle locaties selecteren:
+
+1. die gekoppeld zijn aan een type uit de doelpopulatie van minstens één meetnet in het compartiment grondwater (dus zowel hoofd- als secundaire meetnetten);
+1. waarbij we er nog geen rekening mee houden of van deze locaties geschikte data voorhanden zijn voor de beoogde hoofdmeetnetten.
+
+```{r paged.print=FALSE, eval=params$connect_watina}
+locs_terr <- 
+  get_locs(watina, 
+           filterdepth_range = c(0, 3),
+           filterdepth_guess = TRUE,
+           mask = hmt_pol_buff, 
+           join_mask = TRUE,
+           buffer = 0, 
+           loc_type = "P", 
+           loc_validity = c("VLD", "ENT"), 
+           collect = TRUE) %>% 
+  inner_join(hmt_occ %>% 
+               select(polygon_id, type) %>% 
+               filter(type != "8310"), 
+             # note however that no locations are available for 8310
+             by = "polygon_id") %>% 
+  select(-polygon_id) %>% 
+  bind_rows(
+    # this one appears to yield 0 locations,
+    # hence using chemical data from source inlets would best be used for
+    # chemistry:
+    get_locs(watina, 
+             filterdepth_range = c(0, 3),
+             filterdepth_guess = TRUE,
+             mask = habspring_buff %>% 
+                    filter(system_type %in% c("mire", "unknown")) %>% 
+                    select(type),
+             join_mask = TRUE,
+             buffer = 0, 
+             loc_type = "P", 
+             loc_validity = c("VLD", "ENT"), 
+             collect = TRUE)) %>% 
+  mutate(target = "terrestrial" %>% factor) %>% 
+  # a distinct() is needed because originally adjacent polygons overlap
+  # due to the buffer AND they have common types.
+  distinct()
+```
+
+<!-- We laten hoofdtype 91E0 vallen uit de dataset. -->
+<!-- Onderstaande code toont aan dat er relatief weinig locaties zijn die aan dit type worden gekoppeld, en er werd eigenlijk geen informatie over die locaties bekomen met duidelijke implicaties. -->
+<!-- Merk op dat voor de 4 betrokken locaties in Torfbroek ook reeds een subtype 91E0_vm is aangeduid (naast nog andere types), naast 91E0. -->
+<!-- Hoewel we 91E0 hebben laten bestaan in objecten `hmt_*` en `spfact_*` valt het type ook weg wanneer we koppelen met `targetpop`. -->
+
+<!-- ```{r eval=FALSE} -->
+<!-- locs_terr %>%  -->
+<!--     filter(type=="91E0") %>%  -->
+<!--     left_join(xg3_terr %>%  -->
+<!--                    count(loc_code, name = "n_xg3_years"),  -->
+<!--                by = "loc_code") %>%  -->
+<!--     left_join(chem %>%  -->
+<!--                   count(loc_code, name = "n_chemsamples"),  -->
+<!--               by = "loc_code") %>%  -->
+<!--     filter(!is.na(n_xg3_years) | !is.na(n_chemsamples)) %>%  -->
+<!--     mutate_at(vars(contains("n_")), function(x) ifelse(is.na(x), 0, x)) -->
+<!-- ``` -->
+
+
+```{r eval=params$connect_watina}
+# Dropping lines with type == "91E0", as explained in markdown comments above
+locs_terr <- 
+  locs_terr %>% 
+  filter(type != "91E0")
+```
+
+```{r paged.print=FALSE, eval=params$connect_watina}
+locs_aq <- 
+  get_locs(watina, 
+           filterdepth_range = c(0, maxdepth_aq),
+           filterdepth_guess = TRUE,
+           mask = wsh_pol_ring, 
+           join_mask = TRUE,
+           buffer = 0, 
+           loc_type = "P", 
+           loc_validity = c("VLD", "ENT"), 
+           collect = TRUE) %>% 
+  inner_join(wsh_occ %>% select(polygon_id, type),
+             by = "polygon_id") %>% 
+  select(-polygon_id) %>% 
+  bind_rows(
+    get_locs(watina, 
+             filterdepth_range = c(0, maxdepth_aq),
+             filterdepth_guess = TRUE,
+             mask = habstream_buff %>% select(type), 
+             join_mask = TRUE,
+             buffer = 0, 
+             loc_type = "P", 
+             loc_validity = c("VLD", "ENT"), 
+             collect = TRUE)
+  ) %>% 
+  bind_rows(
+    # this one appears to yield 1 location only,
+    # hence using chemical data from source inlets would best be used for
+    # chemistry:
+    get_locs(watina, 
+             filterdepth_range = c(0, maxdepth_aq),
+             filterdepth_guess = TRUE,
+             mask = habspring_buff %>% 
+                    filter(system_type %in% c("rivulet", "unknown")) %>% 
+                    select(type),
+             join_mask = TRUE,
+             buffer = 0, 
+             loc_type = "P", 
+             loc_validity = c("VLD", "ENT"), 
+             collect = TRUE)
+  ) %>% 
+  mutate(target = "aquatic" %>% factor) %>% 
+  # a distinct() is needed because originally adjacent polygons overlap
+  # due to the buffer AND they have common types.
+  distinct()
+```
+
+```{r eval=params$connect_watina, include=FALSE}
+locs_terr %>% 
+  select(loc_code, x, y, type, target) %>%
+  # distinct(): normally not needed; 
+  # however duplicates (by mistake in Watina) sometimes do occur
+  distinct %>% 
+  write_vc(file = "design_gw/locs_terr",
+           root = nonpublicrepo,
+           optimize = TRUE,
+           strict = FALSE,
+           sorting = c("loc_code", "type", "target"))
+locs_aq %>% 
+  select(loc_code, x, y, type, target) %>%
+  write_vc(file = "design_gw/locs_aq",
+           root = nonpublicrepo,
+           optimize = TRUE,
+           strict = FALSE,
+           sorting = c("loc_code", "type", "target"))
+```
+
+```{r}
+watinalocs_clean <- 
+  status(nonpublicrepo)$unstaged %>% 
+  unlist %>% 
+  str_detect("design_gw/locs_(terr|aq)\\..+") %>% 
+  {!any(.)}
+```
+
+```{r push-watinalocs, eval=params$connect_watina & params$commit_nonpublic}
+if (!watinalocs_clean) {
+  currentutc <- now("UTC")
+  newtag <- str_c("watinalocs-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
+  out_add <- try(git2r::add(nonpublicrepo, "design_gw/locs_[at][qe]*"))
+  out_commit <- try(commit(nonpublicrepo,
+                    message = paste("design_gw: updated watinalocs at",
+                                    currentutc,
+                                    "UTC")
+                    ))
+  if (inherits(out_add, "try-error") | inherits(out_commit, "try-error")) {
+    warning("watinalocs changed but not committed succesfully.")
+  } else {
+    
+    watinalocs_clean <- TRUE
+    git2r::tag(nonpublicrepo, newtag, newtag)
+    message("watinalocs changed and committed with tag '",
+            newtag, "'.")
+
+    if (length(status(nonpublicrepo)$unstaged) > 0) {
+      warning("Non-public data left with unstaged changes.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo))
+    if (inherits(out, "try-error")) {
+      warning("Could not push commit to non-public data repository.")
+    } else {
+      message("watinalocs pushed to non-public data repository.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo, 
+                           refspec = str_c("refs/tags/", newtag)))
+    if (inherits(out, "try-error")) {
+      warning("Could not push TAG to non-public data repository.")
+    } else {
+      message("Tag '", 
+              newtag,
+              "' pushed to non-public data repository.")
+    }
+    
+  }
+}
+```
+
+```{r}
+watinalocs_tag <- 
+  git2r::tags(nonpublicrepo) %>% 
+  names %>% 
+  str_subset("^watinalocs") %>% 
+  sort(decreasing = TRUE) %>% 
+  .[1]
+if (exists("newtag")) {
+  stopifnot(watinalocs_tag == newtag)
+  rm(newtag)
+}
+metadata <- yaml::read_yaml(file.path(datapath, "nonpublic/metadata.yml"))
+if (watinalocs_clean) {
+  metadata$watinalocs_tag <- watinalocs_tag
+} else {
+  metadata$watinalocs_tag <- 
+    paste("UNTAGGED! State modified since tag", watinalocs_tag)
+}
+yaml::write_yaml(metadata,
+                 file.path(datapath, "nonpublic/metadata.yml")
+)
+```
+
+
+```{r}
+locs_terr <- 
+  read_vc("design_gw/locs_terr",
+           root = nonpublicrepo) %>% 
+  as_tibble
+locs_aq <- 
+  read_vc("design_gw/locs_aq",
+           root = nonpublicrepo) %>% 
+  as_tibble
+```
+
+```{r}
+locs_ext <- 
+  bind_rows(locs_terr, locs_aq)
+locs <- locs_ext %>% 
+  distinct(loc_code)
+```
+
+Volgende code-output geeft een indruk van de attributen van alle geselecteerde locaties; het aantal rijen betreft het aantal locaties:
+
+```{r}
+locs_ext %>% 
+  select(-type, -target) %>% 
+  group_by(loc_code) %>% 
+  summarise_all(first) %>% 
+  glimpse
+# group_by() & summarise() instead of simply distinct(): this is because one
+# location had a different selected observation well for aquatic vs.
+# terrestrial, because of the different allowed filterdepth
+```
+
+Het aantal beschikbare meetlocaties voor terrestrische resp. aquatische types (met onderlinge overlap^[
+De overlap is het gevolg van overlappende bufferpolygonen voor de selectie van meetlocaties 
+(zie Tabel \@ref(tab:buffer-area)).])
+is weergegeven in Tabel \@ref(tab:nrlocs).
+
+```{r nrlocs}
+locs_ext %>% 
+  select(-type) %>% 
+  distinct %>% 
+  count(target) %>% 
+  kable(caption = "Het aantal beschikbare meetlocaties voor terrestrische resp. aquatische types.",
+        table.attr = "style='width:30%;'") %>% 
+  kable_styling()
+```
+
+De bovenstaande locaties betreffen steeds piëzometers.
+Voor type 7220 (kalktufbronnen) zijn er nauwelijks piëzometers, maar er zijn wel chemische data beschikbaar van het oppervlaktewater aan de bron, wat we kunnen beschouwen als grondwaterkwaliteit.
+Deze locaties worden daarom toegevoegd voor het ontwerp van hoofdmeetnet GW_03.3.
+
+```{r paged.print=FALSE, message=FALSE, warning=FALSE}
+habspring_chem <- 
+  file.path(gitroot=root,
+          "210_design_surfacewater/110_datapreparation", 
+          "data/10_input/habitatsprings_abio_v3.csv") %>% 
+  read_csv2(col_types = cols(
+    Datum = col_date(format = "%d/%m/%Y")
+  )) %>% 
+  select(point_id = id_n2khab,
+         date = Datum,
+         dist_to_source = AfstandBron,
+         matches("PO4|NH4|NO3")) %>%
+  filter(dist_to_source == "A") %>% 
+  # correcting non-constant N-P mass conversion:
+  mutate(PO4_P = mean(PO4_P / PO4) * PO4,
+         NO3_N = mean(NO3_N / NO3) * NO3,
+         loc_code = str_c("ht7220_", 
+                          point_id %>% str_pad(2, pad = "0"))) %>%
+  select(-matches("(PO4|NH4|NO3)$"),
+         -dist_to_source,
+         -point_id) %>% 
+  rename(po4 = PO4_P,
+         no3 = NO3_N,
+         nh4 = NH4_N) %>% 
+  relocate(loc_code)
+```
+
+```{r paged.print=FALSE}
+locs_7220 <-
+  habspring %>% 
+  mutate(loc_code = str_c("ht7220_", 
+                          point_id %>% str_pad(2, pad = "0"))) %>% 
+  semi_join(habspring_chem, by = "loc_code") %>% 
+  mutate(x = st_coordinates(.)[, "X"],
+         y = st_coordinates(.)[, "Y"]) %>% 
+  select(loc_code, unit_id, system_type, type, x, y) %>% 
+  st_drop_geometry
+```
+
+```{r include=FALSE}
+datapath= "C:/git/n2khab-mne-design/210_design_surfacewater/110_datapreparation/data"
+locs_7220 %>% 
+  write_vc(file = "locs_7220",
+           root = file.path(datapath, "10_input"),
+           optimize = FALSE,
+           strict = FALSE,
+           sorting = c("loc_code", "type"))
+```
+
+
+Het gaat voor type 7220 om data van `r locs_7220 %>% filter(system_type == "mire") %>% nrow` moeraslocatie (terrestrisch) en `r locs_7220 %>% filter(system_type == "rivulet") %>% nrow` beeklocaties (aquatisch).
+
+
+### Extra locatie-attributen voor de modellering
+
+De basisdataset van locaties, bestaande uit de koppeling tussen locatie en type (`r nrow(locs_ext) + nrow(locs_7220)` rijen), wordt aangevuld met extra attributen.
+
+#### Spatiale clusters van locaties
+
+Een numerieke variabele `cluster_id` wordt toegevoegd, die voor twee locaties dezelfde waarde krijgt wanneer beide locaties op hoogstens 2 meter van elkaar zijn verwijderd.
+De eenheden die zo op een hoger ruimtelijk niveau ontstaan, noemen we _locatieclusters_.
+
+```{r paged.print=FALSE}
+set.seed(123456)
+locs_ext <- 
+  locs_ext %>% 
+  distinct(loc_code, x, y) %>% 
+  cluster_locs(max_dist = 2) %>% 
+  select(-x, -y) %>% 
+  inner_join(locs_ext, ., by = "loc_code")
+```
+
+Voor de apart toegevoegde locaties van type 7220 wordt een andere regel gehanteerd:
+wanneer twee puntlocaties tot dezelfde populatie-eenheid horen (bronnen die behoren tot hetzelfde systeem), dan krijgen zij een gelijke waarde voor `cluster_id`, ongeacht hun onderlinge afstand.
+Hierdoor kan de chemische verwantschap tussen verschillende deellocaties in rekening worden gebracht.
+
+```{r paged.print=FALSE}
+locs_ext <- 
+  locs_ext %>% 
+  bind_rows(
+    locs_7220 %>% 
+      mutate(cluster_id = as.integer(unit_id) + 1e4L,
+             target = factor("extra locations 7220")) %>% 
+      select(-unit_id,
+             -system_type)
+  )
+```
+
+#### Spatiale covariaten
+
+De (categorische) covariaten _soilclass_ en _ecoregion_ van de locaties worden toegevoegd als locatie-attributen.
+Zie paragraaf \@ref(spatiale-verdeling) voor motivatie.
+
+```{r paged.print=FALSE, warning=FALSE}
+locs_ext <-
+  locs_ext %>% 
+  distinct(loc_code, x, y) %>%
+  as_points(remove = TRUE) %>% 
+  st_join(soilmap) %>% 
+  st_join(ecoregions) %>% 
+  st_drop_geometry %>% 
+  # solving NA values:
+  replace_na(list(soilclass = "unknown", 
+                  # due to a shortcoming in the ecoregions data source:
+                  ecoregion = "Ecoregio van de kustduinen")) %>% 
+  inner_join(locs_ext, ., by = "loc_code")
+```
+
+De aan de dataset toegevoegde kolommen zien er uit als volgt:
+
+```{r}
+locs_ext %>% 
+  select(cluster_id, soilclass, ecoregion) %>% 
+  glimpse
+```
+
+
+
+```{r include=FALSE}
+locs_ext %>% 
+  write_vc(file = "design_gw/locs_ext",
+           root = nonpublicrepo,
+           optimize = TRUE,
+           strict = FALSE,
+           sorting = c("loc_code", "type", "target"))
+```
+
+
+```{r}
+extlocs_clean <- 
+  status(nonpublicrepo)$unstaged %>% 
+  unlist %>% 
+  str_detect("design_gw/locs_ext\\..+") %>% 
+  {!any(.)}
+```
+
+```{r push-extlocs, eval=params$commit_nonpublic}
+if (!extlocs_clean) {
+  currentutc <- now("UTC")
+  newtag <- str_c("extlocs-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
+  out_add <- try(git2r::add(nonpublicrepo, "design_gw/locs_ext*"))
+  out_commit <- try(commit(nonpublicrepo,
+                    message = paste("design_gw: updated extlocs at",
+                                    currentutc,
+                                    "UTC")
+                    ))
+  if (inherits(out_add, "try-error") | inherits(out_commit, "try-error")) {
+    warning("extlocs changed but not committed succesfully.")
+  } else {
+    
+    extlocs_clean <- TRUE
+    git2r::tag(nonpublicrepo, newtag, newtag)
+    message("extlocs changed and committed with tag '",
+            newtag, "'.")
+
+    if (length(status(nonpublicrepo)$unstaged) > 0) {
+      warning("Non-public data left with unstaged changes.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo))
+    if (inherits(out, "try-error")) {
+      warning("Could not push commit to non-public data repository.")
+    } else {
+      message("extlocs pushed to non-public data repository.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo, 
+                           refspec = str_c("refs/tags/", newtag)))
+    if (inherits(out, "try-error")) {
+      warning("Could not push TAG to non-public data repository.")
+    } else {
+      message("Tag '", 
+              newtag,
+              "' pushed to non-public data repository.")
+    }
+    
+  }
+}
+```
+
+```{r}
+extlocs_tag <- 
+  git2r::tags(nonpublicrepo) %>% 
+  names %>% 
+  str_subset("^extlocs") %>% 
+  sort(decreasing = TRUE) %>% 
+  .[1]
+if (exists("newtag")) {
+  stopifnot(extlocs_tag == newtag)
+  rm(newtag)
+}
+metadata <- yaml::read_yaml(file.path(datapath, "nonpublic/metadata.yml"))
+if (extlocs_clean) {
+  metadata$extlocs_tag <- extlocs_tag
+} else {
+  metadata$extlocs_tag <- 
+    paste("UNTAGGED! State modified since tag", extlocs_tag)
+}
+yaml::write_yaml(metadata,
+                 file.path(datapath, "nonpublic/metadata.yml")
+)
+```
+
+
+```{r}
+# the below objects are only used for GW_05.1_xxx, so there's no need to include the
+# extra 7220 locations, which are only useful to GW_03.3 (for which below objects are
+# not used).
+locs_terr <- 
+  locs_ext %>% 
+  filter(target == "terrestrial")
+locs_aq <- 
+  locs_ext %>% 
+  filter(target == "aquatic")
+```
+
+
+### LG3 en HG3 in meetnet GW_05.1_terr
+
+LG3 en HG3 worden in het meetnet GW_05.1_terr voorlopig nog berekend op basis van stijghoogtes (dit gebeurt in de Watina-databank).
+Omdat in dit meetnet idealiter met _grondwaterstanden_ wordt gewerkt, worden de jaarlijks geaggregeerde LG3- en HG3-waarden boven maaiveld 'afgetopt' tot maaiveldniveau, dus 0 meter t.o.v. maaiveld.
+Het zou beter zijn om dit te doen met de daggebaseerde meetwaarden (vóór aggregatie), maar dit dient nog in de Watina-databank te worden geïmplementeerd.
+
+
+```{r message=FALSE, eval=params$connect_watina}
+xg3_terr <- 
+  locs_terr %>% 
+  get_xg3(watina, 
+          startyear = 1989,
+          endyear = 2018,
+          vert_crs = "local") %>% 
+  select(-vg3_lcl) %>% 
+  filter(!is.na(lg3_lcl) | !is.na(hg3_lcl)) %>% 
+  mutate(lg3_lcl = ifelse(lg3_lcl > 0, 0, lg3_lcl),
+         hg3_lcl = ifelse(hg3_lcl > 0, 0, hg3_lcl)
+         ) %>% 
+  arrange(loc_code, hydroyear) %>% 
+  collect()
+```
+
+```{r eval=params$connect_watina, include=FALSE}
+xg3_terr %>% 
+  write_vc(file = "design_gw/xg3_terr",
+           root = nonpublicrepo,
+           optimize = TRUE,
+           strict = FALSE,
+           sorting = c("loc_code", "hydroyear"))
+```
+
+```{r}
+xg3_terr <- 
+  read_vc("design_gw/xg3_terr",
+           root = nonpublicrepo) %>% 
+  as_tibble
+```
+
+Volgende code-output geeft een indruk van de data.
+Het aantal rijen betreft het aantal combinaties van locatie en (hydrologisch) jaar met beschikbare gegevens (voor de betrokken locaties):
+
+```{r paged.print=FALSE}
+glimpse(xg3_terr)
+```
+
+De variabelen `lg3_lcl` en `hg3_lcl` betreffen respectievelijk LG3 en HG3 t.o.v. maaiveld, uitgedrukt in meter, waarbij negatieve waarden corresponderen met waarden onder maaiveld.
+
+### LG3 en HG3 in meetnet GW_05.1_aq
+
+```{r message=FALSE, eval=params$connect_watina}
+xg3_aq <- 
+  locs_aq %>% 
+  get_xg3(watina, 
+          startyear = 1989,
+          endyear = 2018,
+          vert_crs = "ostend") %>% 
+  select(-vg3_ost) %>% 
+  filter(!is.na(lg3_ost) | !is.na(hg3_ost)) %>% 
+  arrange(loc_code, hydroyear) %>% 
+  collect()
+```
+
+```{r eval=params$connect_watina, include=FALSE}
+xg3_aq %>% 
+  write_vc(file = "design_gw/xg3_aq",
+           root = nonpublicrepo,
+           optimize = TRUE,
+           strict = FALSE,
+           sorting = c("loc_code", "hydroyear"))
+```
+
+```{r}
+xg3_aq <- 
+  read_vc("design_gw/xg3_aq",
+           root = nonpublicrepo) %>% 
+  as_tibble
+```
+
+Volgende code-output geeft een indruk van de data.
+Het aantal rijen betreft het aantal combinaties van locatie en (hydrologisch) jaar met beschikbare gegevens (voor de betrokken locaties):
+
+```{r paged.print=FALSE}
+glimpse(xg3_aq)
+```
+
+De variabelen `lg3_ost` en `hg3_ost` betreffen respectievelijk LG3 en HG3 in meter TAW (verticaal coördinaatreferentiesysteem 'Ostend height'; EPSG-code [5710](https://epsg.io/5710)).
+
+### NO3, NH4 en PO4 in meetnet GW_03.3
+
+In enkele gevallen zijn van deze variabelen meerdere metingen beschikbaar op één dag.
+In die gevallen is het daggemiddelde berekend.
+
+```{r message=FALSE, eval=params$connect_watina}
+chem <- 
+  locs %>% 
+  get_chem(watina, 
+           startdate = "1/1/1989",
+           enddate = "31/12/2018",
+           conc_type = "mass",
+           en_range = c(-0.1, 0.1),
+           en_exclude_na = FALSE,
+           en_fecond_threshold = 0.0023) %>% 
+  # for the following variables, no (sensible) data are available yet from the
+  # datawarehouse. Further, elneutr will not be used:
+  select(-contains("lab"),
+         -loq,
+         -elneutr) %>% 
+  # currently, we will only process numerical data, hence further selection:
+  select(-unit, -below_loq) %>% 
+  filter(chem_variable %in% c("N-NO3", "N-NH4", "P-PO4")) %>% 
+  mutate(chem_variable = case_when(chem_variable == "N-NO3" ~ "no3",
+                                   chem_variable == "N-NH4" ~ "nh4",
+                                   chem_variable == "P-PO4" ~ "po4")) %>% 
+  # a limited number of cases has several measurements on the same date:
+  group_by(loc_code, date, chem_variable) %>% 
+  summarise(value = mean(value, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  collect() %>% 
+  pivot_wider(names_from = chem_variable,
+              values_from = value) %>% 
+  arrange(loc_code, date) %>% 
+  bind_rows(habspring_chem)
+```
+
+```{r eval=params$connect_watina, include=FALSE}
+chem %>% 
+  write_vc(file = "design_gw/chem",
+           root = nonpublicrepo,
+           optimize = TRUE,
+           strict = FALSE,
+           sorting = c("loc_code", "date"))
+```
+
+```{r}
+watinadata_clean <- 
+  status(nonpublicrepo)$unstaged %>% 
+  unlist %>% 
+  str_detect("design_gw/(xg3_.+\\..+|chem\\..+)") %>% 
+  {!any(.)}
+```
+
+
+```{r push-watinadata, eval=params$connect_watina & params$commit_nonpublic}
+if (!watinadata_clean) {
+  currentutc <- now("UTC")
+  newtag <- str_c("watinadata-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
+  out_add <- try(git2r::add(nonpublicrepo,
+                            c("design_gw/xg3_[at][qe]*",
+                              "design_gw/chem.*")))
+  out_commit <- try(commit(nonpublicrepo,
+                    message = paste("design_gw: updated watinadata at",
+                                    currentutc,
+                                    "UTC")
+                    ))
+  if (inherits(out_add, "try-error") | inherits(out_commit, "try-error")) {
+    warning("watinadata changed but not committed succesfully.")
+  } else {
+    
+    watinadata_clean <- TRUE
+    git2r::tag(nonpublicrepo, newtag, newtag)
+    message("watinadata changed and committed with tag '",
+            newtag, "'.")
+    
+    if (length(status(nonpublicrepo)$unstaged) > 0) {
+      warning("Non-public data left with unstaged changes.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo))
+    if (inherits(out, "try-error")) {
+      warning("Could not push commit to non-public data repository.")
+    } else {
+      message("watinadata pushed to non-public data repository.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo, 
+                           refspec = str_c("refs/tags/", newtag)))
+    if (inherits(out, "try-error")) {
+      warning("Could not push TAG to non-public data repository.")
+    } else {
+      message("Tag '", 
+              newtag,
+              "' pushed to non-public data repository.")
+    }
+    
+  }
+}
+```
+
+```{r}
+watinadata_tag <- 
+  git2r::tags(nonpublicrepo) %>% 
+  names %>% 
+  str_subset("^watinadata") %>% 
+  sort(decreasing = TRUE) %>% 
+  .[1]
+if (exists("newtag")) {
+  stopifnot(watinadata_tag == newtag)
+  rm(newtag)
+}
+metadata <- yaml::read_yaml(file.path(datapath, "nonpublic/metadata.yml"))
+if (watinadata_clean) {
+  metadata$watinadata_tag <- watinadata_tag
+} else {
+  metadata$watinadata_tag <- 
+    paste("UNTAGGED! State modified since tag", watinadata_tag)
+}
+yaml::write_yaml(metadata,
+                 file.path(datapath, "nonpublic/metadata.yml")
+)
+```
+
+
+```{r}
+chem <- 
+  read_vc("design_gw/chem",
+           root = nonpublicrepo) %>% 
+  as_tibble
+```
+
+Volgende code-output geeft een indruk van de data.
+Het aantal rijen betreft het aantal combinaties van locatie en datum met beschikbare gegevens (voor de betrokken locaties):
+
+```{r paged.print=FALSE}
+glimpse(chem)
+```
+
+```{r eval=params$connect_watina}
+DBI::dbDisconnect(watina)
+```
+
+### Samenstellen van de analysedatasets voor elk hoofdmeetnet {#samenstellen-analysedatasets}
+
+Uitgaande van de datasets van de locaties en de milieuvariabelen wordt per hoofdmeetnet een dataset samengesteld voor analyse, door:
+
+- de locaties te beperken tot de types die tot de meetnetspecifieke doelpopulatie behoren;
+- de data van de locaties en de milieuvariabelen te combineren;
+- een aantal afgeleide tijdsvariabelen toe te voegen;
+- enkel de locatie-attributen te weerhouden die relevant zijn voor analyse.
+
+```{r paged.print=FALSE}
+gw51t <- 
+  xg3_terr %>% 
+  mutate(sixyear = factor(floor((hydroyear - 1989) / 6 + 1))) %>% 
+  inner_join(
+    locs_terr %>% 
+      filter(type %in% subset(targetpop,
+                              scheme == "GW_05.1_terr")$type) %>% 
+      select(loc_code, 
+             cluster_id, 
+             x, 
+             y, 
+             type,
+             soilclass,
+             ecoregion),
+    by = "loc_code"
+  ) %>% 
+  mutate_at(vars(loc_code, cluster_id), factor) %>% 
+  relocate(sixyear, .after = hydroyear)
+```
+
+Datastructuur voor meetnet `GW_05.1_terr`:
+
+```{r}
+glimpse(gw51t)
+```
+
+
+```{r paged.print=FALSE}
+gw51a <- 
+  xg3_aq %>% 
+  mutate(sixyear = factor(floor((hydroyear - 1989) / 6 + 1))) %>% 
+  inner_join(
+    locs_aq %>% 
+      filter(type %in% subset(targetpop,
+                              scheme == "GW_05.1_aq")$type) %>% 
+      select(loc_code, 
+             cluster_id, 
+             x, 
+             y, 
+             type,
+             soilclass,
+             ecoregion),
+    by = "loc_code"
+  ) %>% 
+  mutate_at(vars(loc_code, cluster_id), factor) %>% 
+  relocate(sixyear, .after = hydroyear)
+```
+
+Datastructuur voor meetnet `GW_05.1_aq`:
+
+```{r}
+glimpse(gw51a)
+```
+
+```{r paged.print=FALSE}
+gw33 <- 
+  chem %>% 
+  mutate(year = year(date),
+         month = month(date),
+         sixyear = factor(floor((year - 1989) / 6 + 1))) %>% 
+  inner_join(
+    locs_ext %>% 
+      filter(type %in% subset(targetpop,
+                              scheme == "GW_03.3")$type) %>% 
+      select(loc_code, 
+             cluster_id, 
+             x, 
+             y, 
+             type,
+             soilclass,
+             ecoregion),
+    by = "loc_code"
+  ) %>% 
+  mutate_at(vars(loc_code, cluster_id), factor) %>% 
+  relocate(year, month, sixyear, .after = date)
+```
+
+Datastructuur voor meetnet `GW_03.3`:
+
+```{r}
+glimpse(gw33)
+```
+
+```{r include=FALSE, eval=params$write_analysisdata}
+gw51t %>% 
+  write_vc(file = "design_gw/gw51t",
+           root = nonpublicrepo,
+           optimize = TRUE,
+           strict = FALSE,
+           sorting = c("loc_code", "hydroyear", "type"))
+gw51a %>% 
+  write_vc(file = "design_gw/gw51a",
+           root = nonpublicrepo,
+           optimize = TRUE,
+           strict = FALSE,
+           sorting = c("loc_code", "hydroyear", "type"))
+gw33 %>% 
+  write_vc(file = "design_gw/gw33",
+           root = nonpublicrepo,
+           optimize = TRUE,
+           strict = FALSE,
+           sorting = c("loc_code", "date", "type"))
+```
+
+```{r}
+gwanalysisdata_clean <- 
+  status(nonpublicrepo)$unstaged %>% 
+  unlist %>% 
+  str_detect("design_gw/gw.+\\..+") %>% 
+  {!any(.)}
+```
+
+```{r push-gwanalysisdata, eval=params$write_analysisdata & params$commit_nonpublic}
+if (!gwanalysisdata_clean) {
+  currentutc <- now("UTC")
+  newtag <- str_c("gwanalysisdata-", format(currentutc, "%Y%m%d-%H%M%S-%Z"))
+  out_add <- try(git2r::add(nonpublicrepo, "design_gw/gw*"))
+  out_commit <- try(commit(nonpublicrepo,
+                    message = paste("design_gw: updated gwanalysisdata at",
+                                    currentutc,
+                                    "UTC")
+                    ))
+  if (inherits(out_add, "try-error") | inherits(out_commit, "try-error")) {
+    warning("gwanalysisdata changed but not committed succesfully.")
+  } else {
+    
+    gwanalysisdata_clean <- TRUE
+    git2r::tag(nonpublicrepo, newtag, newtag)
+    message("gwanalysisdata changed and committed with tag '",
+            newtag, "'.")
+    
+    if (length(status(nonpublicrepo)$unstaged) > 0) {
+      warning("Non-public data left with unstaged changes.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo))
+    if (inherits(out, "try-error")) {
+      warning("Could not push commit to non-public data repository.")
+    } else {
+      message("gwanalysisdata pushed to non-public data repository.")
+    }
+    
+    out <- try(git2r::push(nonpublicrepo, 
+                           refspec = str_c("refs/tags/", newtag)))
+    if (inherits(out, "try-error")) {
+      warning("Could not push TAG to non-public data repository.")
+    } else {
+      message("Tag '", 
+              newtag,
+              "' pushed to non-public data repository.")
+    }
+    
+  }
+}
+```
+
+```{r}
+gwanalysisdata_tag <- 
+  git2r::tags(nonpublicrepo) %>% 
+  names %>% 
+  str_subset("^gwanalysisdata") %>% 
+  sort(decreasing = TRUE) %>% 
+  .[1]
+if (exists("newtag")) {
+  stopifnot(gwanalysisdata_tag == newtag)
+  rm(newtag)
+}
+metadata <- yaml::read_yaml(file.path(datapath, "nonpublic/metadata.yml"))
+if (gwanalysisdata_clean) {
+  metadata$gwanalysisdata_tag <- gwanalysisdata_tag
+} else {
+  metadata$gwanalysisdata_tag <- 
+    paste("UNTAGGED! State modified since tag", gwanalysisdata_tag)
+}
+yaml::write_yaml(metadata,
+                 file.path(datapath, "nonpublic/metadata.yml")
+)
+```
+
+```{r read-analysisdata}
+gw51t <- 
+  read_vc("design_gw/gw51t",
+           root = nonpublicrepo) %>% 
+  as_tibble
+gw51a <- 
+  read_vc("design_gw/gw51a",
+           root = nonpublicrepo) %>% 
+  as_tibble
+gw33 <- 
+  read_vc("design_gw/gw33",
+           root = nonpublicrepo) %>% 
+  as_tibble
+```
+
+<!-- Databehandeling op basis van aanvankelijke verkenning: -->
+<!-- ####################################################### -->
+
+Op de analysedatasets gebeuren post-hoc de volgende bewerkingen (resultaat niet opgenomen in de dataset):
+
+- foute data verwijderen indien er tijdens de (aanvankelijke) dataverkenning duidelijke problemen optraden;
+- GW_05.1_aq: locatiespecifieke standaardisatie uitvoeren van `lg3_ost` en `hg3_ost`.
+Het verschil wordt genomen met de lokaal vroegste waarde van `hg3_ost` (zie par. \@ref(milieuvariabelen) voor meer achtergrond).
+De afgeleide responsvariabelen heten `lg3_std` en `hg3_std`.
+
+<!-- betreft code-chunks uit chunks.R -->
+
+```{r envdata-preprocessing-discard-faulty-data}
+```
+
+```{r envdata-standardise-response}
+```
+
+## Verkenning van de analysedatasets
+
+De analysedatasets (paragraaf \@ref(samenstellen-analysedatasets)) zijn de datasets die we hanteren in de modelbouw voor steekproefsimulatie (scenario's).
+
+<!-- bedoeling is dat de bijlage de volledige verkenning bevat, en hieronder een bespreking op hoofdlijnen (verwijzend naar voornaamste figuren/tabellen; de voornaamste hier hernemen) -->
+<!-- momenteel in opbouw, kan aangevuld worden ifv modelbouw en ifv opmerkingen hieronder-->
+<!-- tekst is sowieso nader aan te vullen / netter uit te schrijven, zowel in bijlage (maar daar generiek/compartimentoverschrijdend houden, i.e. technisch duiden van grafiektypes) als hieronder -->
+
+<!-- HIERONDER, na verdere afwerking, SELECTIEF FIGUREN/TABELLEN UIT BIJLAGE HERNEMEN! (VIA ref.label) -->
+
+### Afwijkingen in de analysedatasets ten opzichte van de doelpopulaties
+
+Onbalansen in een analysedataset kunnen leiden tot een model dat vertekend is ten opzichte van de (spatiotemporele) doelpopulatie.
+Ze zijn in principe niet op te lossen zonder aanvullende data.
+In de praktijk bepaalt deze verkenning hoe realistisch we de modellen kunnen beschouwen bij het maken van steekproefsimulaties, ongeacht een goede fit aan de data zelf.
+Voor niet in de data vertegenwoordigde situaties is het model immers minder betrouwbaar.
+
+#### Aanwezigheid van de types van de doelpopulatie
+
+Zoals eerder uitgelegd (paragraaf \@ref(popsize)) worden de types beschouwd als strata voor de steekproefsimulaties.
+Dit maakt dat er geen probleem rijst als types in andere verhoudingen aanwezig zijn in de analysedataset van een hoofdmeetnet, in vergelijking met de overeenkomstige doelpopulatie.
+Om die reden maken we niet specifiek de vergelijking met de doelpopulatie.
+
+Er is alleen een probleem wanneer een type niet of maar weinig vertegenwoordigd is in een analysedataset (aantal observaties), waardoor de primaire milieuvariabele voor dit type niet of onvoldoende nauwkeurig gemodelleerd kan worden.
+Dit treedt op in een redelijk aantal gevallen (XXXXXXXXXX).
+
+- er zijn zeer sterke verschillen tussen de types in het aantal observaties
+- sommige types zijn niet vertegenwoordigd (Tabel XXXXXX herhaal de tabel hier).
+<!-- specifiek het aantal locaties is niet bekeken -->
+
+In zo'n geval zal dit bij de modelbouw worden omzeild door types te lumpen (en dus 'identiek' te veronderstellen).
+Te lumpen types moeten dus op basis van expertkennis ^[Niet op basis van de datasets; dit zou leiden tot overfitting!] zoveel mogelijk gemeen hebben qua ligging en spreiding van hun primaire milieuvariabele.
+De modellen zijn dan voor zulke types geldig _in zoverre_ deze assumptie (overeenkomst met andere types) opgaat.
+
+#### Spatiale verdeling van de locaties per type volgens bodemtextuur en ecoregio
+
+In het algemeen zien we voor heel wat types verschuivingen optreden in de verdeling van locaties over bodemklassen en ecoregio's, tussen de analysedataset en de overeenkomstige doelpopulatie (voor de types die in de analysedataset voorkomen).
+
+- Voor bodemklasse zijn de verschuivingen iets beperkter in de dataset van GW_05.1_aq.
+- Voor een deel van de types zijn de verschuivingen zeer miniem.
+- Hoewel heel wat uitzonderingen zijn te vinden, zien we voor de bodemklasse in de analysedataset geregeld een grotere vertegenwoordiging (ten opzichte van de doelpopulatie) van de zware en de veenbodems, en een lagere van de lichte bodems.
+- Bij de ecoregio's zijn de grootste toenamen te vinden voor de Ecoregio van de zuidoostelijke heuvelzone, en de grootste afnamen voor de Ecoregio van de Kempen.
+
+
+#### Temporele dekking
+
+Los van de spatiale doelpopulatie is er _idealiter_ een goede temporele dekking op een groot deel van de locaties, en is dus ook de spatiale vertegenwoordiging stabiel doorheen de tijd.
+
+- Meeste locaties GW_05.1 hebben niet meer dan 5 jaar met data, bij GW_03.3 niet meer dan 2.
+- De meerderheid van de locaties in GW_03.3 _overspant_ niet meer dan 2 jaar (tijdsspanne van het eerste tot het laatste datajaar).
+- De tijdsspanne (van het eerste tot het laatste datajaar) is bij GW_05.1 wat vaker in de grootte-orde van 10 tot 20 jaar dan bij GW_03.3, maar toch is dit bij de meerderheid van de locaties niet meer dan een zestal jaar (en vaakst niet meer dan 2 jaar).
+- Geen enkele locatie overspant 30 jaar.
+- In GW_05.1 zijn de eerste jaren, i.e. tot ca. 1995 (GW_05.1_terr) resp. tot ca. 2000 (GW_05.1_aq), veel minder vertegenwoordigd in de dataset.
+- Jaren met data zijn veel vaker aaneensluitend bij GW_05.1 dan bij GW_03.3.
+Dit is logisch, gezien de continu-metingen in het geval van GW_05.1.
+- In GW_03.3 werden de maanden april tot juli in de meest recente zesjaarperiode veel minder bemeten dan vroeger, in verhouding tot de overige maanden.
+In 1995-2000 werden de maanden april en mei veel minder bemeten.
+De meetinspanning in de periode oktober tot december kreeg een toenemend aandeel doorheen de tijd.
+- In de drie meetnetten zien we verschuivingen en schommelingen in de spatiale dekking doorheen de tijd.
+Het relatieve aandeel van Vlaams-Brabant is de eerste 10 jaar veel groter dan daarna.
+De overige provincies zijn in het begin grosso modo beperkter vertegenwoordigd dan daarna.
+In de analysedatasets voor meetnetten GW_05.1_* zien we na 2000 een relatieve afname van West-Vlaanderen ten voordele van Limburg.
+
+
+### Verkenning van de analysedatasets in functie van modelbouw
+
+<!-- Onderstaand tekstje ivm responsvariabelen en covariaten moet misschien verhuizen naar algemene inleiding (aanpak), om dan van hier naar ginder te verwijzen. -->
+
+Om modellen te maken voor steekproefsimulaties, hanteren we ook de volgende terminologie van variabelen in het model, in relatie tot de terminologie in het kader van de meetnetten zelf:
+
+- responsvariabele: een primaire milieuvariabele;
+- covariaat: een andere variabele, (potentieel) gebruikt in een formule om een responsvariabele (inclusief de foutterm) te modelleren.
+Er worden dus covariaten gekozen die:
+  - verklarend/bepalend zijn voor de waarde van de responsvariabele;
+  - we kennen voor de gehele doelpopulatie;
+  - nodig zijn voor het onderscheiden tussen ontwerpscenario's (design-attributen).
+  
+  Bij de covariaten kunnen we zowel continue covariaten (bv. jaar) als categorische (discrete) covariaten (bv. bodemklasse) onderscheiden.
+
+#### Outliers (univariaat) en nullen in responsvariabelen
+
+- Behalve door een fout in de data zijn geen univariate outliers gevonden.
+Overduidelijk foute data zijn geweerd.
+- Met name `hg3_lcl` heeft een groot aandeel nullen (ca. 40% van alle observaties!). 
+- Ook `hg3_std` heeft een groot aandeel nullen (ca. 20%), in het centrum van een min of meer symmetrische verdeling.
+Dit is het gevolg van de standaardisatiestap.
+Het feit dat er méér waarden voorkomen die net kleiner of net groter zijn dan nul, maakt duidelijk dat dit een artefact is: de conclusie is dat de schommelingen van `hg3_std` (en `hg3_ost`) in de tijd beperkt zijn en vaak dicht in de buurt liggen van de eerste observatie.
+- Voorts heeft `lg3_lcl` een groter aantal nullen (4%).
+- In GW_03.3 hebben de responsvariabelen voor specifieke waarden een relatief hoge frequentie.
+Het gaat om meetresultaten beneden de bepaalbaarheidsgrens, waar deze resultaten zijn ingevuld als de 'helft van de bepaalbaarheidsgrens'.
+Zij kunnen een zekere vertekening teweegbrengen in het model.
+
+Vele constante waarden (zoals vele nullen) zullen een grotere ruisterm opleveren in het model.
+
+#### Outliers (univariaat) in continue covariaten
+
+- Er zijn een tweetal outliers te zien voor de y-coördinaat in meetnet GW_05.1_aq.
+Het zijn reële outliers en geen fouten (op kaart: Figuur \@ref(fig:interaction-space-time-GW-05-1-aq)), dus ze blijven behouden.
+- Er zijn voorts geen outliers vastgesteld.
+
+
+#### Balancering van categorische covariaten
+
+- Er zijn voor alle categorische covariaten onbalansen te zien, i.e. opvallende verschillen in het aantal observaties per categorie.
+- De onbalansen zijn veelal het grootst voor `type`, `loc_code`, `cluster_id` en `ecoregion`.
+- Voor GW_03.3 is de overall temporele dekking in de dataset heel goed.
+- De data van GW_05.1_aq betreffen grotendeels de lichte bodems en de Ecoregio van de Kempen.
+- De data van GW_03.3 betreffen grotendeels twee ecoregio's: Ecoregio van de zuidoostelijke heuvelzone, Ecoregio van de Kempen.
+- De data van GW_05.1_terr betreffen grotendeels drie ecoregio's: Ecoregio van de zuidoostelijke heuvelzone, Ecoregio van de Kempen, Ecoregio van de kustduinen.
+
+Onbalansen in de dataset leiden bij de modelbouw tot minder betrouwbare parameterschattingen voor ondervertegenwoordigde categorieën en tot een grotere ruisterm.
+
+#### Patronen en outliers in relaties tussen variabelen
+
+Het doel van deze verkenning is om 'vreemde' elementen op te pikken, die kunnen wijzen op fouten.
+Factoren met heel veel niveaus, namelijk `loc_code` en `cluster_id`, zijn buiten beschouwing gelaten.
+
+- Outliers treden met name op in de relatie tussen een geografische coördinaat (x of y) en spatiale categorieën zoals bodemklasse en ecoregio.
+Dit is geheel normaal.
+- Er zijn patronen te zien in de relatie tussen spatiale en temporele variabelen.
+Dit hangt samen met de bevindingen in paragraaf \@ref(temporele-dekking).
+- Voor sommige categorieën van factoren treden outliers op in de responsvariabele, maar deze zijn niet zo extreem dat ze duidelijk wijzen op foute data.
+Mogelijk foute data zijn evenwel niet uitgesloten, cf. bv. de outlier voor `hg3_lcl` bij type 7150 in meetnet GW_05.1_terr, en voor `po4` ter hoogte van ecoregio 8 (zuidwestelijke heuvelzone) in meetnet GW_03.3.
+- De ligging en spreiding van de responsvariabele is veelal afhankelijk van het niveau van categorische variabelen; een duidelijk effect van deze laatste is te verwachten in de modellen.
+
+Er zijn op basis van deze verkenningen geen (duidelijke) fouten aangetroffen.
+
+#### Collineariteit tussen covariaten
+
+We zien een duidelijke collineariteit tussen jaar en zesjaarperiode (en datum, in het geval van GW_03.3).
+Dit betekent dat het de voorkeur verdient steeds slechts één van deze variabelen op te nemen, indien mogelijk voor de opzet van de steekproefsimulatie.
+
+
+#### Databeschikbaarheid voor relevant geachte interacties
+
+We keken naar de databeschikbaarheid voor interacties tussen tijd en bodemklasse, en tussen tijd en type.
+Trends kunnen immers verschillen volgens **bodemklasse** en **type**.
+
+- Interactie tussen tijd en bodemklasse:
+  - tot ca. het jaar 2000 ontbreekt de categorie 'unknown' en blijven, behalve in GW_03.3, de lichte bodems onderbelicht;
+  - in GW_05.1_aq zijn zware bodems alleen tussen 2000 en 2010 beter vertegenwoordigd;
+  - veenbodems zijn redelijk gelijkmatig bemeten gedurende de volledige periode.
+  
+- Interactie tussen tijd en types:
+  - op typeniveau zien we veranderingen in het jaarlijks aantal bemeten locaties, en er zijn perioden met beperkte tot ontbrekende vertegenwoording van de meetlocaties.
+De overspannen periode is op het niveau van types wel duidelijk groter dan wanneer beschouwd per locatie;
+  - vooral tijdens de eerste zesjaarperiode is een groot deel van de types nog niet vertegenwoordigd in de dataset.
+  
+We besluiten dat de data niet ideaal zijn voor interacties, maar mogelijks de berekening ervan wel mogelijk maken.
+
+
+
