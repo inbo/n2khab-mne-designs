@@ -95,5 +95,18 @@ gw33 <-
     gw33 %>%
     mutate(year_std = year - 1989)
 
+## ---- envdata-handlezeroconcentrations
+
+gw33 <-
+    gw33 %>%
+    mutate(po4 = ifelse(po4 == 0, 5e-4, po4))
+
+gw33 %>%
+    filter(if_any(c(po4, nh4, no3), ~ . == 0)) %>%
+    {if (nrow(.) > 0) {
+        stop("gw33 contains rows with at least one concentration value 0",
+             call. = FALSE)
+    }}
+
 
 
