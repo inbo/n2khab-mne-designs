@@ -48,6 +48,29 @@ gw51t <-
     select(-type_model, -use_data_in_model)
 rm(gw51t_temp)
 
+gw33_temp <-
+    gw33 %>%
+    inner_join(read_vc("typeclusters_gw33",
+                       root = "data/10_input"),
+               by = "type")
+if (sum(is.na(gw33_temp$use_data_in_model)) > 0) {
+    stop("gw33 provides data of types for which it's unclear whether ",
+         "the data have to be used or not. ",
+         "Make this clear in the typeclusters_gw33 table please ",
+         "(use_data_in_model).\n",
+         "It's about following type(s) and number of observations: \n",
+         gw33_temp %>% filter(is.na(use_data_in_model)) %>% count(type) %>%
+             as.matrix %>% paste(collapse = " "),
+         call. = FALSE)
+}
+gw33 <-
+    gw33_temp %>%
+    mutate(type = type_model) %>%
+    filter(use_data_in_model) %>%
+    distinct %>%
+    select(-type_model, -use_data_in_model)
+rm(gw33_temp)
+
 ## ---- envdata-dropfactorlevels
 
 gw51t <-
