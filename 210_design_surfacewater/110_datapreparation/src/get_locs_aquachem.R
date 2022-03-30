@@ -5,7 +5,7 @@ library(assertthat)
 
 
 get_locs_aquachem <-function(con,
-         mask = NULL, #still need to include
+         mask = NULL,
          buffer = 0, #still need to include
          bbox = NULL,
          province = NULL,
