@@ -4,10 +4,8 @@ library(sf)
 library(assertthat)
 
 
-
 get_locs_aquachem <-function(con,
          mask = NULL, #still need to include
-         join_mask = FALSE, #still need to include
          buffer = 0, #still need to include
          bbox = NULL,
          province = NULL,
@@ -87,56 +85,31 @@ get_locs_aquachem <-function(con,
                    .data$y >= bbox_ymin,
                    .data$y <= bbox_ymax)
     }
-    
+
+    if (buffer != 0) {
+        assert_that(!is.null(mask), msg = "no mask specified, add a mask or remove buffer")
+        mask_expand <-
+            mask %>%
+            st_buffer(dist = buffer)
+    } else {
+        mask_expand <-
+            mask
+    }
+
     if (!is.null(mask)) {
-      
-            nr_dropped_locs <-
-        locs %>% collect %>%
-        filter(is.na(.data$x) | is.na(.data$y)) %>%
-        count %>%
-        .$n
-      
-    
-      
-      if (nr_dropped_locs > 0) {
-        warning("Dropped ",
-                nr_dropped_locs,
-                " locations from which x or y coordinates were missing.\n")
-      }
-      
-      locs <-
-        locs %>%
-        filter(!is.na(.data$x), !is.na(.data$y)) %>%
-        arrange(.data$loc_code)
-  
-        
-      #watina::as_points(warn_dupl = FALSE)
-      
-      if (buffer != 0) {
-        mask_expand <-
-          mask %>%
-          st_buffer(dist = buffer)
-      } else {
-        mask_expand <-
-          mask
-      }
-      
-      if (join_mask ) {
-        
-        locs <-
-          locs %>%
-          st_join(mask_expand,
-                  left = FALSE) %>%
-          st_drop_geometry #issue with mask expand ask Floris what subsetting does, check Watina package
-        
-      } else {
-          locs <-
-          locs %>%
-          .[mask_expand,] %>%
-          st_drop_geometry
-        
-      }
-      
+        bbox_mask = (st_bbox(mask_expand))
+        bbox_xmin=unname(bbox_mask$xmin)
+        bbox_xmax=unname(bbox_mask$xmax)
+        bbox_ymin=unname(bbox_mask$ymin)
+        bbox_ymax=unname(bbox_mask$ymax)
+        bbox_filter =locs%>% select(loc_code,x, y)%>% filter(!is.na(x) | !is.na(y))%>% filter(between(x,bbox_xmin, bbox_xmax)) %>% filter(between(y, bbox_ymin, bbox_ymax)) %>%
+        collect %>%
+        rownames_to_column()%>%
+        st_as_sf(coords= c("x","y"),crs = 31370)
+        filter_locations = bbox_filter %>%  filter(rowname %in% (within_shape = st_contains(mask_expand, bbox_filter)%>% unlist))%>% select (loc_code)%>% st_drop_geometry()%>% unlist()
+        locs <- locs %>% filter (loc_code %in% filter_locations)%>%
+        arrange(.data$loc_code)}
+
 
     if (!is.null(province)) {
         locs <-
@@ -152,9 +125,9 @@ get_locs_aquachem <-function(con,
         locs <-
             locs %>%
             filter(.data$habfield %in% habtype_f)}
-    }
 
-  #add filter by mask and buffer
+    if(collect == FALSE){locs} else {locs = locs%>% collect()}
+
 
     return(locs)
 
