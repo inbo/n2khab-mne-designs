@@ -3,8 +3,8 @@
 ```{r}
 dataset <- gw33
 respvar <- "no3"
-stratumvar <- "type" # to support heterogeneity in residuals
-ts_stratumvar <- "type" # for interaction with space and time
+stratumvar <- "ecoregion" # to support heterogeneity in residuals
+ts_stratumvar <- "ecoregion" # for interaction with space and time
 ```
 
 <!-- Tijdelijk: een deel van de dataset bekijken, ivm modelselectie. XXXXXX -->
@@ -93,15 +93,16 @@ dataset <-
                   NA_character_) %>% 
            factor(levels = strata_ts))
 # model-specific extra covariates:
+strata_ts_labels <- str_remove_all(strata_ts, "[\\P{Letter}]")
 dataset <-
   bind_cols(dataset,
-    map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts)), 
+    map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts_labels)), 
              ~as.integer(dataset[[ts_stratumvar]] == .)),
-    map_dfc(set_names(strata_ts, str_c("year_std_stratum_", strata_ts)), 
+    map_dfc(set_names(strata_ts, str_c("year_std_stratum_", strata_ts_labels)), 
              ~dataset$year_std),
-    map_dfc(set_names(strata_ts, str_c("month_stratum_", strata_ts)), 
+    map_dfc(set_names(strata_ts, str_c("month_stratum_", strata_ts_labels)), 
              ~dataset$month),
-    map_dfc(set_names(strata_ts, str_c("cluster_stratum_", strata_ts)), 
+    map_dfc(set_names(strata_ts, str_c("cluster_stratum_", strata_ts_labels)), 
              ~dataset$cluster_id)
   )
 # Beside that, stratum_ is used to predict 
@@ -144,20 +145,20 @@ polynom <-
   str2lang
 tempnoise <- 
     str_c("f(year_std_stratum_",
-          strata_ts,
+          strata_ts_labels,
           ", stratum_", 
-          strata_ts,
+          strata_ts_labels,
           ", model = 'iid')", collapse = " + ") %>% 
     str2lang
 clus_sub <- 
   str_c("f(cluster_stratum_",
-        strata_ts,
+        strata_ts_labels,
         ", stratum_",
-        strata_ts,
+        strata_ts_labels,
         ", model = 'iid')", collapse = " + ") %>%
   str2lang
 modformula <- 
-  substitute(Y ~ -1 + type + ecoregion +
+  substitute(Y ~ type + ecoregion +
                # polynomial trend per stratum:
                stratumpolynoms +
                # remaining short-term temporal variation:
@@ -178,14 +179,14 @@ moddata <-
                           year_std,
                           month,
                           stratum_,
-                          str_c("stratum_", strata_ts),
-                          str_c("year_std_stratum_", strata_ts),
-                          str_c("cluster_stratum_", strata_ts)
+                          str_c("stratum_", strata_ts_labels),
+                          str_c("year_std_stratum_", strata_ts_labels),
+                          str_c("cluster_stratum_", strata_ts_labels)
                           )))
 # linear combinations to compute posterior of predicted fixed effects:
 lincomb_newdata <- 
   newdata %>% 
-  model.matrix(formula(paste("~-1 +", 
+  model.matrix(formula(paste("~", 
                              ts_stratumvar, " + ",
                              deparse(polynom))),
                data = .) %>% 
@@ -195,7 +196,7 @@ lincomb_newdata <-
     c(., 
       newdata %>% 
         filter(is.na(stratum_)) %>% 
-        model.matrix(formula(paste("~-1 +", 
+        model.matrix(formula(paste("~", 
                                    ts_stratumvar)),
                      data = .) %>% 
         as_tibble %>% 
