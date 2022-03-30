@@ -6,8 +6,6 @@
     library(tibble)
     library(stringr)
 
-
-
     get_locs_vmm <-function(con,
     bbox = NULL,
     parameter = NULL,
@@ -45,7 +43,7 @@
                    x = Lambert72_X,
                    y = Lambert72_Y,
                    vhas_code = VhasCode,
-                   vhag_code = VhagCode,
+                   vhag = VhagCode,
                    wbody_code = OwlCode,
                    wbody_order = OwlOrde,
                    wbody_typecode = OwlTypeCode,
@@ -109,7 +107,7 @@
 
         if (collect_HT3260 == FALSE){locs}else{geodata=geodatabase
             geodata=geodata%>%rownames_to_column()
-           collected_locs= locs%>% select(loc_code, x, y)%>% distinct()%>%collect%>%
+           collected_locs= locs%>% select(loc_code, x, y,vhag)%>% distinct()%>%collect%>%
                 st_as_sf(coords= c("x","y"),crs = 31370)
             locs_buffer=st_buffer(x=collected_locs,dist = 10)%>%
                 #find closest stream + buffer to point
@@ -120,23 +118,27 @@
             db_locs_input<-locs_buffer
             if (dim(db_locs_input)[1]==0) {stop("No data to collect. There is no match between given stream, bbox, parameter and the HT3260 database. If a stream was specified, try guess = T")
             }else{
-            link_data=locs%>% filter (loc_code %in% !!db_locs_input$loc_code)%>% collect %>%
+            link_data=locs%>% filter (loc_code %in% !!db_locs_input$loc_code)%>%collect %>%
                 st_as_sf(coords= c("x","y"),crs = 31370)
                 link_data_buffer=st_buffer(x=link_data,dist = 10)%>%
+                mutate(x = unlist(map(link_data$geometry,1)))%>%
+                mutate(y = unlist(map(link_data$geometry,2)))%>%
                 mutate(nearest=st_nearest_feature(.,geodata))%>%
                 st_join(geodata)%>%
                 mutate(naam = toupper(naam))%>%
-                #check if stream names of VMMData and Geodatafiles are equal
-                mutate(check_location= str_detect(river_name, naam))%>%
+                #check if vhag_code of VMM Data and Geodatafiles are equal
+                mutate(check_location= str_detect(vhag, vhag_code))%>%
                 #remove unnamed locations
-                filter(!is.na(naam))%>%
+                #filter(!is.na(naam))%>%
                 #only keep the closest stream (if point is within different stream buffers)
-                filter(nearest==rowname)%>%
-                filter(date >= period_min & date <= period_max)}
-                if(FALSE %in% link_data_buffer$check_location){warning("VMM database and geodatabase use different name for same stream segment")
-                difference = link_data_buffer %>% filter (check_location == FALSE) %>%
-                    select(c(loc_code,vhas_code, river_name, naam, source))%>% unique
-                print(paste0(capture.output(st_set_geometry(difference,NULL)), collapse = "\n"))}
+                filter(nearest==rowname)
+                #filter(date >= period_min & date <= period_max)}
+                #difference = link_data_buffer %>% filter (check_location == FALSE) %>%
+                    #rename(river_name_geodatabase = naam)%>%
+                    #rename(river_name_vmm = river_name)%>%
+                   # select(c(loc_code,vhas_code, river_name_vmm, river_name_geodatabase, source,check_location))%>% unique
+                #if(FALSE %in% link_data_buffer$check_location){warning("VMM database and geodatabase use different name for same stream segment, check locations above")
+                #message(paste0(capture.output(st_set_geometry(difference,NULL)), collapse = "\n"))}
 
             link_data_buffer
 
