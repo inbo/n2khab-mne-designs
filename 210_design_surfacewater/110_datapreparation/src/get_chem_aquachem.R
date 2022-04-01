@@ -31,7 +31,6 @@ get_chem_aquachem <- function(locs,
                .data$FieldSamplingDate,
                 .data$Component,
                loc_code = .data$CODE,
-               habfield = .data$HabtypeVel,
                .data$ResultFormattedNumeric,
                .data$Unit,
                #.data$MeetwaardeMEQ,
@@ -43,5 +42,6 @@ get_chem_aquachem <- function(locs,
             chem %>%
             filter(.data$Component %in% parameter)}else{
                 chem}
+    if(collect == FALSE){chem} else {chem = chem%>% collect()}
 
 }
