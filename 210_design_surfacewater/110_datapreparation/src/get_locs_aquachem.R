@@ -6,7 +6,7 @@ library(assertthat)
 
 get_locs_aquachem <-function(con,
          mask = NULL,
-         buffer = 0, #still need to include
+         buffer = 0,
          bbox = NULL,
          province = NULL,
          town = NULL,
@@ -69,9 +69,11 @@ get_locs_aquachem <-function(con,
                    loc_code = CODE,
                    sbz = SBZ,
                    x_check = X, #coordinate not matching with FactResultAqua ?
-                   y_check = Y),
+                   y_check = Y,
+                   area = SHAPE_Area),
             by = "loc_code") %>%
-        select(gemeente, provincie, loc_code, habfield, x, y,x_check,y_check) %>% distinct()
+
+        select(gemeente, provincie, loc_code, habfield, x, y,x_check,y_check,area) %>% distinct()
 
     if (!is.null(bbox)) {
         bbox_xmin <- unname(bbox["xmin"])
@@ -102,7 +104,7 @@ get_locs_aquachem <-function(con,
         bbox_xmax=unname(bbox_mask$xmax)
         bbox_ymin=unname(bbox_mask$ymin)
         bbox_ymax=unname(bbox_mask$ymax)
-        bbox_filter =locs%>% select(loc_code,x, y)%>% filter(!is.na(x) | !is.na(y))%>% filter(between(x,bbox_xmin, bbox_xmax)) %>% filter(between(y, bbox_ymin, bbox_ymax)) %>%
+        bbox_filter =locs%>% select(loc_code,x, y)%>% filter(!is.na(x) | !is.na(y))%>% filter(between(x,bbox_xmin, bbox_xmax)) %>% filter(between(y, bbox_ymin, bbox_ymax)) %>% select (x,y,loc_code)%>%
         collect %>%
         rownames_to_column()%>%
         st_as_sf(coords= c("x","y"),crs = 31370)
