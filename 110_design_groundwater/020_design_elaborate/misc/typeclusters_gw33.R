@@ -35,7 +35,8 @@ result %>%
     git2rdata::write_vc("typeclusters_gw33",
                         root = "data/10_input",
                         sorting = "type",
-                        optimize = FALSE)
+                        optimize = FALSE,
+                        strict = FALSE)
 
 
 
