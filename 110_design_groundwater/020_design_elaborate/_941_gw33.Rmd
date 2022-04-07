@@ -1,13 +1,4 @@
-## GW_03.3
-
-```{r}
-dataset <- gw33
-respvar <- "no3"
-stratumvar <- "ecoregion" # to support heterogeneity in residuals
-ts_stratumvar <- "ecoregion" # for interaction with space and time
-```
-
-<!-- Voor gamma duurde het volledige model (zonder filteren van data vlgs frequentie per type) een klein halfuur. Met typespecifieke spatiale en temporele random effecten (maar niet: maand). -->
+## GW_03.3: {{respvar}}
 
 ```{r include=FALSE}
 rds_filepath <- file.path(datapath, "binary/simmodels",
@@ -182,7 +173,7 @@ cont_comp <- list(waic = TRUE, dic = TRUE)
 ```
 
 
-```{r gw33-no3-fitmodel, results="hide", eval=params$fit_simmodels && params$write_simmodels}
+```{r gw33-{{respvar}}-fitmodel, results="hide", eval=params$fit_simmodels && params$write_simmodels}
 system.time(
 M1 <- inla(modformula,
              family = rep("lognormal", length(strata)),
@@ -215,7 +206,7 @@ saveRDS(M1, rds_filepath)
 cont_comp <- list(waic = TRUE, dic = TRUE)
 ```
 
-```{r results="hide", eval=(params$fit_simmodels && !params$write_simmodels) || params$largemodel_diagn_eval, ref.label="gw33-no3-fitmodel"}
+```{r results="hide", eval=(params$fit_simmodels && !params$write_simmodels) || params$largemodel_diagn_eval, ref.label="gw33-{{respvar}}-fitmodel"}
 ```
 
 ```{r include=FALSE, eval=!params$largemodel_diagn_eval && !params$fit_simmodels}
@@ -367,7 +358,7 @@ M1$summary.random[str_detect(names(M1$summary.random),
 
 Resultaten hyperparameters, getransformeerd tot standaardafwijkingen:
 
-```{r hyperpar-summary, warning=FALSE}
+```{r hyperpar-summary-{{respvar}}, warning=FALSE}
 map_dfr(precmargs,
         function(marg){
           sink(tempfile())
@@ -405,9 +396,10 @@ map_dfr(precmargs,
 ```
 
 ```{r results="asis", warning=FALSE, message=FALSE, eval=params$largemodel_diagn_eval}
-knit_child("_941_gw33_diagneval.Rmd", 
-           quiet = TRUE,
-           envir =  environment()) %>% 
+knit_expand("_941_gw33_diagneval.Rmd") %>% 
+  {knit_child(text = ., 
+              quiet = TRUE,
+              envir =  environment())} %>% 
   cat(sep = '\n')
 ```
 
