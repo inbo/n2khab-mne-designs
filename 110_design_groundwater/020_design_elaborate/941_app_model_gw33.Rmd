@@ -328,7 +328,8 @@ map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
     )
 ```
 
-Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties), met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele:
+Gemodelleerd lange-termijntijdseffect (dit zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties), met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele.
+Opgelet, de respons is op de schaal van de lineaire predictor.
 
 ```{r out.width='70%'}
 fixedpred_newdata <- 
@@ -368,37 +369,11 @@ trends_abs <-
   select(-contains("year")) 
 trends_abs %>% 
   mutate(across(where(is.numeric), ~round(., 3))) %>% 
-  kable(caption = "Variatie, per stratum, van de lineaire trend in de data. De trend wordt beschouwd volgens de raaklijn aan de gemodelleerde langetermijntrend: de momentane verandering in meter per jaar.") %>% 
+  kable(caption = "Variatie, per stratum, van de lineaire trend op de schaal van de lineaire predictor. De trend wordt beschouwd volgens de raaklijn aan de gemodelleerde langetermijntrend: de momentane verandering per jaar.") %>% 
   kable_styling()
 ```
 
-```{r}
-trends_rel <-
-  trends_abs %>% 
-  select(1:3) %>% 
-  pivot_longer(cols = starts_with("trend"),
-               names_to = "year_std",
-               values_to = "trend") %>% 
-  mutate(year_std = str_remove(year_std, "trend_y") %>% as.numeric) %>% 
-  left_join(fixedpred_newdata %>% select(stratum, year_std, pred = mean),
-            by = c("stratum", "year_std")) %>% 
-  mutate(multiplier12 = (1 + trend / abs(pred))^12,
-         year_std = str_c("multiplier12_y", str_pad(year_std, 2, pad = "0"))) %>% 
-  pivot_wider(id_cols = "stratum", 
-              names_from = year_std,
-              values_from = multiplier12) %>% 
-  mutate(avg = rowMeans(across(c(multiplier12_y01, multiplier12_y29)))) %>% 
-  rowwise %>% 
-  mutate(max_abs = max(abs(multiplier12_y01), abs(multiplier12_y29))) %>% 
-  ungroup
-trends_rel %>% 
-  mutate(across(where(is.numeric), ~round(., 3))) %>% 
-  kable(caption = "Variatie, per stratum, van de lineaire trend in de data (uitgedrukt als multiplier). De trend wordt beschouwd volgens de raaklijn aan de gemodelleerde langetermijntrend: de momentane verandering per jaar, uitgedrukt als multiplier van de waarde van de milieuvariabele voor een constante exponentiële trend over 12 jaar.") %>% 
-  kable_styling()
-```
-
-
-Resterend korte-termijntijdseffect:
+Resterend korte-termijntijdseffect (respons op de schaal van de lineaire predictor):
 
 ```{r out.width='70%'}
 M1$summary.random[str_detect(names(M1$summary.random), 
@@ -456,7 +431,7 @@ map_dfr(precmargs,
 ```
 
 ```{r results="asis", warning=FALSE, message=FALSE, eval=params$largemodel_diagn_eval}
-knit_child("_939_gw33_no3_diagneval.Rmd", 
+knit_child("_941_gw33_diagneval.Rmd", 
            quiet = TRUE,
            envir =  environment()) %>% 
   cat(sep = '\n')
