@@ -258,28 +258,44 @@ if (exists(modelname)) {
 }
 ```
 
-INLA formule en likelihood family:
+INLA formule:
 
-```{r echo=TRUE}
+```{r}
 M1$.args$formula
-cbind(colnames(resp), M1$.args$family)
+```
+
+Likelihood family (distributie van de respons):
+
+```{r}
+cat(paste(colnames(resp), M1$.args$family, sep = ": "), sep = "\n")
 ```
 
 
 
 ### Modelresultaten
 
-Model summary:
+De volgende tabellen en output vatten de belangrijkste resultaten samen.
 
 ```{r paged.print=FALSE}
 # summary(M1)
 # names(M1)
-M1$summary.fixed %>% 
-  select(mean, sd, matches("025|975")) %>% 
-  round(3) %>% 
-  cbind(ci_excludes_zero = .$`0.025quant` > 0 | .$`0.975quant` < 0)
-cat("\n")
-M1$summary.hyperpar %>% select(mean, sd, matches("025|975")) %>% round(3)
+M1$summary.fixed %>%
+    select(mean, sd, matches("025|975")) %>%
+    round(3) %>%
+    cbind(ci_excludes_zero = .$`0.025quant` > 0 | .$`0.975quant` < 0) %>% 
+    kable(caption = "Modelresultaten: fixed parameters.") %>%
+    kable_styling()
+```
+
+```{r paged.print=FALSE}
+M1$summary.hyperpar %>% 
+    select(mean, sd, matches("025|975")) %>% 
+    round(3) %>% 
+    kable(caption = "Modelresultaten: hyperparameters.") %>%
+    kable_styling()
+```
+
+```{r paged.print=FALSE}
 cat("\nDIC:", M1$dic$dic,
     "\nWAIC:", M1$waic$waic,
     "\nNumber of equivalent replicates:", 
