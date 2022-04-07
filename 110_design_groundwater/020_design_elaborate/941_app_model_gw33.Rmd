@@ -7,33 +7,7 @@ stratumvar <- "ecoregion" # to support heterogeneity in residuals
 ts_stratumvar <- "ecoregion" # for interaction with space and time
 ```
 
-<!-- Tijdelijk: een deel van de dataset bekijken, ivm modelselectie. XXXXXX -->
 <!-- Voor gamma duurde het volledige model (zonder filteren van data vlgs frequentie per type) een klein halfuur. Met typespecifieke spatiale en temporele random effecten (maar niet: maand). -->
-
-```{r}
-dataset <- 
-  read_scheme_types(lang = "nl") %>% 
-  filter(scheme == "GW_03.3") %>% 
-  select(type, typegroup) %>% 
-  inner_join(read_vc("typeclusters_gw33",
-                     root = "data/10_input") %>% 
-               select(type, type_model) %>% 
-               as_tibble, .,
-             by = "type") %>% 
-  select(-type) %>% 
-  distinct %>% 
-  rename(type = type_model) %>% 
-  inner_join(dataset, ., by = "type") %>% 
-  count(typegroup, type) %>% 
-  arrange(typegroup, -n) %>% 
-  group_by(typegroup) %>% 
-  # for each typegroup, withhold the three species with most observations:
-  slice(1:3) %>% 
-  ungroup %>% 
-  semi_join(dataset, ., by = "type") %>% 
-  mutate(type = droplevels(type))
-```
-
 
 ```{r include=FALSE}
 rds_filepath <- file.path(datapath, "binary/simmodels",
