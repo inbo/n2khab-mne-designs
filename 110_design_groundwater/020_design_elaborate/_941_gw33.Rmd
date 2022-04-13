@@ -47,16 +47,16 @@ strata_ts <-
   as.character
 # the stratum_ variable is only needed in model formulas where it is used - 
 # up to now that is the case when fitting stratum-specific polynomial trends
+strata_ts_labels <- str_remove_all(strata_ts, "[\\P{Letter}]") # needed for ecoregion
 dataset <-
   dataset %>% 
   mutate(stratum_ = as.character(.data[[ts_stratumvar]]),
          stratum_ = 
            ifelse(stratum_ %in% strata_ts, 
-                  stratum_,
+                  str_remove_all(stratum_, "[\\P{Letter}]"),
                   NA_character_) %>% 
-           factor(levels = strata_ts))
+           factor(levels = strata_ts_labels))
 # model-specific extra covariates:
-strata_ts_labels <- str_remove_all(strata_ts, "[\\P{Letter}]")
 dataset <-
   bind_cols(dataset,
     map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts_labels)), 
