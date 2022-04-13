@@ -244,7 +244,23 @@ split_popsize <- function(df, spfact, scheme_sel) {
         ungroup %>%
         filter(population_size > 0) %>%
         select(-proportion) %>%
-        relocate(population_size, .after = last_col())
+        relocate(population_size, .after = last_col()) %>%
+        {if (scheme_sel != "GW_03.3") . else {
+            # for GW_03.3, stratum "Ecoregio van de krijtgebieden" (Voerstreek)
+            # is missing from the data used to fit the model. Hence, we replace
+            # this stratum by the spatially adjacent "Ecoregio van de
+            # krijt-leemgebieden", in order to get model results for those
+            # locations as well:
+            mutate(.,
+                   ecoregion =
+                       fct_recode(ecoregion,
+                                  "Ecoregio van de krijt-leemgebieden" =
+                                      "Ecoregio van de krijtgebieden")
+                       ) %>%
+                group_by(across(-population_size)) %>%
+                summarise(population_size = sum(population_size)) %>%
+                ungroup
+        }}
 }
 
 
