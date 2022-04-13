@@ -341,6 +341,8 @@ simulate_detrended_pops <-
                                         levels(mdata[str_detect(names(mdata), "^type")][[1]])),
                          stratum_ =
                              .[[var_stratum_]] %>%
+                             as.character %>%
+                             str_remove_all("[\\P{Letter}]") %>%
                              factor(levels = levels(mdata[str_detect(names(mdata), "^stratum_+\\D?$")][[1]])),
                          stratum =
                              .[[var_stratum]] %>%
