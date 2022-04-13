@@ -363,8 +363,7 @@ simulate_detrended_pops <-
                          stratum =
                              .[[var_stratum]] %>%
                              factor(levels = levels(mdata[str_detect(names(mdata), paste0("^", var_stratum, "(_\\D)?$"))][[1]]))
-                     ) %>%
-                     {if (any(is.na(.$stratum_))) select(., -stratum_) else .}
+                     )
                                  }),
             likelihood_family = map(model,
                              ~unique(.$.args$family)),
@@ -821,9 +820,10 @@ sd_extract <- function(model,
                        index_joint,
                        prefix = "Precision for.*") {
 
-    if (!any(str_detect(
-        names(model$marginals.hyperpar),
-        str_c(regex_no_suffix, suffixes_joint[index_joint], "$"))
+    if (is.na(regex_no_suffix) ||
+        !any(str_detect(
+            names(model$marginals.hyperpar),
+            str_c(regex_no_suffix, suffixes_joint[index_joint], "$"))
         )) return(NA)
 
     selection_1 <-
