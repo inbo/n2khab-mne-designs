@@ -532,8 +532,22 @@ simulate_detrended_pops_singlemodel <-
                                          dm
                                      }
                                     ),
-                model_matrix = map2(design_matrix, formula_fixed,
-                                    ~model.matrix(.y, data = .x)),
+                model_matrix =
+                  map2(design_matrix, formula_fixed,
+                       function(dm, ff) {
+                         model.matrix(ff, dm,
+                                      # forcing dummy variables for all factor
+                                      # levels (the ones without a model
+                                      # parameter are removed in a next step):
+                                      contrasts.arg =
+                                        map(dm %>%
+                                              select(where(is.factor) &
+                                                     any_of(attr(terms(ff),
+                                                                 "term.labels"))),
+                                            contrasts,
+                                            contrasts = FALSE))
+                       }
+                       ),
                 # calculate fixed part
                 "linpred_fixed{suffix}" := map2(model_matrix, model,
                                         function(mm, model) {
@@ -545,7 +559,7 @@ simulate_detrended_pops_singlemodel <-
                                             # represent the first level of a
                                             # fixed effect:
                                             if (ncol(mm) - nr_fe > 1) {
-                                                warning("The model matrix has ", colnames(mm) - nr_fe, " columns that don't occur in the model's fixed effects. Something is probably going wrong, please debug.")
+                                                message("The preliminary model matrix has ", ncol(mm) - nr_fe, " columns that don't occur in the model's fixed effects.\nThis will be corrected.")
                                             }
                                             mm <-
                                                 mm[, colnames(mm) %in%
@@ -553,6 +567,8 @@ simulate_detrended_pops_singlemodel <-
                                                            model$summary.fixed
                                                            )
                                                    ]
+                                            # needed when factor level order differs:
+                                            mm <- mm[, rownames(model$summary.fixed)[rownames(model$summary.fixed) %in% colnames(mm)]]
                                             if(any(rownames(model$summary.fixed)[rownames(model$summary.fixed) %in% colnames(mm)] != colnames(mm))) stop("The order of model matrix columns does not match that of the fixed effects.")
                                             pars_fixed <- model$summary.fixed[
                                                 rownames(model$summary.fixed) %in% colnames(mm), "mean"]
