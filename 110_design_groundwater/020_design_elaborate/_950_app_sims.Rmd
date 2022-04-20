@@ -433,7 +433,7 @@ In de scenario-evaluatie (poweranalyse s.l.) vergelijken we de scenario's door i
 ```{r message=FALSE}
 statusdata <- 
   simsamples %>% 
-  filter(between(hydroyear_std, 1, 6)) %>% 
+  filter(between(.data[[timevar]], 1, 6)) %>% 
   inner_join(type_attrib %>% 
                select(starts_with("type"), population_size), 
              by = "type") %>% 
@@ -653,8 +653,8 @@ trend_estimateslocal <-
            pmap(list(data, spatial_sample, type), function(df, ss, tp) {
              # log_socket("Fitting model for %s in sample %s in population %s in scenario %s...", tp, ss, pop, scen, .socket = logsocket)
              if (n_distinct(df$location) == 1L) {
-               fm <- logresp ~ hydroyear_std
-             } else fm <- logresp ~ hydroyear_std:location
+               fm <- as.formula(paste0("logresp ~ ", timevar))
+             } else fm <- as.formula(paste0("logresp ~ ", timevar, ":location"))
              if (n_distinct(df$logresp) > 1L) {
                  lme(fm,
                      random = ~ 1 | location,
