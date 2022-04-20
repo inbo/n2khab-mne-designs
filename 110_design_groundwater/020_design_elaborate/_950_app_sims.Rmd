@@ -162,17 +162,30 @@ simpops %>%
 
 
 ```{r zeroes-{{scheme_sel_label}}-{{respvar_label}}}
+rounding_level <- 
+    case_when(
+        scheme_sel == "GW_03.3" ~ 3,
+        TRUE ~ 2
+    )
 simpops %>%
     left_join(type_attrib %>% select(type, typegroup), by = "type") %>%
     nest(data = -typegroup) %>%
-    mutate(prop_zero = map(data, ~round(sum(round(.$response, 2) == 0) / nrow(.), 3))) %>%
+    mutate(prop_zero = map(
+        data, ~round(sum(round(.$response, rounding_level) == 0) / nrow(.), 3)
+        )) %>%
     select(typegroup, prop_zero) %>%
     unnest(prop_zero) %>%
     arrange(typegroup) %>%
-    bind_rows(tibble(typegroup = "all",
-                     prop_zero = round(sum(round(simpops$response, 2) == 0) / nrow(simpops), 3)),
+    bind_rows(tibble(
+        typegroup = "all",
+        prop_zero = round(sum(round(simpops$response, rounding_level) == 0) / nrow(simpops), 3)
+        ),
               .) %>%
-    kable(caption = "Proportie nullen in de gesimuleerde responsvariabele, zowel voor het geheel (all) als opgesplitst per typegroep. Waarden die 0.005 eenheden of minder van nul verwijderd zijn, zijn eveneens beschouwd als nul.") %>%
+    kable(caption = paste(
+        "Proportie nullen in de gesimuleerde responsvariabele, zowel voor het geheel (all) als opgesplitst per typegroep. Waarden die minder dan",
+        5 * 10^(- rounding_level - 1),
+        "eenheden van nul verwijderd zijn, zijn in deze tabel eveneens beschouwd als nul."
+        )) %>%
     kable_styling(full_width = FALSE)
 ```
 
