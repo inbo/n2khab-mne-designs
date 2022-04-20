@@ -206,8 +206,10 @@ spatvar <-
   simpops_500locs %>% 
   group_by(population, modelname, type, location) %>% 
   summarise(spatresp = mean(response)) %>% 
-  {if (errmarg_rel) {
+  {if (errmarg_rel && str_detect(scheme_sel, "GW_05\\.1")) {
     summarise(., spatvar = ifelse(-spatresp <= 0, .01, -spatresp) %>% log10 %>% var)
+  } else if (errmarg_rel) {
+    summarise(., spatvar = spatresp %>% log10 %>% var)
   } else summarise(., spatvar = var(spatresp))
     } %>% 
   group_by(modelname, type) %>% 
