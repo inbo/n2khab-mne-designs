@@ -626,7 +626,8 @@ simulate_detrended_pops_singlemodel <-
                             sd_extract(model,
                                        str_c("^Stratum ",
                                              stratum,
-                                             ": Precision of residuals"),
+                                             ": Precision of residuals",
+                                             "( \\(in log scale\\))?"),
                                        "", 1, "")^2,
                         llhfam_param2_gamma =
                             model$summary.hyperpar[str_c("Stratum ",
@@ -724,6 +725,8 @@ simulate_detrended_pops_singlemodel <-
                             likelihood_family[index_joint],
                             "gaussian" =
                                 model_sd_strat["llhfam_param2_gaussian"],
+                            "lognormal" =
+                                model_sd_strat["llhfam_param2_gaussian"],
                             "binomial" = NA,
                             "gamma" =
                                 model_sd_strat["llhfam_param2_gamma"]
@@ -737,6 +740,12 @@ simulate_detrended_pops_singlemodel <-
                                                    mean = .data[[str_c("llhfam_param1", suffix)]],
                                                    sd = sqrt(.data[[str_c("llhfam_param2", suffix)]]),
                                                    a = lln, b = uln),
+                                        "lognormal" =
+                                            rtrunc(n(), spec = "norm",
+                                                   mean = .data[[str_c("llhfam_param1", suffix)]],
+                                                   sd = sqrt(.data[[str_c("llhfam_param2", suffix)]]),
+                                                   a = lln, b = uln) %>%
+                                            exp,
                                         "binomial" =
                                             rbinom(n(),
                                                    size = 1,
