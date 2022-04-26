@@ -1547,6 +1547,7 @@ plot_summary <- function(input, stat = NULL) {
         pivot_longer(cols = starts_with("p("),
                      names_to = "distribution_threshold",
                      values_to = "probability") %>%
+        drop_na %>%
         {if (any(str_detect(unique(.$distribution_threshold), "errmarg"))) {
             mutate(., distribution_threshold =
                        factor(distribution_threshold) %>%
