@@ -432,25 +432,30 @@ In de scenario-evaluatie (poweranalyse s.l.) vergelijken we de scenario's door i
 
 ```{r message=FALSE}
 statusdata <- 
-  simsamples %>% 
-  filter(between(.data[[timevar]], 1, 6)) %>% 
-  inner_join(type_attrib %>% 
-               select(starts_with("type"), population_size), 
-             by = "type") %>% 
-  group_by(scenario, 
-           population, 
-           spatial_sample, 
-           across(starts_with("type")),
-           location, 
-           population_size) %>% 
-  summarise(targetvar = mean(response)) %>% 
-  ungroup
-status_res_per_type <- 
-  statusdata %>% 
-  compute_status_persample("type")
+    simsamples %>% 
+    rename(time = {{timevar}},
+           targetvar = response) %>% 
+    filter(between(time, 1, 6)) %>% 
+    inner_join(type_attrib %>% 
+                   select(starts_with("type"), population_size), 
+               by = "type") %>% 
+    {if (inference_temporal) . else {
+        group_by(.,
+                 scenario, 
+                 population, 
+                 spatial_sample, 
+                 across(starts_with("type")),
+                 location, 
+                 population_size) %>% 
+            summarise(targetvar = mean(targetvar)) %>% 
+            ungroup
+    }}
+status_res_per_type <-
+    statusdata %>%
+    compute_status_persample("type")
 status_res_per_typegroup <- 
-  compute_status_persample(level = "typegroup",
-                           typeresult = status_res_per_type)
+    compute_status_persample(level = "typegroup",
+                             typeresult = status_res_per_type)
 ```
 
 De typegroepen waren benoemd in Tabel \@ref(tab:typegroups).

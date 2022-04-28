@@ -1155,6 +1155,9 @@ visualize_trends <- function(sample_definition,
 #' @param statusdata Data frame with at least columns "scenario", "population",
 #' "spatial_sample", "type", "location", "population_size", and a column with
 #' the value of the target variable (conveniently named as "targetvar").
+#' Note that "population_size" is assumed to refer to the SPATIAL population
+#' size of each TYPE.
+#' If also a "time" column is present, inference will be spatiotemporal.
 #' @param level Level at which the status estimate must be computed.
 #' For levels higher than type, the design is always stratified according to
 #' type.
@@ -1164,6 +1167,10 @@ visualize_trends <- function(sample_definition,
 #' The default (FALSE) gives equal weight to types and standard error is
 #' calculated accordingly (equal weights of the type standard errors).
 #' This is done since it is the global quantity of primary interest.
+#' @param temporal_poststratif Logical; only relevant if a "time" column is present
+#' in statusdata.
+#' If TRUE (default), apply poststratification over the unique values of the time
+#' variable, when doing spatiotemporal aggregation.
 #' @param targetvar String. Name of the target variable.
 #' @param extra_se_var String (NULL by default).
 #' Name of a variable containing the standard errors
@@ -1177,6 +1184,7 @@ visualize_trends <- function(sample_definition,
 compute_status_persample <- function(statusdata = NULL,
                                      level = c("typegroup", "type", "overall"),
                                      weighted_mean = FALSE,
+                                     temporal_poststratif = TRUE,
                                      targetvar = "targetvar",
                                      extra_se_var = NULL,
                                      typeresult = NULL) {
@@ -1191,6 +1199,16 @@ compute_status_persample <- function(statusdata = NULL,
 
     if (is.null(typeresult) | level == "type" | weighted_mean) {
 
+    has_timevar <- "time" %in% colnames(statusdata)
+
+    # if time is present, then population is considered spatiotemporal and
+    # spatial population size is replaced by spatiotemporal population size:
+    if (has_timevar) {
+        statusdata <-
+            statusdata %>%
+            mutate(population_size = population_size * n_distinct(time))
+    }
+
     mean_se <-
         statusdata %>%
         {if (!weighted_mean | level == "type") {
@@ -1204,10 +1222,26 @@ compute_status_persample <- function(statusdata = NULL,
         } else {
             nest(., data = -c(scenario, population, spatial_sample, typegroup))
         }} %>%
-        mutate(design = map(data, ~svydesign(ids = ~1,
-                                             strata = if(!weighted_mean) NULL else ~type,
-                                             fpc = ~population_size,
-                                             data = .)),
+        mutate(design =
+                   map(data, function(df) {
+                       svydesign(ids = ~1,
+                                 # note that unweighted aggregation only occurs
+                                 # while data is nested by type
+                                 strata = if (!weighted_mean) NULL else ~type,
+                                 fpc = ~population_size,
+                                 data = df) %>%
+                           {if (has_timevar && temporal_poststratif) {
+                               postStratify(.,
+                                            strata = ~time,
+                                            population = data.frame(
+                                                time = unique(df$time),
+                                                Freq =
+                                                    sum(unique(df$population_size)) /
+                                                    n_distinct(df$time)
+                                            )
+                                            )
+                           } else .}
+                   }),
                mean_svystat = map(design, ~svymean(paste0("~", targetvar) %>%
                                                        as.formula, .)),
                deg_freedom = map_dbl(design, ~degf(.)),
