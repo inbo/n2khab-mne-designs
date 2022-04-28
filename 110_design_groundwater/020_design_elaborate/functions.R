@@ -1169,8 +1169,8 @@ visualize_trends <- function(sample_definition,
 #' Name of a variable containing the standard errors
 #' associated with the values of targetvar, and which should be incorporated
 #' into the standard error of the spatial or spatiotemporal mean.
-#' @param typeresult The outputted dataframe of the function for level="type"
-#' can be inputted again; will be used to shortcut calculations if
+#' @param typeresult The outputted dataframe of the function for level="type",
+#' which can be inputted again; will be used to shortcut calculations if
 #' weighted_mean = FALSE and level is higher than type.
 #' In this case, statusdata is not needed.
 #'
