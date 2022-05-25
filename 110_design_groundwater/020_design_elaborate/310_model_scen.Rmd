@@ -48,6 +48,23 @@ file.path(datapath,
     })
 ```
 
+```{r eval=params$loadmodels_GW_03.3, include=FALSE}
+# GW_03.3
+respvar <- c("no3", "nh4", "po4")
+gw33_modelnames <- 
+    str_c("model_gw33_", 
+          respvar)
+file.path(datapath, 
+          "binary/simmodels",
+          str_c(gw33_modelnames, ".rds")) %>% 
+    walk(function(path) {
+        if (file.exists(path)) {
+            modelname <- basename(path) %>% str_remove(".rds")
+            assign(modelname, readRDS(path), envir = .GlobalEnv)
+        }
+    })
+```
+
 In verdere hoofdstukken komen de resultaten van scenario's aan bod, waarbij het effect is doorgerekend van verschillende steekproefgrootte, meetfrequentie en/of herbezoekpatroon, alsook van een hypothetische (lineaire of exponentiële) trend.
 Het doorrekenen van het effect van scenariokeuzes doen we door herhaaldelijk waarden van doelpopulaties en steekproeven na te bootsen (te simuleren).
 Steekproeven worden daarbij uit een gesimuleerde doelpopulatie getrokken in overeenstemming met de kenmerken van een scenario.
@@ -148,6 +165,19 @@ read_vc("typeclusters_gw51t",
             as_tibble %>% 
             group_by(type_model) %>% 
             mutate(scheme = "GW_05.1_aq",
+                   nr_types = n()) %>% 
+            ungroup %>% 
+            filter(nr_types >1) %>% 
+            select(scheme,
+                   typecluster = type_model,
+                   type)
+    ) %>% 
+    bind_rows(
+        read_vc("typeclusters_gw33",
+                root = "data/10_input") %>% 
+            as_tibble %>% 
+            group_by(type_model) %>% 
+            mutate(scheme = "GW_03.3",
                    nr_types = n()) %>% 
             ungroup %>% 
             filter(nr_types >1) %>% 
@@ -442,15 +472,105 @@ We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpo
 
 
 
-### GW_03.3: no3
 
 
 
-### GW_03.3: nh4
+### GW_03.3: `no3`, `nh4` en `po4`
+
+Wegens de grote parallellen in modelvorm en resultaten, worden de respectievelijke modellen voor `no3`, `nh4` en `po4` hier samen besproken.
+
+Op basis van de scheve spreiding van deze responsvariabelen en hun strikt positieve waarde, is gekozen voor lognormale modellen.
+Dit wil zeggen dat het logaritme van de responsvariabele een normale kansverdeling volgt, waarbij de ligging (het gemiddelde) afhangt van de waarde van covariaten.
+Ook gammamodellen komen in aanmerking voor deze responsvariabelen en zijn uitgetest, maar hun WAIC en DIC criteria scoorden slechter.
+Bovendien vroegen deze modellen meer rekentijd.
+
+Er is voor de distributie, voor de random componenten en voor de lange-termijntrend gekozen voor een interactie met `ecoregion`.
+In het geval van de random componenten en de lange-termijntrend gebeurt dit alleen voor de ecoregio's met voldoende data (voor andere ecoregio's wordt de variatie vertegenwoordigd door de distributie en wordt geen lange-termijntrend geïsoleerd).
+Er is in plaats van `ecoregion` ook gekeken naar de fit met `type` en met `soilclass`, maar die modellen scoorden voor alle responsvariabelen slechter.
+
+Behalve het jaareffect (random) werd er ook gekeken naar het maandeffect (random).
+Er is echter voor geopteerd om het te laten vallen omdat het maar heel weinig variatie verklaarde (maand heeft weinig effect), terwijl het de modellen complexer maakt.
+Dit besluit werd voor `no3` ook gesteund door de informatiecriteria.
+
+Modelvorm:
+
+$$Y_i \sim Lognormal(\mu_i, \sigma^2_{q_i})$$
+$$\mu_i = c_i + \beta_{t,q_i} \cdot t_i + \beta_{t^2,q_i} \cdot t^2_i + u_i + w_i$$
+$$u_i \sim \mathcal{N}(0,\sigma^2_{u,q_i})$$
+$$w_i \sim \mathcal{N}(0,\sigma^2_{w,q_i})$$
+
+Met:
+
+::: {.largefonttable}
+
+|
+:-|:---------------
+$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en variantie ($\sigma^2$)
+$i$ | _index_ die een unieke (hypothetische) observatie identificeert
+$q_i$ | _index_ die het stratum aanduidt waartoe de observatie behoort. De stratumvariabele is steeds `ecoregion`. Het gebruik van deze index geeft aan dat de parameter afhangt van $q_i$.
+$c_i$ | fixed effect van `type` (typecluster)
+$t_i$ | `year_std`, de variabele in de tweedegraadspolynoom (lange-termijntrend; fixed effect)
+$\beta_{t,q_i}$, $\beta_{t^2,q_i}$ | parameters van de tweedegraadspolynoom
+$u_i$ | random effect van `year_std` (korte-termijnvariatie)
+$w_i$ | random effect van `cluster_id` (locatiecluster)
+
+:::
+
+De gefitte modellen zijn:
+
+```{r eval=params$loadmodels_GW_03.3, results="asis"}
+gw33_modelnames %>% 
+    str_c("- `", ., "`") %>% 
+    cat(sep = "\n")
+```
+
+
+De figuren geven een idee van de fit en de robuustheid van elk model.
+Merk op dat in dit meetnet de geobserveerde en gefitte waarden betrekking hebben op de log-getransformeerde waarden (met grondtal $e$).
+
+```{r eval=params$loadmodels_GW_03.3, results="asis"}
+gw33_modelnames %>% 
+    walk(function(mn) {
+        M1 <- eval(as.name(mn))
+        M1_diagn <- 
+            tibble(observed = log(extract_observed(M1$.args$data$Y)),
+                   fitted = M1$summary.fitted.values$mean,
+                   resid = fitted - observed) %>% 
+            filter(!is.na(resid))
+        plot_modelevaluation(M1, M1_diagn, mn)
+    })
+```
+
+Het aantal 'equivalent replicates' is bij deze modellen aan de lage kant, wat maakt dat de parameterschattingen minder betrouwbaar worden.
+Bij de modelselectie is echter vooral voortgegaan op de informatietheoretische criteria WAIC en DIC, die de balans beschouwen tussen de fit (beter bij meer parameters en dus minder 'equivalent replicates') en de spaarzaamheid (beter bij minder parameters).
+Ondanks het lagere aantal 'equivalent replicates' wezen deze criteria dus uit dat deze modellen beter zijn dan modellen met minder parameters.
+
+Daarnaast valt een hoge RMSE op te merken: de distributie van observaties rondom de gefitte waarde is relatief breed.
+Er is dus veel residuele variatie die niet verklaard wordt door de lineaire predictor.
+Aangezien de distributie van de respons ook meespeelt in simulaties, is het niet echt een probleem dat de lineaire predictor nog niet de meeste variatie afdekt.
+De gesimuleerde responsen blijven dus realistisch.
+
+
+_Algemeen resultaat voor de fixed effects:_
+
+- terwijl `type` vaak geen duidelijk effect heeft, is dit wel het geval voor `ecoregion`;
+- voor de ecoregio's waar een lange-termijntrend is geïsoleerd over de volledige tijdsspanne (30 jaar), blijkt er sprake te zijn van een stijging, gevolgd door een daling.
+Bij twee ecoregio's lijkt dit voor `no3` omgekeerd te zijn, i.e. eerst een daling, dan een stijging.
+
+_Algemeen resultaat voor de random effects:_
+
+- de spatiale ruis is groter dan de temporele ruis;
+- de spatiale, temporele en residuele ruis lopen duidelijk uiteen tussen ecoregio's. Dit is deels gevolg van het niet apart onderscheiden van spatiale en temporele ruis bij ecoregio's met minder data;
+
+Op basis van de resultaten kunnen we **besluiten** dat deze modellen de variatie van de milieuvariabele in de analysedataset redelijkerwijze generaliseren.
+We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpopulaties te simuleren:
+
+- onevenwichtige spatiale en temporele dekking in de analysedata, op typeniveau tevens te zien in de vertegenwoordiging van ecoregio's in vergelijking met de doelpopulatie. Dit uit zich ook in een beperkte databeschikbaarheid voor heel wat ecoregio's;
+- er is geen onderscheid gemaakt tussen spatiale en temporele variatie in ecoregio's met minder data; alle random variatie is daar residueel;
+- de aannames om bepaalde types bij elkaar te mogen lumpen.
 
 
 
-### GW_03.3: po4
 
 
 
