@@ -130,11 +130,16 @@ Dit verhindert dat korte-termijnvariatie wordt geabsorbeerd in de lange-termijnt
 
 ### Verdere keuzes
 
-In de meeste (of alle) gevallen wordt er naar gestreefd om deels typespecifiek te werken bij de specificatie van het systematisch en/of random deel van de lineaire predictor.
+In de meeste (of alle) gevallen wordt er naar gestreefd om typespecifiek te werken bij de specificatie van het systematisch en/of random deel van de lineaire predictor, en in de distributiefunctie van de respons.
 Op die manier is het mogelijk om in steekproefscenario's rekening te houden met verschillende variatiestructuur tussen types, bij het kiezen van steekproefgrootte in ruimte of tijd.
-Typespecifiek werken is mogelijk door het opnemen van de covariaat `type` in het model, of van een covariaat waarvoor de kansverdeling per type gekend is (bv. `soilclass`).
-In het random deel en in de distributiefunctie van de respons is dit mogelijk door een interactie te voorzien met voornoemde covariaat, d.w.z. dat bv. de korte-termijnvariatie (een ruisterm in de lineaire predictor) beschreven wordt door een aparte distributiefunctie op maat van elk type.
-Dit is natuurlijk enkel mogelijk voor types met voldoende data.
+Typespecifiek werken is mogelijk door het opnemen van de covariaat `type` in het model, of van een spatiale factor waarvoor de kansverdeling per type gekend is zoals `soilclass`; zie \@ref(spatiale-verdeling).
+In het random deel en in de distributiefunctie van de respons is dit mogelijk door een interactie te voorzien met voornoemde covariaat (type, of een spatiale factor).
+We spreken hierbij over stratificatie van het model, niet te verwarren met de strata van het meetnet zoals vernoemd in \@ref(popsize) (hoewel ze kunnen overeenkomen).
+De beschouwde spatiale factoren (zie ook \@ref(spatiale-verdeling)) zijn gebaseerd op voorbereidend modelwerk (Jansen, unpubl.).
+
+Bijvoorbeeld de korte-termijnvariatie (een ruisterm in de lineaire predictor) wordt dan beschreven door een aparte distributiefunctie op maat van elk type of elk niveau van een ruimtelijke covariaat.
+Dit is natuurlijk enkel mogelijk voor types of niveaus met voldoende data.
+Wanneer veel niveaus onvoldoende data bevatten, komt het ook voor dat deze niveaus gelumpt zijn tot één niveau (zie \@ref(gw33-model)).
 
 Omwille van specifieke kenmerken van de analysedataset werden enkele aanpassingen gedaan aan de analysedataset alvorens een model te fitten:
 
@@ -475,7 +480,7 @@ We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpo
 
 
 
-### GW_03.3: `no3`, `nh4` en `po4`
+### GW_03.3: `no3`, `nh4` en `po4` {#gw33-model}
 
 Wegens de grote parallellen in modelvorm en resultaten, worden de respectievelijke modellen voor `no3`, `nh4` en `po4` hier samen besproken.
 
@@ -484,8 +489,10 @@ Dit wil zeggen dat het logaritme van de responsvariabele een normale kansverdeli
 Ook gammamodellen komen in aanmerking voor deze responsvariabelen en zijn uitgetest, maar hun WAIC en DIC criteria scoorden slechter.
 Bovendien vroegen deze modellen meer rekentijd.
 
-Er is voor de distributie, voor de random componenten en voor de lange-termijntrend gekozen voor een interactie met `ecoregion`.
-In het geval van de random componenten en de lange-termijntrend gebeurt dit alleen voor de ecoregio's met voldoende data (voor andere ecoregio's wordt de variatie vertegenwoordigd door de distributie en wordt geen lange-termijntrend geïsoleerd).
+Er is voor de distributie, voor de random componenten en voor het lange-termijntijdseffect gekozen voor een interactie met `ecoregion`.
+In het geval van de random componenten en het lange-termijntijdseffect gebeurt dit specifiek voor de ecoregio's met voldoende data.
+Voor de andere ecoregio's zijn deze modelcomponenten ook voorzien, maar dit is dan voor het gelumpte niveau 'Overige ecoregio's' om voldoende data te hebben.
+Sowieso gebeurde de schatting van de residuele variantie wel voor elke ecoregio apart.
 Er is in plaats van `ecoregion` ook gekeken naar de fit met `type` of met `soilclass` als interactievariabele, maar die modellen scoorden voor alle responsvariabelen slechter.
 
 Behalve het jaareffect (random) werd er ook gekeken naar het maandeffect (random).
@@ -554,19 +561,19 @@ De gesimuleerde responsen blijven dus realistisch.
 _Algemeen resultaat voor de fixed effects:_
 
 - terwijl `type` vaak geen duidelijk effect heeft, is dit wel het geval voor `ecoregion`;
-- voor de ecoregio's waar een lange-termijntrend is geïsoleerd over de volledige tijdsspanne (30 jaar), blijkt er sprake te zijn van een stijging, gevolgd door een daling.
-Bij twee ecoregio's lijkt dit voor `no3` omgekeerd te zijn, i.e. eerst een daling, dan een stijging.
+- lange-termijntijdseffect over de volledige tijdsspanne (30 jaar): voor `nh4` en `po4` blijkt er sprake te zijn van een stijging, gevolgd door een daling.
+Bij `no3` wisselt het effect in functie van de ecoregio.
 
 _Algemeen resultaat voor de random effects:_
 
 - de spatiale ruis is groter dan de temporele ruis;
-- de spatiale, temporele en residuele ruis lopen duidelijk uiteen tussen ecoregio's. Dit is deels gevolg van het niet apart onderscheiden van spatiale en temporele ruis bij ecoregio's met minder data;
+- de spatiale, temporele en residuele ruis lopen duidelijk uiteen tussen ecoregio's.
 
 Op basis van de resultaten kunnen we **besluiten** dat deze modellen de variatie van de milieuvariabele in de analysedataset redelijkerwijze generaliseren.
 We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpopulaties te simuleren:
 
 - onevenwichtige spatiale en temporele dekking in de analysedata, op typeniveau tevens te zien in de vertegenwoordiging van ecoregio's in vergelijking met de doelpopulatie. Dit uit zich ook in een beperkte databeschikbaarheid voor heel wat ecoregio's;
-- er is geen onderscheid gemaakt tussen spatiale en temporele variatie in ecoregio's met minder data; alle random variatie is daar residueel;
+- de aanname om bepaalde ecoregio's tot één stratum te mogen lumpen bij de schatting van spatiale en temporele effecten per stratum;
 - de aannames om bepaalde types bij elkaar te mogen lumpen.
 
 
