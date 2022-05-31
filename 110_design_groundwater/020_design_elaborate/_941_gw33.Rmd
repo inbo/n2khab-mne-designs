@@ -38,13 +38,15 @@ ts_summaries
 ```
 
 We laten alleen strata met voldoende locaties en aantal jaren per locatie toe in een stratumspecifieke spatiale en/of temporele modelcomponent (interactie).
+Om ook voor de overige strata dergelijke modelcomponenten toe te voegen, en zodoende niet de residuele term op te blazen, worden de overige strata tot een gemeenschappelijk stratum gelumpt, specifiek voor deze modelcomponenten.
 
 ```{r}
 strata_ts <- 
   ts_summaries %>% 
   filter(q3 >= 4, nrlocs > 100) %>%
   pull(.data[[ts_stratumvar]]) %>% 
-  as.character
+  as.character %>% 
+  c("Ecoregio_Overige")
 # the stratum_ variable is only needed in model formulas where it is used - 
 # up to now that is the case when fitting stratum-specific polynomial trends
 strata_ts_labels <- str_remove_all(strata_ts, "[\\P{Letter}]") # needed for ecoregion
@@ -52,15 +54,16 @@ dataset <-
   dataset %>% 
   mutate(stratum_ = as.character(.data[[ts_stratumvar]]),
          stratum_ = 
-           ifelse(stratum_ %in% strata_ts, 
+           ifelse(stratum_ %in% strata_ts,
                   str_remove_all(stratum_, "[\\P{Letter}]"),
-                  NA_character_) %>% 
+                  "EcoregioOverige") %>% 
            factor(levels = strata_ts_labels))
 # model-specific extra covariates:
 dataset <-
   bind_cols(dataset,
-    map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts_labels)), 
+    map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts_labels))[!str_detect(strata_ts, "Overige")], 
              ~as.integer(dataset[[ts_stratumvar]] == .)),
+    tibble(stratum_EcoregioOverige = str_detect(dataset$stratum_, "Overige") %>% as.integer),
     map_dfc(set_names(strata_ts, str_c("year_std_stratum_", strata_ts_labels)), 
              ~dataset$year_std),
     map_dfc(set_names(strata_ts, str_c("month_stratum_", strata_ts_labels)), 
