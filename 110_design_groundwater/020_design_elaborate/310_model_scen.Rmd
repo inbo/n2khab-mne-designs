@@ -80,7 +80,7 @@ Alleen de uiteindelijke modellen zijn in het rapport opgenomen.^[In de git-histo
 
 In dit hoofdstuk gaan we in op de aard (betekenis) van de modellen zelf, die te beschouwen zijn als het 'gereedschap' om data mee na te bootsen (scenario's).
 We definiëren met name de mathematische modelvorm, omdat deze weergeeft hoe we de variatie in de responsvariabele structureren.
-Daarbij wordt ook ingegaan op enkele gemaakte keuzes die verband houden met kenmerken van de analysedatasets.
+Daarbij wordt ook ingegaan op enkele keuzes, die bijvoorbeeld verband houden met kenmerken van de analysedatasets.
 Voorts wordt de modelevaluatie samengevat en wordt een kwalitatieve beoordeling gegeven van de bruikbaarheid van het model.
 
 ## Gemeenschappelijke bepalingen voor de modellen
@@ -102,15 +102,15 @@ $$\eta_i = g(\mu_i) = X_i \cdot \beta + Z_i$$
     Het vertegenwoordigt variabele effecten ('random effects') van bv. locatie of tijdstip, waarvan de waarde gemeenschappelijk kan zijn aan meerdere observaties.
     Elk random effect (ruisterm) wordt beschreven door een zg. _latent model_, dat verondersteld wordt gerespecteerd te zijn bij elke mogelijke observatie, en waarmee dus een nieuwe waarde kan worden gesimuleerd om een nieuwe observatie samen te stellen.
     De parameters van het latent model worden geschat door R-INLA volgens een op te geven type latent model (bv. Gaussian random effects, Random walk of order 1, ...).
-- De **linkfunctie** $g$ definieert een transformatie tussen de respons en de lineaire predictor.
-Bij een 'identity link' is er geen transformatie.
-Bij een 'log link' schat de lineaire predictor de natuurlijke logaritme van de respons, dus $\eta_i = ln(\mu_i)$ of $\mu_i = e^{\eta_i}$.
-- De **distributiefunctie** (kansverdeling of kansdichtheid) $f$ van de respons definieert de kansverdeling van $Y_i$ op basis van $\mu_i$, dus typisch op de schaal van de respons.
+- De **distributiefunctie** (kansverdeling of kansdichtheid) $f$ van de respons definieert de kansverdeling van $Y_i$ op basis van $\mu_i$, dus typisch op de schaal van de respons (meestal is $\mu_i$ de verwachte waarde van $Y_i$).
 Deze distributiefunctie dicteert in essentie de variatie tussen _de mogelijke individuele observaties_ met eenzelfde gemeenschappelijke schatting $\mu_i$, i.e. de kansverdeling van $\epsilon_i$ in $Y_i = \mu_i + \epsilon_i$.
-Afhankelijk van de distributiefamilie (gaussiaans, gamma, ...) is $f$ behalve door $\mu_i$ bijkomend geparametriseerd door een of meer extra parameters ('$...$'), bv. een variantie $\sigma^2$ bij een gaussiaanse = normale distributie ($Y_i \sim \mathcal{N}(\mu_i, \sigma^2)$).
-Bij meeste distributiefamilies is $\mu_i$ het gemiddelde van de distributie van $Y_i$ ($\mu_i = E(Y_i)$) en kan $\mu_i$ dus geïnterpreteerd worden op de schaal van de respons.
+Afhankelijk van de distributiefamilie (gaussiaans, gamma, ...) is $f$ behalve door $\mu_i$ bijkomend geparametriseerd door een of meer extra parameters ('$...$'), bv. een standaarddeviatie $\sigma$ bij een gaussiaanse = normale distributie ($Y_i \sim \mathcal{N}(\mu_i, \sigma^2)$).
+Bij de meeste distributiefamilies is $\mu_i$ het gemiddelde van de distributie van $Y_i$ ($\mu_i = E(Y_i)$) en kan $\mu_i$ dus geïnterpreteerd worden op de schaal van de respons.
 Echter, bij de lognormale distributie ($Y_i \sim Lognormal(\mu_i, \sigma^2)$) is $\mu_i$ het gemiddelde van de distributie van $ln(Y_i)$ ($\mu_i = E(ln(Y_i))$; analoog voor $\sigma^2 = Var(ln(Y_i))$).
 Bij een lognormale distributie geldt namelijk dat $ln(Y_i) \sim \mathcal{N}(\mu_i, \sigma^2)$.
+- De **linkfunctie** $g$ definieert een transformatie tussen $\mu_i$ en de lineaire predictor.
+Bij een 'identity link' is er geen transformatie.
+Bij een 'log link' schat de lineaire predictor de natuurlijke logaritme van $\mu_i$, dus $\eta_i = ln(\mu_i)$ of $\mu_i = e^{\eta_i}$.
 
 Soms wordt een respons beschreven door een zg. 'joint model', wat betekent dat de respons samengesteld is uit twee responsen (bv. het product van beide).
 Elk van de deelresponsen kan dan worden gemodelleerd op bovenstaande wijze, maar daarbij kunnen overeenkomende delen van de lineaire predictor gemeenschappelijk worden geschat [@gomez-rubio_bayesian_2021; @krainski_advanced_2021].
@@ -133,9 +133,9 @@ Dit verhindert dat korte-termijnvariatie wordt geabsorbeerd in de lange-termijnt
 In de meeste (of alle) gevallen wordt er naar gestreefd om typespecifiek te werken bij de specificatie van het systematisch en/of random deel van de lineaire predictor, en in de distributiefunctie van de respons.
 Op die manier is het mogelijk om in steekproefscenario's rekening te houden met verschillende variatiestructuur tussen types, bij het kiezen van steekproefgrootte in ruimte of tijd.
 Typespecifiek werken is mogelijk door het opnemen van de covariaat `type` in het model, of van een spatiale factor waarvoor de kansverdeling per type gekend is zoals `soilclass`; zie \@ref(spatiale-verdeling).
-In het random deel en in de distributiefunctie van de respons is dit mogelijk door een interactie te voorzien met voornoemde covariaat (type, of een spatiale factor).
+In het random deel en in de distributiefunctie van de respons is dit mogelijk door een interactie te voorzien met voornoemde covariaat (`type`, of een spatiale factor).
 We spreken hierbij over stratificatie van het model, niet te verwarren met de strata van het meetnet zoals vernoemd in \@ref(popsize) (hoewel ze kunnen overeenkomen).
-De beschouwde spatiale factoren (zie ook \@ref(spatiale-verdeling)) zijn gebaseerd op voorbereidend modelwerk (Jansen, unpubl.).
+De keuze voor de beschouwde spatiale factoren (zie ook \@ref(spatiale-verdeling)) is gebaseerd op voorbereidend modelwerk (Jansen, unpubl.).
 
 Bijvoorbeeld de korte-termijnvariatie (een ruisterm in de lineaire predictor) wordt dan beschreven door een aparte distributiefunctie op maat van elk type of elk niveau van een ruimtelijke covariaat.
 Dit is natuurlijk enkel mogelijk voor types of niveaus met voldoende data.
@@ -149,8 +149,8 @@ De resulterende variabelen zijn `hydroyear_std` en `year_std`, met waarden van 0
 De gebruikte typeclusters zijn weergegeven in Tabel \@ref(tab:typeclusters).
 Elk type wordt dus nog steeds vertegenwoordigd, maar dit kan gebeuren via een typecluster.
 Deze benadering is ook gevolgd voor types zonder gegevens over een milieuvariabele.
-In de modellen wordt nog steeds gesproken van de variabele `type`, maar de waarde krijgt vaak een suffix `_clus` indien het om meerdere types gaat.
-Bv. het modeltype '9160_clus' is in de data voor meetnet GW_05.1_terr meest vertegenwoordigd door 9160, maar omvat ook 9130_end, 91F0 en 1310_zv.
+In de modellen wordt nog steeds gesproken van de variabele `type`, maar de waarde krijgt vaak een suffix `_clus` indien _data_ van meerdere types werden gecombineerd voor de _modelbouw_.
+Bv. het modeltype '9160_clus' is in de data voor meetnet GW_05.1_terr meest vertegenwoordigd door 9160, maar omvat ook de data van 9130_end, 91F0 en 1310_zv.
 
 Omdat we veelal gebruik maken van de default priors van R-INLA, passen we steeds 'model scaling' toe om de zg. hyperparameters van bepaalde latente modellen (o.a. random walk) intern te herschalen  [@gomez-rubio_bayesian_2021].
 Dit maakt dat de default hyperpriors doorgaans meer toepasbaar zullen zijn.
@@ -221,7 +221,7 @@ Met:
 
 |
 :-|:---------------
-$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en variantie ($\sigma^2$)
+$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en standaarddeviatie ($\sigma$)
 $i$ | _index_ die een unieke (hypothetische) observatie identificeert
 $\beta_0$ | intercept
 $c_i$ | fixed effect van `type` (typecluster)
@@ -319,7 +319,7 @@ Met:
 :-|:-------------
 $Ber$ | bernouilli distributiefunctie, gedefinieerd door één parameter $\pi$: de kans op waarde 1
 $Gamma$ | gamma distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en vorm ($\nu$).^[Een alternatieve parametrisatie is mogelijk met de parameters vorm en schaal, waarbij $gemiddelde = schaal \cdot vorm$.] De vormparameter verwijst naar de vorm van de distributiefunctie. Beide parameters zijn bepalend voor de variantie.
-$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en variantie ($\sigma^2$)
+$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en standaarddeviatie ($\sigma$)
 $i$ | _index_ die een unieke (hypothetische) observatie identificeert
 $Y_{b,i}$, $Y_{g,i}$ | bernouilli (0 of 1) resp. gamma respons
 $\eta_{b,i}$, $\eta_{g,i}$ | lineaire predictor van de bernouilli resp. gamma respons
@@ -420,7 +420,7 @@ Met:
 
 |
 :-|:---------------
-$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en variantie ($\sigma^2$)
+$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en standaarddeviatie ($\sigma$)
 $i$ | _index_ die een unieke (hypothetische) observatie identificeert
 $c_i$ | fixed effect van `type` (typecluster)
 $q_i$ | _index_ die het type (typecluster) aanduidt waartoe de observatie behoort. Het gebruik van deze index geeft aan dat de parameter afhangt van $q_i$.
@@ -491,8 +491,8 @@ Bovendien vroegen deze modellen meer rekentijd.
 
 Er is voor de distributie, voor de random componenten en voor het lange-termijntijdseffect gekozen voor een interactie met `ecoregion`.
 In het geval van de random componenten en het lange-termijntijdseffect gebeurt dit specifiek voor de ecoregio's met voldoende data.
-Voor de andere ecoregio's zijn deze modelcomponenten ook voorzien, maar dit is dan voor het gelumpte niveau 'Overige ecoregio's' om voldoende data te hebben.
-Sowieso gebeurde de schatting van de residuele variantie wel voor elke ecoregio apart.
+Voor de andere ecoregio's zijn deze modelcomponenten ook voorzien, maar dit is dan voor het gelumpte niveau 'Ecoregio Overige' om voldoende data te hebben.
+De schatting van de residuele variantie gebeurde wel voor elke ecoregio apart.
 Er is in plaats van `ecoregion` ook gekeken naar de fit met `type` of met `soilclass` als interactievariabele, maar die modellen scoorden voor alle responsvariabelen slechter.
 
 Behalve het jaareffect (random) werd er ook gekeken naar het maandeffect (random).
@@ -512,7 +512,7 @@ Met:
 
 |
 :-|:---------------
-$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en variantie ($\sigma^2$)
+$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en standaarddeviatie ($\sigma$)
 $i$ | _index_ die een unieke (hypothetische) observatie identificeert
 $q_i$ | _index_ die het stratum aanduidt waartoe de observatie behoort. De stratumvariabele is steeds `ecoregion`. Het gebruik van deze index geeft aan dat de parameter afhangt van $q_i$.
 $c_i$ | fixed effect van `type` (typecluster)
