@@ -639,7 +639,7 @@ simulate_detrended_pops_singlemodel <-
                                              stratum,
                                              ": Precision of residuals",
                                              "( \\(in log scale\\))?"),
-                                       "", 1, "")^2,
+                                       "", 1, ""),
                         llhfam_param2_gamma =
                             model$summary.hyperpar[str_c("Stratum ",
                                                          stratum,
@@ -749,12 +749,12 @@ simulate_detrended_pops_singlemodel <-
                                         "gaussian" =
                                             rtrunc(n(), spec = "norm",
                                                    mean = .data[[str_c("llhfam_param1", suffix)]],
-                                                   sd = sqrt(.data[[str_c("llhfam_param2", suffix)]]),
+                                                   sd = .data[[str_c("llhfam_param2", suffix)]],
                                                    a = lln, b = uln),
                                         "lognormal" =
                                             rtrunc(n(), spec = "norm",
                                                    mean = .data[[str_c("llhfam_param1", suffix)]],
-                                                   sd = sqrt(.data[[str_c("llhfam_param2", suffix)]]),
+                                                   sd = .data[[str_c("llhfam_param2", suffix)]],
                                                    a = lln, b = uln) %>%
                                             exp,
                                         "binomial" =
