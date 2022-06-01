@@ -321,6 +321,8 @@ simulate_detrended_pops <-
             design_matrix = map2(design_matrix, model,
                                  function(dm, model) {
 
+                 mdata <- model$.args$data
+
                  # var_stratum_: variable by which temporal or spatial variation
                  # is stratified; it can have less levels than the orginal
                  # variable it is based on, because certain levels don't have
@@ -335,6 +337,16 @@ simulate_detrended_pops <-
                          "ecoregion"
                      } else "type"
 
+                 # moreover, stratum_ can have lumped levels in the model
+                 # and its levels can have an altered name (e.g. with spaces
+                 # trimmed), so let's make a lookup table:
+
+                 lkt_stratum_ <-
+                     tibble(orig_stratum_ = mdata[var_stratum_][[1]],
+                            stratum_ = mdata[str_detect(names(mdata), "^stratum_+\\D?$")][[1]]) %>%
+                     distinct %>%
+                     mutate(across(.fns = as.character))
+
                  # var_stratum: variable by which residual distribution has been split
                  var_stratum <-
                      if (any(str_detect(rownames(model$summary.hyperpar),
@@ -344,8 +356,6 @@ simulate_detrended_pops <-
                                                "^Stratum.*(polders|Kempen)"))) {
                          "ecoregion"
                      } else "type"
-
-                 mdata <- model$.args$data
 
                  dm %>%
                      rename(type = modelterm_type) %>%
@@ -357,9 +367,10 @@ simulate_detrended_pops <-
                                         levels(mdata[str_detect(names(mdata), "^type")][[1]])),
                          stratum_ =
                              .[[var_stratum_]] %>%
-                             as.character %>%
-                             str_remove_all("[\\P{Letter}]") %>%
-                             factor(levels = levels(mdata[str_detect(names(mdata), "^stratum_+\\D?$")][[1]])),
+                             plyr::mapvalues(from = lkt_stratum_$orig_stratum_,
+                                             to = lkt_stratum_$stratum_) %>%
+                             factor(levels = levels(mdata[str_detect(names(mdata),
+                                                                     "^stratum_+\\D?$")][[1]])),
                          stratum =
                              .[[var_stratum]] %>%
                              factor(levels = levels(mdata[str_detect(names(mdata), paste0("^", var_stratum, "(_\\D)?$"))][[1]]))
