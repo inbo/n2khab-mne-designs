@@ -204,17 +204,39 @@ abspath_spatvar <- file.path(datapath, str_c(relpath_spatvar, ".tsv"))
 ```{r message=FALSE, eval=(params$simulate_pops | !file.exists(abspath_spatvar))}
 spatvar <- 
   simpops_500locs %>% 
-  group_by(population, modelname, type, location) %>% 
-  summarise(spatresp = mean(response)) %>% 
+  {if (!inference_temporal) {
+    # making data spatial-only
+    group_by(., modelname, type, population, location) %>% 
+      summarise(spatresp = mean(response))
+  } else {
+    # keeping time, and preparing to calculate spatial variance per timestep,
+    # since spatial variance is time-independent
+    rename(., spatresp = response) %>% 
+      group_by(modelname, type, population, .data[[timevar]])
+  }
+  } %>% 
   {if (errmarg_rel && str_detect(scheme_sel, "GW_05\\.1")) {
     summarise(., spatvar = ifelse(-spatresp <= 0, .01, -spatresp) %>% log10 %>% var)
   } else if (errmarg_rel) {
     summarise(., spatvar = spatresp %>% log10 %>% var)
   } else summarise(., spatvar = var(spatresp))
-    } %>% 
-  group_by(modelname, type) %>% 
-  summarise(spatvar_estimate = mean(spatvar),
-            spatvar_se = sd(spatvar) / sqrt(n())) %>% 
+  } %>% 
+  {if (!inference_temporal) {
+    # grouping is by modelname, type
+    summarise(., spatvar_estimate = mean(spatvar),
+              spatvar_se = sd(spatvar) / sqrt(n()))
+  } else {
+    # grouping is by modelname, type, population
+    summarise(., spatvar_estimate_pop = mean(spatvar),
+              spatvar_est_pop_var = var(spatvar) / n()) %>% 
+      # grouping is by modelname, type (applying formula for total estimator variance)
+      summarise(., spatvar_estimate = mean(spatvar_estimate_pop),
+                spatvar_se = sqrt(
+                  mean(spatvar_est_pop_var) + 
+                    var(spatvar_estimate_pop) / n()
+                ))
+  }
+  } %>% 
   mutate(spatvar_group = 
            spatvar_estimate %>% 
            dist %>% 
