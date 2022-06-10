@@ -428,7 +428,7 @@ rds_filepath_simsamples <- file.path(datapath, "binary/simobs",
 ```
 
 ```{r eval=(params$simulate_obs | !file.exists(rds_filepath_simsamples))}
-simsamples <- 
+simsamples <-
   simulate_trended_spatial_samples(sample_definition = sample_definition,
                                    population_data = simpops,
                                    var_time = timevar,
@@ -466,29 +466,29 @@ In de scenario-evaluatie (poweranalyse s.l.) vergelijken we de scenario's door i
 #### Toestand
 
 ```{r message=FALSE}
-statusdata <- 
-    simsamples %>% 
+statusdata <-
+    simsamples %>%
     rename(time = {{timevar}},
-           targetvar = response) %>% 
-    filter(between(time, 1, 6)) %>% 
-    inner_join(type_attrib %>% 
-                   select(starts_with("type"), population_size), 
-               by = "type") %>% 
+           targetvar = response) %>%
+    filter(between(time, 1, 6)) %>%
+    inner_join(type_attrib %>%
+                   select(starts_with("type"), population_size),
+               by = "type") %>%
     {if (inference_temporal) . else {
         group_by(.,
-                 scenario, 
-                 population, 
-                 spatial_sample, 
+                 scenario,
+                 population,
+                 spatial_sample,
                  across(starts_with("type")),
-                 location, 
-                 population_size) %>% 
-            summarise(targetvar = mean(targetvar)) %>% 
+                 location,
+                 population_size) %>%
+            summarise(targetvar = mean(targetvar)) %>%
             ungroup
     }}
 status_res_per_type <-
     statusdata %>%
     compute_status_persample("type")
-status_res_per_typegroup <- 
+status_res_per_typegroup <-
     compute_status_persample(level = "typegroup",
                              typeresult = status_res_per_type)
 ```
@@ -497,34 +497,34 @@ De typegroepen waren benoemd in Tabel \@ref(tab:typegroups).
 Welke types tot welke typegroep behoren, is opgelijst in Tabel \@ref(tab:typegroups-ext).
 
 ```{r include=FALSE}
-relpath_status_summary_typegroup <- 
+relpath_status_summary_typegroup <-
   file.path("20_intermediate1",
             str_c(filepath_sub, respvar,
                   "_status_summary"))
 ```
 
 ```{r}
-status_summary_typegroup <- 
-  status_res_per_typegroup %>% 
+status_summary_typegroup <-
+  status_res_per_typegroup %>%
   summarise_status_of_samples("twosided_errmarg90_rel",
                               conflevel_pctiles = 0.9,
-                              qual_std = qual_std_status_errmarg_rel) %>% 
-  mutate(statistic = "twosided_errmarg90_rel", .before = 1) %>% 
+                              qual_std = qual_std_status_errmarg_rel) %>%
+  mutate(statistic = "twosided_errmarg90_rel", .before = 1) %>%
   bind_rows(
-    status_res_per_typegroup %>% 
+    status_res_per_typegroup %>%
       summarise_status_of_samples("twosided_errmarg90",
                                   conflevel_pctiles = 0.9,
-                                  qual_std = qual_std_status_errmarg) %>% 
+                                  qual_std = qual_std_status_errmarg) %>%
       mutate(statistic = "twosided_errmarg90", .before = 1)
-  ) %>% 
+  ) %>%
   mutate(statistic = factor(statistic))
 ```
 
 
 ```{r results="hide", eval=params$write_scenariofiles}
-scen_n_spatial %>% 
-  inner_join(status_summary_typegroup, by = "scenario") %>% 
-  rename_with(.fn = ~str_replace_all(., "\\(|\\)|≤|≥|/", "_")) %>% 
+scen_n_spatial %>%
+  inner_join(status_summary_typegroup, by = "scenario") %>%
+  rename_with(.fn = ~str_replace_all(., "\\(|\\)|≤|≥|/", "_")) %>%
   write_vc(relpath_status_summary_typegroup,
            root = datapath,
            sorting = c("statistic", "scenario", "typegroup"),
@@ -535,36 +535,36 @@ scen_n_spatial %>%
 
 ```{r}
 oldopt <- options(knitr.kable.NA = "")
-status_summary_typegroup %>% 
-  mutate(across(where(is.numeric), ~round(., 3))) %>% 
-  kable(caption = "De _relatieve_ en _absolute_ foutenmarge op de schatting van de doelparameter (voor 90% betrouwbaarheid) per scenario, voor een uitspraak per typegroep. `avg` is de verwachte waarde van deze foutenmarge, op basis van diens distributie over alle gesimuleerde steekproeven van een populatie (en vervolgens gemiddeld over de gesimuleerde populaties). De percentielen zijn de 5% en 95% percentielen van deze distributie, wat een beeld geeft van de onzekerheid over de verwachte waarde. Daarnaast wordt de (over populaties gemiddelde) kans weergegeven dat de (relatieve resp. absolute) foutenmarge onder een bepaald maximumniveau ligt.") %>% 
-  kable_styling() %>% 
-  collapse_rows(columns = 1:2, valign = "top") %>% 
+status_summary_typegroup %>%
+  mutate(across(where(is.numeric), ~round(., 3))) %>%
+  kable(caption = "De _relatieve_ en _absolute_ foutenmarge op de schatting van de doelparameter (voor 90% betrouwbaarheid) per scenario, voor een uitspraak per typegroep. `avg` is de verwachte waarde van deze foutenmarge, op basis van diens distributie over alle gesimuleerde steekproeven van een populatie (en vervolgens gemiddeld over de gesimuleerde populaties). De percentielen zijn de 5% en 95% percentielen van deze distributie, wat een beeld geeft van de onzekerheid over de verwachte waarde. Daarnaast wordt de (over populaties gemiddelde) kans weergegeven dat de (relatieve resp. absolute) foutenmarge onder een bepaald maximumniveau ligt.") %>%
+  kable_styling() %>%
+  collapse_rows(columns = 1:2, valign = "top") %>%
   scroll_box(height = "500px")
 options(oldopt)
 ```
 
 ```{r}
-status_res_per_type %>% 
+status_res_per_type %>%
   summarise_status_of_samples("twosided_errmarg90_rel",
-                              conflevel_pctiles = 0.9) %>% 
-  mutate(statistic = "twosided_errmarg90_rel", .before = 1) %>% 
+                              conflevel_pctiles = 0.9) %>%
+  mutate(statistic = "twosided_errmarg90_rel", .before = 1) %>%
   bind_rows(
-    status_res_per_type %>% 
+    status_res_per_type %>%
       summarise_status_of_samples("twosided_errmarg90",
-                                  conflevel_pctiles = 0.9) %>% 
+                                  conflevel_pctiles = 0.9) %>%
       mutate(statistic = "twosided_errmarg90", .before = 1)
-  ) %>% 
-  mutate(across(where(is.numeric), ~round(., 3))) %>% 
-  kable(caption = "De _relatieve_ en _absolute_ foutenmarge op de schatting van de doelparameter (voor 90% betrouwbaarheid) per scenario, voor een uitspraak per type. `avg` is de verwachte waarde van deze foutenmarge, op basis van diens distributie over alle gesimuleerde steekproeven van een populatie (en vervolgens gemiddeld over de gesimuleerde populaties). De percentielen zijn de 5% en 95% percentielen van deze distributie, wat een beeld geeft van de onzekerheid over de verwachte waarde.") %>% 
-  kable_styling() %>% 
-  collapse_rows(columns = 1:3, valign = "top") %>% 
+  ) %>%
+  mutate(across(where(is.numeric), ~round(., 3))) %>%
+  kable(caption = "De _relatieve_ en _absolute_ foutenmarge op de schatting van de doelparameter (voor 90% betrouwbaarheid) per scenario, voor een uitspraak per type. `avg` is de verwachte waarde van deze foutenmarge, op basis van diens distributie over alle gesimuleerde steekproeven van een populatie (en vervolgens gemiddeld over de gesimuleerde populaties). De percentielen zijn de 5% en 95% percentielen van deze distributie, wat een beeld geeft van de onzekerheid over de verwachte waarde.") %>%
+  kable_styling() %>%
+  collapse_rows(columns = 1:3, valign = "top") %>%
   scroll_box(height = "500px")
 ```
 
 
 ```{r fig.width=7, fig.height=6, out.width='80%', fig.cap="Visualisatie van het gemiddelde en het 5-95% bereik van de _**relatieve**_ foutenmarge op de schatting van de doelparameter, over de steekproeven per populatie (één populatie is één horizontale lijn). De schatting is per typegroep."}
-status_res_per_typegroup %>% 
+status_res_per_typegroup %>%
   summarise_status_of_samples("twosided_errmarg90_rel",
                               conflevel_pctiles = 0.9,
                               merge_pops = FALSE,
@@ -572,7 +572,7 @@ status_res_per_typegroup %>%
 ```
 
 ```{r fig.width=7, fig.height=6, out.width='80%', fig.cap="Visualisatie van het gemiddelde en het 5-95% bereik van de _**absolute**_ foutenmarge op de schatting van de doelparameter, over de steekproeven per populatie (één populatie is één horizontale lijn). De schatting is per typegroep."}
-status_res_per_typegroup %>% 
+status_res_per_typegroup %>%
   summarise_status_of_samples("twosided_errmarg90",
                               conflevel_pctiles = 0.9,
                               merge_pops = FALSE,
@@ -582,7 +582,7 @@ status_res_per_typegroup %>%
 ```
 
 ```{r warning=FALSE, fig.width=7, fig.height=6/10*n_distinct(status_res_per_type$type), out.width='80%', fig.cap="Visualisatie van het gemiddelde en het 5-95% bereik van de _**relatieve**_ foutenmarge op de schatting van de doelparameter, over de steekproeven per populatie (één populatie is één horizontale lijn). De schatting is per type."}
-status_res_per_type %>% 
+status_res_per_type %>%
   summarise_status_of_samples("twosided_errmarg90_rel",
                               conflevel_pctiles = 0.9,
                               merge_pops = FALSE,
@@ -591,7 +591,7 @@ status_res_per_type %>%
 ```
 
 ```{r warning=FALSE, fig.width=7, fig.height=6/10*n_distinct(status_res_per_type$type), out.width='80%', fig.cap="Visualisatie van het gemiddelde en het 5-95% bereik van de _**absolute**_ foutenmarge op de schatting van de doelparameter, over de steekproeven per populatie (één populatie is één horizontale lijn). De schatting is per type."}
-status_res_per_type %>% 
+status_res_per_type %>%
   summarise_status_of_samples("twosided_errmarg90",
                               conflevel_pctiles = 0.9,
                               merge_pops = FALSE,
@@ -604,7 +604,7 @@ status_res_per_type %>%
 ```{r eval=FALSE, fig.width=7, fig.height=6/10*n_distinct(status_res_per_type$type), out.width='80%', fig.cap="Visualisatie van het gemiddelde en het 5-95% bereik van de doelparameter, over de steekproeven per populatie (één populatie is één horizontale lijn)."}
 # graphs only for interactive checks
 suppressMessages(
-    status_res_per_typegroup %>% 
+    status_res_per_typegroup %>%
         summarise_status_of_samples("mean",
                                     conflevel_pctiles = 0.9,
                                     merge_pops = FALSE,
@@ -612,15 +612,15 @@ suppressMessages(
                                     ylim = NULL)
 )
 suppressMessages(
-  status_res_per_type %>% 
-    split(~typegroup) %>% 
+  status_res_per_type %>%
+    split(~typegroup) %>%
       walk(~summarise_status_of_samples(.,
                                         "mean",
                                         conflevel_pctiles = 0.9,
                                         merge_pops = FALSE,
                                         plot = TRUE,
                                         ylim = NULL,
-                                        ncol = 4) %>% 
+                                        ncol = 4) %>%
                print
       )
 )
@@ -631,7 +631,7 @@ suppressMessages(
 #### Trend
 
 ```{r include=FALSE}
-rds_filepath_inputdata_trend <- 
+rds_filepath_inputdata_trend <-
   file.path(datapath, "binary/simobs",
             str_c(filepath_sub, respvar,
                   "_inputdata_trend.rds"))
@@ -642,24 +642,24 @@ rds_filepath_trend_estimateslocal <- file.path(datapath, "binary/simresults",
 
 
 ```{r eval=(params$simulate_obs || (!file.exists(rds_filepath_inputdata_trend) && !file.exists(rds_filepath_trend_estimateslocal)))}
-inputdata_trend <- 
-  simsamples %>% 
-  # nest(datacontainer = -c(scenario, population)) %>% 
-  # group_by(scenario) %>% 
+inputdata_trend <-
+  simsamples %>%
+  # nest(datacontainer = -c(scenario, population)) %>%
+  # group_by(scenario) %>%
   # slice(1:2) %>%
-  # ungroup %>% 
-  # unnest(datacontainer) %>% 
+  # ungroup %>%
+  # unnest(datacontainer) %>%
   {if (any(.$response < 0)) {
-      group_by(., scenario, population, spatial_sample, type, location) %>% 
+      group_by(., scenario, population, spatial_sample, type, location) %>%
       mutate(negresp = -response,
              minresp = min(negresp),
-             logresp = ifelse(minresp <=0, 
-                              log10(negresp - minresp + 0.01), 
-                              log10(negresp))) %>% 
-      select(-minresp, -negresp) %>% 
+             logresp = ifelse(minresp <=0,
+                              log10(negresp - minresp + 0.01),
+                              log10(negresp))) %>%
+      select(-minresp, -negresp) %>%
       ungroup} else {
         mutate(., logresp = log10(response))
-      }} %>% 
+      }} %>%
     select(-response)
 # dropping unneeded large objects
 saveRDS(inputdata_trend, rds_filepath_inputdata_trend)
@@ -681,15 +681,15 @@ inputdata_trend <- readRDS(rds_filepath_inputdata_trend)
 registerDoParallel(cores = cpu_cores_trend)
 system.time(
 trend_estimateslocal <-
-  inputdata_trend %>% 
-  nest(datacontainer = -c(scenario, population)) %>% 
+  inputdata_trend %>%
+  nest(datacontainer = -c(scenario, population)) %>%
   # filter(str_detect(scenario, "01|02"),             # for debugging only
   #        str_detect(population, "00001|00002")) %>% # for debugging only
-  mutate(result = foreach(dc = .$datacontainer, 
-                          pop = .$population, 
+  mutate(result = foreach(dc = .$datacontainer,
+                          pop = .$population,
                           scen = .$scenario) %dopar% {
-    nest(dc, data = -c(spatial_sample, type)) %>% 
-  mutate(location_estim = 
+    nest(dc, data = -c(spatial_sample, type)) %>%
+  mutate(location_estim =
            pmap(list(data, spatial_sample, type), function(df, ss, tp) {
              # log_socket("%s: Fitting model for %s in sample %s in population %s in scenario %s...", respvar, tp, ss, pop, scen, .socket = logsocket)
              if (n_distinct(df$location) == 1L) {
@@ -699,38 +699,38 @@ trend_estimateslocal <-
                  lme(fm,
                      random = ~ 1 | location,
                      data = df,
-                     control = lmeControl(opt = "optim")) %>% 
-                     summary %>% 
+                     control = lmeControl(opt = "optim")) %>%
+                     summary %>%
                      {tibble(distinct(.$groups),
                              beta_loc = .$tTable[-1, "Value"],
                              se_loc = .$tTable[-1, "Std.Error"])}
              } else {
                  # lme always errors with a singular fit (constant response)
-                 lm(fm, data = df) %>% 
-                     summary %>% 
+                 lm(fm, data = df) %>%
+                     summary %>%
                      {tibble(distinct(df, location),
                              beta_loc = .$coefficients[-1, "Estimate"],
                              se_loc = .$coefficients[-1, "Std. Error"])}
              }
            }
-           ))  %>% 
-  select(-data) %>% 
-  unnest(cols = location_estim) %>% 
-  inner_join(type_attrib %>% 
-               select(starts_with("type"), population_size), 
-             by = "type") 
-    }) %>% 
-  select(-datacontainer) %>% 
+           ))  %>%
+  select(-data) %>%
+  unnest(cols = location_estim) %>%
+  inner_join(type_attrib %>%
+               select(starts_with("type"), population_size),
+             by = "type")
+    }) %>%
+  select(-datacontainer) %>%
   unnest(cols = result)
 )
 # gw51t_hg3_lcl:
-#      user    system   elapsed 
+#      user    system   elapsed
 # 14446.084    32.583  7270.678
 # gw51t_lg3_lcl:
-#      user    system   elapsed 
+#      user    system   elapsed
 # 17623.303    25.420  8888.728
 # gw51a_lg3_std:
-#     user   system  elapsed 
+#     user   system  elapsed
 # 5623.294    9.510 1421.316
 stopImplicitCluster()
 ```
@@ -756,7 +756,7 @@ trend_res_per_type <-
   compute_status_persample("type",
                            targetvar = "beta_loc",
                            extra_se_var = "se_loc")
-trend_res_per_typegroup <- 
+trend_res_per_typegroup <-
   compute_status_persample(level = "typegroup",
                            typeresult = trend_res_per_type)
 ```
@@ -765,9 +765,9 @@ De typegroepen waren benoemd in Tabel \@ref(tab:typegroups).
 Welke types tot welke typegroep behoren, is opgelijst in Tabel \@ref(tab:typegroups-ext).
 
 ```{r fig.width=7, fig.height=6, warning=FALSE, out.width='80%', fig.cap="Visualisatie van het gemiddelde en het 5-95% bereik van de geschatte trendmultiplicatiefactor over 12 jaar, over de steekproeven per populatie (één populatie is één horizontale lijn). De schatting is per typegroep."}
-trend_res_per_typegroup %>% 
-  select(scenario:mean) %>% 
-  mutate(trend_12yearly_multiplier = 10^(12 * mean)) %>% 
+trend_res_per_typegroup %>%
+  select(scenario:mean) %>%
+  mutate(trend_12yearly_multiplier = 10^(12 * mean)) %>%
   summarise_status_of_samples("trend_12yearly_multiplier",
                               conflevel_pctiles = 0.9,
                               merge_pops = FALSE,
@@ -777,9 +777,9 @@ trend_res_per_typegroup %>%
 ```
 
 ```{r fig.width=7, fig.height=6/10*n_distinct(trend_res_per_type$type), out.width='80%', warning=FALSE, fig.cap="Visualisatie van het gemiddelde en het 5-95% bereik van de geschatte trendmultiplicatiefactor over 12 jaar, over de steekproeven per populatie (één populatie is één horizontale lijn). De schatting is per type."}
-trend_res_per_type %>% 
-  select(scenario:mean) %>% 
-  mutate(trend_12yearly_multiplier = 10^(12 * mean)) %>% 
+trend_res_per_type %>%
+  select(scenario:mean) %>%
+  mutate(trend_12yearly_multiplier = 10^(12 * mean)) %>%
   summarise_status_of_samples("trend_12yearly_multiplier",
                               conflevel_pctiles = 0.9,
                               merge_pops = FALSE,
@@ -790,23 +790,23 @@ trend_res_per_type %>%
 ```
 
 ```{r include=FALSE}
-relpath_trend_summary_typegroup <- 
+relpath_trend_summary_typegroup <-
   file.path("20_intermediate1",
             str_c(filepath_sub, respvar,
                   "_trend_summary"))
 ```
 
 ```{r}
-trend_summary_typegroup <- 
-  trend_res_per_typegroup %>% 
+trend_summary_typegroup <-
+  trend_res_per_typegroup %>%
   calculate_power_of_scenarios(qual_std = qual_std_trend)
 ```
 
 
 ```{r results="hide", eval=params$write_scenariofiles}
-scen_n_spatial %>% 
-  inner_join(trend_summary_typegroup, by = "scenario") %>% 
-  rename_with(.fn = ~str_replace_all(., "\\(|\\)|≤|≥|/", "_")) %>% 
+scen_n_spatial %>%
+  inner_join(trend_summary_typegroup, by = "scenario") %>%
+  rename_with(.fn = ~str_replace_all(., "\\(|\\)|≤|≥|/", "_")) %>%
   write_vc(relpath_trend_summary_typegroup,
            root = datapath,
            sorting = c("scenario", "typegroup"),
@@ -816,31 +816,31 @@ scen_n_spatial %>%
 
 
 ```{r}
-trend_summary_typegroup %>% 
-  mutate(across(where(is.numeric), ~round(., 3))) %>% 
-  kable(caption = "De mediane power voor het tweezijdig toetsen van de trend t.o.v. een nultrend voor een uitspraak per typegroep en dit bij verschillende betrouwbaarheidsniveaus (kolommen). Het resultaat wordt gegeven voor de respectievelijke scenario's. Het betreft de mediaan van de powerwaarde per populatie; tussen haakjes het eerste en derde kwartiel. Daarnaast wordt de kans weergegeven dat de power een bepaald minimumniveau haalt.") %>% 
-  kable_styling() %>% 
+trend_summary_typegroup %>%
+  mutate(across(where(is.numeric), ~round(., 3))) %>%
+  kable(caption = "De mediane power voor het tweezijdig toetsen van de trend t.o.v. een nultrend voor een uitspraak per typegroep en dit bij verschillende betrouwbaarheidsniveaus (kolommen). Het resultaat wordt gegeven voor de respectievelijke scenario's. Het betreft de mediaan van de powerwaarde per populatie; tussen haakjes het eerste en derde kwartiel. Daarnaast wordt de kans weergegeven dat de power een bepaald minimumniveau haalt.") %>%
+  kable_styling() %>%
   scroll_box(height = "500px")
 ```
 
 ```{r}
-trend_res_per_type %>% 
-  calculate_power_of_scenarios(qual_std = qual_std_trend) %>% 
-  mutate(across(where(is.numeric), ~round(., 3))) %>% 
-  kable(caption = "De mediane power voor het tweezijdig toetsen van de trend t.o.v. een nultrend voor een uitspraak per type en dit bij verschillende betrouwbaarheidsniveaus (kolommen). Het resultaat wordt gegeven voor de respectievelijke scenario's. Het betreft de mediaan van de powerwaarde per populatie (voor het type in kwestie); tussen haakjes het eerste en derde kwartiel. Daarnaast wordt de kans weergegeven dat de power een bepaald minimumniveau haalt.") %>% 
-  kable_styling() %>% 
+trend_res_per_type %>%
+  calculate_power_of_scenarios(qual_std = qual_std_trend) %>%
+  mutate(across(where(is.numeric), ~round(., 3))) %>%
+  kable(caption = "De mediane power voor het tweezijdig toetsen van de trend t.o.v. een nultrend voor een uitspraak per type en dit bij verschillende betrouwbaarheidsniveaus (kolommen). Het resultaat wordt gegeven voor de respectievelijke scenario's. Het betreft de mediaan van de powerwaarde per populatie (voor het type in kwestie); tussen haakjes het eerste en derde kwartiel. Daarnaast wordt de kans weergegeven dat de power een bepaald minimumniveau haalt.") %>%
+  kable_styling() %>%
   scroll_box(height = "500px")
 ```
 
 ```{r fig.width=8, fig.height=8, out.width='80%', fig.cap="Jitter plots van de power, per scenario en populatie, voor het tweezijdig toetsen van de trend t.o.v. een nultrend. De grafieken zijn opgesplitst volgens het betrouwbaarheidsniveau van de toets en volgens typegroep. De scenario's zijn vertegenwoordigd door het aantal locaties en de grootte van de gesimuleerde trend. Elk bolletje betreft één populatie volgens één scenario; de mediaan per scenario is weergegeven door een kruisje."}
-trend_res_per_typegroup %>% 
+trend_res_per_typegroup %>%
   calculate_power_of_scenarios(scenario_def = scen,
                                plot = TRUE,
                                ncol = 4)
 ```
 
 ```{r fig.width=8, fig.height=7/10*n_distinct(trend_res_per_type$type), out.width='80%', fig.cap="Jitter plots van de power, per scenario en populatie, voor het tweezijdig toetsen van de trend t.o.v. een nultrend. De grafieken zijn opgesplitst volgens het betrouwbaarheidsniveau van de toets en volgens type. De scenario's zijn vertegenwoordigd door het aantal locaties en de grootte van de gesimuleerde trend. Elk bolletje betreft één populatie volgens één scenario; de mediaan per scenario is weergegeven door een kruisje."}
-trend_res_per_type %>% 
+trend_res_per_type %>%
   calculate_power_of_scenarios(scenario_def = scen,
                                plot = TRUE,
                                ncol = 8)
