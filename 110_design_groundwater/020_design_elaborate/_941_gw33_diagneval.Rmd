@@ -179,6 +179,72 @@ plot_vg(vg)
 ```
 
 
+
+##### Analyse van random effecten `cluster_id` en `year_std`
+
+We verifiëren de orthogonaliteit tussen de spatiale en temporele random effecten.
+
+```{r}
+M1_diagn <-
+    M1_diagn %>%
+    inner_join(select_ranef_subset(M1, "cluster", nullify = 1e-8),
+               by = c("cluster_id" = "ID")) %>%
+    nest(data = -stratum_) %>% 
+    mutate(data = 
+               map2(data, stratum_, 
+                       ~mutate(.x, 
+                               ranef_clus = 
+                                   .x[[str_c("ranef_cluster_stratum_", .y)]])
+                    )
+           ) %>% 
+    unnest(data) %>% 
+    select(-starts_with("ranef_cluster_stratum_")) %>% 
+    inner_join(select_ranef_subset(M1, "year_std"),
+               by = c("year_std" = "ID")) %>%
+    nest(data = -stratum_) %>% 
+    mutate(data = 
+               map2(data, stratum_, 
+                       ~mutate(.x, 
+                               ranef_year = 
+                                   .x[[str_c("ranef_year_std_stratum_", .y)]])
+                    )
+           ) %>% 
+    unnest(data) %>% 
+    select(-starts_with("ranef_year_std_stratum_")) %>% 
+    mutate(fitted_without_ranef = fitted - ranef_year - ranef_clus)
+```
+
+```{r}
+M1_diagn %>% 
+    ggplot(aes(x = ranef_clus, y = ranef_year)) +
+    geom_point() +
+    facet_wrap(~stratum_) +
+    coord_fixed()
+```
+
+We beoordelen hieronder de resp. random effecten ten opzichte van de gefitte waarde met de beide random effecten ervan afgetrokken.
+
+###### `cluster_id`
+
+```{r ranef-clus-fitted-{{subdataset_label}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted_without_ranef, y = ranef_clus)) +
+    geom_point() +
+    geom_smooth() +
+    facet_wrap(~stratum_, scales = "free_x")
+```
+
+###### `year_std`
+
+```{r ranef-year-fitted-{{subdataset_label}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted_without_ranef, y = ranef_year)) +
+    geom_point() +
+    geom_smooth() +
+    facet_wrap(~stratum_, scales = "free_x")
+```
+
+
 #### Modelevaluatie
 
 We beschouwen de modelfit op verschillende manieren.

@@ -166,6 +166,40 @@ extract_observed <- function(y) {
         as.numeric
 }
 
+#' Take a subset of a model object's summary.random element, only returning IDs and means
+#'
+#' If multiple random effects are selected, this function requires them to have the same ID
+#'
+#' @param model R-INLA model object
+#' @param string String that matches one or more random effect names
+#' @param nullify Optional numeric.
+#' If set, values with an absolute value lower than this threshold will be set
+#' to zero.
+select_ranef_subset <- function(model, string, nullify = NULL) {
+    msr <- model$summary.random
+    selection <- str_detect(names(msr), string)
+
+    stopifnot(map(msr[selection], ~select(., ID)) %>% unique %>% length == 1L)
+    stopifnot(is.null(nullify) || (is.numeric(nullify) && length(nullify) == 1L))
+
+    df <- msr[[which(selection)[1]]] %>% select(ID) %>% as_tibble
+    df %>%
+        bind_cols(
+            map2_dfc(
+                msr[selection], names(msr[selection]), function(df_ranef, nm) {
+                    colname <- str_c("ranef_", nm)
+                    select(df_ranef, !!colname := mean)
+                }
+            )
+        ) %>%
+        if (is.null(nullify)) . else {
+            mutate(.,
+                   across(where(is.numeric),
+                          ~ifelse(abs(.) < nullify, 0, .)))
+
+        }
+}
+
 #' Give the error 'model objects are missing'
 error_missing_modelobjects <- function() {
     stop("Please rerun this report the first time setting appropriate ",
