@@ -32,7 +32,7 @@ source_dirs <- file.path(choicesroot, "source/detailed",
                            detailed)
 
 files_dirs <- file.path(choicesroot, "docs/site/files", detailed)
-walk(files_dirs, ~dir.create(., showWarnings = FALSE))
+walk(files_dirs, ~dir.create(., recursive = TRUE, showWarnings = FALSE))
 
 pwalk(list(source_dirs, files_dirs, detailed_filenames),
       function(sd, fd, fn) {
