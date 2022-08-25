@@ -12,7 +12,11 @@ Elke gesimuleerde populatie is uniek in zijn trekking van random effecten en res
 De ruimtelijke populatiegrootte wordt voor elk type gedimensioneerd in overeenstemming met de beschikbare schatting hiervan voor de doelpopulatie (zie paragraaf \@ref(popsize)).
 Wel limiteren we de populatiegrootte van een type tot een grootte van 5000 eenheden, om de rekentijd binnen de perken te houden.
 We gaan er van uit dat de steekproefgroottes steeds veel kleiner zijn.
-Er worden steeds 13 tijdsstappen voorzien op elke locatie, opdat een trend over een verschil van 12 jaar kan worden bekeken.
+
+Het nodige aantal gesimuleerde jaren om een trend over een _verschil_ van 12 jaar te berekenen, hangt af van de lengte van één cyclus van de revisit design (panel design)[^revisit] in een scenario (zie \@ref(scen)).
+We werken in scenario's voorlopig alleen met een _serieel alternerende_ revisit design, i.e. een locatie wordt met een vaste _terugkeerperiode_ bemeten én de locaties worden verdeeld over de verschillende jaren van de bezoekcyclus.
+We gaan uit van een terugkeerperiode van maximaal 6 jaar in het geval van een spatiotemporele design (waar ook in de tijd de primaire milieuvariabele slechts steekproefgewijs wordt bepaald), en per definitie 1 jaar in het geval van een spatiale design.
+Het nodige aantal gesimuleerde jaren is $12 + terugkeerperiode$, dus 13 in het geval van een spatiale design en tot 18 bij een spatiotemporele design.
 
 Omdat de gesimuleerde populaties moeten dienen voor scenario's met verschillende lange-termijntrend, laten we de lange-termijntrend weg uit het model.
 Deze wordt in de scenario's vervangen door een gekende lineaire of exponentiële trend.
@@ -31,8 +35,8 @@ Ook types van de doelpopulatie waarvoor geen data voorhanden waren, werden aan e
 In de gesimuleerde populaties worden voor elk origineel type van de doelpopulatie observaties gegenereerd op basis van de toewijzing aan typeclusters.
 
 Voor de toestandsinferentie (design-based spatiotemporeel gemiddelde) hebben we slechts een zesjaarperiode nodig.
-Voor de trendinferentie (richtingscoëfficiënt) benodigen we een periode van 13 jaar (tijdsverschil van 12 jaar).
-Voor toestandsinferentie kunnen we dus de eerste zes jaar daarvan gebruiken.
+Voor de trendinferentie (richtingscoëfficiënt) over een tijdsverschil van 12 jaar benodigen we een periode van 12 jaar + de terugkeerperiode; zie hoger.
+Voor toestandsinferentie kunnen we dus een subset van zes opeenvolgende jaren daarvan gebruiken.
 
 De inputdata om de populaties te simuleren, zien er uit als volgt:
 
@@ -76,12 +80,13 @@ Daarna worden de ruimtelijke steekproefgroottes (per type) naar beneden bijgeste
 De steekproefgrootte voor een eindige populatie hangt immers af van zowel de populatiegrootte als van de steekproefgrootte voor een oneindige populatie (zie paragraaf \@ref(popsize)).
 
 
-### Scenario's
+### Scenario's {#scen}
 
 Scenario's voor steekproeftrekking kunnen zich onderscheiden in:
 
 - het aantal getrokken locaties (voor alle types samen) uit een oneindige populatie;
-- de revisit design[^revisit];
+- de revisit design[^revisit].
+We werken voor spatiotemporele designs (waar ook in de tijd de primaire milieuvariabele slechts steekproefgewijs wordt bepaald) steeds met een serieel alternerend bezoekpatroon, i.e. een locatie wordt met een vaste _terugkeerperiode_ bemeten én de locaties worden verdeeld over de verschillende jaren van de bezoekcyclus;
 - de grootte van een aan de populatie (post-hoc) toegevoegde lineaire of exponentiële trend.
 
 [^revisit]: De revisit design (s.s.) of panel design betreft de verdeling van locatiebezoeken over de tijd.
@@ -231,11 +236,14 @@ scheme_respvar <-
                                    power_conf90 = 0.9)),
            spfact = c("ecoregion", NA_character_, "soilclass"),
            scen_def = list(
-               crossing(avg_nrlocs_pertype_infpop = c(10, 20, 40),
+               crossing(avg_nrlocs_pertype_infpop = c(15, 30, 60),
+                        full_cycle = c(3, 6),
                         trend_12yearly_multiplier = c(1, 1.2, 1.5)),
                crossing(avg_nrlocs_pertype_infpop = c(20, 40, 80),
+                        full_cycle = 1,
                         trend_12yearly_multiplier = c(1, 2, 3)),
                crossing(avg_nrlocs_pertype_infpop = c(7, 10, 14, 20, 40),
+                        full_cycle = 1,
                         trend_12yearly_multiplier = c(1, 1.2, 1.5))
            ),
            cpu_cores_trend = c(3, 5, 2)) %>% 

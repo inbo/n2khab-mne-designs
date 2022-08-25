@@ -91,7 +91,7 @@ design_matrix <-
   {if (is.na(spfact)) . else split_popsize(., spfact, scheme_sel)} %>% 
   select(-matches("typegroup")) %>% 
   uncount_limited(5000) %>% 
-  add_st(time = 0:12)
+  add_st(time = seq(1 - max(scen_def$full_cycle), 12))
 
 simpops <-
   simulate_detrended_pops(design_matrix = design_matrix,
@@ -371,14 +371,19 @@ scen_n_spatial <-
   group_by(scenario) %>%
   summarise(total_n_finitepop_spatial = sum(n_finitepop_spatial),
             total_popsize_spatial = sum(popsize_spatial),
-            `n/N` = str_c(total_n_finitepop_spatial, "/", total_popsize_spatial)) %>% 
-  inner_join(scen, ., by = "scenario") %>% 
-  relocate(trend_12yearly_multiplier, 
-           .before = avg_nrlocs_pertype_infpop)
-scen_n_spatial %>% 
-  select(-starts_with("total")) %>% 
-  kable(caption = "Kenmerken van de scenario's. Behalve door de artificieel toegevoegde trend, wordt een scenario gedefinieerd door het gemiddelde aantal locaties dat per type wordt weerhouden, bij trekking uit een oneindige spatiale populatie. De uiteindelijke spatiale steekproefgroottes (voor alle types samen), vergezeld van de totale spatiale populatiegrootte, staan in de laatste kolom als respectievelijk teller en noemer (n/N).") %>% 
-  kable_styling()
+            `n/N` = str_c(total_n_finitepop_spatial, "/", total_popsize_spatial)) %>%
+  inner_join(scen, ., by = "scenario") %>%
+  relocate(full_cycle,
+           trend_12yearly_multiplier,
+           .after = last_col()) %>% 
+  {if (inference_temporal) . else select(., -full_cycle)}
+scen_n_spatial %>%
+  select(-starts_with("total")) %>%
+  (function(df) {
+  kable(df, caption = paste0("Kenmerken van de scenario's. Behalve door de artificieel toegevoegde trend", if (inference_temporal) " en het aantal jaren van één volledige bezoekcyclus", ", wordt een scenario gedefinieerd door het gemiddelde aantal locaties dat per type wordt weerhouden, bij trekking uit een oneindige spatiale populatie. De uiteindelijke spatiale steekproefgroottes (voor alle types samen), vergezeld van de totale spatiale populatiegrootte, staan in de laatste kolom als respectievelijk teller en noemer (n/N).")) %>%
+  kable_styling() %>% 
+  collapse_rows(columns = 2:ncol(df), valign = "top")
+  })
 ```
 
 
