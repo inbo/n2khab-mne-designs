@@ -195,32 +195,32 @@ simpops %>%
 De verhouding tussen de typespecifieke -- maar achteraf gegeneraliseerde -- variantieschattingen wordt gebruikt als verhouding tussen de ruimtelijke steekproefgroottes van types bij trekking uit een oneindige populatie.
 
 ```{r include=FALSE}
-relpath_spatvar <- 
+relpath_spatvar <-
   file.path("20_intermediate1",
             str_c(filepath_sub, respvar, "_spatvar"))
 abspath_spatvar <- file.path(datapath, str_c(relpath_spatvar, ".tsv"))
 ```
 
 ```{r message=FALSE, eval=(params$simulate_pops | !file.exists(abspath_spatvar))}
-spatvar <- 
-  simpops_500locs %>% 
+spatvar <-
+  simpops_500locs %>%
   {if (!inference_temporal) {
     # making data spatial-only
-    group_by(., modelname, type, population, location) %>% 
+    group_by(., modelname, type, population, location) %>%
       summarise(spatresp = mean(response))
   } else {
     # keeping time, and preparing to calculate spatial variance per timestep,
     # since spatial variance is time-independent
-    rename(., spatresp = response) %>% 
+    rename(., spatresp = response) %>%
       group_by(modelname, type, population, .data[[timevar]])
   }
-  } %>% 
+  } %>%
   {if (errmarg_rel && str_detect(scheme_sel, "GW_05\\.1")) {
     summarise(., spatvar = ifelse(-spatresp <= 0, .01, -spatresp) %>% log10 %>% var)
   } else if (errmarg_rel) {
     summarise(., spatvar = spatresp %>% log10 %>% var)
   } else summarise(., spatvar = var(spatresp))
-  } %>% 
+  } %>%
   {if (!inference_temporal) {
     # grouping is by modelname, type
     summarise(., spatvar_estimate = mean(spatvar),
@@ -228,32 +228,32 @@ spatvar <-
   } else {
     # grouping is by modelname, type, population
     summarise(., spatvar_estimate_pop = mean(spatvar),
-              spatvar_est_pop_var = var(spatvar) / n()) %>% 
+              spatvar_est_pop_var = var(spatvar) / n()) %>%
       # grouping is by modelname, type (applying formula for total estimator variance)
       summarise(., spatvar_estimate = mean(spatvar_estimate_pop),
                 spatvar_se = sqrt(
-                  mean(spatvar_est_pop_var) + 
+                  mean(spatvar_est_pop_var) +
                     var(spatvar_estimate_pop) / n()
                 ))
   }
-  } %>% 
-  mutate(spatvar_group = 
-           spatvar_estimate %>% 
-           dist %>% 
-           hclust(method = "complete") %>% 
+  } %>%
+  mutate(spatvar_group =
+           spatvar_estimate %>%
+           dist %>%
+           hclust(method = "complete") %>%
            cutree(h = ifelse(max(spatvar_estimate) / min(spatvar_estimate) < 1.2,
                              max(spatvar_estimate),
-                             (max(spatvar_estimate) - min(spatvar_estimate)) / 5))) %>% 
-  group_by(modelname, spatvar_group) %>% 
-  mutate(spatvar_generalized = mean(spatvar_estimate)) %>% 
-  ungroup %>% 
-  select(-c(spatvar_group, modelname)) %>% 
+                             (max(spatvar_estimate) - min(spatvar_estimate)) / 5))) %>%
+  group_by(modelname, spatvar_group) %>%
+  mutate(spatvar_generalized = mean(spatvar_estimate)) %>%
+  ungroup %>%
+  select(-c(spatvar_group, modelname)) %>%
   arrange(type)
 ```
 
 ```{r include=FALSE}
 if (params$simulate_pops | !file.exists(abspath_spatvar)) {
-    spatvar %>% 
+    spatvar %>%
         write_vc(relpath_spatvar,
                  root = datapath,
                  sorting = "type",
@@ -265,18 +265,18 @@ if (params$simulate_pops | !file.exists(abspath_spatvar)) {
 ```
 
 ```{r spatvar-{{scheme_sel_label}}-{{respvar_label}}}
-spatvar %>% mutate(across(where(is.numeric), ~round(., 3))) %>% 
+spatvar %>% mutate(across(where(is.numeric), ~round(., 3))) %>%
   kable(caption = str_c("De geschatte spatiale variantie per type, met de standaardfout. ",
                         ifelse(errmarg_rel, "De waarden hebben betrekking op de log~10~-getransformeerde spatiale variabele omdat we tussen de types een gelijkaardige _relatieve_ foutenmarge willen bekomen. ", ""),
-                        "De schattingen zijn gebaseerd op 100 gesimuleerde populaties (gesimuleerd met dezelfde parameterwaarden), over 6 jaar en met een spatiale populatiegrootte van 500 locaties per type. De populaties verschillen onderling enkel in de sampling van de random effectlevels. Eén populatie levert één waarde per type. Een vereenvoudigde waarde van de spatiale variantie (rechterkolom; op basis van complete linkage clustering) wordt gebruikt bij de verdeling van ruimtelijke steekproefgrootte in scenario's, gezien de onzekerheid in de hyperparameters van het simulatiemodel.")) %>% 
-  kable_styling() %>% 
+                        "De schattingen zijn gebaseerd op 100 gesimuleerde populaties (gesimuleerd met dezelfde parameterwaarden), over 6 jaar en met een spatiale populatiegrootte van 500 locaties per type. De populaties verschillen onderling enkel in de sampling van de random effectlevels. Eén populatie levert één waarde per type. Een vereenvoudigde waarde van de spatiale variantie (rechterkolom; op basis van complete linkage clustering) wordt gebruikt bij de verdeling van ruimtelijke steekproefgrootte in scenario's, gezien de onzekerheid in de hyperparameters van het simulatiemodel.")) %>%
+  kable_styling() %>%
   scroll_box(height = "500px")
 ```
 
 ```{r spatvar-graph-{{scheme_sel_label}}-{{respvar_label}}, fig.width=10, fig.height=2, fig.cap=paste("Vereenvoudiging van de geschatte spatiale varianties per type (punten) tot", n_distinct(spatvar$spatvar_generalized), "waarden (weergegeven als verticale lijnen), gebruikt bij de verdeling van ruimtelijke steekproefgrootte in scenario's. De kleuren vertegenwoordigen de clusters. Dit is een visualisatie van Tabel \\@ref(tab:spatvar-{{scheme_sel_label}}-{{respvar_label}}).")}
-spatvar %>% 
+spatvar %>%
     mutate(spatvar_generalized_colour = as.factor(spatvar_generalized %>% round(3))) %>%
-    ggplot(aes(x = "all")) + 
+    ggplot(aes(x = "all")) +
     geom_point(aes(y = spatvar_estimate, colour = spatvar_generalized_colour)) +
     geom_hline(aes(yintercept = spatvar_generalized, colour = spatvar_generalized_colour)) +
     coord_flip() +
@@ -296,79 +296,79 @@ gc()
 ### Definitie van scenario's
 
 ```{r}
-scen <- 
-  scen_def %>% 
-  mutate(scenario = str_c(scheme_sel, "_S", str_pad(row_number(), 2, pad = "0")) %>% factor) %>% 
+scen <-
+  scen_def %>%
+  mutate(scenario = str_c(scheme_sel, "_S", str_pad(row_number(), 2, pad = "0")) %>% factor) %>%
   relocate(scenario)
 # the yearly multiplier for a relative change is g = (1+f)^(1/Δt) with f the fractional change after Δt years (trend_12yearly_multiplier is 1+f for Δt=12)
 # see model results for example values (multiplier12) derived from the polynomial fitted trend
 ```
 
 ```{r}
-sample_definition <- 
-  scen %>% 
-  crossing(spatvar) %>% 
-  left_join(type_attrib %>% 
-              select(type, 
+sample_definition <-
+  scen %>%
+  crossing(spatvar) %>%
+  left_join(type_attrib %>%
+              select(type,
                      typegroup,
                      popsize_spatial = population_size),
-            by = "type") %>% 
-    arrange(scenario, typegroup) %>% 
+            by = "type") %>%
+    arrange(scenario, typegroup) %>%
     (
         function(df) {
-            adjusted_by_typegroup <- 
-                df %>% 
-                group_by(scenario, typegroup, avg_nrlocs_pertype_infpop) %>% 
+            adjusted_by_typegroup <-
+                df %>%
+                group_by(scenario, typegroup, avg_nrlocs_pertype_infpop) %>%
            # note that: se_typegroup^2 = sum(se_type^2) / nrtypes_per_typegroup^2
-           # and: se_type^2 = spatvar_generalized / avg_nrlocs_pertype_infpop 
+           # and: se_type^2 = spatvar_generalized / avg_nrlocs_pertype_infpop
            # so we now consider the 'constant' part of se_typegroup^2, i.e.
            # without nr of locs per type, in order to adjust the latter _between
            # typegroups_ in a first round!
                 summarise(
                     nrtypes_per_typegroup = n(),
-                    se2_typegroup_pp = 
+                    se2_typegroup_pp =
                         sum(spatvar_generalized) / nrtypes_per_typegroup^2
-                    ) %>% 
-                group_by(scenario) %>% 
-                mutate(adj_nrlocs_pertype_infpop = 
+                    ) %>%
+                group_by(scenario) %>%
+                mutate(adj_nrlocs_pertype_infpop =
                            sum(avg_nrlocs_pertype_infpop) *
-                           se2_typegroup_pp / sum(se2_typegroup_pp)) %>% 
-                ungroup %>% 
+                           se2_typegroup_pp / sum(se2_typegroup_pp)) %>%
+                ungroup %>%
                 select(scenario, typegroup, adj_nrlocs_pertype_infpop)
-            
-            df %>% 
+
+            df %>%
                 inner_join(adjusted_by_typegroup, by = c("scenario", "typegroup"))
         }
-    ) %>% 
-  group_by(scenario, typegroup) %>% 
+    ) %>%
+  group_by(scenario, typegroup) %>%
     # now we make that the different se_type^2 terms (in se_typegroup^2) are
     # made equal _within each typegroup_ by further adjusting the number of locs
     # per type (which are in the denominator)
-  mutate(n_infpop_spatial = 
-           sum(adj_nrlocs_pertype_infpop) * 
+  mutate(n_infpop_spatial =
+           sum(adj_nrlocs_pertype_infpop) *
              spatvar_generalized / sum(spatvar_generalized)
-           ) %>% 
-  rowwise %>% 
+           ) %>%
+  rowwise %>%
     # then, we forbid type sample sizes smaller than 20% of
     # avg_nrlocs_pertype_infpop
-  mutate(n_infpop_spatial = max(n_infpop_spatial, avg_nrlocs_pertype_infpop * 0.2)) %>% 
-  ungroup %>% 
-  select(-starts_with("spatvar"), 
-         -contains("nrlocs_pertype_infpop"), 
-         -contains("typegroup")) %>% 
+  mutate(n_infpop_spatial = max(n_infpop_spatial, avg_nrlocs_pertype_infpop * 0.2)) %>%
+  ungroup %>%
+  select(-starts_with("spatvar"),
+         -contains("nrlocs_pertype_infpop"),
+         -contains("typegroup")) %>%
     # finally, we apply finite population correction
-  mutate(n_finitepop_spatial = 
-               n_infpop_spatial * popsize_spatial / 
+  mutate(n_finitepop_spatial =
+               n_infpop_spatial * popsize_spatial /
                (popsize_spatial - 1 + n_infpop_spatial),
-         n_finitepop_spatial = round(n_finitepop_spatial, 0)) %>% 
+         n_finitepop_spatial = round(n_finitepop_spatial, 0)) %>%
   select(-n_infpop_spatial)
 ```
 
 ```{r}
-scen_n_spatial <- 
-  sample_definition %>% 
-  select(-trend_12yearly_multiplier) %>% 
-  group_by(scenario) %>% 
+scen_n_spatial <-
+  sample_definition %>%
+  select(-trend_12yearly_multiplier) %>%
+  group_by(scenario) %>%
   summarise(total_n_finitepop_spatial = sum(n_finitepop_spatial),
             total_popsize_spatial = sum(popsize_spatial),
             `n/N` = str_c(total_n_finitepop_spatial, "/", total_popsize_spatial)) %>% 
@@ -383,12 +383,12 @@ scen_n_spatial %>%
 
 
 ```{r}
-sample_definition %>% 
-  mutate(`n/N` = str_c(n_finitepop_spatial, "/", popsize_spatial)) %>% 
-  select(scenario, type, `n/N`) %>% 
-  kable(caption = "De spatiale steekproefgrootte per type (n: teller) en de totale spatiale populatiegrootte van het type (N: noemer), voor elk scenario. Deze breuk is de inclusiekans van elke populatie-eenheid van het type in kwestie. Behalve de eindige populatiegrootte leiden met name verschillen in de spatiale variantie tussen de types tot een typespecifieke spatiale steekproefgrootte.") %>% 
-  collapse_rows(columns = 1, valign = "top") %>% 
-  kable_styling() %>% 
+sample_definition %>%
+  mutate(`n/N` = str_c(n_finitepop_spatial, "/", popsize_spatial)) %>%
+  select(scenario, type, `n/N`) %>%
+  kable(caption = "De spatiale steekproefgrootte per type (n: teller) en de totale spatiale populatiegrootte van het type (N: noemer), voor elk scenario. Deze breuk is de inclusiekans van elke populatie-eenheid van het type in kwestie. Behalve de eindige populatiegrootte leiden met name verschillen in de spatiale variantie tussen de types tot een typespecifieke spatiale steekproefgrootte.") %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  kable_styling() %>%
   scroll_box(height = "500px")
 ```
 
