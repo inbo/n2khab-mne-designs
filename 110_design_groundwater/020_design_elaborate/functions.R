@@ -1073,7 +1073,7 @@ simulate_trended_spatial_samples <- function(sample_definition,
                             type,
                             .data[[var_time]],
                             response) %>%
-                     group_by(location) %>%
+                     group_by(population, location) %>%
                      mutate(prediction_spatial = median(response)) %>%
                      ungroup %>%
                      nest(pop_data = -population)) %>%
