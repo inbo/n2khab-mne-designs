@@ -426,7 +426,8 @@ visualize_trends(sample_definition = sample_definition,
                  seed = 20210702)
 ```
 
-Uit elke populatie worden `r nsamples_per_pop` spatiale steekproeven gesimuleerd (telkens zonder teruglegging).
+Uit elke populatie worden `r nsamples_per_pop` `r if (inference_temporal) "spatiotemporele" else "spatiale"` steekproeven gesimuleerd (telkens zonder teruglegging).
+`r if (inference_temporal) "In de populatie wordt namelijk jaarlijks gesampled (systematic sampling). De combinatie van deze temporele design met de spatiale steekproef verloopt volgens een 'serially alternating pattern' (revisit design), in overeenstemming met de cyclusduur van elk scenario. Dit betekent dat elke locatie met een vaste terugkeerperiode wordt bemeten én dat de locaties worden verdeeld over de verschillende jaren van een bezoekcyclus."`
 
 ```{r include=FALSE}
 rds_filepath_simsamples <- file.path(datapath, "binary/simobs",
@@ -435,12 +436,12 @@ rds_filepath_simsamples <- file.path(datapath, "binary/simobs",
 
 ```{r eval=(params$simulate_obs | !file.exists(rds_filepath_simsamples))}
 simsamples <-
-  simulate_trended_spatial_samples(sample_definition = sample_definition,
-                                   population_data = simpops,
-                                   var_time = timevar,
-                                   npops = npops,
-                                   nsamples_per_pop = nsamples_per_pop,
-                                   seed = 20210506)
+  simulate_trended_samples(sample_definition = sample_definition,
+                           population_data = simpops,
+                           var_time = timevar,
+                           npops = npops,
+                           nsamples_per_pop = nsamples_per_pop,
+                           seed = 20210506)
 ```
 
 ```{r include=FALSE}
@@ -484,7 +485,7 @@ statusdata <-
         group_by(.,
                  scenario,
                  population,
-                 spatial_sample,
+                 sample_id,
                  across(starts_with("type")),
                  location,
                  population_size) %>%
@@ -656,7 +657,7 @@ inputdata_trend <-
   # ungroup %>%
   # unnest(datacontainer) %>%
   {if (any(.$response < 0)) {
-      group_by(., scenario, population, spatial_sample, type, location) %>%
+      group_by(., scenario, population, sample_id, type, location) %>%
       mutate(negresp = -response,
              minresp = min(negresp),
              logresp = ifelse(minresp <=0,
@@ -694,9 +695,9 @@ trend_estimateslocal <-
   mutate(result = foreach(dc = .$datacontainer,
                           pop = .$population,
                           scen = .$scenario) %dopar% {
-    nest(dc, data = -c(spatial_sample, type)) %>%
+    nest(dc, data = -c(sample_id, type)) %>%
   mutate(location_estim =
-           pmap(list(data, spatial_sample, type), function(df, ss, tp) {
+           pmap(list(data, sample_id, type), function(df, ss, tp) {
              # log_socket("%s: Fitting model for %s in sample %s in population %s in scenario %s...", respvar, tp, ss, pop, scen, .socket = logsocket)
              if (n_distinct(df$location) == 1L) {
                fm <- as.formula(paste0("logresp ~ ", timevar))

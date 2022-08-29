@@ -26,6 +26,25 @@ log_socket <- function(text, ..., .cat = FALSE, .socket) {
 ####
 
 
+#' Assign membership of equally sized groups to the elements of a vector
+#'
+#' Splits a vector into a given number of equally sized groups, randomly assigns
+#' a group number and returns group membership vector.
+#'
+#' A useful application is to  assign and return the panel membership of
+#' sampling locations in a serially alternating design.
+#'
+#' @param x A vector.
+#' @param n The requested number of groups.
+#'
+#' @return A vector of group numbers, with the same length as the input vector.
+#'
+assign_groups <- function(x, n) {
+  seq_len(length(x)) %>%
+    cut(n, labels = sample(seq_len(n))) %>%
+    as.character %>%
+    as.integer
+}
 
 
 #####################################################################
@@ -1027,28 +1046,28 @@ rtrunc2 <- function(n, spec, p_a = 0, p_b = 1, ...)
 
 
 
-#' Simulate spatial samples from given populations and sample definitions (including artificial trend)
+#' Simulate spatial or spatiotemporal samples from given populations and sample definitions (including artificial trend)
 #'
 #' @param sample_definition Data frame that defines the constitution of a sample for each scenario.
-#' Minimal columns needed: scenario, trend_12yearly_multiplier, type, n_finitepop_spatial
+#' Minimal columns needed: scenario, trend_12yearly_multiplier, periodicity, type, n_finitepop_spatial
 #' @param population_data Data frame with data of multiple (full) population realizations, with specific required columns: population, type, location, {{var_time}} and response.
 #' @param var_time String. The name of the time variable in `population_data`.
 #' @param npops Number of populations to select from population_data (the first `npops` populations are used)
 #' @param pops Optional character vector of population names to select.
 #' If specified, npops is ignored.
 #' @param nsamples_per_pop Number of samples to take per population (without replacement)
-#' @param sampling If TRUE (default), return repeated spatial samples from each population.
+#' @param sampling If TRUE (default), return multiple independent samples from each population.
 #' If FALSE, simply return the full data of each (selected) population,
 #' with the artificial trend of each scenario added.
 #'
-simulate_trended_spatial_samples <- function(sample_definition,
-                                             population_data,
-                                             var_time,
-                                             npops = length(unique(population_data$population)),
-                                             pops = NULL,
-                                             nsamples_per_pop = 20,
-                                             sampling = TRUE,
-                                             seed = NULL){
+simulate_trended_samples <- function(sample_definition,
+                                     population_data,
+                                     var_time,
+                                     npops = length(unique(population_data$population)),
+                                     pops = NULL,
+                                     nsamples_per_pop = 20,
+                                     sampling = TRUE,
+                                     seed = NULL){
   if (!is.null(seed)) set.seed(seed)
 
   pops_missing <- missing(pops)
@@ -1092,48 +1111,73 @@ simulate_trended_spatial_samples <- function(sample_definition,
                   spatial_term,
                   trend_12yearly_multiplier)) %>%
         relocate(response, .after = last_col())
-    }))
+    })) %>%
+    select(-scen_attrib)
 
   if (!sampling) {
     return(
       trended_pop_data %>%
-        select(-scen_attrib) %>%
         unnest(pop_data) %>%
-        select(-n_finitepop_spatial))
+        select(-n_finitepop_spatial, -periodicity)
+    )
   }
-  # simulating repeated spatial samples:
+  # simulating independent spatial or spatiotemporal samples:
   trended_pop_data %>%
-    mutate(sample_data = list(tibble(spatial_sample =
+    mutate(sample_data = list(tibble(sample_id =
                                        str_c("sample_",
                                              str_pad(1:nsamples_per_pop, 4, pad = "0")) %>%
                                        factor)),
            sample_data = map2(pop_data,
                               sample_data,
                               function(p, df) {
-                                df %>%
-                                  mutate(units = map(spatial_sample, ~
-                                                       p %>%
-                                                       distinct(type,
-                                                                location,
-                                                                n_finitepop_spatial) %>%
-                                                       nest(locs = location) %>%
-                                                       mutate(sample = map2(locs, n_finitepop_spatial,
-                                                                            ~slice_sample(.x, n = .y))) %>%
-                                                       select(sample) %>%
-                                                       unnest(sample)
-                                  ),
-                                  data = map2(spatial_sample, units, ~
-                                                p %>%
-                                                select(-n_finitepop_spatial) %>%
-                                                semi_join(.y,
-                                                          by = "location")
-                                  )
-                                  ) %>%
-                                  select(-units) %>%
-                                  unnest(data)
+              df %>%
+                mutate(
+                  units = map(sample_id, ~
+                                     p %>%
+                                     distinct(type,
+                                              location,
+                                              n_finitepop_spatial,
+                                              periodicity) %>%
+                                     nest(locs = location) %>%
+                                     mutate(sample =
+                                              pmap(list(locs,
+                                                        n_finitepop_spatial,
+                                                        periodicity),
+                                                   ~slice_sample(..1, n = ..2) %>%
+                                                     mutate(panel = assign_groups(location, ..3)))) %>%
+                                     select(sample) %>%
+                                     unnest(sample)
+                  ),
+                  data = map(units,
+                             function(u) {
+                               time_panel_transl <-
+                                 tibble(
+                                   # full time sequence:
+                                   {{var_time}} := full_seq(p[[var_time]], 1L),
+                                   # cycle all panels over all time steps:
+                                   panel = rep_len(seq_len(max(u$panel)),
+                                                   length(.data[[var_time]]))
+                                 )
+                               p %>%
+                                 select(-n_finitepop_spatial,
+                                        -periodicity) %>%
+                                 inner_join(time_panel_transl,
+                                            by = {{var_time}}) %>%
+                                 semi_join(u,
+                                           by = c("location", "panel")) %>%
+                                 {if (max(p$periodicity) == 1L) {
+                                   select(., -panel)
+                                 } else {
+                                   relocate(., panel, .after = type)
+                                 }}
+                             }
+                  )
+                ) %>%
+                select(-units) %>%
+                unnest(data)
                               })) %>%
-    # drop scen_attrib and pop_data:
-    select(-scen_attrib, -pop_data) %>%
+    # drop pop_data:
+    select(-pop_data) %>%
     unnest(sample_data)
 }
 
@@ -1155,16 +1199,16 @@ visualize_trends <- function(sample_definition,
 
   sample_definition %>%
     # select 1 scenario per artificial trend:
-    nest(data = -c(scenario, trend_12yearly_multiplier)) %>%
+    nest(data = -c(scenario, periodicity, trend_12yearly_multiplier)) %>%
     group_by(trend_12yearly_multiplier) %>%
     slice_head %>%
     ungroup %>%
     unnest(data) %>%
     # add the trends to 1 simulated population:
-    simulate_trended_spatial_samples(population_data = population_data,
-                                     pops = population,
-                                     var_time = var_time,
-                                     sampling = FALSE) %>%
+    simulate_trended_samples(population_data = population_data,
+                             pops = population,
+                             var_time = var_time,
+                             sampling = FALSE) %>%
     # use only 2 locations per type and ntypes types
     select(-population) %>%
     nest(type_data = -type) %>%
@@ -1199,7 +1243,7 @@ visualize_trends <- function(sample_definition,
 #' in which case the mean trend estimate will emerge.
 #'
 #' @param statusdata Data frame with at least columns "scenario", "population",
-#' "spatial_sample", "type", "location", "population_size", and a column with
+#' "sample_id", "type", "location", "population_size", and a column with
 #' the value of the target variable (conveniently named as "targetvar").
 #' Note that "population_size" is assumed to refer to the SPATIAL population
 #' size of each TYPE.
@@ -1260,13 +1304,13 @@ compute_status_persample <- function(statusdata = NULL,
       {if (!weighted_mean | level == "type") {
         nest(., data = -c(scenario,
                           population,
-                          spatial_sample,
+                          sample_id,
                           type, # type is required
                           starts_with("type"))) # typegroup is possibly present
       } else if (level == "overall") {
-        nest(., data = -c(scenario, population, spatial_sample))
+        nest(., data = -c(scenario, population, sample_id))
       } else {
-        nest(., data = -c(scenario, population, spatial_sample, typegroup))
+        nest(., data = -c(scenario, population, sample_id, typegroup))
       }} %>%
       mutate(design =
                map(data, function(df) {
@@ -1326,7 +1370,7 @@ compute_status_persample <- function(statusdata = NULL,
 
   # calculating unweighted mean of types (overall or typegroup level):
   mean_se %>%
-    group_by(scenario, population, spatial_sample) %>%
+    group_by(scenario, population, sample_id) %>%
     {if (level == "typegroup") group_by(., typegroup, .add = TRUE) else .} %>%
     summarise(mean = mean(mean),
               se = sqrt(sum(se^2)) / n()) %>%
