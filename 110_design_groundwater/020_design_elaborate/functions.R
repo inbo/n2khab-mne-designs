@@ -1158,6 +1158,7 @@ visualize_trends <- function(sample_definition,
     nest(data = -c(scenario, trend_12yearly_multiplier)) %>%
     group_by(trend_12yearly_multiplier) %>%
     slice_head %>%
+    ungroup %>%
     unnest(data) %>%
     # add the trends to 1 simulated population:
     simulate_trended_spatial_samples(population_data = population_data,
