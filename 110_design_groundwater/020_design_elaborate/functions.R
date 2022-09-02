@@ -1300,9 +1300,13 @@ compute_status_persample <- function(statusdata = NULL,
     # if time is present, then population is considered spatiotemporal and
     # spatial population size is replaced by spatiotemporal population size:
     if (has_timevar) {
+      if (temporal_poststratif) {
+        spatial_popsizes <- statusdata %>% distinct(type, population_size)
+      }
+      nr_timesteps <- n_distinct(statusdata$time)
       statusdata <-
         statusdata %>%
-        mutate(population_size = population_size * n_distinct(time))
+        mutate(population_size = population_size * nr_timesteps)
     }
 
     mean_se <-
@@ -1328,14 +1332,19 @@ compute_status_persample <- function(statusdata = NULL,
                            data = df) %>%
                    {if (has_timevar && temporal_poststratif) {
                      postStratify(.,
-                                  strata = ~time,
-                                  population = data.frame(
-                                    time = unique(df$time),
-                                    Freq =
-                                      sum(unique(df$population_size)) /
-                                      n_distinct(df$time)
+                                  strata = if (!weighted_mean) ~time else ~time+type,
+                                  population =
+                                    if (!weighted_mean) {
+                                      df %>%
+                                        distinct(time, Freq = population_size) %>%
+                                        mutate(Freq = Freq / nr_timesteps)
+                                    } else {
+                                      df %>%
+                                        distinct(time, type) %>%
+                                        inner_join(spatial_popsizes, by = "type") %>%
+                                        rename(Freq = population_size)
+                                    }
                                   )
-                     )
                    } else .}
                }),
              mean_svystat = map(design, ~svymean(paste0("~", targetvar) %>%
