@@ -1279,6 +1279,12 @@ compute_status_persample <- function(statusdata = NULL,
                                      extra_se_var = NULL,
                                      typeresult = NULL) {
 
+  level <- match.arg(level)
+
+  if (weighted_mean && level == "type") {
+    stop("level = type and weighted_mean = TRUE is no supported combination.")
+  }
+
   add_rel <- function(df) {
     mutate(df,
            twosided_errmarg80_rel =
