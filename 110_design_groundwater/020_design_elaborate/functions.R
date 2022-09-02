@@ -1523,7 +1523,7 @@ lower_tailprob <- function(x, q, density_left) {
 #'
 #' @param multisample_stats dataframe with at least the sample means as column 'mean' and associated errormargin(s)
 #' @param scenario_def Dataframe that defines the scenarios (one row per scenario).
-#' Has at least columns "scenario", "avg_nrlocs_pertype_infpop" and a column trend_*.
+#' Has at least columns "scenario", "avg_nrlocs_pertype_infpop", "periodicity" and a column trend_*.
 #' One row per scenario.
 #' Only used (and needed) if `plot = TRUE`.
 #' @param qual_std Optional numeric vector of targeted power values (quality standards)
@@ -1602,6 +1602,7 @@ calculate_power_of_scenarios <- function(multisample_stats,
     trend_colname <-
       colnames(scenario_def) %>%
       {.[str_detect(., "trend_")]}
+    periodic <- n_distinct(scenario_def$periodicity) > 1
     type_typegroup_colname <-
       colnames(result) %>%
       {.[str_detect(., "type")]}
@@ -1612,21 +1613,28 @@ calculate_power_of_scenarios <- function(multisample_stats,
       pivot_longer(cols = matches("^conf"),
                    names_to = "conflevel",
                    values_to = "power") %>%
-      mutate({{trend_colname}} := factor(.data[[trend_colname]])) %>%
+      mutate({{trend_colname}} := factor(.data[[trend_colname]]),
+             periodicity = factor(periodicity)) %>%
       (function(df) {
         df_summ <-
           df %>%
           group_by(across(c(scenario,
                             avg_nrlocs_pertype_infpop,
                             matches("^trend_"),
+                            periodicity,
                             contains("type"),
                             conflevel))) %>%
           summarise(power = median(power))
 
         ggplot(df, aes(x = avg_nrlocs_pertype_infpop,
                        y = power,
-                       colour = .data[[trend_colname]],
-                       group = .data[[trend_colname]])) +
+                       colour = if (periodic) {
+                         .data[[trend_colname]]:periodicity
+                         } else .data[[trend_colname]],
+                       group = if (periodic) {
+                         .data[[trend_colname]]:periodicity
+                       } else .data[[trend_colname]]
+                       )) +
           geom_jitter(alpha = 0.4, width = 3, height = 0) +
           geom_line(data = df_summ) +
           geom_point(data = df_summ,
@@ -1639,6 +1647,9 @@ calculate_power_of_scenarios <- function(multisample_stats,
                                           " + conflevel"))),
                      ...) +
           xlab("average number of locations per type\n(before adjusting for spatial variance, population size and typegroup size)") +
+          labs(colour = if (periodic) {
+            str_c(trend_colname, ":periodicity")
+          } else trend_colname) +
           theme(legend.position = "bottom")
       })
   }
