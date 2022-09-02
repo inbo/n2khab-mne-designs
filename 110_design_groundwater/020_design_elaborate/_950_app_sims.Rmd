@@ -706,21 +706,42 @@ trend_estimateslocal <-
                fm <- as.formula(paste0("logresp ~ ", timevar))
              } else fm <- as.formula(paste0("logresp ~ ", timevar, ":location"))
              if (n_distinct(df$logresp) > 1L) {
+               tryCatch({
                  lme(fm,
                      random = ~ 1 | location,
                      data = df,
-                     control = lmeControl(opt = "optim")) %>%
-                     summary %>%
-                     {tibble(distinct(.$groups),
-                             beta_loc = .$tTable[-1, "Value"],
-                             se_loc = .$tTable[-1, "Std.Error"])}
+                     control = lmeControl(opt = "optim", msMaxIter = 100)) %>%
+                   summary %>%
+                   {tibble(distinct(.$groups),
+                           beta_loc = .$tTable[-1, "Value"],
+                           se_loc = .$tTable[-1, "Std.Error"])}
+               }, error = function(e) {
+                 if (str_detect(as.character(e), 
+                                "Singularity in backsolve at level 0, block 1")) {
+                   warning(sprintf("Model singularity detected for %s in type %s in sample %s in population %s in scenario %s; lme() cannot fit this with a random intercept. Will drop random intercept.", respvar, tp, ss, pop, scen))
+                   df$dummy <- 1
+                   return(
+                     lme(fm,
+                     random = ~ 1 | dummy,
+                     data = df,
+                     control = lmeControl(opt = "optim", msMaxIter = 100)) %>%
+                       summary %>% 
+                       {tibble(distinct(df, location),
+                               beta_loc = .$tTable[-1, "Value"],
+                               se_loc = .$tTable[-1, "Std.Error"])}
+                   )
+                 }
+                 else stop(e)
+               }
+               )
              } else {
-                 # lme always errors with a singular fit (constant response)
-                 lm(fm, data = df) %>%
-                     summary %>%
-                     {tibble(distinct(df, location),
-                             beta_loc = .$coefficients[-1, "Estimate"],
-                             se_loc = .$coefficients[-1, "Std. Error"])}
+               # lme always errors with a singular fit (constant response)
+               warning(sprintf("All response values are the same for %s in type %s in sample %s in population %s in scenario %s; lme() cannot fit this. Will fit with lm().", respvar, tp, ss, pop, scen))
+               lm(fm, data = df) %>%
+                 summary %>%
+                 {tibble(distinct(df, location),
+                         beta_loc = .$coefficients[-1, "Estimate"],
+                         se_loc = .$coefficients[-1, "Std. Error"])}
              }
            }
            ))  %>%
