@@ -1,0 +1,1534 @@
+# Data-exploratie ter voorbereiding van modelbouw
+
+<!-- - A Missing values?  -->
+<!-- - B Outliers in Y / Outliers in X  -->
+<!-- - C Collinearity X  -->
+<!-- - D Relationships Y vs X  -->
+<!-- - E Spatial/temporal aspects of sampling design (not relevant here)  -->
+<!-- - F Interactions (is the quality of the data good enough to include them?)  -->
+<!-- - G Zero inflation Y  -->
+<!-- - H Are categorical covariates balanced? -->
+
+<!-- idee ivm TEKST in dit stuk: generiek houden (maximaal bruikbaar voor andere compartimenten). Voor conclusies verwijzen naar hoofdstuk. 
+<!-- waarden van Luc Denys koppelen aan plassen. Dit is een gemiddelde intensiteitswaarden voor de hele plas, gebaseerd op verschillende buffers van 0 tot 150m. 
+<!-- Niet alle plassen in excel worden vertegenwoordigd door een habitatwaardig vegetatietype in de Aquachem databank. -->
+
+
+```{r, include = FALSE}
+#lentic_chem <- read.csv("../110_datapreparation/data/20_output/lentic_chem.csv")
+root = "../110_datapreparation/data/20_output/"
+#write_vc(lentic_cova,"lentic_cova", root = root, sorting = "X", strict = FALSE )
+ow34len <- 
+  read_vc("lentic_cova",
+           root = root) %>% 
+    dplyr::select(-loc_code) %>%
+    rename(loc_code = "codeplas") %>%
+    mutate(year = as.numeric(year)) %>%
+  as_tibble
+owl34lot_3260 <- 
+  read_vc("lotic_cova_3260",
+           root = root) %>% 
+    rename(loc_code ="rank")%>%
+    mutate(year = as.numeric(year))%>%
+    mutate(loc_code = as.character(loc_code))%>%
+    mutate(type = as.factor(type))%>%
+    mutate(soilclass = coalesce(soilclass, "unknown"))%>%
+  as_tibble
+owl34lot_7220 <- 
+  read_vc("cova_lotic_7220",
+           root = root) %>% 
+    mutate(year = as.numeric(year))%>%
+  as_tibble
+
+```
+
+<!-- Databehandeling op basis van aanvankelijke verkenning: -->
+<!-- ####################################################### -->
+
+<!-- betreft code-chunks uit chunks.R -->
+
+```{r envdata-preprocessing-discard-faulty-data, eval=!("read-analysisdata" %in% knitr::all_labels())}
+```
+
+```{r envdata-standardise-response, eval=!("read-analysisdata" %in% knitr::all_labels())}
+```
+
+
+```{r prepare_exploration, include = FALSE}
+datasets <- 
+    tibble(data = 
+               list(ow34len,owl34lot_3260,owl34lot_7220) %>%
+               set_names("SURF_03.4_lentic","SURF_03.4_lotic_3260","SURF_03.4_lotic_7220"),
+           response = list(vars(no3, ptot),
+                           vars(no3, po4),
+                           vars(no3, po4)
+                           ),
+           var_cont = list(vars(x,y,date),
+                           vars(x,y,date),
+                           vars(x,y,date)),
+           var_cat = list(vars(loc_code,ecoregion,soilclass, year,sixyear,type),
+                          vars(loc_code,ecoregion,soilclass, year,sixyear,type),
+                          vars(loc_code,ecoregion,soilclass, year,sixyear,type)
+                          )) 
+
+lotic_merged <- owl34lot_3260 %>% dplyr::select(year, loc_code, type, no3, po4, x,y,date, ecoregion, soilclass, sixyear)%>% bind_rows(owl34lot_7220  %>% dplyr::select (year, loc_code, type, no3, po4, x,y,date, ecoregion,soilclass,  sixyear))%>% mutate(type = as.factor(type), soilclass = as.factor(soilclass))
+ datasets_lotic<-   tibble(data = 
+               list(lotic_merged) %>%
+               set_names("SURF_03.4_lotic"),
+           response = list(vars(no3, po4)
+                           ),
+           var_cont = list(vars(x,y,date)),
+           var_cat = list(vars(loc_code,ecoregion,soilclass, year,sixyear,type)
+           ))
+datasets_merged <- 
+        tibble(data = 
+               list(ow34len,lotic_merged) %>%
+               set_names("SURF_03.4_lentic","SURF_03.4_lotic"),
+           response = list(vars(no3, ptot),
+                           vars(no3, po4)),
+           var_cont = list(vars(x,y,date),
+                           vars(x,y,date)),
+           var_cat = list(vars(loc_code,ecoregion, soilclass, year,sixyear,type),
+                          vars(loc_code,ecoregion, soilclass, year,sixyear,type)
+                          ))
+    
+```
+
+## Responsvariabelen
+
+### Outliers
+
+```{r resp-cleveland-untransformed, warning=FALSE, results="asis",echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$response[[1]]
+                df2 <- dplyr::select(df, !!!var)
+                colnames(df2) %>%
+                    walk(function(cname) {
+                        p <- 
+                            df2 %>%
+                            dplyr::select(.data[[cname]]) %>%
+                            drop_na %>% 
+                            arrange(.data[[cname]]) %>%
+                            mutate(id = seq_along(.data[[cname]])) %>%
+                            ggplot(., aes(x = .data[[cname]], y = id)) +
+                                    geom_point(size = 0.5, alpha = 0.7) +
+                                    labs(title = dfname2)
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = c(paste("```{r cleveland-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                                   "fig.cap = 'Cleveland dotplot voor {{cname}}",
+                                                   "in meetnet {{dfname2}}.',",
+                                                   "out.width='70%',",
+                                                   "warning=FALSE}"), 
+                                             "print(p)",
+                                             "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+                    })
+            }) 
+    })
+```
+
+```{r resp-cleveland-logaxis-03-3, warning=FALSE, results="asis", echo=FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$response[[1]]
+                df2 <- 
+                  dplyr::select(df, !!!var)
+                colnames(df2) %>%
+                    walk(function(cname) {
+                        p <- 
+                            df2 %>%
+                            dplyr::select(.data[[cname]]) %>%
+                            drop_na %>% 
+                            arrange(.data[[cname]]) %>%
+                            mutate(id = seq_along(.data[[cname]])) %>%
+                            ggplot(., aes(x = .data[[cname]], y = id)) +
+                                    geom_point(size = 0.5, alpha = 0.7) +
+                                    scale_x_log10(minor_breaks = 
+                                                    seq(10, 90, 10) * 
+                                                    matrix(10^(-4:3), 9, 8, byrow = TRUE) %>% 
+                                                    as.vector) +
+                                    labs(title = dfname2)
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = 
+                                      c(paste("```{r cleveland-log-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                              "fig.cap = 'Cleveland dotplot voor {{cname}}",
+                                              "in meetnet {{dfname2}}. X-as in de log-schaal.',",
+                                              "out.width='70%',",
+                                              "warning=FALSE}"), 
+                                        "print(p)",
+                                        "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+                    })
+            }) 
+    })
+```
+
+```{r resp-pairplot, warning=FALSE, results="asis", echo = FALSE}
+names(datasets_merged$data) %>%
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                response <-  x$response[[1]]
+                df2 <- 
+                  dplyr::select(df, !!!response) %>% 
+                  {if (dfname2 == "SURF_03.4_lotic") {
+                    mutate_at(.,
+                              c("no3","po4"),
+                              ~ifelse(. == 0, -3, log10(.))
+                              )
+                  } else {mutate_at(.,
+                              c("no3", "ptot"),
+                              ~ifelse(. == 0, -3, log10(.)))}}
+                  p <- ggpairs(df2,
+                                showStrips = TRUE,
+                                upper = list(continuous = 
+                                               wrap("cor",
+                                                    method = "kendall",
+                                                    use = "pairwise.complete.obs")),
+                                lower = list(continuous = 
+                                               wrap("points", 
+                                                    size = 0.3,
+                                                    alpha = 0.35)),
+                                progress = FALSE)
+                  if (interactive()) {
+                    print(p)
+                    } else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        
+                        knit_expand(text = 
+                c(paste("```{r resp-pairplot-{{dfname_hyphen}},",
+                        "fig.cap = 'Distributie van en relatie tussen responsvariabelen",
+                        "in meetnet {{dfname2}}.",
+                        ifelse(dfname2 %like% "SURF_03.4",
+                               paste("Voor deze grafiek zijn de",
+                                     "responsvariabelen log-getransformeerd."), ""),
+                        "De correlatiecoëfficiënten zijn volgens Kendall.'",
+                        ", fig.width= 8, fig.height = 8,",
+                        " message=FALSE, warning=FALSE",
+                        "}"),
+                  "print(p)",
+                  "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        
+                        }
+
+            }) 
+    })
+```
+
+
+### Nullen
+
+```{r resp-zeroes, message=FALSE, warning=FALSE, results="asis", echo = FALSE}
+names(datasets_merged$data) %>% 
+    map_dfr(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$response[[1]]
+                dplyr::select(df, !!!var) %>% 
+                  pivot_longer(cols = everything(),
+                               names_to = "variable") %>% 
+                  group_by(variable) %>% 
+                  summarise(zero_count = sum(value == 0, na.rm = TRUE),
+                            zero_proportion = 
+                              (sum(value == 0, na.rm = TRUE) / n()) %>% 
+                              round(3)) %>% 
+                  mutate(scheme = dfname2) %>%
+                  relocate(scheme)
+            }) 
+    }) %>% 
+  kable(caption = "Het aantal en het aandeel nullen per responsvariabele in elke analysedataset (1 meetnet ('scheme') komt overeen met 1 analysedataset).") %>% 
+  kable_styling(full_width = FALSE) %>% 
+  collapse_rows(columns = 1, valign = "top")
+```
+
+Het lentische meetnet bevat geen nullen, het lotische meetnet bevat 4% nullen voor nitraat en 24% nullen voor orthofosfaat zoas weergegeven in Tabel \@ref(tab:resp-zeroes). 
+
+```{r resp-zeroes-plot, warning=FALSE, results="asis", echo = FALSE}
+cut_zero <- 
+    function(x, cuts) {
+        fct_c(if (length(x[x < 0]) > 0) {
+                     cut_interval(x[x < 0], n = cuts, closed = "left")
+                  } else factor(),
+              x[x == 0] %>% factor,
+              if (length(x[x > 0]) > 0) {
+                     cut_interval(x[x > 0], n = cuts, closed = "right")
+                  } else factor()
+              )
+    }
+
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$response[[1]]
+                df2 <- dplyr::select(df, !!!var)
+                colnames(df2) %>%
+                    walk(function(cname) {
+                        p <- 
+                            df2 %>%
+                            dplyr::select(.data[[cname]]) %>% 
+                            drop_na %>%
+                            mutate_all(cut_zero, cuts = 4) %>%
+                            group_by(.data[[cname]]) %>% 
+                            mutate(newlabel = str_c(as.character(.data[[cname]]),
+                                                    "\nn=",
+                                                    n())
+                            ) %>% 
+                            ungroup %>% 
+                            transmute_at(1,
+                                      .funs = ~plyr::mapvalues(.,
+                                                               from = unique(.),
+                                                               to = unique(.data$newlabel))
+                                      ) %>% 
+                            ggplot(., aes(x = .data[[cname]])) +
+                                    geom_bar(fill = "white", colour = "grey50") +
+                                    labs(title = dfname2)
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = c(paste("```{r barplot-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                                   "fig.cap = 'Staafdiagram voor {{cname}}",
+                                                   "in meetnet {{dfname2}}. De waarde nul, indien",
+                                                   "aanwezig, is altijd vertegenwoordigd door een",
+                                                   "aparte staaf. Klassebreedtes voor negatieve",
+                                                   "waarden wijken af van die voor positieve.',",
+                                                   "out.width='70%',",
+                                                   "warning=FALSE}"), 
+                                             "print(p)",
+                                             "")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+                    })
+            }) 
+    })
+```
+De waarden voor nitraat in het lentische hoofdmeetnet liggen voor 99% (n = 5567) tussen 0,00289 en 3.33 mg N/l. De ondergrens wordt bepaald door de detectielimiet / 2. Voor totaal fosfor liggen op twee waarden na alles waarden tussen 0.02 en 5.54 mg/l. Ook hier vormt de detectielimiet/2 de ondergrens.
+De twee uitschieters komen voor binnen dezelfde locatie (WVLKNO0205). Er is geen nemen om aan te nemen dat de afwijkende waarden foutief zijn. Bij het lotische meetnet zien we meer nulwaarden voor zowel orthofosfaat als nitraat. Vermoedelijk werden er waarden onder de detectielimiet op  gezet. Ook hier is er geen reden om aan te nemen dat de afwijkende waarden foutief zijn. 
+
+
+## Covariaten
+### Outliers in continue covariaten
+
+- Er zijn geen echte outliers te bespeuren in de continue variaten. Voor beide hoofdmeetnetten ligt het zwaartepunt  van het x-coordinaat in het oosten van Vlaanderen. De staalnames voor het lotische meetnet verlopen zeer continu, terwijl het lentische meetnet een onderbreking kent van eind 2014 tot eind 2015. 
+
+```{r contcov-cleveland-untransformed, warning=FALSE, results="asis", echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$var_cont[[1]]
+                df2 <- dplyr::select(df, !!!var)
+                colnames(df2) %>%
+                    walk(function(cname) {
+                        p <- 
+                            df2 %>%
+                            dplyr::select(.data[[cname]]) %>%
+                            drop_na %>% 
+                            arrange(.data[[cname]]) %>%
+                            mutate(id = seq_along(.data[[cname]])) %>%
+                            ggplot(., aes(x = .data[[cname]], y = id)) +
+                                    geom_point(size = 0.5, alpha = 0.7) +
+                                    labs(title = dfname2)
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = c(paste("```{r cleveland-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                                   "fig.cap = 'Cleveland dotplot voor {{cname}}",
+                                                   "in meetnet {{dfname2}}.',",
+                                                   "out.width='70%',",
+                                                   "warning=FALSE}"), 
+                                             "print(p)",
+                                             "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+                    })
+            }) 
+    })
+```
+
+### Balancering van categorische covariaten
+
+Er zijn voor alle categorische covariaten onbalansen te zien, i.e. opvallende verschillen in het aantal observaties per categorie.
+- De onbalansen zijn veelal het grootst voor `type`, `loc_code`, `soilclass` en `ecoregion`.
+- De data van SURF_3.4_lentic betreffen grotendeels de Ecoregio van de Kempen met bodemklasse licht of onbekend .
+- De data van SURF_3.4_lotic betreffen grotendeels de Ecoregio van de Kempen met bodemklasse licht.
+
+```{r catcov-barplot, results="asis", fig.width=7, fig.height=6, echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged%>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$var_cat[[1]]
+                df2 <- dplyr::select(df, !!!var)
+                colnames(df2) %>%
+                    walk(function(cname) {
+                        p <- 
+                            df2 %>%
+                            dplyr::select(.data[[cname]]) %>%
+                            drop_na %>% 
+                            {if (cname %in% c("type", "ecoregion", "loc_code")) {
+                              ggplot(., aes(x = .data[[cname]])) +
+                                geom_bar(fill = "white", colour = "grey50") +
+                                labs(title = dfname2) +
+                                theme(axis.text.x = element_text(angle = 90,
+                                                                 vjust = 0.4,
+                                                                 hjust = 1))
+                            } else {
+                              ggplot(., aes(x = .data[[cname]])) +
+                                geom_bar(fill = "white", colour = "grey50") +
+                                labs(title = dfname2)
+                            }
+                            }
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        cname_hyphen <- str_replace_all(cname, "_", "-")
+                        knit_expand(text = 
+                                      c(
+                                        if (colnames(df2)[1] == cname) {
+                                          paste("####",
+                                                dfname2,
+                                                "\n\n")
+                                        },
+                                        paste("```{r barplot-{{dfname_hyphen}}-{{cname_hyphen}},",
+                                              "fig.cap = 'Staafdiagram van alle unieke waarden",
+                                              "van {{cname}} in meetnet {{dfname2}}.',",
+                                              "out.width='70%', fig.width=7, fig.height=6}"), 
+                                        "print(p)",
+                                        "```")) %>% 
+                          {knit_child(text = ., 
+                                      quiet = TRUE,
+                                      envir =  environment())} %>% 
+                          cat(sep = '\n')
+                        }
+                    })
+            }) 
+    })
+```
+
+
+
+## Patronen en outliers in de relaties tussen variabelen
+
+<!-- acf & variogram is hier ook een optie, maar eerder relevant voor residuals -->
+
+### Met uitzondering van categorische variabelen met een hoger aantal categorieën
+
+
+```{r load-catvar, include = FALSE}
+soilclass_codes <- 
+  datasets_merged$data[[1]] %>% 
+  dplyr::pull(soilclass) %>%
+  levels %>% 
+  setNames(str_sub(., end = 2))
+ecoregion_codes <- 
+  datasets_merged$data[[1]] %>%
+  dplyr::pull(ecoregion) %>%
+  levels %>% 
+  setNames(as.character(1:length(.)))
+type_codes <-
+      datasets_merged$data[[1]] %>%
+  dplyr::pull(type) %>%
+  levels %>% 
+  setNames(as.character(1:length(.)))
+
+```
+
+
+```{r pairplot, results="asis", message=FALSE, warning=FALSE, fig.width=14, fig.height=12, echo = FALSE}
+names(datasets_merged$data) %>%
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                response <-  x$response[[1]]
+                df2 <- 
+                  dplyr::select(df, !!!response, everything()) %>% 
+                  {if (dfname2 == "SURF_03.4_lentic") {
+                    mutate_at(.,
+                              c("no3", "ptot"),
+                              ~ifelse(. == 0, -3, log10(.))
+                              )%>%
+                          dplyr::select(-loc_code, -type, -year,-sixyear)
+                  } else if (dfname2 == "SURF_03.4_lotic") {mutate_at(.,
+                              c("no3", "po4"),
+                              ~ifelse(. == 0, -3, log10(.)))}%>%
+                          dplyr::select(-loc_code, -type, -year,-sixyear)}%>%
+                  # plotting not feasible for factors with numerous levels,
+                  # and relations are less relevant for random factors which we include
+                  # by design
+                  mutate(ecoregion = fct_recode(ecoregion, !!!ecoregion_codes))%>%
+                  mutate(soilclass = fct_recode(soilclass, !!!soilclass_codes))
+                  p1 <- 
+                    ggpairs(df2,
+                            progress = FALSE) %>% 
+                    {map(1:.$ncol, function(i) getPlot(., i, i))} %>% 
+                    {arrangeGrob(grobs = .)}
+                  p2 <- ggpairs(df2 %>% 
+                                
+                                # XXXXXXXXXXXXXXXXXXXXXXXXX
+                                # DROPPING 'date' MUST BE UNDONE (i.e. drop following step) WHEN 
+                                # https://github.com/ggobi/ggally/issues/383 IS SOLVED!
+                                {if (dfname2 == "SURF_03.4_lentic"|dfname2 =="SURF_03.4_lotic"){
+                                  dplyr::select(., -date)
+                                } else .},
+                                
+                                showStrips = TRUE,
+                                upper = list(continuous = 
+                                               wrap("cor", 
+                                                    method = "kendall",
+                                                    use = "pairwise.complete.obs")),
+                                lower = list(continuous = 
+                                               wrap("points", 
+                                                    size = 0.4,
+                                                    alpha = 0.35)),
+                                
+                                # XXXXXXXXXXXXXXXXXXXXXXXXX
+                                # Regarding diagonal axis label colour:
+                                # KEEP AN EYE ON: https://github.com/ggobi/ggally/issues/381
+                                # AND https://github.com/ggobi/ggally/issues/382
+                                # Only after fixing the first, axisLabels = "internal"
+                                # can be re-enabled
+                                
+                                diag = list(discrete = wrap("diagAxis",
+                                                              labelSize = 8,
+                                                              colour = "black"),
+                                            continuous = wrap("diagAxis",
+                                                              labelSize = 8,
+                                                              colour = "black")),
+                                # axisLabels = "internal",
+                                progress = FALSE)
+                  if (interactive()) {
+                    grid::grid.newpage()
+                    grid::grid.draw(p1)
+                    print(p2)
+                    } else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        
+                        knit_expand("_920_pairplots.Rmd") %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        
+                        }
+
+            }) 
+    })
+```
+
+
+```{r codes-soilclass, include = FALSE}
+#soilclass_codes %>% 
+  #as_tibble(rownames="code") %>% 
+  #kable(caption = "Codes voor afkorting van de variabele 'soilclass'.",
+        #table.attr = "style='width:40%;'") %>% 
+  #kable_styling()
+```
+
+
+```{r codes-ecoregion, echo = FALSE}
+ecoregion_codes %>% 
+  as_tibble(rownames="code") %>% 
+  kable(caption = "Codes voor afkorting van de variabele 'ecoregion'.") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+### Jitter plots responsvariabele t.a.v. de meeste categorische variabelen
+
+We bekijken in meer detail de spreiding van responsvariabelen i.f.v. categorische variabelen die geen extreem hoog aantal categorieën hebben.
+
+```{r jitter-resp-cat, warning=FALSE, results="asis", echo= FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- 
+                  x$data[[1]] %>%
+                  mutate(ecoregion = fct_recode(ecoregion, !!!ecoregion_codes))
+                var <-  x$response[[1]]
+                var_cat <- x$var_cat[[1]]
+                # display not feasible for factors with numerous levels
+                var_cat_cond <- lapply(var_cat, 
+                                       function(x) {
+                                         quo_name(x) %in% c("loc_code"
+                                                            )}
+                                       )
+                var_cat <- var_cat[!unlist(var_cat_cond)]
+                crossing(var, 
+                         var_cat) %>% 
+                    {walk2(dplyr::pull(., 1), dplyr::pull(., 2),
+                          function(resp, varcat) {
+                        p <-
+                            df %>%
+                            dplyr::select({{resp}}, {{varcat}}) %>%
+                            drop_na %>%
+                            ggplot(aes(x = .data[[names(.)[2]]],
+                                       y = .data[[names(.)[1]]])) +
+                                    geom_jitter(alpha = 0.1, 
+                                                height = 0,
+                                                width = 0.2) +
+                                    labs(title = dfname2) +
+                            theme_bw()
+                        if (quo_name(varcat) == "type") {
+                          p <- 
+                            p +
+                            theme(axis.text.x = element_text(angle = 90,
+                                                             hjust = 1,
+                                                             vjust = 0.4))
+                        }
+                        if (dfname2 == "OW_03.4_lentic") {
+                          p <- 
+                            p +
+                            scale_y_log10()
+                        }
+                        if (interactive()) print(p) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        respname_hyphen <- str_replace_all(quo_name(resp), "_", "-")
+                        catname_hyphen <- str_replace_all(quo_name(varcat), "_", "-")
+                        knit_expand(text = c(
+                          if (quo_name(var_cat[[1]]) == quo_name(varcat)) {
+                                          paste0("#### ",
+                                                dfname2,
+                                                ": ",
+                                                quo_name(resp),
+                                                "\n\n")
+                          },
+                          paste("```{r jitter-{{dfname_hyphen}}-{{respname_hyphen}}-{{catname_hyphen}},",
+                                "fig.cap = 'Jitter plot voor {{quo_name(resp)}} i.f.v. {{quo_name(varcat)}}",
+                                "in meetnet {{dfname2}}.",
+                                ifelse(dfname2 == "OW_03.4_lentic",
+                                       paste("In deze grafiek is de",
+                                             "Y-as log-getransformeerd.',"), "',"),
+                                "out.width='70%',",
+                                "warning = FALSE}"),
+                          "print(p)",
+                          "```")) %>%
+                          {knit_child(text = .,
+                                      quiet = TRUE,
+                                      envir =  environment())} %>%
+                          cat(sep = '\n')
+                        }
+                    })}
+            }) 
+    })
+```
+
+
+### Range van elke responsvariabele per locatie
+
+```{r resp-loc, warning=FALSE, results="asis", message=FALSE, fig.width=6, fig.height=7, echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var <-  x$response[[1]]
+                p <- dplyr::select(df, loc_code, !!!var) %>% 
+                  pivot_longer(cols = -loc_code,
+                               names_to = "variable",
+                               values_to = "value") %>% 
+                  group_by(loc_code, variable) %>% 
+                  summarise(range = 
+                              max(value, na.rm = TRUE) - 
+                              min(value, na.rm = TRUE)) %>% 
+                  ungroup %>% 
+                  ggplot(aes(x = range)) +
+                  geom_histogram(fill = "white", colour = "grey50") +
+                  scale_y_log10(minor_breaks =
+                                  1:9 *
+                                  matrix(10^(0:4), 9, 5, byrow = TRUE)) +
+                  labs(title = dfname2) +
+                  facet_wrap(~variable, ncol = 1) +
+                  theme(axis.line.x = element_blank())
+
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste(
+                                  "```{r resp-loc-{{dfname_hyphen}},",
+                                  "fig.cap = 'Histogram van de locatiespecifieke range van elke responsvariabele",
+                                  "in meetnet {{dfname2}}.",
+                                  "De Y-as is in de log-schaal.',",
+                                  "out.width='70%',",
+                                  "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            })
+    }) 
+```
+
+## Collineariteit tussen covariaten
+
+Omwille van hun talrijke niveaus zijn de variabelen `loc_code` en `cluster_id` buiten beschouwing gelaten voor de berekening van de VIF.
+Aangezien ze plaatsen definiëren, zijn zij sowieso 100% gerelateerd met de overige spatiale covariaten (`x`, `y`, `soilclass`, `ecoregion`).
+Hun relatie met de tijd komt aan bod in een aantal locatiegebaseerde grafieken van paragraaf \@ref(interacties).
+
+
+Er kan geen VIF-waarde berekend worden voor de sixyear van de lentic types aangezien deze factor minder dan twee levels bevat. We maken een subset van de lotic types om de sixyear-factor mee te berekenen. 
+De datum van staalname ( _date_ ) heeft een hogere VIF-waarde en hangt vermoedelijk samen met de _sixyear_ factor. 
+
+```{r corvif-sixyear-lotic, echo = FALSE} 
+datasets_merged_lotic <- datasets[2,]
+names(datasets_merged_lotic$data) %>% 
+    walk(function(dfname) {                                   
+        datasets_merged_lotic %>%
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var_cont <-  x$var_cont[[1]]
+                var_cat <-  x$var_cat[[1]]
+                vif <- dplyr::select(df, !!!var_cont, !!!var_cat) %>% 
+                  # calculation not feasible for factors with numerous levels,
+                  # and VIFs are less relevant for random factors which we include
+                  # by design
+                dplyr::select(x,y,ecoregion, soilclass,date, sixyear) %>% 
+                    #year gives error 0 or NA.
+                corvif
+                if (interactive()) print(vif) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        knit_expand(text = c("```{r corvif-{{dfname_hyphen}}}",
+                                             "kable(vif,",
+                                             "caption = 'Variance inflation factors (vif) in meetnet {{dfname2}}. Factoren met veel niveaus (`loc_code`, `cluster_id`) zijn buiten beschouwing gelaten.', ",
+                                             "table.attr = \"style='width:40%;'\"",
+                                             ") %>% ",
+                                             "kable_styling()",
+                                             "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+
+            }) 
+    })
+```
+
+Als we de _sixyear_ factor weglaten ligt de VIF-waarde een pak lager voor de datum van staalname ( _date_ ) bij de lotische types. We zien een hogere VIF-waarde bij de lotische types voor het X-coördinaat. 
+Dit valt waarschijnlijk te verklaren tussen de sterke samenhang van het voorkomen van de lentische types met bepaalde ecoregio's. Bij modellen met een spatiale component (obv coördinaten) in combinatie met de covariaat ecoregio kunnen enigszins minder stabiele effecten worden verwacht. 
+
+```{r corvif-nosixyear,  echo = FALSE} 
+source("./functions.R")
+#sixyear needs more than two levels, issue for lentic (only 1 level)
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {                                   
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- x$data[[1]]
+                var_cont <-  x$var_cont[[1]]
+                var_cat <-  x$var_cat[[1]]
+                vif <- dplyr::select(df, !!!var_cont, !!!var_cat) %>% 
+                  # calculation not feasible for factors with numerous levels,
+                  # and VIFs are less relevant for random factors which we include
+                  # by design
+                dplyr::select(x,y,ecoregion, soilclass,date) %>% 
+                    #year gives error 0 or NA.
+                corvif
+                if (interactive()) print(vif) else {
+                        dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                        knit_expand(text = c("```{r corvif-{{dfname_hyphen}}}",
+                                             "kable(vif,",
+                                             "caption = 'Variance inflation factors (vif) in meetnet {{dfname2}}. Factoren met veel niveaus (`loc_code`, `cluster_id`) zijn buiten beschouwing gelaten.', ",
+                                             "table.attr = \"style='width:40%;'\"",
+                                             ") %>% ",
+                                             "kable_styling()",
+                                             "```")) %>% 
+                            {knit_child(text = ., 
+                                        quiet = TRUE,
+                                        envir =  environment())} %>% 
+                            cat(sep = '\n')
+                        }
+
+            }) 
+    })
+```
+
+
+## Databeschikbaarheid volgens de waarde van meerdere covariaten {#interacties}
+
+We kijken nader naar de databeschikbaarheid van interacties tussen covariaten:
+
+1. hetzij om te evalueren of voor een relevant geachte interactie voldoende data beschikbaar zijn om deze te kunnen modelleren;
+1. hetzij om de balancering te evalueren van beschikbare data, voor een combinatie van covariaten.
+Deze covariaten hoeven niet noodzakelijk in het model te zijn opgenomen, maar ze bepalen wel mee ons vertrouwen in het model:
+voor niet in de data vertegenwoordigde situaties is het model immers minder betrouwbaar.
+
+Voor geval 1 onderscheiden we in eerste instantie de interacties tussen tijd en bodemklasse, en tussen tijd en type.
+Trends kunnen immers verschillen volgens bodemklasse en type.
+
+Voor geval 2 kijken we vooral naar de spatiale en de spatiotemporele vertegenwoordiging in de data:
+
+- in welke mate wijkt de proportie van de (spatiaal gekende) klassen van _soilclass_ en _ecoregion_ in de respectievelijke types af van deze in de doelpopulatie?
+- is op alle tijdstippen de spatiale verdeling gelijkaardig?
+- is op alle locaties de tijdsverdeling gelijkaardig?
+
+Dergelijke onbalansen ten opzichte van de spatiotemporele doelpopulatie kunnen immers het model vertekenen.
+
+
+### Interacties los van de variabele `type`
+
+De locaties binnen het lentische hoofdmeetnet hebben binnen de beschikbare tijdspanne (2014-2018) maximaal 3 herhalingen. Voor het lotische meetnet zijn er locaties die binnen de beschikbare tijdspanne (2000-2018) een jaarlijkse herhaling kennen (19 jaar)
+
+```{r interaction-loc, results="asis", warning=FALSE, message=FALSE, echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                p <- 
+                  x$data[[1]] %>% 
+                  dplyr::select(matches("^year"), loc_code) %>% 
+                  distinct %>% 
+                  group_by(loc_code) %>% 
+                  summarise(years = n()) %>% 
+                  ggplot(aes(x = years)) +
+                  geom_bar(fill = "white", colour = "grey50") +
+                  labs(title = dfname2)
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-loc-{{dfname_hyphen}},",
+                                        "fig.cap = 'De verdeling van het aantal jaren (met data) per locatie",
+                                        "voor meetnet {{dfname2}}.",
+                                        "De Y-as is het aantal locaties.',",
+                                        "out.width='70%',",
+                                        "fig.height=4, fig.width=5,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
+
+```{r, echo=FALSE}
+sixybr <- seq(1989, 2019, 6)
+```
+
+Voor de meeste locaties binnen het lentische hoofdmeetnet werden twee metingen uitgevoerd in opeenvolgende jaren. Wat doet vermoeden dat het om specifieke meetcampagnes gaat. De locaties binnen het lotische meetnet hebben (muv. van type 7220) meer gespreide herhaalde metingen binnen de beschikbare tijdspanne en wijzen op een langetermijnopvolging.  
+
+```{r interaction-loc2, results="asis", warning=FALSE, fig.height=8, fig.width=6, echo = FALSE}
+plots <- 
+  datasets_merged %>% 
+  mutate(
+    scheme = names(data),
+    df = 
+      map(data, function(x) {
+        x %>% 
+      dplyr::select(matches("^year"), loc_code) %>% 
+      distinct
+        }),
+    firstvarname = map(df, function(x) colnames(x)[1]),
+    loc_levels =
+      map2(df, firstvarname, function(x, fstname) {
+        x %>%
+      mutate(value = 1) %>%
+      #arrange(all_of(fstname)) %>%
+      pivot_wider(id_cols = loc_code,
+                  names_from = all_of(fstname),
+                  values_from = value,
+                  values_fill = 0) %>%
+      column_to_rownames("loc_code") %>%
+      cca %>%
+      scores %>%
+      {.$sites[,"CA1"]} %>%
+      sort %>%
+      names
+      }),
+    loc_levels =
+      map2(df, loc_levels, function(x, y) {
+      if (
+        (filter(x, loc_code == y[1]) %>% dplyr::pull(1) %>% min) <
+          (filter(x, loc_code == tail(y, 1)) %>% dplyr::pull(1) %>% max)) {
+        rev(y)
+          } else y
+        }),
+    baseplot =
+      pmap(list(df, firstvarname, scheme, loc_levels),
+           function(df2, fstname, dfname2, loc_lev) {
+             p <-
+               df2 %>%
+               mutate(loc_code = factor(loc_code, levels = loc_lev)) %>%
+               ggplot(aes_string(x = fstname, y = "loc_code")) +
+               labs(title = dfname2, y = paste(length(loc_lev), "locations")) +
+               scale_x_continuous(breaks = sixybr,
+                                  sec.axis = sec_axis(~ ., breaks = sixybr)) +
+               theme(axis.text.y = element_blank(),
+                     panel.background = element_blank(),
+                     panel.grid = element_blank(),
+                     axis.ticks.y = element_blank(),
+                     panel.border = element_rect(colour = "grey50",
+                                                 fill = NA),
+                     legend.position = "bottom")
+             return(p)
+           }),
+    plot1 = map(baseplot, ~. + geom_tile(fill = "#843860"))
+    )
+
+walk2(plots$plot1, plots$scheme, function(p, dfname2) {
+  if (interactive()) print(p) else {
+    dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+    knit_expand(text = 
+                  c(paste("```{r interaction-loc2-{{dfname_hyphen}},",
+                          "fig.cap = 'De vertegenwoordigde jaren per locatie",
+                          "voor meetnet {{dfname2}}.",
+                          "Elk gekleurd lijnstukje staat voor een combinatie",
+                          "locatie x jaar met data.",
+                          "De dikte van de smalste lijnen toont",
+                          "welke hoogte elke locatie",
+                          "in de grafiek inneemt.',",
+                          "out.width='70%',",
+                          "fig.height=8, fig.width=6,",
+                          "warning=FALSE}"), 
+                    "print(p)",
+                    "```")) %>% 
+      {knit_child(text = ., 
+                  quiet = TRUE,
+                  envir =  environment())} %>% 
+      cat(sep = '\n')
+  }}
+)
+```
+De tijdspanne per locatie voor de lentische types tussen de eerste en laaste meting varieert van 1 tot 5 jaar maar bedraagt voor de meeste locaties maximaal twee jaar. Voor de lotische types varieert de tijdspanne van 1 tot 19 jaar. 
+
+```{r interaction-loc3, results="asis", warning=FALSE, message=FALSE, echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                p <- 
+                  x$data[[1]] %>% 
+                  dplyr::select(matches("^year"), loc_code) %>% 
+                  distinct %>% 
+                  group_by(loc_code) %>% 
+                  summarise(timerange = 
+                              max(.data[[names(.)[1]]], na.rm = TRUE) - 
+                              min(.data[[names(.)[1]]], na.rm = TRUE) + 1) %>% 
+                  ggplot(aes(x = timerange)) +
+                  geom_histogram(fill = "white", colour = "grey50",
+                                 binwidth = 1) +
+                  labs(title = dfname2, x = "timerange (y)")
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-loc3-{{dfname_hyphen}},",
+                                        "fig.cap = 'De verdeling van de tijdsspanne per locatie",
+                                        "voor meetnet {{dfname2}}.",
+                                        "De tijdsspanne is de duur (in jaar) van het",
+                                        "eerste tot en met het laatste datajaar.',",
+                                        "out.width='70%',",
+                                        "fig.height=4, fig.width=5,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
+Reeds in de pairplots waren patronen te zien in de relatie tussen tijds- en ruimtevariabelen.
+De volgende figuren brengen dit nader in beeld.
+
+```{r, echo = FALSE}
+provinces <- 
+  read_admin_areas(dsn = "provinces") %>% 
+  dplyr::select(province = name)
+```
+
+De provincies Antwerpen en Limburg zijn over de hele tijdspanne heen dominant voor het lotische hoofdmeetnet. Voor het lentische meetnet geldt deze dominantie ook met uitzondering van het laatste meetjaar (2018) waar het aatal locaties proportioneel toeneemt in West-Vlaanderen.
+
+```{r interaction-provinces, results="asis", warning=FALSE, message=FALSE, echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                p <- 
+                  x$data[[1]] %>% 
+                  dplyr::select(matches("^year|hydroyear"), loc_code, x, y) %>% 
+                  distinct %>%
+                  as_points(remove = TRUE) %>%
+                  st_join(provinces) %>%
+                  st_drop_geometry() %>% 
+                  ggplot(aes(x = .data[[names(.)[1]]],
+                             fill = province)) +
+                  geom_bar(position = "fill") +
+                  # exceptional cases are located just outside Flanders; we do
+                  # not show these with a legend key:
+                  scale_fill_discrete(na.translate = FALSE) +
+                  scale_x_continuous(breaks = sixybr) +
+                  labs(title = dfname2, y = "proportion of locations")
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-provinces-{{dfname_hyphen}},",
+                                        "fig.cap = 'De relatieve verdeling van locaties over provincies doorheen de tijd",
+                                        "voor meetnet {{dfname2}}.',",
+                                        "out.width='70%',",
+                                        "fig.height=4, fig.width=6,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+De interactie tussen tiid en bodemklasse toont voor het lentische hoofdmeetnet een toename van (voornamelijk) het aandeel locaties op een licht bodemtype ten koste van de locaties op een onbekend bodemtype. Het lotisch meetnet vertoont over de hele periode een meerderheid van de locaties binnen lichte bodemtypes. 
+
+```{r interaction-soilclass, results="asis", warning=FALSE, message=FALSE, echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                p <- 
+                  x$data[[1]] %>% 
+                  dplyr::select(matches("^year|hydroyear"), loc_code, x, y,soilclass) %>% 
+                  distinct %>%
+                  as_points(remove = TRUE) %>%
+                  st_drop_geometry() %>% 
+                  ggplot(aes(x = .data[[names(.)[1]]],
+                             fill = soilclass)) +
+                  geom_bar(position = "fill") +
+                  # exceptional cases are located just outside Flanders; we do
+                  # not show these with a legend key:
+                  scale_fill_discrete(na.translate = FALSE) +
+                  scale_x_continuous(breaks = sixybr) +
+                  labs(title = dfname2, y = "proportion of locations")
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-soilclass-{{dfname_hyphen}},",
+                                        "fig.cap = 'De relatieve verdeling van locaties over soilclass doorheen de tijd",
+                                        "voor meetnet {{dfname2}}.',",
+                                        "out.width='70%',",
+                                        "fig.height=4, fig.width=6,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
+De interactie tussen tijd en ecoregio toont voor beide hoofdmeetnetten aan dat het merendeel van de stalen wordt genomen in de _ecoregio van de Kempen_. 
+Voor het lentische meetnet neemt het aandeel _ecoregio van de kustduinen_ toe in 2017 en 2018. We zien dit ook terug bij de interactie tussen type en tijd. (zie verder). Voor het lotische meetnet zien we een gelijkaardige invloed in de periode 2012-2013 door de staalnamecampagnes van type 7220. De figuren hangen sterk samen met de interactie tijd x provincie. 
+
+```{r interaction-ecoregion, results="asis", warning=FALSE, message=FALSE, echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                p <- 
+                  x$data[[1]] %>% 
+                  dplyr::select(matches("^year|hydroyear"), loc_code, x, y,ecoregion) %>% 
+                  distinct %>%
+                  as_points(remove = TRUE) %>%
+                  st_drop_geometry() %>% 
+                  ggplot(aes(x = .data[[names(.)[1]]],
+                             fill = ecoregion)) +
+                  geom_bar(position = "fill") +
+                  # exceptional cases are located just outside Flanders; we do
+                  # not show these with a legend key:
+                  scale_fill_discrete(na.translate = FALSE) +
+                  scale_x_continuous(breaks = sixybr) +
+                  labs(title = dfname2, y = "proportion of locations")
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-ecoregion-{{dfname_hyphen}},",
+                                        "fig.cap = 'De relatieve verdeling van locaties over ecoregio's doorheen de tijd",
+                                        "voor meetnet {{dfname2}}.',",
+                                        "out.width='70%',",
+                                        "fig.height=4, fig.width=6,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
+De volgende figuren geven gelijkaardige info weer op kaart.Het lentische hoofdmeetnet situeert zich voornamelijk ter hoogte van de kempen en de kust. 
+De coverage is echter zeer beperkt gezien de periodieke en typegerichte staalnamecampagnes. Het lotische meetnet vertoont een betere coverage over de jaren heen. 
+
+```{r interaction-space-time, results="asis", warning=FALSE, message=FALSE,fig.width=12, fig.height=5, echo = FALSE}
+fstyear <- 
+  datasets_merged %>% 
+  mutate(year = map(data, ~dplyr::select(., year = matches("^year")))) %>% 
+  dplyr::select(year) %>% 
+  unnest(cols = c(year)) %>% 
+  dplyr::pull(year) %>% 
+  min
+years_complete <- function(x) {n() / (max(x) - fstyear + 1)}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                p <- 
+                  x$data[[1]] %>% 
+                  dplyr::select(matches("^year"), x, y) %>% 
+                  distinct %>% 
+                  group_by(x, y) %>% 
+                  summarise_all(list(last_datayear = max, 
+                                     coverage_since_start = years_complete)) %>% 
+                  ungroup %>% 
+                  as_points(remove = FALSE) %>% 
+                  ggplot() +
+                  geom_sf(data = provinces, colour = "grey70") +
+                  geom_sf(aes(colour = last_datayear,
+                              size = coverage_since_start)) +
+                  scale_colour_viridis_c(option = "B", direction = -1,
+                                         breaks = sixybr) +
+                  scale_size_continuous(range = c(0.5, 4),
+                                        limits = c(NA, 1),
+                                        breaks = seq(0.2, 1, 0.2)) +
+                  coord_sf(datum = st_crs(31370)) +
+                  labs(title = dfname2) +
+                  theme_bw() +
+                  theme(panel.grid = element_blank(),
+                        legend.position = "bottom",
+                        legend.box = "vertical",
+                        legend.spacing = unit(0, "pt"),
+                        legend.key.width = unit(0.08, "npc"))
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand(text = 
+                                c(paste("```{r interaction-space-time-{{dfname_hyphen}},",
+                                        "fig.cap = 'Temporele kenmerken van locaties in relatie tot de ruimtelijke ligging,",
+                                        "voor meetnet {{dfname2}}.',",
+                                        "fig.width=12, fig.height=6,",
+                                        "warning=FALSE, message=FALSE}"), 
+                                  "print(p)",
+                                  "```")) %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+                
+            }) 
+    })
+```
+
+```{r, echo = FALSE}
+make_sixyrlabels <- 
+  function(x) {
+    str_c(
+      (as.numeric(x) - 1) * 6 + 1989,
+      "-\n",
+      (as.numeric(x) - 1) * 6 + 1994
+    )
+  }
+```
+
+
+### Interacties met de variabele type
+
+<!-- Het gaat er in deze chunk om in welke mate voor de verschillende types de tijdsspanne goed vertegenwoordigd is -->
+In het lentische hoofdmeetnet valt een duidelijke periodieke indeling op van de verschillende types. De focus van de staalnamecampagnes verschuift over verschillende types heen in de onderzochte tijdspanne. Zo lag bijvoorbeeld voor type 3110 de focus in de periode 2014-2016, en voor type 2190_a in de periode 2017-2018. 
+
+In het lotische hoofdmeetnet zien we voor type 3260 een continue bemonstering over de periode 1989-2018. Het relatief aantal bemonsterde stalen varieert 
+wel sterk over de jaren heen. Voor type 7220 werden enkel in de jaren 2012 en 2013 staalnames uitgevoerd. 
+
+```{r interaction-type-time-lentic, results="asis", warning=FALSE, message=FALSE, fig.height=8, fig.width=6, echo = FALSE}
+names(datasets_merged$data) %>% 
+    walk(function(dfname) {
+        datasets_merged %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- 
+                  x$data[[1]] %>% 
+                  dplyr::select(matches("^year"), loc_code, type) %>% 
+                  distinct %>% 
+                  group_by(type,
+                           .data[[names(.)[1]]]) %>% 
+                  summarise(n_locs = n()) %>% 
+                  mutate(year_representation = n_locs / max(n_locs)) %>% 
+                  ungroup
+                # we will also show zeroes for the missing types:
+                missing_types <- 
+                  targetpop %>% 
+                  filter(as.character(scheme) == "SURF_03.4_lentic") %>% 
+                  anti_join(df %>% distinct(type), by = "type") %>% 
+                  dplyr::pull(type)
+                fstyear <- df[,2] %>% min
+                df2 <- 
+                  df %>% 
+                  dplyr::select(1:2) %>% 
+                  bind_rows(tibble(type = missing_types, 
+                                   num = fstyear) %>% 
+                              magrittr::set_colnames(colnames(df)[1:2])) %>% 
+                  expand(nesting(type), 
+                         full_seq(.data[[names(.)[2]]], 1)) %>% 
+                  magrittr::set_colnames(colnames(df)[1:2]) %>% 
+                  left_join(df, by = c("type", colnames(df)[2])) %>% 
+                  replace_na(list(n_locs = 0,
+                                  year_representation = 0))
+                type_levels <-
+                  df2 %>%
+                  mutate(year_representation = year_representation + 0.1) %>% 
+                  pivot_wider(id_cols = type,
+                              names_from = .data[[names(.)[2]]],
+                              values_from = year_representation,
+                              values_fill = 0) %>%
+                  column_to_rownames("type") %>%
+                  cca %>%
+                  scores %>%
+                  {.$sites[,"CA1"]} %>%
+                  sort %>%
+                  names
+                if ((filter(df2, type == type_levels[1]) %>% dplyr::pull(2) %>% min) <
+                    (filter(df2, type == tail(type_levels, 1)) %>% dplyr::pull(2) %>% max)) {
+                  type_levels <- rev(type_levels)
+                }
+                p <-
+                  df2 %>% 
+                  mutate(type = factor(type, levels = type_levels)) %>%
+                  ggplot(aes(x = .data[[names(.)[2]]], 
+                             y= type,
+                             fill = year_representation)) +
+                  geom_tile() +
+                  scale_fill_gradient(low = "white", high = "#843860") +
+                  scale_x_continuous(breaks = (sixybr <- seq(1989, 2019, 6)),
+                                     sec.axis = sec_axis(~ ., breaks = sixybr)) +
+                  coord_fixed() +
+                  labs(title = dfname2,
+                       fill = "relative number\nof locations\nper year") +
+                  theme(panel.background = element_blank(),
+                        panel.grid = element_blank(),
+                        axis.ticks.y = element_blank(),
+                        panel.border = element_rect(colour = "grey50", 
+                                                    fill = NA))
+                
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand("_920_interaction-type-time.Rmd") %>% 
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            }) 
+    })
+```
+
+
+```{r interaction-type-soilclass-diff-lentic, results="asis", warning=FALSE, message=FALSE, fig.width=8, fig.height=15, echo = FALSE}
+targetpop_soilclass_distr_expanded <- 
+  targetpop_soilclass_distr_lentic %>% 
+  expand(nesting(scheme, type), soilclass) %>% 
+  left_join(targetpop_soilclass_distr %>% 
+              dplyr::select(scheme, type, soilclass, proportion)) %>% 
+  replace_na(list(proportion = 0))
+names(datasets_lentic$data) %>% 
+    walk(function(dfname) {
+        datasets_lentic %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- 
+                  x$data[[1]] %>% 
+                  distinct(type, soilclass, loc_code) %>% 
+                  count(type, soilclass) %>% 
+                  group_by(type) %>% 
+                  mutate(proportion = n / sum(n)) %>% 
+                  ungroup %>% 
+                  dplyr::select(-n)
+                p <- 
+                  df %>% 
+                  expand(nesting(type),
+                         soilclass) %>% 
+                  left_join(df, by = c("type", "soilclass")) %>% 
+                  replace_na(list(proportion = 0)) %>% 
+                  inner_join(targetpop_soilclass_distr_expanded %>% 
+                               rename(proportion_target = proportion) %>% 
+                               filter(scheme == "SURF_03.4_lentic") %>% 
+                               dplyr::select(-scheme),
+                             by = c("type", "soilclass")) %>% 
+                  mutate(proportion_diff = proportion - proportion_target,
+                         direction = ifelse(proportion_diff >= 0, "pos", "neg")) %>% 
+                  ggplot(aes(x = soilclass, 
+                             y = proportion_diff, 
+                             fill = direction)) +
+                  geom_col() +
+                  scale_fill_manual(values = c(pos = "chartreuse4", neg = "red"),
+                                    guide = FALSE) +
+                  ylim(-1, 1) +
+                  labs(title = dfname2,
+                       y = "difference in proportion (dataset - targetpopulation)") +
+                  facet_wrap(~type, ncol = 5) +
+                  theme(axis.text.x = element_text(angle = 90, 
+                                                   hjust = 1, 
+                                                   vjust = 0.4))
+                         
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand("_920_type-diff.Rmd",
+                              label = "soilclass") %>%
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            }) 
+    })
+```
+
+```{r interaction-type-ecoregion-diff-lentic, results="asis", warning=FALSE, message=FALSE, fig.width=8, fig.height=15, echo = FALSE}
+targetpop_ecoregion_distr_expanded <- 
+  targetpop_ecoregion_distr_lentic %>% 
+  expand(nesting(scheme, type), ecoregion) %>% 
+  left_join(targetpop_ecoregion_distr %>% 
+              dplyr::select(scheme, type, ecoregion, proportion)) %>% 
+  replace_na(list(proportion = 0))
+names(datasets_lentic$data) %>% 
+    walk(function(dfname) {
+        datasets_lentic %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- 
+                  x$data[[1]] %>% 
+                  distinct(type, ecoregion, loc_code) %>% 
+                  count(type, ecoregion) %>% 
+                  group_by(type) %>% 
+                  mutate(proportion = n / sum(n)) %>% 
+                  ungroup %>% 
+                  dplyr::select(-n)
+                p <- 
+                  df %>% 
+                  expand(nesting(type),
+                         ecoregion) %>% 
+                  left_join(df, by = c("type", "ecoregion")) %>% 
+                  replace_na(list(proportion = 0)) %>% 
+                  inner_join(targetpop_ecoregion_distr_expanded %>% 
+                               rename(proportion_target = proportion) %>% 
+                               filter(scheme == "SURF_03.4_lentic") %>% 
+                               dplyr::select(-scheme),
+                             by = c("type", "ecoregion")) %>% 
+                  mutate(proportion_diff = proportion - proportion_target,
+                         direction = ifelse(proportion_diff >= 0, "pos", "neg")) %>% 
+                  ggplot(aes(x = ecoregion, 
+                             y = proportion_diff, 
+                             fill = direction)) +
+                  geom_col() +
+                  scale_fill_manual(values = c(pos = "chartreuse4", neg = "red"),
+                                    guide = FALSE) +
+                  ylim(-1, 1) +
+                  labs(title = dfname2,
+                       y = "difference in proportion (dataset - targetpopulation)") +
+                  facet_wrap(~type, ncol = 5) +
+                  theme(axis.text.x = element_text(angle = 90, 
+                                                   hjust = 1, 
+                                                   vjust = 0.4))
+                         
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand("_920_type-diff.Rmd",
+                              label = "ecoregio") %>%
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            }) 
+    })
+```
+
+```{r interaction-type-soilclass-diff-lotic, results="asis", warning=FALSE, message=FALSE, fig.width=8, fig.height=15, echo = FALSE}
+targetpop_soilclass_distr_expanded <- 
+  targetpop_soilclass_distr_lotic %>% 
+  expand(nesting(scheme, type), soilclass) %>% 
+  left_join(targetpop_soilclass_distr %>% 
+              dplyr::select(scheme, type, soilclass, proportion)) %>% 
+  replace_na(list(proportion = 0))
+names(datasets_lotic$data) %>% 
+    walk(function(dfname) {
+        datasets_lotic%>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- 
+                  x$data[[1]] %>% 
+                  distinct(type, soilclass, loc_code) %>% 
+                  count(type, soilclass) %>% 
+                  group_by(type) %>% 
+                  mutate(proportion = n / sum(n)) %>% 
+                  ungroup %>% 
+                  dplyr::select(-n)
+                p <- 
+                  df %>% 
+                  expand(nesting(type),
+                         soilclass) %>% 
+                  left_join(df, by = c("type", "soilclass")) %>% 
+                  replace_na(list(proportion = 0)) %>% 
+                  inner_join(targetpop_soilclass_distr_expanded %>% 
+                               rename(proportion_target = proportion) %>% 
+                               filter(scheme == "SURF_03.4_lotic") %>% 
+                               dplyr::select(-scheme),
+                             by = c("type", "soilclass")) %>% 
+                  mutate(proportion_diff = proportion - proportion_target,
+                         direction = ifelse(proportion_diff >= 0, "pos", "neg")) %>% 
+                  ggplot(aes(x = soilclass, 
+                             y = proportion_diff, 
+                             fill = direction)) +
+                  geom_col() +
+                  scale_fill_manual(values = c(pos = "chartreuse4", neg = "red"),
+                                    guide = FALSE) +
+                  ylim(-1, 1) +
+                  labs(title = dfname2,
+                       y = "difference in proportion (dataset - targetpopulation)") +
+                  facet_wrap(~type, ncol = 5) +
+                  theme(axis.text.x = element_text(angle = 90, 
+                                                   hjust = 1, 
+                                                   vjust = 0.4))
+                         
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand("_920_type-diff.Rmd",
+                              label = "soilclass") %>%
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            }) 
+    })
+```
+
+```{r interaction-type-ecoregion-diff-lotic, results="asis", warning=FALSE, message=FALSE, fig.width=8, fig.height=15, echo = FALSE}
+targetpop_ecoregion_distr_expanded <- 
+  targetpop_ecoregion_distr_lotic %>% 
+  expand(nesting(scheme, type), ecoregion) %>% 
+  left_join(targetpop_ecoregion_distr %>% 
+              dplyr::select(scheme, type, ecoregion, proportion)) %>% 
+  replace_na(list(proportion = 0))
+names(datasets_lotic$data) %>% 
+    walk(function(dfname) {
+        datasets_lotic %>% 
+            filter(names(data) == dfname) %>% 
+            (function(x, dfname2 = dfname) {
+                df <- 
+                  x$data[[1]] %>% 
+                  distinct(type, ecoregion, loc_code) %>% 
+                  count(type, ecoregion) %>% 
+                  group_by(type) %>% 
+                  mutate(proportion = n / sum(n)) %>% 
+                  ungroup %>% 
+                  dplyr::select(-n)
+                p <- 
+                  df %>% 
+                  expand(nesting(type),
+                         ecoregion) %>% 
+                  left_join(df, by = c("type", "ecoregion")) %>% 
+                  replace_na(list(proportion = 0)) %>% 
+                  inner_join(targetpop_ecoregion_distr_expanded %>% 
+                               rename(proportion_target = proportion) %>% 
+                               filter(scheme == "SURF_03.4_lotic") %>% 
+                               dplyr::select(-scheme),
+                             by = c("type", "ecoregion")) %>% 
+                  mutate(proportion_diff = proportion - proportion_target,
+                         direction = ifelse(proportion_diff >= 0, "pos", "neg")) %>% 
+                  ggplot(aes(x = ecoregion, 
+                             y = proportion_diff, 
+                             fill = direction)) +
+                  geom_col() +
+                  scale_fill_manual(values = c(pos = "chartreuse4", neg = "red"),
+                                    guide = FALSE) +
+                  ylim(-1, 1) +
+                  labs(title = dfname2,
+                       y = "difference in proportion (dataset - targetpopulation)") +
+                  #facet_wrap(~type, ncol = 5) +
+                  theme(axis.text.x = element_text(angle = 90, 
+                                                   hjust = 1, 
+                                                   vjust = 0.4))
+                         
+                if (interactive()) print(p) else {
+                  dfname_hyphen <- str_replace_all(dfname2, "_|\\.", "-")
+                  knit_expand("_920_type-diff.Rmd",
+                              label = "ecoregio") %>%
+                    {knit_child(text = ., 
+                                quiet = TRUE,
+                                envir =  environment())} %>% 
+                    cat(sep = '\n')
+                }
+            }) 
+    })
+```
+
