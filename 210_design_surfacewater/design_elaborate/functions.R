@@ -1,5 +1,26 @@
 ################################################################################
-
+library(rmarkdown)
+library(tidyverse)
+library(n2khab)
+library(kableExtra)
+library(pander)
+library(git2rdata)
+library(inborutils)
+library(sf)
+library(units)
+library(rprojroot)
+library(mapview)
+library(qgisprocess)
+library(rmarkdown)
+library(ggplot2)
+library(GGally)
+library(kableExtra)
+library(aquachem)
+library(git2rdata)
+library(gridExtra)
+library(car)
+library(reshape2)
+library(here)
 # Miscellaneous functions
 
 execshell <- function(commandstring, intern = FALSE) {
