@@ -1,0 +1,42 @@
+# Creating spatial sampling frames
+
+Making an expanded form of `targetpop` and `types`, needed for joining with the `base_samplingframe` (see earlier explanation).
+
+<!-- De variabele `added` is `TRUE` voor de extra types, toegevoegd door expansie van de lijst. -->
+<!-- Het betekent dat zulke types niet voorkomen in de definiërende typelijst van de doelpopulatie (als gevolg van hoofd- vs. subtypeniveau), maar dat polygonen met deze types in de geïnterpreteerde spatiale dataset `habitatmap_terr` vermoedelijk _deel uitmaken_ van de doelpopulatie. -->
+<!-- Na koppeling met het `base_samplingframe` kunnen de toegevoegde SUBtypes terug worden omgezet naar het hoofdtype. -->
+<!-- Of een polygoon met een hoofdtypecode waarvoor `added == TRUE`, ook werkelijk deel uitmaakt van de doelpopulatie, zal op terrein moeten blijken. -->
+
+```{r}
+targetpop_expanded <-
+    targetpop %>%
+    group_by(scheme) %>%
+    expand_types %>%
+    ungroup
+types_expanded <-
+    targetpop_expanded %>%
+    distinct(type) %>%
+    arrange(type) %>%
+    mutate(added = type %in% (targetpop_expanded %>% 
+                                       distinct(type) %>%
+                                       anti_join(targetpop,
+                                                 by = "type") %>%
+                                       .$type))
+```
+
+<!-- De volgende types werden toegevoegd als gevolg van de expansie: -->
+
+```{r eval=FALSE, include=FALSE}
+types_expanded %>%
+    filter(added) %>% 
+    inner_join(read_types() %>% select(type, typelevel),
+               by = "type") %>% 
+    select(type, typelevel) %>% 
+    kable(caption = "Toegevoegde typecodes om optimaal te koppelen met de geïnterpreteerde kaartlaag van terrestrische types `habitatmap_terr`") %>% 
+    kable_styling(full_width = FALSE)
+```
+
+
+
+
+
