@@ -6,7 +6,7 @@ Summarizing the target populations of all schemes in MNE & MHQ (prefix `n2khab_`
 
 ```{r}
 n2khab_targetpop <-
-  read_scheme_types() |>
+  read_scheme_types() %>%
   select(scheme, type)
 n2khab_targetpop_expanded <-
   n2khab_targetpop %>%
@@ -28,11 +28,11 @@ This way, the sampling frames will present the exact set of type codes as in `ta
 ```{r eval=FALSE, include=FALSE}
 # various main type codes are not added because habitatmap_terr doesn't have
 # them OR they're not involved in MNE/MHQ anyway
-read_types(lang = lang) |> 
+read_types(lang = lang) %>% 
   anti_join(n2khab_types_expanded, by = "type")
 # following types were added by expansion:
 n2khab_types_expanded %>%
-    anti_join(n2khab_targetpop |> distinct(type), by = "type") %>% 
+    anti_join(n2khab_targetpop %>% distinct(type), by = "type") %>% 
     inner_join(read_types() %>% select(type, typelevel),
                by = "type")
 ```
@@ -44,16 +44,16 @@ n2khab_types_expanded_properties <-
   read_vc(
     "030_preparations/010_explore_targetpop/type_approaches",
     root = find_root(is_git_root)
-  ) |>
-  as_tibble() |> 
+  ) %>%
+  as_tibble() %>% 
   mutate(
-    grts_join_method = ifelse(approach_cellbased, "cell", "centroid") |> 
+    grts_join_method = ifelse(approach_cellbased, "cell", "centroid") %>% 
       factor(levels = c("centroid", "cell", "point"))
-  ) |> 
+  ) %>% 
   select(type, grts_join_method)%>%
   left_join(
-    read_types() |> 
-      semi_join(n2khab_types_expanded, by = "type") |> 
+    read_types() %>% 
+      semi_join(n2khab_types_expanded, by = "type") %>% 
       select(type, typelevel, main_type, typeclass, hydr_class, groundw_dep, flood_dep),
     .,
     by = "type"
@@ -120,7 +120,7 @@ pop_size_terr <-
   read_vc(
     "030_preparations/010_explore_targetpop/pop_size_terr", 
     root = find_root(is_git_root)
-  ) |> 
+  ) %>% 
   as_tibble() %>% 
   inner_join(
     read_vc(
@@ -129,8 +129,8 @@ pop_size_terr <-
     ),
     by = "type") %>% 
   filter(count_method == "cellbased" & approach_cellbased |
-           count_method == "centroidbased" & !approach_cellbased) |> 
-  select(-c(count_method, approach_cellbased)) |> 
+           count_method == "centroidbased" & !approach_cellbased) %>% 
+  select(-c(count_method, approach_cellbased)) %>% 
   mutate(stratum = NA_character_,
          population_size = round(population_size) %>% as.integer) %>% 
   select(type, stratum, population_size) %>% 
@@ -204,18 +204,18 @@ targetpop_stratumsize <-
 
 ```{r exploration-2, eval = FALSE, include=FALSE}
 # targetpop_stratumsize comprises the whole targetpop!
-targetpop |> anti_join(targetpop_stratumsize, by = c("scheme", "type")) 
+targetpop %>% anti_join(targetpop_stratumsize, by = c("scheme", "type")) 
 # targetpop_stratumsize has no empty population sizes!
-targetpop_stratumsize |> filter(is.na(population_size))
+targetpop_stratumsize %>% filter(is.na(population_size))
 # targetpop_stratumsize has no type, stratum, population_size combinations that are different between schemes (it's obvious from the code above)
-targetpop_stratumsize |> 
-  distinct(type, stratum, population_size) |> 
-  count(type, stratum) |> 
+targetpop_stratumsize %>% 
+  distinct(type, stratum, population_size) %>% 
+  count(type, stratum) %>% 
   filter(n > 1)
 # the type_stratum_props object created below is the object we use to explore and decide which types to select for prototyping
 type_stratum_props <-
-  targetpop_stratumsize |> 
-  distinct(type, stratum, population_size) |> 
+  targetpop_stratumsize %>% 
+  distinct(type, stratum, population_size) %>% 
   arrange(type, stratum) %>%
   inner_join(
     n2khab_types_expanded_properties,
