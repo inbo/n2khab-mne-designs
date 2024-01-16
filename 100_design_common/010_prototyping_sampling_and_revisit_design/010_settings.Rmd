@@ -48,20 +48,36 @@ targetpop <-
 #   ))
 ```
 
-Extending `schemes` with MHQ schemes for the selected types.
-
-```{r}
-
+```{r eval=FALSE, include=FALSE}
+# MHQ has no unique types relative to the MNE target population for GW+SURF+SOIL
+read_scheme_types() %>% 
+  select(scheme, type) %>% 
+  semi_join(
+    read_schemes() %>% 
+      filter(programme == "MHQ"),
+  by = "scheme"
+  ) %>% 
+  anti_join(targetpop, by = "type")
 ```
 
-Included types with some properties.
+Extending `schemes` and `targetpop` with MHQ schemes.
 
 ```{r}
-types <- 
-  read_types(lang = lang) %>% 
-  select(type, typelevel, main_type, typeclass, hydr_class, groundw_dep, flood_dep)
+schemes <- read_schemes(lang = lang) %>% 
+  filter(programme == "MHQ") %>% 
+  select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction) %>% 
+  semi_join( ### REVISIT THIS: do we want to restrict MHQ to the types in MNE? (trivial at the time of writing)
+    read_scheme_types() %>% 
+      select(scheme, type) %>% 
+      semi_join(targetpop, by = "type"),
+    by = "scheme"
+  ) %>% 
+  bind_rows(schemes, .)
+targetpop <- 
+  read_scheme_types(lang = lang) %>% 
+  select(scheme, type) %>% 
+  semi_join(schemes, by = "scheme")
 ```
-
 
 
 ## Setting scheme properties
