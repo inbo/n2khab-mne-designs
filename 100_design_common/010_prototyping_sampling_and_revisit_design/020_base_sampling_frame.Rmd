@@ -45,23 +45,38 @@ n2khab_types_expanded %>%
 Gathering minimal needed properties of all types.
 
 ```{r}
-n2khab_types_expanded_properties <- 
-  read_vc(
-    "030_preparations/010_explore_targetpop/type_approaches",
-    root = find_root(is_git_root)
-  ) %>%
-  as_tibble() %>% 
-  mutate(
-    grts_join_method = ifelse(approach_cellbased, "cell", "centroid") %>% 
-      factor(levels = c("centroid", "cell", "point"))
-  ) %>% 
-  select(type, grts_join_method)%>%
+n2khab_types_expanded_properties <-
+  read_types() %>% 
+  semi_join(n2khab_types_expanded, by = "type") %>% 
+  select(type, typelevel, main_type, typeclass, hydr_class, groundw_dep, flood_dep) %>% 
   left_join(
-    read_types() %>% 
-      semi_join(n2khab_types_expanded, by = "type") %>% 
-      select(type, typelevel, main_type, typeclass, hydr_class, groundw_dep, flood_dep),
-    .,
+    read_vc(
+      "030_preparations/010_explore_targetpop/type_approaches",
+      root = find_root(is_git_root)
+    ) %>%
+      as_tibble() %>% 
+      mutate(
+        grts_join_method = ifelse(approach_cellbased, "cell", "centroid") %>% 
+          factor(levels = c("centroid", "cell", "point"))
+      ) %>% 
+      select(type, grts_join_method),
     by = "type"
+  ) %>% 
+  mutate(
+    grts_join_method = case_when(
+        !is.na(grts_join_method) ~ grts_join_method,
+        type %in% c("7220", "8310") | hydr_class == "HC3" ~ "point",
+        .default = "centroid"
+    ),
+    sample_support = case_when(
+      grts_join_method == "centroid" ~ "area of type within 1024 m² cell (centroid must be type)",
+      grts_join_method == "cell" ~ "area of type within 1024 m² cell",
+      type == "3260" ~ "predefined watercourse segment (mostly 100 m)",
+      type == "7220" ~ "population unit as defined by read_habitatsprings(units_7220 = TRUE)",
+      type == "8310" ~ "population unit as defined by read_habitatquarries(filter_hab = TRUE)",
+      .default = "watersurface"
+    ) %>% 
+      factor()
   )
 ```
 
