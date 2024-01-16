@@ -2,7 +2,9 @@
 
 ## Creating elements of the base sampling frame
 
-Summarizing the target populations of all schemes in MNE & MHQ (prefix `n2khab_`) to an overall list of types, including the expansion to main types or subtypes for each scheme for better spatial joining with `habitatmap_terr`, which is a 'best possible guess' of actually present terrestrial types (see its documentation).
+### Types to be distinguished and their properties
+
+Summarizing the target populations of all schemes in MNE & MHQ (prefix `n2khab_`) as an overall list of types, including the expansion to main types or subtypes for each scheme for better spatial joining with `habitatmap_terr`, which is a 'best possible guess' of actually present terrestrial types (see its documentation).
 
 ```{r}
 n2khab_targetpop <-
@@ -20,10 +22,13 @@ n2khab_types_expanded <-
 ```
 
 The base sampling frame will include a layer for each of the resulting main types or subtypes.
+More correctly, a layer is to be made for each stratum (see further), which can be further subdivisions.
 
-Since the target populations of each scheme are defined by non-overlapping type codes (never combining a main type with its subtypes), when deriving sampling frames for each scheme, subtypes that were added by the code above will be merged again into their main types and added (but unresolved) main types will be added (repeated) to each of its corresponding subtype sampling frame.
+Since the target populations of each scheme are defined by non-overlapping type codes (never combining a main type with its subtypes), when deriving sampling frames for each scheme, locations of subtypes that were added by the code above will be merged in the sampling frame layer of their main type, and the locations of an added (but unresolved) main type will be added (repeated) in each of its corresponding subtype sampling frame layers.
 
 This way, the sampling frames will present the exact set of type codes as in `targetpop`, while taking advantage of the type expansion since all codes added by expansion will be present in the base sampling frame.
+
+In the ideal situation, the base sampling frame is 'resolved' by terrain visits by replacing main type codes by the correct subtype code, for main types that do have subtypes.
 
 ```{r eval=FALSE, include=FALSE}
 # various main type codes are not added because habitatmap_terr doesn't have
@@ -37,7 +42,7 @@ n2khab_types_expanded %>%
                by = "type")
 ```
 
-Gathering minimal needed properties of types.
+Gathering minimal needed properties of all types.
 
 ```{r}
 n2khab_types_expanded_properties <- 
@@ -60,8 +65,9 @@ n2khab_types_expanded_properties <-
   )
 ```
 
+### Reading and filtering spatial data
 
-<!-- We lezen de ruimtelijke data in van de terrestrische types (incl. 'semi-terrestrisch'), met uitsluiting van resterende aquatische types (binnen deze potentieel terrestrische polygonen). -->
+Reading and filtering spatial data of terrestrial types.
 
 ```{r}
 hmt <- read_habitatmap_terr(keep_aq_types = FALSE, drop_7220 = TRUE)
@@ -76,7 +82,7 @@ hmt_pol <-
     st_make_valid
 ```
 
-<!-- - We doen hetzelfde voor de stilstaande wateren (d.w.z. aquatische types uitgezonderd 3260 en 7220 partim beken): -->
+Reading and filtering spatial data of lentic aquatic types.
 
 ```{r}
 wsh <- read_watersurfaces_hab(interpreted = TRUE)
@@ -90,12 +96,16 @@ wsh_pol <-
     select(polygon_id)
 ```
 
-<!-- - We lezen de spatiale data ook in voor types 3260, 7220 en 8310. -->
+Reading spatial data of type 3260.
+
+<!-- maar beter ineens de afgeleide dataset opbouwen / inlezen met de segmenten: betrek daarbij het voorbereidend werk van Tom DD en vlgs googledoc steekproefkader is dit iets voor Toon W, incl koppeling met punten -->
 
 ```{r}
 habstream <- read_habitatstreams()
 ```
 
+Reading spatial data of type 7220.
+Each row (point) already represents a population unit in this case.
 
 ```{r}
 flanders_buffer <- 
