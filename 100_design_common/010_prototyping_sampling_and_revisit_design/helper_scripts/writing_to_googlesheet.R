@@ -1,6 +1,7 @@
 # This code requires availability of the following objects:
 # - n2khab_types_expanded_properties
 # - schemes
+# - non_core_types
 
 if (Sys.getenv("GARGLE_OAUTH_EMAIL") != "") {
   options(gargle_oauth_email = Sys.getenv("GARGLE_OAUTH_EMAIL"))
@@ -39,3 +40,6 @@ schemes %>%
   ) %>%
   relocate(attribute_3, tag_1, .after = last_col()) %>%
   write_sheet(gs_id, "scheme_properties")
+
+non_core_types %>%
+  write_sheet(gs_id, "non_core_types")
