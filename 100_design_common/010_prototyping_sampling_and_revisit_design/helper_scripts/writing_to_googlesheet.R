@@ -1,3 +1,7 @@
+# This code requires availability of the following objects:
+# - n2khab_types_expanded_properties
+# - schemes
+
 if (Sys.getenv("GARGLE_OAUTH_EMAIL") != "") {
   options(gargle_oauth_email = Sys.getenv("GARGLE_OAUTH_EMAIL"))
 }
