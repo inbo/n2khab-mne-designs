@@ -1,3 +1,6 @@
+# This code is to support intermediate discussions and not to be considered part
+# of the workflow. Just like the other helper scripts.
+
 # This code requires availability of the following objects:
 # - n2khab_types_expanded_properties
 # - schemes
