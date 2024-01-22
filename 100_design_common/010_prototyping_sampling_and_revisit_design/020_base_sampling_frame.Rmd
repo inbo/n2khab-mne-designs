@@ -60,14 +60,7 @@ n2khab_types_expanded_properties <-
     ) %>%
       as_tibble() %>% 
       mutate(
-        grts_join_method = ifelse(approach_cellbased, "cell", "centroid_of_cell") %>% 
-          factor(levels = c(
-            "centroid_of_cell", 
-            "cell", 
-            "point_on_surface", 
-            "endpoint_of_segment", 
-            "original_point"
-          ))
+        grts_join_method = ifelse(approach_cellbased, "cell", "centroid_of_cell")
       ) %>% 
       select(type, grts_join_method),
     by = "type"
@@ -79,7 +72,14 @@ n2khab_types_expanded_properties <-
         type == "3260" ~ "endpoint_of_segment",
         type == "8310" | hydr_class == "HC3" ~ "point_on_surface",
         .default = "centroid_of_cell"
-    ),
+    ) %>% 
+      factor(levels = c(
+        "centroid_of_cell", 
+        "cell", 
+        "point_on_surface", 
+        "endpoint_of_segment", 
+        "original_point"
+      )),
     sample_support = case_when(
       grts_join_method == "centroid_of_cell" ~ "area of type within 1024 m² cell (centroid must be type)",
       grts_join_method == "cell" ~ "area of type within 1024 m² cell",
