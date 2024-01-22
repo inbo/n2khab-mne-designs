@@ -1,7 +1,8 @@
 # This code requires the 'prepare-strata' chunk to have run.
 # Below code narrows down to targetpop, for exploratory purposes.
 
-# building blocks for the exploration which types to select from targetpop for the POC
+# building blocks for the exploration which types to select from targetpop for
+# the POC
 
 pop_size_terr <-
   read_vc(
@@ -78,12 +79,14 @@ targetpop_stratumsize <-
 targetpop %>% anti_join(targetpop_stratumsize, by = c("scheme", "type"))
 # targetpop_stratumsize has no empty population sizes!
 targetpop_stratumsize %>% filter(is.na(population_size))
-# targetpop_stratumsize has no type, stratum, population_size combinations that are different between schemes (it's obvious from the code above)
+# targetpop_stratumsize has no type, stratum, population_size combinations that
+# are different between schemes (it's obvious from the code above)
 targetpop_stratumsize %>%
   distinct(type, stratum, population_size) %>%
   count(type, stratum) %>%
   filter(n > 1)
-# the type_stratum_props object created below is the object we use to explore and decide which types to select for prototyping
+# the type_stratum_props object created below is the object we use to explore
+# and decide which types to select for prototyping
 stratum_props <-
   targetpop_stratumsize %>%
   distinct(type, stratum, population_size) %>%
