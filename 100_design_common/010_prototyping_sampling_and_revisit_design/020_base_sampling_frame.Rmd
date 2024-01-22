@@ -206,15 +206,6 @@ habquarries_strata <-
 
 
 ```{r result-strata}
-# n2khab_strata: for sampling and inference from the spatial sampling frames, which it defines
-n2khab_strata <-
-  n2khab_types %>% 
-  left_join(
-    bind_rows(wsh_pol_strata, habquarries_strata),
-    by = "type"
-  ) %>% 
-  unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>% 
-  select(type, stratum)
 # n2khab_strata_expanded: defines the strata of the base sampling frame
 n2khab_strata_expanded <-
   n2khab_types_expanded %>% 
@@ -223,7 +214,21 @@ n2khab_strata_expanded <-
     by = "type"
   ) %>% 
   unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>% 
-  select(type, stratum)
+  select(type, stratum) %>% 
+  mutate(stratum = factor(stratum))
+# n2khab_strata: for sampling and inference from the spatial sampling frames,
+# which it defines (except for further needed spatial restrictions)
+n2khab_strata <-
+  n2khab_types %>% 
+  left_join(
+    bind_rows(wsh_pol_strata, habquarries_strata),
+    by = "type"
+  ) %>% 
+  unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>% 
+  select(type, stratum) %>% 
+  mutate(
+    stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
+  )
 ```
 
 
