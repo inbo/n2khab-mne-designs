@@ -231,9 +231,113 @@ n2khab_strata <-
   )
 ```
 
+### Data sources with the population unit geometries
 
-### Defining the point - geometry relationship of specific types
+Reading the `GRTSmaster_habitats` data source that define the population unit geometries of the terrestrial types.
 
+```{r}
+grts_mh <- read_GRTSmh()
+```
+
+For watersurface types, the unit geometries are defined by the `watersurfaces` data source (units are polygons).
+
+For type 3260, the unit geometries are defined by `read_watercourse_100mseg(element = "lines")` (units are segments).
+
+For type 7220, we already created the `habspring_units` object (undefined units reffered to by points).
+
+For type 8310, we already created the `habquarries` object (units are polygons).
+
+
+### Defining the point - geometry relationship for specific types
+
+These may encompass units not currently covered by the target population.
+This is especially true for watersurfaces and watersegments.
+This allows for dynamic changes in the occurrence of types
+
+We don't need points for `grts_join_method == "cell"`.
+
+We will use centroids on the fly for `grts_join_method == "centroid_of_cell"`.
+
+Defining points that represent the watersurface units (object `points_watsurf`).
+
+```{r}
+# Accessing a temporary data source for watersurfaces
+with_drive_quiet({
+  path <- file.path(tempdir(), "watersurfaces_refpoints.tsv")
+  drive_download(as_id("1XgtdZOebbqp-MJih60P_Vi-npz_5UVkY"), path = path)
+  path2 <- file.path(tempdir(), "watersurfaces_refpoints.yml")
+  drive_download(as_id("1Bb07utgZOyMK65TdR64-4VjGP7T6GqMa"), path = path2)
+})
+points_watsurf <- read_vc("watersurfaces_refpoints", tempdir()) %>% 
+  as_tibble() %>% 
+  select(polygon_id, x, y) %>% 
+  st_as_sf(coords = c("x", "y"), crs = 31370)
+invisible(file.remove(path, path2))
+# adding all other watersurfaces
+points_watsurf <- 
+  bind_rows(
+    points_watsurf,
+    read_watersurfaces() %>% 
+      filter(!(polygon_id %in% points_watsurf$polygon_id)) %>% 
+      select(polygon_id) %>% 
+      st_sf(agr = "identity") %>% 
+      st_point_on_surface() %>% 
+      rename(geometry = geom)
+  )
+```
+
+Defining points that represent the watercourse segments (object `points_watcourse`).
+
+```{r}
+points_watcourse <- read_watercourse_100mseg(element = "points")
+```
+
+For type 7220, we can use the points in `habspring_units`.
+
+Defining points that represent the type 8310 units (object `points_8310`).
+
+```{r}
+points_8310 <-
+  habquarries %>% 
+  select(unit_id) %>% 
+  st_sf(agr = "identity") %>%
+  st_point_on_surface()
+```
+
+Combining all points that refer to non-cell units into one object.
+
+```{r}
+points_non_cell <-
+  bind_cols(
+    tibble(sample_support_code = "watersurface"),
+    points_watsurf %>% rename(unit_id = polygon_id)
+  ) %>% 
+  bind_rows(
+    bind_cols(
+      tibble(sample_support_code = "watercourse_segment"), 
+      points_watcourse %>% 
+        unite(unit_id, vhag_code, rank) %>% 
+        rename(geometry = geom)
+    )
+  ) %>% 
+  bind_rows(
+    bind_cols(
+      tibble(sample_support_code = "spring"), 
+      habspring_units %>% select(unit_id)
+    ) %>% 
+      mutate(unit_id = as.character(unit_id))
+  ) %>% 
+  bind_rows(
+    bind_cols(tibble(sample_support_code = "quarry"), points_8310) %>% 
+      mutate(unit_id = as.character(unit_id)) %>% 
+      rename(geometry = geom)
+  ) %>% 
+  mutate(sample_support_code = factor(
+    sample_support_code,
+    levels = levels(n2khab_types_expanded_properties$sample_support_code)
+  )) %>% 
+  st_sf(sf_column_name = "geometry")
+```
 
 
 ### Assigning a GRTS address to all population units of each stratum
