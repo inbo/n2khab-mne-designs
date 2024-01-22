@@ -86,3 +86,25 @@ crossing(p = 0:5, k = 10:30) %>%
     fill = "Needed relative\nsample size increase"
   )
 
+# The MNE + MHQ '1st wave' targetpop comprises all types targeted by scheme
+# ATM_03.1
+
+schemes <- read_schemes(lang = lang) %>%
+  filter(programme == "MHQ") %>%
+  select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction) %>%
+  semi_join( ### REVISIT THIS: do we want to restrict MHQ to the types in MNE? (trivial at the time of writing)
+    read_scheme_types() %>%
+      select(scheme, type) %>%
+      semi_join(targetpop, by = "type"),
+    by = "scheme"
+  ) %>%
+  bind_rows(schemes, .)
+targetpop <-
+  read_scheme_types(lang = lang) %>%
+  select(scheme, type) %>%
+  semi_join(schemes, by = "scheme")
+read_scheme_types(lang = lang) %>%
+  filter(scheme == "ATM_03.1") %>%
+  select(type) %>%
+  anti_join(targetpop, by = "type")
+
