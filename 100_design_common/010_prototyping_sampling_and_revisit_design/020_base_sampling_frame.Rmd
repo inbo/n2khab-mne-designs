@@ -342,8 +342,66 @@ points_non_cell <-
 
 ### Assigning a GRTS address to all population units of each stratum
 
+#### For the non-cell units
 
+From `points_non_cell`, we need to filter those that fall within the target population of MNE and MHQ.
+This is already fine for types 7220 and 8310.
 
+We determine the watercourse segments that have type 3260.
+
+```{r}
+# Quick-and-dirty approach to define the 3260 segments (i.e. it will miss a
+# part and some may be false positives)
+segm_3260 <- read_watercourse_100mseg(element = "lines")[habstream, ] %>% 
+  unite(unit_id, vhag_code, rank)
+```
+
+The watersurfaces with types are defined by `wsh_pol`.
+
+```{r}
+points_non_cell_n2khab <- 
+  points_non_cell %>% 
+  filter(
+    sample_support_code %in% c("spring", "quarry") |
+      (sample_support_code == "watersurface" & unit_id %in% wsh_pol$polygon_id) |
+      (sample_support_code == "watercourse_segment" & unit_id %in% segm_3260$unit_id)
+  )
+```
+
+Determining the GRTS address of the units represented by `points_non_cell_n2khab`.
+
+```{r}
+units_non_cell_n2khab_grts <- 
+  points_non_cell_n2khab %>% 
+  mutate(
+    grts_address = extract(grts_mh, st_coordinates(points_non_cell_n2khab)) %>% 
+      pull(GRTSmaster_habitats)
+  ) %>% 
+  st_drop_geometry()
+```
+
+Assigning the units with GRTS addresses to the corresponding strata in `n2khab_strata_expanded`.
+
+```{r}
+# result will be a tibble of stratum, unit_id, grts_address
+```
+
+<!-- Er zijn gevallen met hetzelfde GRTS-adres; een oplossing is hiervoor uit te werken: -->
+<!-- > units_non_cell_n2khab_grts %>% count(sample_support_code, grts_address) %>% filter(n > 1) %>% count(sample_support_code, n) -->
+<!-- Storing counts in `nn`, as `n` already present in input -->
+<!-- ℹ Use `name = "new_name"` to pick a new name. -->
+<!-- # A tibble: 7 × 3 -->
+<!--   sample_support_code     n    nn -->
+<!--   <fct>               <int> <int> -->
+<!-- 1 watercourse_segment     2    21 -->
+<!-- 2 watercourse_segment     3     1 -->
+<!-- 3 watercourse_segment   122     1 -->
+<!-- 4 watersurface            2    54 -->
+<!-- 5 watersurface            3    13 -->
+<!-- 6 watersurface            4     8 -->
+<!-- 7 watersurface            5     2 -->
+
+#### For the cell units
 
 
 ## Writing the base sampling frame
