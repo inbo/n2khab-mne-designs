@@ -95,3 +95,13 @@ stratum_props <-
     n2khab_types_expanded_properties,
     by = "type"
   )
+# add relation to MNE schemes:
+stratum_props %>%
+  inner_join(targetpop, by = "type", relationship = "many-to-many") %>%
+  filter(!str_detect(scheme, "^HQ")) %>%
+  pivot_wider(
+    names_from = scheme,
+    values_from = type
+  ) %>%
+  relocate(matches("^(GW|SOIL|SURF)")) %>%
+  View()
