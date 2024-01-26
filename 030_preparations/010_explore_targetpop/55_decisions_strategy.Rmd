@@ -1,0 +1,110 @@
+# De centroïdgebaseerde celselectiekans en de implicaties voor het terreinwerk of de steekproefprocedure {#celselectiekans}
+
+De feitelijke celselectiekans voor een celgebaseerde koppeling hangt af van de aan- of afwezigheid van het type in de gehele cel, en we laten variatie hierin tussen cellen niet verder meespelen in de inferentieprocedure: we maken voor deze uitzonderingen de keuze om elke steekproefeenheid te definiëren als een cel met de gemiddelde celbedekking die voor dat type optreedt, en maken abstractie van de variatie omdat die meer beperkt is (overwegend lage bedekkingen binnen de cel).
+Deze overwegingen werden gemaakt in paragraaf \@ref(level3-0-distr).
+
+Aangezien we de exacte ligging van habitatvlekken vaak niet kennen (phab < 100%), is de centroïdgebaseerde celselectiekans van een level0-cel te schatten op basis van twee componenten:
+
+- de ruimtelijke ligging van de **polygonen van `habitatmap_terr`** die tot het type behoren: centroïdgebaseerde koppeling met de polygonen leidt ertoe dat de volledige oppervlakte van deze polygonen op een adequate manier wordt geabstraheerd tot (volledig dekkende) cellen, die als evenwaardig mogen worden beschouwd.
+De totale oppervlakte van deze cellen komt goed overeen met de reële oppervlakte van de polygonen met het type.
+Immers worden laagbedekkende cellen ook minder vaak geselecteerd (kleinere celselectiekans) zodat deze proportioneel minder meewegen;
+- de **phab-fractie** van het type in elke polygoon: zij weerspiegelt effectief de kans dat, _indien een centroïd tot de polygoon behoort_, dit centroïd ook het type treft.
+
+Met het tweede aspect houdt de centroïdgebaseerde koppeling op basis van polygonen **geen rekening** (cf. verschillende grafieken ivm polygonen of 'level0-cell distribution').
+We houden er wel rekening mee in de wijze waarop we de populatiegrootte en type-oppervlaktes berekenen (`area`, `area_as_cells`, 'areal distribution' in grafieken enz.), aangezien we deze phab-gecorrigeerd berekenen.
+De phab-fractie is belangrijk voor de steekproeftrekking, want ze is nodig om de _met polygonen_ gekoppelde cellen (via centroïd) een aandeel in de steekproef te geven dat overeenstemt met de phab-waarde in dat polygoon:
+
+- ofwel door de celselectiekans **op terrein** te laten doorwerken: in de lage phab-cellen zal vaker geconcludeerd worden dat het type er niet voorkomt, dus dat de cel uit het steekproefkader geweerd moet worden.
+De oplossing is een overgedimensioneerde steekproef te nemen, a rato van de phab-distributie.
+Een belangrijk **nadeel** van deze methode zijn de vele bezoeken die geen steekproefpunt opleveren, maar enkel een lokale update van het steekproefkader ('hier komt het type niet voor').
+De ruimtelijke balans zorgt er bovendien voor dat er vaak geen ander steekproefpunt in de nabije buurt voorkomt.
+- ofwel door de celselectiekans reeds in de **steekproeftrekking** door te voeren.
+Dit betekent dat een cel (waarvan het centroïd een polygoon met het type treft) een celselectiekans krijgt die gelijk is aan de phab-fractie.
+Er wordt nog steeds getrokken volgens de reverse hierarchical order van de GRTS-strategie, maar met inachtneming van deze ongelijke celselectiekansen [^ongelijk].
+Het resultaat is dat alle eenheden van de steekproef nog steeds met een equal probability beschouwd mogen worden -- de redenering is hier analoog aan de centroïdgebaseerde polygoonselectie.
+    - De reproduceerbaarheid en aanpasbaarheid (in een revisie) van een op deze manier samengestelde steekproef is mogelijk door een vast raster random getallen uit een uniforme verdeling op te slaan, met dezelfde extent en resolutie als het GRTS-master raster, dat gebruikt wordt voor de binomiaal verdeelde uitkomst per cel: 'wordt geselecteerd / wordt niet geselecteerd'.
+Daarbij wordt een cel geselecteerd als het random getal voor die cel kleiner is dan de phab-fractie voor de corresponderende polygoon.
+    - Het is bij deze methode wel essentieel om voor elke getrokken cel een waarde proberen te bekomen, aangezien de cellen in de steekproef reeds op voorhand beperkt worden op basis van de phab-waarde.
+Aangezien de kans hiervoor afneemt met een afnemende phab-fractie, is het belangrijk om een vervangprocedure te hebben, cf. de overweging hierboven om in level3-cellen naar een level0-cel te zoeken.
+Dit wordt verder uitgewerkt in paragraaf \@ref(vervang).
+    - Deze benadering zal dus maar in beperkte mate het nadeel vertonen van de eerst besproken optie.
+
+[^ongelijk]: Een equivalente zienswijze is om te stellen dat het steekproefkader _voorafgaandelijk aan de steekproeftrekking_ herleid wordt tot een kortere lijst cellen waarvoor effectief mag worden verondersteld dat hun volledige oppervlakte meetelt voor het type.
+Dit gebeurt door cellen in het steekproefkader te weerhouden volgens een kans gelijk aan de phab-waarde.
+Daarna gebeurt de steekproeftrekking uit het zo bekomen steekproefkader volgens een equal probability design.
+In de praktijk is het echter efficiënter om beide stappen te integreren.
+
+
+**Omwille van het voordeel bij het gebruik van de celselectiekans in de steekproefprocedure, besluiten we om deze benadering toe te passen voor de centroïdgebaseerde terrestrische types.**
+
+**Uiteindelijk besluiten we**:
+
+- aangezien de locaties met lage phab veel beperkter in de steekproef betrokken gaan worden, is het **onnodig om bijkomend de polygonen met phab ≤ 10% uit te sluiten**.
+Voor verschillende types is dit ook minder goed te verantwoorden wegens het oppervlaktegewijze aandeel van die situaties, voor het type.
+- we passen wel de regel toe om bepaalde types celgebaseerd te beschouwen (zie paragraaf \@ref(level3-0-distr)): de types waarvan de level0-cellen met hoogstens 30% bedekking (binnen de cel) een oppervlakte-aandeel van minstens 55% van het type vertegenwoordigen.
+
+
+
+## Wegschrijven van de keuzes voor de respectievelijke types
+
+```{r}
+type_stats_complete <-
+    type_stats %>%
+    inner_join(type_areastats_implement_phab10_0.05 %>%
+                   select(type,
+                          contains("greaterthan"),
+                          keep_phab10) %>%
+                   mutate(type = factor(type, levels =
+                                             levels(type_stats$type))),
+               by = "type"
+    ) %>%
+    mutate(polygonarea_reldiff = drop_units((area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10) /
+               area_pol_as_cells_phab_greaterthan_10),
+           drop_phab10_was_considered = (type_areaprop_phab10 < 0.045) &
+               (polygonarea_reldiff > 0.1) &
+               !majority_level0coverlessthan0.3
+           ) %>%
+    rename(approach_cellbased = majority_level0coverlessthan0.3) %>%
+    select(type,
+           approach_cellbased,
+           drop_phab10_was_considered,
+           everything()) %>%
+    select(-keep_phab10)
+type_stats_complete %>% glimpse
+```
+
+De eerste twee variabelen zijn nodig voor de verdere implementatie; de overige variabelen bevatten de eigenschappen.
+
+```{r}
+type_stats_complete %>%
+    select(type,
+           approach_cellbased) %>%
+    git2rdata::write_vc("type_approaches",
+                        sorting = "type",
+                        strict = FALSE)
+type_stats_complete %>% write_csv("type_stats_complete.csv")
+```
+
+Nadere inspectie:
+
+```{r}
+type_stats_complete$approach_cellbased %>%
+    table
+```
+
+```{r warning=FALSE, fig.width=10, fig.height=7}
+type_stats_complete %>%
+  ggplot(aes(y = type_level3prop_nolevel0avail,
+             x = area_as_cells,
+             # label = type,
+             colour = approach_cellbased,
+             size = type_areaprop_phab10)) +
+  geom_point(alpha = 0.6) +
+  scale_x_unit(limits = c(0, 45e3))
+```
+
+Noot: in de bovenstaande grafiek betreffen de data op de assen de niet-ingeperkte doelpopulatie.
+
+
+
+

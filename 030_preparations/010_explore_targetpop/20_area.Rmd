@@ -1,0 +1,1190 @@
+# Het voorkomen van types {#voorkomen}
+
+## Algemeen
+
+### Types vertegenwoordigd door polygonen: oppervlakte
+
+Het gaat om de terrestrische types, de watervlaktypes en het ondergrondse type 8310.
+
+```{r}
+hmt_area <- 
+    hmt_pol %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    select(polygon_id, area)
+wsh_area <- 
+    wsh_pol %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    select(polygon_id, area)
+quar_area <- 
+    habquarries %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    select(polygon_id, area)
+typest_area <- 
+    hmt_occ %>% 
+    select(polygon_id, type, phab) %>% 
+    inner_join(hmt_area, by = "polygon_id") %>% 
+    mutate(area = area * phab / 100) %>% 
+    group_by(type) %>% 
+    summarize(area = sum(area))
+typesw_area <- 
+    wsh_occ %>% 
+    select(polygon_id, type) %>% 
+    inner_join(wsh_area, by = "polygon_id") %>% 
+    group_by(type) %>% 
+    summarize(area = sum(area))
+typesq_area <- 
+  tibble(type = habquarries$type %>% unique,
+         area = sum(quar_area$area))
+```
+
+Merk op dat het onderstaande resultaat bij de watervlaktypes sterk bepaald wordt door het feit dat de volledige oppervlakte van watervlakken wordt meegerekend.
+Het natuurbeleid beschouwt het gehele watervlak als habitat (zie G-IHD), ook wanneer maar een klein deel de betreffende levensgemeenschap bevat.
+Het overwicht van grote plassen maakt het oppervlaktegebaseerde signaal echter weinig informatief voor het voorkomen van (problematieken in) waterplassen, wat voor het natuurbeleid in feite meest relevant is.
+Dit argument wordt nog versterkt door sectie \@ref(watsurf-area).
+
+- Met logaritmisch verdeelde Y-as:
+
+```{r fig.height=8, fig.width=12}
+types_area <- 
+    typesw_area %>% 
+    rbind(typest_area) %>% 
+    rbind(typesq_area) %>% 
+    inner_join(types_mne_expanded, by = "type") %>% 
+    mutate(type = fct_reorder(type, area, .desc = TRUE),
+           is_surfacewater = str_detect(hydr_class, "3"))
+types_area %>% 
+    mutate(area = area %>% set_units("a")) %>%
+    ggplot(aes(x = type, y = area, fill = unresolved)) + 
+      geom_col() + 
+      scale_y_unit(trans = "log10", breaks = c(1,10,100,1000,10000,100000)) +
+      ylab("area_in_are") +
+      facet_wrap(~is_surfacewater, 
+                 ncol = 1,
+                 scales = "free",
+                 labeller = "label_both") +
+      theme(axis.text.x = element_text(angle = 90, 
+                                       hjust = 1,
+                                       vjust = 0.4))
+```
+
+- Met de Y-as niet getransformeerd:
+
+```{r fig.height=8, fig.width=12}
+types_area %>% 
+    ggplot(aes(x = type, y = area, fill = unresolved)) + 
+      geom_col() + 
+      ylab("area") +
+      facet_wrap(~is_surfacewater, 
+                 ncol = 1,
+                 scales = "free",
+                 labeller = "label_both") +
+      theme(axis.text.x = element_text(angle = 90, 
+                                       hjust = 1,
+                                       vjust = 0.4))
+```
+
+
+### Watervlaktypes: verdeling van oppervlakteklassen {#watsurf-area}
+
+Verdeling van een aantal oppervlakteklassen van de watervlakken, volgens de polygoonoppervlakte:
+
+```{r watsurf-areaclasses-area, fig.width=10, fig.height=2, fig.cap="Verdeling van oppervlakteklassen van watervlakken, volgens het oppervlakte-aandeel."}
+cut_sw <- function(x) cut(x, c(0,1,5,10,50,100,150))
+wsh_area %>% 
+  mutate(area_class_ha = cut_sw(area) %>% fct_rev) %>% 
+  group_by(area_class_ha) %>% 
+  summarise(area = sum(area) %>% as.numeric) %>% 
+  ggplot(aes(x = "surfacewater types", y = area, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    labs(x = NULL, y = "areal distribution") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
+Verdeling van een aantal oppervlakteklassen van de watervlakken, in termen van het aantal polygonen `n`:
+
+```{r}
+wsh_area %>% 
+  mutate(area_class_ha = cut_sw(area)) %>% 
+  count(area_class_ha)
+```
+
+```{r watsurf-areaclasses-polygons, fig.width=10, fig.height=2, fig.cap="Verdeling van oppervlakteklassen van watervlakken, volgens de frequentie van polygonen."}
+wsh_area %>% 
+  mutate(area_class_ha = cut_sw(area) %>% fct_rev) %>% 
+  group_by(area_class_ha) %>% 
+  summarise(number_of_polygons = n_distinct(polygon_id)) %>% 
+  ggplot(aes(x = "surfacewater types", y = number_of_polygons, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    labs(x = NULL, y = "distribution of polygons") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
+De vergelijking met verdeling volgens oppervlakte benadrukt dat een relatief beperkt aantal grotere watervlakken een groot aandeel van de oppervlakte bestrijken.
+
+Verdeling van het aantal polygonen per type:
+
+```{r fig.height=6, fig.width=12}
+typesw_levels <- 
+  typesw_area %>% 
+  mutate(type = fct_reorder(type, area, .desc = TRUE)) %>% 
+  .$type %>% 
+  levels
+wsh_occ %>% 
+  inner_join(wsh_area, by = "polygon_id") %>% 
+  mutate(area_class_ha = cut_sw(area) %>% fct_rev) %>% 
+  group_by(type, area_class_ha) %>% 
+  summarise(number_of_polygons = n_distinct(polygon_id)) %>% 
+  ungroup %>% 
+  mutate(type = factor(type, levels = typesw_levels)) %>% 
+  ggplot(aes(x = type, y = number_of_polygons, fill = area_class_ha)) + 
+      geom_col() +
+      theme(axis.text.x = element_text(angle = 90, 
+                                       hjust = 1,
+                                       vjust = 0.4))
+```
+
+Dit bevestigt dat kleine watervlakken in zeer grote mate de ruimtelijke verspreiding van de meeste habitattypes bepalen.
+De volgorde van meest naar minst aantal polygonen is duidelijk anders dan volgens oppervlakte.
+
+Een verdeling volgens de vierkantswortel van de polygoonoppervlakte houdt het midden tussen de beide verdelingen:
+
+```{r watsurf-areaclasses-sqrtarea, fig.width=10, fig.height=2, fig.cap="Verdeling van oppervlakteklassen van watervlakken, volgens de vierkantswortel van de polygoonoppervlakte."}
+wsh_area %>% 
+  mutate(area_class_ha = cut_sw(area) %>% fct_rev) %>% 
+  group_by(area_class_ha) %>% 
+  summarise(area = 
+              area %>% 
+              as.numeric %>% 
+              sqrt %>% 
+              sum) %>% 
+  ggplot(aes(x = "surfacewater types", y = area, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    labs(x = NULL, y = expression(sqrt(area[polygon]) ~ distribution)) +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
+### Type 8310 (ondergronds): verdeling van oppervlakteklassen
+
+Verdeling van een aantal oppervlakteklassen van type 8310, volgens de polygoonoppervlakte:
+
+```{r quarries-areaclasses-area, fig.width=10, fig.height=2, fig.cap="Verdeling van oppervlakteklassen van mergelgroeve-polygonen, volgens het oppervlakte-aandeel."}
+cut_q <- function(x) cut_width(as.numeric(x), 
+                               width = 2, 
+                               boundary = 0)
+quar_area %>% 
+  mutate(area_class_ha = cut_q(area) %>% fct_rev) %>% 
+  group_by(area_class_ha) %>% 
+  summarise(area = sum(area) %>% as.numeric) %>% 
+  ggplot(aes(x = "type 8310", y = area, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    labs(x = NULL, y = "areal distribution") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
+Merk op dat de polygoonoppervlakte betrekking heeft op artificiële polygonen.
+Een mergelgroevepolygoon is namelijk de polygoon met de kleinste omtrek rondom alle gangen van de mergelgroeve, en waar nodig afgekapt volgens de grens van het Vlaamse Gewest.
+
+Verdeling van een aantal oppervlakteklassen van type 8310, in termen van het aantal polygonen `n`:
+
+```{r}
+quar_area %>% 
+  mutate(area_class_ha = cut_q(area)) %>% 
+  count(area_class_ha)
+```
+
+```{r quarries-areaclasses-polygons, fig.width=10, fig.height=2, fig.cap="Verdeling van oppervlakteklassen van mergelgroeve-polygonen, volgens de frequentie van polygonen."}
+quar_area %>% 
+  mutate(area_class_ha = cut_q(area) %>% fct_rev) %>% 
+  group_by(area_class_ha) %>% 
+  summarise(number_of_polygons = n_distinct(polygon_id)) %>% 
+  ggplot(aes(x = "type 8310", y = number_of_polygons, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    labs(x = NULL, y = "distribution of polygons") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
+De vergelijking met verdeling volgens oppervlakte wijst erop dat één heel grote polygoon bijna de helft van de oppervlakte van het type bestrijkt.
+
+Kleine polygonen bepalen echter in grote mate de ruimtelijke verspreiding van het habitattype.
+
+In habitattype 8310 wordt oppervlakte als meer relevant gezien, vermits grotere oppervlaktes typisch een grotere levensgemeenschap herbergen - vleermuispopulaties in het bijzonder.
+
+Een verdeling volgens de vierkantswortel van de polygoonoppervlakte houdt het midden tussen de beide verdelingen:
+
+```{r quarries-areaclasses-sqrtarea, fig.width=10, fig.height=2, fig.cap="Verdeling van oppervlakteklassen van mergelgroeve-polygonen, volgens de vierkantswortel van de polygoonoppervlakte."}
+quar_area %>% 
+  mutate(area_class_ha = cut_q(area) %>% fct_rev) %>% 
+  group_by(area_class_ha) %>% 
+  summarise(area = 
+              area %>% 
+              as.numeric %>% 
+              sqrt %>% 
+              sum) %>% 
+  ggplot(aes(x = "type 8310", y = area, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    labs(x = NULL, y = expression(sqrt(area[polygon]) ~ distribution)) +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
+### Type vertegenwoordigd als lijnen: 3260
+
+```{r}
+stream_length <- 
+  habstream %>% 
+  mutate(length = st_length(.))
+```
+
+Er is op basis van de databron `habitatstreams` meer dan 200 km van het habitattype:
+
+```{r}
+stream_length$length %>% sum %>% set_units("km")
+```
+
+De verdeling van lengtes is scheef:
+
+```{r fig.width=10, fig.height=5}
+stream_length %>% 
+  ggplot(aes(x = length)) + 
+    geom_histogram(fill = "grey60", binwidth = 250) +
+    scale_x_unit(breaks = seq(0,11000,500)) +
+    theme(axis.line.x = NULL)
+```
+
+### Type vertegenwoordigd als punten: 7220
+
+Met elk punt komt een habitatvlek overeen, vaak met een geschatte oppervlakte, maar geregeld met onbekende oppervlakte.
+Verdelingen van eigenschappen volgens oppervlakte zijn dus momenteel niet mogelijk voor het totaal van de punten.
+
+Er zijn `r sum(habspring$nr_of_points)` dergelijke punten.
+Sommige zijn heel dicht bij elkaar gelegen en kunnen samen als dezelfde 'eenheid' worden beschouwd.
+Er zijn zo in totaal `r nrow(habspring)` eenheden van type 7220 onderscheiden.
+De oppervlakte van een eenheid die uit meerdere punten bestaat, is de som van de samenstellende oppervlakten.
+Een dergelijke eenheid wordt voorgesteld door het centroïd van de samenstellende punten.
+
+We spitsen de verkenning toe op de eenheden, aangezien maar in `r habspring %>% st_drop_geometry %>% filter(nr_of_points > 1) %>% nrow` gevallen de eenheden uit méér dan één punt bestaan.
+
+Verdeling van oppervlakteklassen, in termen van het aantal eenheden `n`:
+
+```{r}
+habspring %>% 
+  st_drop_geometry %>% 
+  mutate(area_class_m2 = cut_number(area_m2, 4) %>% 
+           fct_explicit_na()) %>% 
+  count(area_class_m2)
+```
+Voor een flink deel van de eenheden is de (totale) oppervlakte momenteel niet gekend.
+
+Een eenheid behoort tot één van twee mogelijke systeemtypes voor 7220: beek of moeras.
+In `r (sum(habspring$system_type == "unknown") / nrow(habspring) * 100) %>% round(1)`% van de gevallen is het systeemtype momenteel onbekend.
+
+```{r}
+habspring %>% 
+  st_drop_geometry %>% 
+  count(system_type) %>% 
+  mutate(pct = (n / sum(n) * 100) %>% round(1))
+```
+
+Merk op dat het type 7220 binnen de MNM een speciale behandeling vergt, niet enkel omdat het steekproefkader bepaald wordt door een aparte databron (`habitatsprings`), maar ook omdat afhankelijk van het meetnet vaak maar één van beide systeemtypes wordt beschouwd binnen de doelpopulatie.
+Zo wordt voor monitoring in het oppervlaktewatermeetnet alleen gewerkt met beeksystemen, en voor monitoring van inundatiewater alleen met moerassystemen.
+
+## Vertegenwoordiging van het domein 'SBZ-H-netwerk'
+
+Omdat er specifieke interesse bestaat voor domeinuitspraken binnen het SBZ-H-netwerk, bekijken we in welke mate het domein door de doelpopulatie wordt afgedekt.
+
+```{r}
+sac_union <- 
+  read_admin_areas(dsn = "sac") %>% 
+  st_union
+```
+
+```{r}
+area_fl <- 
+  read_admin_areas(dsn = "flanders") %>% 
+  st_area() %>% 
+  set_units("ha")
+area_sac <- 
+  sac_union %>% 
+  st_area() %>% 
+  set_units("ha")
+```
+
+Het SBZ-H netwerk bestrijkt `r (area_sac/area_fl *100) %>% round(1)`% van Vlaanderen.
+
+
+### Types vertegenwoordigd door polygonen
+
+<!-- ```{r echo=FALSE, eval=FALSE} -->
+<!-- system.time( -->
+<!-- execGRASS("v.in.ogr", -->
+<!--           input = normalizePath(file.path(fileman_up("n2khab_data"), -->
+<!--                                           "20_processed/habitatmap_terr/habitatmap_terr.gpkg")), -->
+<!--           layer = "habitatmap_terr_polygons", -->
+<!--           output = "hmt_pol", -->
+<!--           flags = "o" # assume CRS is same as from GRASS, i.e. set CRS as epsg:31370 -->
+<!--           ) -->
+<!-- ) -->
+<!-- #   user  system elapsed  -->
+<!-- # 25.696   6.954  32.825 -->
+<!-- # But we prefer starting from the nicer format as generated by read_habitatmap_terr() -->
+<!-- ``` -->
+
+
+```{r results="hide", eval=!grass_areal_exists}
+system.time(
+hmt_pol %>% 
+  writeVECT("hmt_pol")
+)
+ #   user  system elapsed 
+ # 58.555  19.998 112.386 
+wsh_pol %>% 
+  writeVECT("wsh_pol")
+```
+
+
+```{r results="hide", eval=!grass_areal_exists}
+sac_union %>% 
+  writeVECT("sac_union")
+```
+
+
+```{r echo=FALSE, eval=FALSE}
+execGRASS("g.list", type = "vector", flags = "p")
+```
+
+```{r eval = FALSE, warning=FALSE, results="hide"}
+# launching GRASS GUI interface:
+execGRASS("g.gui")
+# opening GRASS manual:
+system("g.manual -i")
+```
+
+
+```{r warning=FALSE, results="hide", eval=!grass_areal_exists}
+system.time(
+execGRASS("v.overlay",
+          ainput = "hmt_pol",
+          operator = "or",
+          binput = "sac_union",
+          output = "hmtsac_pol")
+)
+ #   user  system elapsed 
+ # 62.457  21.396 105.916
+```
+
+```{r warning=FALSE, results="hide", eval=!grass_areal_exists}
+execGRASS("v.overlay",
+          ainput = "wsh_pol",
+          operator = "or",
+          binput = "sac_union",
+          output = "wshsac_pol")
+```
+
+```{r}
+execGRASS("g.list", type = "vector", flags = "p")
+```
+
+
+```{r warning=FALSE, results="hide", eval=!file.exists("hmtsac_pol.gpkg") | params$regenerate_large_files}
+# writing GPKG permanently, because the step takes too long if it is to 
+# be done each time in a temporary way (by calling readVECT)
+execGRASS("v.out.ogr",
+          input = "hmtsac_pol",
+          output = file.path(projroot, "hmtsac_pol.gpkg"),
+          format = "GPKG")
+```
+
+```{r warning=FALSE, results="hide"}
+hmtsac_pol <- 
+  read_sf("hmtsac_pol.gpkg") %>% 
+  filter(!is.na(a_cat)) %>% 
+  mutate(in_sac = !is.na(b_cat),
+         polygon_id = factor(a_polygon_id, 
+                             levels = hmt_pol$polygon_id %>% levels)) %>% 
+  select(polygon_id,
+         in_sac)
+wshsac_pol <- 
+  readVECT("wshsac_pol") %>% 
+  st_set_crs(31370) %>% 
+  as_tibble %>% 
+  st_as_sf %>% 
+  filter(!is.na(a_cat)) %>% 
+  mutate(in_sac = !is.na(b_cat),
+         polygon_id = factor(a_polygon_id, 
+                             levels = wsh_pol$polygon_id %>% levels)) %>% 
+  select(polygon_id,
+         in_sac)
+quarsac_pol <- 
+  habquarries %>% 
+  mutate(in_sac = st_intersects(., sac_union, sparse = FALSE)[, 1]) %>% 
+  select(polygon_id,
+         in_sac)
+```
+
+Inspectie van de objecten die zijn gegenereerd:
+
+```{r}
+hmtsac_pol %>% glimpse
+```
+
+```{r}
+wshsac_pol %>% glimpse
+```
+
+```{r}
+quarsac_pol %>% glimpse
+```
+
+```{r}
+hmtsac_area <- 
+    hmtsac_pol %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    select(polygon_id, in_sac, area)
+wshsac_area <- 
+    wshsac_pol %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    select(polygon_id, in_sac, area)
+quarsac_area <- 
+    quarsac_pol %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>% 
+    st_drop_geometry %>% 
+    select(polygon_id, in_sac, area)
+typestsac_area <- 
+    hmt_occ %>% 
+    select(polygon_id, type, phab) %>% 
+    inner_join(hmtsac_area, by = "polygon_id") %>% 
+    mutate(area = area * phab / 100) %>% 
+    group_by(type, in_sac) %>% 
+    summarize(area = sum(area)) %>% 
+    ungroup
+typeswsac_area <- 
+    wsh_occ %>% 
+    select(polygon_id, type) %>% 
+    inner_join(wshsac_area, by = "polygon_id") %>% 
+    group_by(type, in_sac) %>% 
+    summarize(area = sum(area)) %>% 
+    ungroup
+typesqsac_area <- 
+  quarsac_area %>% 
+  mutate(type = habquarries$type %>% unique) %>% 
+  group_by(type, in_sac) %>% 
+  summarize(area = sum(area)) %>% 
+  ungroup
+```
+
+Controles dat de objecten met SBZ-intersectie nog steeds dezelfde oppervlakte bevatten:
+
+```{r}
+all.equal(hmtsac_area$area %>% sum,
+          hmt_area$area %>% sum)
+all.equal(wshsac_area$area %>% sum,
+          wsh_area$area %>% sum)
+all.equal(quarsac_area$area %>% sum,
+          quar_area$area %>% sum)
+```
+
+#### Terrestrisch
+
+Oppervlakte en proportie van de terrestrische doelpopulatie binnen (`in_sac == TRUE`) en buiten SBZ-H, en de verhouding tot het Vlaams Gewest:
+
+```{r}
+hmtsac_area %>% 
+  group_by(in_sac) %>% 
+  summarise(area = sum(area)) %>% 
+  mutate(pct_targetpop = (((area / sum(area)) %>% as.numeric) * 
+                        100) %>% round(1),
+         pct_flanders = (((area / area_fl) %>% as.numeric) * 
+                        100) %>% round(1)
+         )
+```
+
+Bij een ruimtelijk constante inclusiekans per type, d.w.z. zonder rekening te houden met de SBZ-grenzen, zal er dus een gelijkaardige precisie zijn binnen en buiten het SBZ-H-netwerk, terwijl het netwerk maar een beperkt deel van Vlaanderen bedekt.
+Het lijkt daarom niet aangewezen om het SBZ-H-netwerk te overbemonsteren.
+Een equal probability design, zonder a priori domeinstructuur, heeft trouwens voor monitoring sowieso de voorkeur, omdat het zorgt voor eenvoud en flexibiliteit tgo. veranderingen in de toekomst.
+
+#### Watervlaktypes
+
+Verdeling volgens oppervlakte:
+
+```{r}
+wshsac_area %>% 
+  group_by(in_sac) %>% 
+  summarise(area = sum(area)) %>% 
+  mutate(pct_targetpop = (((area / sum(area)) %>% as.numeric) * 
+                        100) %>% round(1),
+         pct_flanders = (((area / area_fl) %>% as.numeric) * 
+                        100) %>% round(1)
+         )
+```
+
+Verdeling volgens aantal polygonen:
+
+- totaal binnen en buiten SBZ-H:
+
+```{r}
+wshsac_area %>% 
+  count(in_sac) %>% 
+  mutate(pct_targetpop = (n / sum(n) * 100) %>% round(1))
+```
+
+- met verdeling van oppervlakteklassen:
+  
+```{r}
+wshsac_area %>% 
+  mutate(area_class_ha = cut_sw(area)) %>% 
+  count(in_sac, area_class_ha) %>% 
+  pivot_wider(names_from = in_sac,
+              names_prefix = "in_sac: ",
+              values_from = n,
+              values_fill = list(n = 0))
+```
+  
+```{r fig.width=8, fig.height=2.5}
+wshsac_area %>% 
+  mutate(area_class_ha = cut_sw(area) %>% fct_rev) %>% 
+  group_by(in_sac, area_class_ha) %>% 
+  summarise(number_of_polygons = n_distinct(polygon_id)) %>% 
+  ungroup %>% 
+  ggplot(aes(x = in_sac, y = number_of_polygons, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    ylab("distribution of polygons") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
+We zien dus dat de watervlaktypes ca. dubbel zo vaak binnen als buiten het SBZ-H netwerk voorkomen, zodat de verwachte steekproefgrootte hier vanzelf dubbel zo groot zal zijn.
+De foutmarge op de schatting van een gemiddelde zou hierdoor zo'n 30% afnemen binnen het SBZ-H-netwerk in vergelijking met erbuiten, bij een gelijke variatie binnen en buiten het SBZ-H-netwerk.
+
+#### Type 8310 (ondergronds)
+
+Verdeling volgens oppervlakte:
+
+```{r}
+quarsac_area %>% 
+  group_by(in_sac) %>% 
+  summarise(area = sum(area)) %>% 
+  mutate(pct_targetpop = (((area / sum(area)) %>% as.numeric) * 
+                        100) %>% round(1),
+         pct_flanders = (((area / area_fl) %>% as.numeric) * 
+                        100) %>% round(3)
+         )
+```
+
+Verdeling volgens aantal polygonen:
+
+- totaal binnen en buiten SBZ-H:
+  
+```{r}
+quarsac_area %>% 
+  count(in_sac) %>% 
+  mutate(pct_targetpop = (n / sum(n) * 100) %>% round(1))
+```
+
+- met verdeling van oppervlakteklassen:
+  
+```{r}
+quarsac_area %>% 
+  mutate(area_class_ha = cut_q(area)) %>% 
+  count(in_sac, area_class_ha) %>% 
+  arrange(area_class_ha) %>% 
+  pivot_wider(names_from = in_sac,
+              names_prefix = "in_sac: ",
+              values_from = n,
+              values_fill = list(n = 0))
+```
+  
+```{r fig.width=8, fig.height=2.5}
+quarsac_area %>% 
+  mutate(area_class_ha = cut_q(area) %>% fct_rev) %>% 
+  group_by(in_sac, area_class_ha) %>% 
+  summarise(number_of_polygons = n_distinct(polygon_id)) %>% 
+  ungroup %>% 
+  ggplot(aes(x = in_sac, y = number_of_polygons, fill = area_class_ha)) + 
+    geom_col(position = "fill") +
+    ylab("distribution of polygons") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip()
+```
+
+We zien dus dat type 8310 nog schever verdeeld voorkomt: 80% binnen het SBZ-H netwerk op basis van polygonen (90% op basis van oppervlakte), zodat de verwachte steekproefgrootte hier vanzelf veel groter zal zijn.
+De foutmarge op de schatting van een gemiddelde zou hierdoor met meer dan de helft afnemen binnen het SBZ-H-netwerk in vergelijking met erbuiten, bij een gelijke variatie binnen en buiten het SBZ-H-netwerk.
+
+De 90% oppervlakte binnen SBZ-H hangt ook samen met het feit dat de meeste grotere polygonen binnen SBZ-H zijn gelegen -- alle polygonen groter dan 6 ha liggen binnen SBZ-H.
+
+#### Algemene bemerking
+
+Bemerk dat de vermelde effecten op foutmarges voor terrestrisch versus aquatisch versus ondergronds doorgaans niet volgens die indeling optreden in MNM: typegroepering in de MNM betreft indelingen over terrestrische, aquatische en ondergrondse types samen.
+
+#### Oppervlakteverdeling volgens types en typeklassen
+
+```{r}
+typessac_area <- 
+  typeswsac_area %>% 
+    rbind(typestsac_area) %>% 
+    rbind(typesqsac_area) %>% 
+    inner_join(types_mne_expanded, by = "type") %>% 
+    mutate(is_surfacewater = str_detect(hydr_class, "3"))
+```
+
+
+```{r fig.height=10, fig.width=12}
+typessac_area %>%
+    mutate(area = area %>% as.numeric) %>% 
+    ggplot(aes(x = type, 
+               y = area, 
+               fill = in_sac)) + 
+      geom_col(position = "fill") + 
+      ylab("area") +
+      facet_wrap(~is_surfacewater, 
+                 ncol = 1,
+                 scales = "free",
+                 labeller = "label_both") +
+      theme(axis.text.x = element_text(angle = 90, 
+                                       hjust = 1,
+                                       vjust = 0.4)) +
+      ylab("areal distribution")
+```
+
+```{r fig.width=10, fig.height=4}
+typessac_area %>%
+    mutate(area = area %>% as.numeric) %>% 
+    inner_join(read_types() %>% select(type, typeclass = typeclass_name),
+               by = "type") %>% 
+    mutate(typeclass = factor(typeclass) %>% fct_rev) %>% 
+    group_by(typeclass, in_sac) %>% 
+    summarise(area = sum(area)) %>% 
+    ggplot(aes(x = typeclass, 
+               y = area, 
+               fill = in_sac)) + 
+      geom_col(position = "fill") + 
+      ylab("areal distribution") +
+      scale_y_continuous(breaks = seq(0,1,0.1)) +
+      coord_flip()
+```
+
+De meeste typeklassen zijn binnen de SBZ-H's goed in oppervlakte vertegenwoordigd.
+Tussen types zijn de verschillen groter, en sommige types zijn enkel binnen of enkel buiten de SBZ-H's vertegenwoordigd.
+
+Voor de MNM, waar types gegroepeerd worden, lijkt het verantwoord om hier geen specifieke aandacht aan te geven in functie van subpopulatieschattingen (zoals overbemonstering van types binnen SBZ).
+Meer nog, voor types die vaker buiten SBZ-H voorkomen, is het tevens logisch om ook vaker buiten SBZ-H te bemonsteren.
+
+Als voorbeeld tonen we het voorkomen van de typegroepen binnen en buiten SBZ-H, in het meetnet voor de eutrofiëring via de lucht:
+
+```{r fig.width=10, fig.height=3}
+atm_types <- 
+  read_scheme_types() %>% 
+  filter(scheme == "ATM_03.1") %>% 
+  select(type, typegroup = typegroup_name)
+typessac_area %>%
+    mutate(area = area %>% as.numeric) %>% 
+    inner_join(atm_types,
+               by = "type") %>% 
+    mutate(typegroup = factor(typegroup) %>% fct_rev) %>% 
+    group_by(typegroup, in_sac) %>% 
+    summarise(area = sum(area)) %>% 
+    ggplot(aes(x = typegroup, 
+               y = area, 
+               fill = in_sac)) + 
+      geom_col(position = "fill") + 
+      ylab("areal distribution") +
+      scale_y_continuous(breaks = seq(0,1,0.1)) +
+      coord_flip()
+```
+
+
+### Type vertegenwoordigd als lijnen: 3260
+
+```{r message=FALSE, warning=FALSE, results="hide"}
+system.time(
+habstream_sac <- 
+  habstream %>% 
+  st_difference(sac_union) %>% 
+  mutate(in_sac = FALSE) %>% 
+  rbind(habstream %>% 
+          st_intersection(sac_union) %>% 
+          mutate(in_sac = TRUE))
+)
+#  user  system elapsed 
+# 6.852   0.000   6.850
+```
+
+Controle dat de totale lengte dezelfde is gebleven:
+
+```{r}
+all.equal(habstream_sac %>% st_length() %>% sum,
+          habstream %>% st_length() %>% sum)
+```
+
+Verdeling van lengte volgens het domein:
+
+```{r}
+habstream_sac %>% 
+  mutate(length = st_length(.)) %>% 
+  st_drop_geometry %>% 
+  group_by(in_sac) %>% 
+  summarise(length = sum(length) %>% set_units("km")) %>% 
+  mutate(pct_targetpop = (((length / sum(length)) %>% as.numeric) * 
+                        100) %>% round(1))
+```
+ 
+Hier zien we dat 3260 een type is dat maar voor 28% binnen het SBZ-H-netwerk voorkomt.
+Maar we beschouwen het als 'slechts' één type voor MNM; dit leidt niet tot een noodzaak voor overbemonstering in het domein.
+Ook hier geldt dat voor types, zoals 3260, die vaker buiten SBZ-H voorkomen, het logisch is om ook vaker buiten SBZ-H te bemonsteren.
+
+
+### Type vertegenwoordigd als punten: 7220
+
+```{r}
+springsac <- 
+  habspring %>% 
+  mutate(in_sac = st_intersects(., sac_union, sparse = FALSE)[, 1]) %>% 
+  st_drop_geometry %>% 
+  select(unit_id,
+         system_type,
+         in_sac)
+```
+
+Verdeling van de punten over binnen en buiten SBZ-H:
+
+```{r}
+springsac %>% 
+  count(in_sac) %>% 
+  mutate(pct_targetpop = (n / sum(n) * 100) %>% round(1))
+```
+
+Verdeling van de systeemtypes:
+  
+```{r}
+springsac %>% 
+  count(in_sac, system_type) %>% 
+  pivot_wider(names_from = in_sac,
+              names_prefix = "in_sac: ",
+              values_from = n,
+              values_fill = list(n = 0))
+```
+
+We zien dus dat type 7220 ca. drie keer zo vaak binnen als buiten het SBZ-H netwerk voorkomt, zodat de verwachte steekproefgrootte hier vanzelf drie keer zo groot zal zijn.
+De foutmarge op de schatting van een gemiddelde zou hierdoor zo'n 40% afnemen binnen het SBZ-H-netwerk in vergelijking met erbuiten, bij een gelijke variatie binnen en buiten het SBZ-H-netwerk.
+
+
+## Terrestrische types: trefkans in een polygoon en oppervlakte van types in een polygoon {#trefk-pol}
+
+Het betreft hier alle terrestrische (incl. semi-terrestrische) types, uitgezonderd 7220.
+De verspreiding van 7220 is immers reeds eenduidig, op basis van `habitatsprings`.
+
+### Aandachtspunt ivm steekproef(kader): verdeling van PHAB klassen {#phab}
+
+In het bewerkte, terrestrische deel van de habitatkaart (databron `habitatmap_terr`) komen types voor als fracties binnen 'polygonen'.
+Voor elk type is het procentueel oppervlakte-aandeel van de polygoon opgegeven via de variabele `phab`.
+
+Het probleem voor het steekproefkader is dat we van types met phab < 100 de ligging binnen de polygoon niet kennen.
+Merk daarbij op dat een type ruimtelijk uit meerdere 'vlekken' kan bestaan binnen dezelfde polygoon.
+
+  
+De overall verdeling van `phab` is als volgt:
+
+```{r fig.width=12, fig.height=5}
+hmt_occ %>% 
+  ggplot(aes(x = phab)) + geom_histogram(binwidth = 10, fill = "grey60")
+```
+
+Samengenomen tot enkele klassen:
+
+```{r fig.height=2.5, fig.width=7}
+hmt_occ_area <- 
+  hmt_occ %>% 
+  select(polygon_id, type, certain, phab) %>% 
+  inner_join(hmt_area, by = "polygon_id") %>% 
+  rename(area_pol = area) %>% 
+  mutate(area = area_pol * phab / 100,
+         phab_class = cut(phab, c(0, 5, 10, 25, 50, 75, 90, 95, 100), 
+                          include.lowest = TRUE) %>% fct_rev)
+```
+
+
+```{r fig.height=2.5, fig.width=7}
+hmt_occ_area %>% 
+  ggplot(aes(x = "all types", fill = phab_class)) + 
+  geom_bar(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(x = NULL, y = "distribution of type occurrences")
+```
+
+De oppervlakteverdeling van phab-klassen, op basis van de geschatte oppervlaktes per type in elk polygoon (geschatte oppervlakte = phab/100 * polygoonoppervlakte):
+
+```{r fig.height=2.5, fig.width=7}
+hmt_occ_area %>% 
+  group_by(phab_class) %>% 
+  summarise(area = sum(area) %>% as.numeric) %>% 
+  ggplot(aes(x = "all types", y = area, fill = phab_class)) + 
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(x = NULL, y = "areal distribution")
+```
+
+We zien aanzienlijke verschillen tussen types:
+
+```{r phabclasses-areas-type, fig.height=12, fig.width=7, out.width='60%', out.height='60%'}
+typelevels_phab <- 
+  hmt_occ_area %>% 
+  mutate(area = area %>% as.numeric) %>% 
+  group_by(type) %>% 
+  summarize(area_prop10 = sum(area[.data$phab <= 10]) / sum(area),
+            area_prop50 = sum(area[.data$phab <= 50]) / sum(area)) %>% 
+  arrange(area_prop50, area_prop10) %>% 
+  .$type %>% 
+  as.character
+hmt_occ_area %>% 
+  mutate(area = area %>% as.numeric,
+         type = factor(type, levels = rev(typelevels_phab))) %>% 
+  ggplot(aes(x = type, y = area, fill = phab_class)) + 
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(y = "areal distribution",
+       title = "Type's cover per polygon") +
+  theme(legend.position = "bottom")
+```
+
+Gesorteerd volgens een grens op phab van 10%:
+
+```{r phabclasses10-areas-type, fig.height=12, fig.width=7, out.width='60%', out.height='60%'}
+typelevels_phab <- 
+  hmt_occ_area %>% 
+  mutate(area = area %>% as.numeric) %>% 
+  group_by(type) %>% 
+  summarize(area_prop10 = sum(area[.data$phab <= 10]) / sum(area),
+            area_prop50 = sum(area[.data$phab <= 50]) / sum(area)) %>% 
+  arrange(area_prop10, area_prop50) %>% 
+  .$type %>% 
+  as.character
+plot_phab_typeareal <- 
+  hmt_occ_area %>% 
+  mutate(area = area %>% as.numeric,
+         type = factor(type, levels = rev(typelevels_phab))) %>% 
+  ggplot(aes(x = type, y = area, fill = phab_class)) + 
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(y = "areal distribution",
+       title = "Type's cover per polygon") +
+  theme(legend.position = "bottom")
+plot_phab_typeareal
+```
+
+Beschouwd per typeklasse:
+
+```{r phabclasses-areas-typeclass, fig.width=12, fig.height=3, fig.cap="Oppervlakteverdeling van de phab-klassen (in polygonen) per typeklasse."}
+typeclasslevels_phab <- 
+  hmt_occ_area %>% 
+  inner_join(read_types() %>% select(type, typeclass = typeclass_name),
+             by = "type") %>% 
+  mutate(area = area %>% as.numeric) %>% 
+  group_by(typeclass) %>% 
+  summarize(area_prop10 = sum(area[.data$phab <= 10]) / sum(area),
+            area_prop50 = sum(area[.data$phab <= 50]) / sum(area)) %>% 
+  arrange(area_prop50, area_prop10) %>% 
+  .$typeclass %>% 
+  as.character
+hmt_occ_area %>% 
+  inner_join(read_types() %>% select(type, typeclass = typeclass_name),
+             by = "type") %>% 
+  mutate(area = area %>% as.numeric,
+         typeclass = factor(typeclass, levels = typeclasslevels_phab)) %>% 
+  ggplot(aes(x = typeclass, y = area, fill = phab_class)) + 
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(y = "areal distribution")
+```
+
+### Aandachtspunt ivm steekproef(kader): polygoonoppervlakte
+
+Verdeling van polygoonoppervlakte (ha):
+
+```{r message=FALSE, warning=FALSE}
+hmt_area %>% .$area %>% summary
+```
+
+Histogram van polygoonoppervlaktes tot 4 ha:
+
+```{r hist-polarea, message=FALSE, warning=FALSE, fig.cap="Histogram van de polygoonoppervlaktes in de habitatkaart (polygonen met types uit de MNM-doelpopulaties), beperkt tot maximum 4 ha."}
+hmt_area %>% 
+  ggplot(aes(x = area)) + 
+    geom_histogram(binwidth = 0.1, fill = "grey60") +
+    scale_x_unit(limits = c(0, 4))
+```
+
+Bemerk dat de 'binwidth' van alle histogrammen 0.1 ha bedraagt.
+De eerste bin (0 - 1000 m²) komt dus ruwweg overeen met de gridcelgrootte van 32*32 m² zoals gebruikt in het meetnet biotische habitatkwaliteit.
+
+Histogram van polygoonoppervlakte per type-record, gegroepeerd volgens phab-klasse (verticale as is variabel geschaald):
+
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=8}
+hmt_occ %>% 
+  select(polygon_id, type, certain, phab) %>% 
+  inner_join(hmt_area, by = "polygon_id") %>% 
+  mutate(phab_class = cut(phab, c(0, 5, 10, 25, 50, 75, 90, 95, 100), 
+                          include.lowest = TRUE)) %>% 
+  ggplot(aes(x = area)) + 
+    geom_histogram(binwidth = 0.1, fill = "grey60") +
+    scale_x_unit(limits = c(0, 4)) +
+    facet_wrap(~phab_class,
+               labeller = "label_both",
+               scales = "free_y")
+```
+
+Dit geeft een goede indicatie van wat een relevante grootte van zoekgebied kan zijn, om een gridcel te selecteren die effectief tot de doelpopulatie behoort.
+Een hok van 256*256 m² bestrijkt de meeste gevallen, al kan het zijn dat deze een polygoon niet afdekt.
+
+Een alternatief is dus de polygoon te hanteren als basis voor uitwisseling, en daar de gridcel met het laagste rangnummer uit te selecteren die tot de doelpopulatie behoort.
+
+Een ander aspect van de hoge abundantie van kleine polygonen, is de wellicht frequent voorkomende situatie dat een gridcel maar voor een deel in de polygoon ligt.
+En vaker nog, dat een gridcel niet volledig bedekt is door het type in kwestie (gezien de phab-waarde van een type in een polygoon).
+
+In paragraaf \@ref(phab) werd de phab-klasseverdeling bekeken volgens de reële oppervlakteverdeling van het type.
+In het licht van het steekproefkader en het eraan gekoppelde terreinwerk is het ook nuttig om zicht te hebben op de phab-oppervlakteverdeling van de polygonen, vermits deze de terreinbezoeken aandrijven:
+
+```{r, fig.height=12, fig.width=7}
+plot_phab_polygonareal <- 
+  hmt_occ %>% 
+  select(polygon_id, type, certain, phab) %>% 
+  inner_join(hmt_area, by = "polygon_id") %>% 
+  mutate(area = area %>% as.numeric,
+         phab_class = cut(phab, c(0, 5, 10, 25, 50, 75, 90, 95, 100), 
+                          include.lowest = TRUE) %>% fct_rev,
+         type = factor(type, levels = rev(typelevels_phab))) %>% 
+  ggplot(aes(x = type, y = area, fill = phab_class)) + 
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(y = "polygon area distribution",
+       title = "Type's cover per polygon") +
+  theme(legend.position = "bottom")
+```
+
+```{r typecover, fig.height=12, fig.width=15, fig.cap="Verdeling van phab-klassen per type (% bedekking in polygoon). Links verdeling volgens geschatte type-oppervlakte (dus phab-gecorrigeerd), rechts volgens polygoonoppervlakte."}
+gridExtra::grid.arrange(plot_phab_typeareal, plot_phab_polygonareal, nrow = 1)
+```
+
+Het is duidelijk dat de polygonen met phab ≤ 10% voor heel wat extra bezoekbare (te bezoeken) oppervlakte zorgen, in verhouding tot de type-oppervlakte die ze vertegenwoordigen.
+
+### Oppervlakte van types binnen polygonen {#opptypes-in-pol}
+
+Onderstaand histogram toont de verdeling van de oppervlaktes van types binnen polygonen (met als _transparante overlay_ (_niet_ gestapeld) de polygoonoppervlakteverdeling van eerder).
+De hier geschatte type-oppervlakte is de best mogelijke benadering van de reële oppervlakte van types in de doelpopulatie.
+
+```{r message=FALSE, warning=FALSE}
+hmt_occ_area %>% 
+  mutate(object = "type_in_polygon") %>% 
+  select(object, area) %>% 
+  rbind(hmt_area %>% 
+              mutate(object = "polygon") %>% 
+              select(object, area)) %>% 
+  mutate(object = factor(object) %>% fct_rev) %>% 
+  ggplot(aes(x = area, fill = object)) +
+  geom_histogram(binwidth = 0.1,
+                 position = "identity",
+                 alpha = 0.7) +
+  scale_x_unit(limits = c(0, 3))
+```
+
+Zoals te verwachten zijn type-oppervlaktes nog schever verdeeld dan polygoonoppervlaktes.
+
+De verdeling van de kleinste type-oppervlaktes in polygonen, i.e. kleiner dan een level0-cel:
+
+```{r warning=FALSE}
+hmt_occ_area %>% 
+  mutate(area = area %>% set_units("m^2")) %>% 
+  filter(area <= set_units(1024, "m^2"),
+         area > set_units(0, "m^2")) %>% 
+  ggplot(aes(x = area)) +
+  geom_histogram(colour = "grey60", 
+                 fill = "white",
+                 binwidth = 10) +
+  scale_x_unit(breaks = seq(0, 1000, 50))
+```
+
+De verdeling van type-oppervlaktes op sub-level0 niveau (< 1024 m^2^) blijkt vrij gelijkmatig.
+Alleen de heel lage oppervlaktes (< ca. 75 m^2^) komen minder vaak voor.
+
+We kunnen dit ook weergeven volgens klassen van oppervlakte:
+
+```{r}
+cut_m2 <- function(x) {
+  cut(x %>% 
+        set_units("m^2") %>% 
+        drop_units, 
+      c(seq(0, 1024, 256), seq(2048, 8192, 2048), 16384, 32768, 65536, 10e6),
+      include.lowest = TRUE,
+      dig.lab = 7
+  )
+}
+```
+
+
+```{r}
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2) %>%
+  ggplot(aes(x = area_m2)) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+De eerste 4 balkjes betreffen groottes kleiner dan de level0-cel van 32 x 32 m².
+
+Relatief uitgedrukt:
+
+```{r patch-areas, fig.height=3.5, fig.width=9, fig.cap="Verdeling (volgens occurrences) van de subpolygoon-oppervlakteklassen van types."}
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2 %>% fct_rev) %>%
+  ggplot(aes(x = "terrestrial_types", fill = area_m2)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(x = NULL, y = "distribution of type occurrences")
+```
+
+We zien dat > 20% van de voorkomens van types gaat over oppervlaktes kleiner dan de level0-cel.
+
+Wanneer we dit per type bekijken:
+
+```{r fig.height=12, fig.width=7, out.width='70%', out.height='70%'}
+typelevels_area <- 
+  hmt_occ_area %>% 
+  mutate(area = area %>% set_units("m^2") %>% drop_units) %>% 
+  group_by(type) %>% 
+  summarize(prop1024 = sum(area <= 1024) / n()) %>% 
+  arrange(-prop1024) %>% 
+  .$type %>% 
+  as.character
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2 %>% fct_rev,
+         type = factor(type, levels = typelevels_area)) %>%
+  ggplot(aes(x = type, fill = area_m2)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(y = "distribution of type occurrences")
+```
+
+Er is bij heel wat types een aanzienlijk aandeel van ocurrences waar de oppervlakte van het type in de polygoon kleiner is dan de oppervlakte van een level0-cel (1024 m²).
+
+Verdeling van deze klassen volgens oppervlakte:
+
+
+```{r fig.height=3.5, fig.width=9}
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2 %>% fct_rev,
+         area = area %>% drop_units) %>%
+  group_by(area_m2) %>% 
+  summarise(area = sum(area)) %>% 
+  ggplot(aes(x = "terrestrial_types", y = area, fill = area_m2)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(x = NULL, y = "areal distribution")
+```
+
+Per type:
+
+```{r fig.height=12, fig.width=7, out.width='70%', out.height='70%'}
+typelevels_area <- 
+  hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2) %>% 
+  group_by(type) %>% 
+  summarize(areaprop1024 = sum(area[(.data$area %>% drop_units) <= 0.1024]) / sum(area)) %>% 
+  arrange(-areaprop1024) %>% 
+  .$type %>% 
+  as.character
+hmt_occ_area %>% 
+  mutate(area_m2 = area %>% cut_m2 %>% fct_rev,
+         type = factor(type, levels = typelevels_area),
+         area = area %>% drop_units) %>%
+  group_by(area_m2, type) %>% 
+  summarise(area = sum(area)) %>% 
+  ggplot(aes(x = type, y = area, fill = area_m2)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(breaks = seq(0,1,0.1)) +
+  coord_flip() +
+  labs(x = NULL, y = "areal distribution")
+```
+
+Logischerwijs zien we bij de oppervlaktegewogen benadering maar een klein overall aandeel van de kleine oppervlaktes.
+Echter, bij zo'n 10 à 15 types (onderaan in de grafiek) is het oppervlakte-aandeel ervan nog steeds > 10% (en soms > 20%).
+
+We kunnen de totale oppervlakte van de types ook uitdrukken in eenheden van 1024 m², wat overeenkomt met een level0-cel (32 x 32 m²):
+
+```{r}
+install_unit("cell0units", "1024 m^2")
+```
+
+
+```{r}
+type_areastats <- 
+  hmt_occ_area %>% 
+  group_by(type) %>% 
+  summarise(area_pol = sum(area_pol),
+            area = sum(area),
+            nr_polygons = n_distinct(polygon_id)) %>% 
+  mutate(mean_area_per_polygon = set_units(area, "m^2") / nr_polygons,
+         area_as_cells = area %>% set_units("cell0units"),
+         area_pol_as_cells = area_pol %>% set_units("cell0units"),
+         success_rate = (area_as_cells / area_pol_as_cells) %>% drop_units %>% round(2)) %>% 
+  select(1, 6, 7, 8, 4, 5, 6, 3, 2) %>% 
+  arrange(area)
+type_areastats %>% glimpse
+```
+
+De **success rate** is daarbij de gemiddelde kans om het type rastergebaseerd (via de centroïden van rastercellen) te treffen op terrein.
+Dit is berekend als de totale type-oppervlakte gedeeld door de totale oppervlakte van alle polygonen waar het type in voorkomt.
+
+```{r out.width='100%', out.height='100%'}
+p <- 
+  type_areastats %>% 
+  ggplot(aes(x = area_as_cells, 
+             y = success_rate,
+             label = type)) +
+  geom_point(colour = "grey50") +
+  geom_text(size = 2, vjust = -1) +
+  geom_hline(yintercept = 0.5, 
+             colour = "blue")
+ggplotly(p) %>% 
+  layout(yaxis = list(fixedrange = TRUE))
+```
+
+In de bovenstaande (interactieve) grafiek zien we dat de meest algemene types een grote success-rate zouden hebben.
+Buiten de meest algemene types zien we dat er geen duidelijk verband meer is en de spreiding van de success-rate is in dit gebied groot.
+
+### Onzekerheid over de type-identificatie
+
+Niet van elk type was bij de kartering (of bij omzetting van de BWK) even zeker dat het om het betreffende type gaat (gestapeld histogram):
+
+```{r message=FALSE, warning=FALSE}
+hmt_occ_area %>% 
+  ggplot(aes(x = area, fill = certain)) +
+  geom_histogram(binwidth = 0.1,
+                 position = "fill") +
+  scale_x_unit(limits = c(0, 3)) +
+  ylab("Relative number of type occurrences")
+```
+
+Behalve onzekerheden i.v.m. de ligging van de types wordt het steekproefkader dus ook bezwaard met deze onzekerheden, die iets vaker optreden bij kleinere oppervlaktes.
+
+In `r hmt_occ %>% summarise(pct = sum(!certain) / n() * 100) %>% pull(pct) %>% round(1)` procent van de type-records is de bepaling van het type als onzeker beschouwd.
+Vermits ook plaatsen waar `certain == TRUE` niet overal zullen overeenkomen met de actuele situatie (evolutie van het terrein sinds de kartering), is dit cijfer als een ondergrens te beschouwen.
+Dit staat nog los van de ruimtelijke onzekerheid omtrent de ligging van een type in een polygoon.
+  
+  

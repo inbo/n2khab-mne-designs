@@ -1,0 +1,1475 @@
+# Relaties tussen verschillende hiërarchische GRTS-resoluties bij de terrestrische types {#levels}
+
+Een uitdaging voor de meetnetten natuurlijk milieu zijn de onbetrouwbaarheden in het terrestrische steekproefkader, dat gebaseerd zal worden op de databron `habitatmap_terr`:
+
+- van een willekeurige puntlocatie in een polygoon met een beoogd type is er alleen informatie over de kans op voorkomen van een type, vertegenwoordigd door de `phab`-waarde van een type in een polygoon.
+Met andere woorden, het is raak ofwel ernaast;
+- in veel polygonen staat een type nog op 'onzeker' omdat het gelabeld is in combinatie met een ander type (betekenis: 'ofwel', niet 'en');
+- het gebeurt niet zelden dat een type in realiteit niet meer aanwezig is, hetzij door spontane successie, hetzij door toedoen van menselijke ingrepen.
+
+Een gevolg hiervan is dat, bij het terreinwerk, een cel die niet blijkt te voldoen (is niet het beoogde type) uit de steekproef wegvalt en vervangen zal moeten worden door een volgende cel van de GRTS-rangschikking.
+Een dergelijke nieuwe cel zal typisch ver gelegen zijn van de weggevallen plaats.
+Noot: we spreken hier steeds over cellen van resolutie 32 m als steekproefeenheid; we verwijzen hiernaar als 'level0-cellen' vermits dit de labelling is in de databronnen `GRTSmh_brick` en `GRTSmh_diffres`.
+
+Het was reeds duidelijk dat de wijze van koppeling tussen het GRTS-raster en `habitatmap_terr` deze trefkans eveneens beïnvloedt.
+
+Een interessante piste om hier praktisch aan te verhelpen (zowel voor punt- als celgebaseerde koppeling), zou kunnen zijn om een level0-cel (32 m) die wegvalt te vervangen door de volgende level0-cel (volgens GRTS-rangnummer) _binnen de cel van een hoger hiërarchisch GRTS-niveau die correspondeert met de wegvallende level0-cel_.
+
+Dit zou er op neerkomen dat eerst het voorkomen van het doeltype in de level0-cellen in die grotere cel goed gekarteerd moet worden, alvorens de GRTS-selectie in de grotere cel correct te kunnen toepassen.
+M.a.w. een lokale update van het steekproefkader wordt dan beoogd op het terrein.
+Omdat een dergelijke lokale update van het steekproefkader moeilijk haalbaar is voor niveaus hoger dan 'level3' (cellen van 256 x 256 m²)^[
+Bemerk dat de GRTS-niveaus overeenkomen met resoluties die verspringen volgens machten van 2.
+],
+zullen we kijken naar relaties tussen **level0** en **level3**:
+
+- hoe snel wordt elke concrete level3 herbezocht, bij het aflopen van alle level0-cellen van een type volgens de GRTS-rangschikking?
+- in welke mate komen types van de gezamenlijke MNM-doelpopulatie samen voor in level3-cellen, en hoe zinvol is het om niet alleen het doeltype maar ook de andere types te bemonsteren?
+- hoeveel level3-cellen, en level0-cellen per level3-cel zijn er ter beschikking per type?
+
+Noot: in de onderstaande benadering zijn de level0-cellen steeds met polygonen gekoppeld _volgens de centroïd-methode_.
+
+UPDATE: in de onderstaande tekst wordt de bovenstaande filosofie gevolgd.
+Evenwel zal een van de hiermee gerelateerde vervangprocedures uiteindelijk getrapt worden geformuleerd; zie paragraaf \@ref(vervang).
+
+```{r include=FALSE}
+vc_polygon_id <- all(file.exists("grts_polygon_id.tsv", "grts_polygon_id.yml")) | !params$regenerate_large_files
+```
+
+
+```{r eval=!grass_grts_join}
+hmt_pol_id <- 
+    hmt_pol %>% 
+    mutate(pol_id = 1:n())
+```
+
+```{r results="hide", eval=!grass_grts_join}
+hmt_pol_id %>% 
+    writeVECT("hmt_pol_id",
+              v.in.ogr_flags = c("overwrite", "o"))
+system("v.to.rast input=hmt_pol_id output=hmt_pol_ras use=attr attribute_column=pol_id memory=3000 --overwrite")
+system("r.out.gdal input=hmt_pol_ras output=pol_id.tif -c --overwrite")
+```
+
+```{r eval=!vc_polygon_id}
+r_pol_id <- raster("pol_id.tif")
+NAvalue(r_pol_id) <- -1 # also all values lower than -1 will be NA
+# r_pol_id[] %>% summary
+```
+
+```{r eval=!vc_polygon_id}
+grts_b <- read_GRTSmh(brick = TRUE)
+grts_b[[11]] <- r_pol_id
+grts_polygon_id <- 
+    grts_b[!is.na(grts_b$pol_id)] %>% 
+    as_tibble %>% 
+    filter(!is.na(level0)) %>% # removes a series of border cells
+    inner_join(hmt_pol_id %>% st_drop_geometry, 
+               by = "pol_id") %>% 
+    select(-pol_id)
+```
+
+
+```{r eval=!vc_polygon_id}
+# an idea for n2khab_data (+ reading function in n2khab):
+grts_polygon_id %>% git2rdata::write_vc("grts_polygon_id", sorting = "level0")
+# grts_polygon_id %>% write_csv("grts_polygon_id.csv")
+```
+
+
+```{r}
+grts_polygon_id <- git2rdata::read_vc("grts_polygon_id") %>% as_tibble
+# but perhaps still better to do this with type_grts
+```
+
+```{r}
+type_grts <- 
+    hmt_occ %>% 
+    select(polygon_id, type, phab) %>% 
+    group_by(polygon_id, type) %>% 
+    summarise(phab = mean(phab)) %>% 
+    ungroup %>% 
+    inner_join(grts_polygon_id, 
+               by = "polygon_id")
+```
+
+
+## Aandachtspunt: de dekking door GRTSmaster_habitats
+
+We verifiëren of het GRTS-raster wel degelijk de volledige doelpopulatie afdekt.
+
+```{r}
+hmt_popsize_centroid %>% 
+    distinct(type,
+             nr_polygoncells = count) %>% 
+    inner_join(type_grts %>% 
+                   distinct(level0, type) %>% 
+                   count(type, name = "nr_grtscells"),
+               by = "type") %>% 
+    mutate(diff = nr_polygoncells - nr_grtscells,
+           diff_rel = diff / nr_polygoncells) %>% 
+    filter(diff != 0) %>% 
+    arrange(-diff_rel)
+```
+
+Voor ongeveer een kwart van de types is er een verschil, waarbij er cellen zijn van de doelpopulatie zonder GRTS-rangnummer.
+Het probleem is alleen substantieel voor het type 1140, waar dit om 7% van de populatie gaat.
+Voor de andere types is het verschil kleiner dan 0.4% en dus te verwaarlozen.
+Het blijkt voor 1140 te gaan om de kustlijn, die zeewaarts niet helemaal is afgedekt door het GRTS-raster.
+
+Bij visuele inspectie blijkt ook dat het GRTS-raster niet het volledige Vlaamse grondgebied opvult.
+Er blijken vooral smalle stroken langs de kust (o.m. in zee) te ontbreken.
+Ook enkele plaatsen in de Voerstreek zijn niet helemaal afgedekt.
+
+In principe zou een verdere opvulling (aanvulling) van het GRTS-raster een oplossing zijn voor deze problemen.
+Gezien het overwegend zeer marginale optreden van de problemen en het eerder complexe werk om een dgl. opvulling te programmeren zullen we dit aspect verder negeren.
+
+## Hoe vaak worden de level0-cellen bezocht binnen een level3-cel?
+
+We willen weten hoe snel elke concrete level3-cel wordt herbezocht, bij het aflopen van alle level0-cellen van een type volgens de GRTS-rangschikking.
+
+
+```{r fig.width=8, fig.height=10, warning=FALSE}
+turnover3 <- 
+    type_grts %>% 
+    group_by(type) %>% 
+    arrange(level0) %>% 
+    mutate(rank = 1:n()) %>% 
+    group_by(type, level3) %>% 
+    arrange(type, level3, level0) %>% 
+    mutate(visits_waited = rank - lag(rank)) %>% 
+    filter(!is.na(visits_waited))
+typelev <- 
+    turnover3 %>% 
+    group_by(type) %>% 
+    summarise(med = median(visits_waited)) %>% 
+    arrange(med) %>% 
+    pull(type) %>% 
+    as.character
+turnover3 %>% 
+    ungroup %>% 
+    mutate(type = factor(type, levels = typelev)) %>% 
+    ggplot(aes(x = type, y = visits_waited)) +
+    geom_boxplot(outlier.size = 0.2, outlier.alpha = 0.3) +
+    scale_y_log10(breaks = c(1,5,10,50,100,500,1000,5000,1e4,5e4,1e5),
+                  limits = c(1, 1e5)) +
+    coord_flip() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+Voor heel wat types blijkt herbezoek dus lang te duren.
+Bemerk dat we hierbij niet hebben gecorrigeerd volgens de trefkans.
+
+```{r eval=!grass_grts_join}
+# use bbox of level 3  (see read_GRTSmh_diffres(level=3)):
+# system("g.proj -c datumtrans=1 epsg=31370") # this was necessary when linkGRASS() overwrited this, is fixed now
+system("g.region w=22030 e=259086 s=153054 n=244190 res=256")
+system("shellscripts/shellscript_05_r.resamp.stats_level3_parallel.sh")
+# This creates:
+# - lev3_summax_xxxx: sum of max_xxxx (res 32 m) at resolution 256 m
+```
+
+
+## Coëxistentie van types in een GRTS-cel van hoger hiërarchisch niveau
+
+### Op level3-niveau
+
+We willen weten in welke mate types van de gezamenlijke MNM-doelpopulatie samen voorkomen in dezelfde level3-cellen, en hoe zinvol het is om niet alleen het doeltype maar ook de andere types te bemonsteren.
+
+Verdeling van het aantal types dat samen voorkomt in een level3-cel, gebruik makend van een puntgebaseerde koppeling (i.e. met correctie volgens phab):
+
+```{r}
+type_grts_effective_lev3 <- 
+    type_grts %>% 
+    group_by(level3, type) %>% 
+    summarise(nr_level0 = sum(phab) / 100) %>% 
+    filter(nr_level0 >= 1) %>% 
+    ungroup
+type_grts_effective_lev3 %>% 
+    count(level3,
+          name = "nrtypes_per_level3cell") %>% 
+    ggplot(aes(x = nrtypes_per_level3cell)) +
+    geom_bar() +
+    ylab("nr_level3cells")
+```
+
+Verdeling van het aantal types dat samen voorkomt in een level3-cel, _binnen de level3-cellen die (effectief, dus phab-gecorrigeerd) bemonsterd worden indien n~type~ = 50_:
+
+```{r}
+type_grts %>% 
+    semi_join(type_grts_effective_lev3, 
+              by = c("type", "level3")) %>% 
+    group_by(type) %>% 
+    arrange(type, level0) %>% 
+    slice(1:50) %>% 
+    ungroup %>% 
+    distinct(level3, type) %>% 
+    count(level3,
+          name = "nrtypes_per_level3cell") %>% 
+    ggplot(aes(x = nrtypes_per_level3cell)) +
+    geom_bar() +
+    labs(y = "nr_level3cells",
+         title = "Sample size of 50 units per type (or all units if N < 50)")
+```
+
+Dit wil dus zeggen dat steekproeven van grootte 50 (per type, of minder dan 50 indien N~type~ < 50) in beperkte mate tussen types overlappen op het niveau van level3-cellen (< 20% van de level3-cellen.
+Bijgevolg heeft het zin om ook een of meer andere types te lokaliseren op level3-niveau en er een steekproefeenheid van te bemeten, op voorwaarde dat het GRTS-rangnummer kleiner is dan het maximum in de steekproef van dat type.
+
+### Op level4-niveau
+
+Verdeling van het aantal types dat samen voorkomt in een level4-cel, gebruik makend van een puntgebaseerde koppeling (i.e. met correctie volgens phab):
+
+```{r}
+type_grts_effective_lev4 <- 
+    type_grts %>% 
+    group_by(level4, type) %>% 
+    summarise(nr_level0 = sum(phab) / 100) %>% 
+    filter(nr_level0 >= 1) %>% 
+    ungroup
+type_grts_effective_lev4 %>% 
+    count(level4,
+          name = "nrtypes_per_level4cell") %>% 
+    ggplot(aes(x = nrtypes_per_level4cell)) +
+    geom_bar() +
+    ylab("nr_level4cells")
+```
+
+Deze verdeling is iets meer naar rechts dan bij het level3-niveau, wat logisch is.
+
+Verdeling van het aantal types dat samen voorkomt in een level4-cel, _binnen de level4-cellen die bemonsterd worden indien n~type~ = 50_:
+
+```{r}
+type_grts %>% 
+    semi_join(type_grts_effective_lev4, 
+              by = c("type", "level4")) %>% 
+    group_by(type) %>% 
+    arrange(type, level0) %>% 
+    slice(1:50) %>% 
+    ungroup %>% 
+    distinct(level4, type) %>% 
+    count(level4,
+          name = "nrtypes_per_level4cell") %>% 
+    ggplot(aes(x = nrtypes_per_level4cell)) +
+    geom_bar() +
+    labs(y = "nr_level4cells",
+         title = "Sample size of 50 units per type (or all units if N < 50)")
+```
+
+Hier geldt dezelfde conclusie als voor level3.
+
+## Het voorkomen van types in hogere-orde- en level0-cellen
+
+We willen weten hoeveel level3-cellen, en level0-cellen per level3-cel er ter beschikking zijn per type.
+Analoog voor level4.
+
+### Het voorkomen van types in level3-cellen
+
+Verdeling van het aantal level3-cellen per type (zonder rekening te houden met trefkans, i.e. level0-cellen worden meegeteld in de level3-cel wanneer hun centroïd in een polygoon valt _met_ het type):
+
+```{r level3-pertype, warning=FALSE, fig.cap="Histogram van het aantal level3-cellen (256x256 m²) die per type ter beschikking zijn."}
+type_grts %>% 
+    distinct(level3, type) %>% 
+    count(type,
+          name = "nrcells") %>% 
+    ggplot(aes(x = nrcells)) +
+    geom_histogram(binwidth = 200, fill = "white", colour = "grey60") +
+    scale_x_continuous(limits = c(-100,7000), breaks = seq(0,7000,400)) +
+    ylab("nrtypes")
+```
+
+Verdeling van het aantal level3-cellen per type, in de laagste klassen:
+
+```{r warning=FALSE}
+type_grts %>% 
+    distinct(level3, type) %>% 
+    count(type,
+          name = "nrcells") %>% 
+    ggplot(aes(x = nrcells)) +
+    geom_histogram(binwidth = 50, fill = "white", colour = "grey60") +
+    scale_x_continuous(limits = c(-50,1000), breaks = seq(0,1000,100)) +
+    ylab("nrtypes")
+```
+
+### Het voorkomen van types in level4-cellen
+
+Verdeling van het aantal level4-cellen per type (zonder rekening te houden met trefkans, i.e. level0-cellen worden meegeteld in de level4-cel wanneer hun centroïd in een polygoon valt _met_ het type):
+
+```{r level4-pertype, warning=FALSE}
+type_grts %>% 
+    distinct(level4, type) %>% 
+    count(type,
+          name = "nrcells") %>% 
+    ggplot(aes(x = nrcells)) +
+    geom_histogram(binwidth = 200, fill = "white", colour = "grey60") +
+    scale_x_continuous(limits = c(-100,7000), breaks = seq(0,7000,400)) +
+    ylab("nrtypes")
+```
+
+Verdeling van het aantal level4-cellen per type, in de laagste klassen:
+
+```{r warning=FALSE}
+type_grts %>% 
+    distinct(level4, type) %>% 
+    count(type,
+          name = "nrcells") %>% 
+    ggplot(aes(x = nrcells)) +
+    geom_histogram(binwidth = 50, fill = "white", colour = "grey60") +
+    scale_x_continuous(limits = c(-50,1000), breaks = seq(0,1000,100)) +
+    ylab("nrtypes")
+```
+
+De distributie van het aantal level4-cellen is iets schever naar links dan voor level3 (zoals te verwachten), maar slechts in beperkte mate.
+Dit betekent dat veel level3-cellen als enige cel het type bevatten, binnen hun overeenkomstige level4-cel.
+
+We kunnen dit laatste meer concreet visualiseren als het aantal level3-cellen dat het type 'effectief' bevat (gedefinieerd volgens 'bevat minstens 1 level0-cel, rekening houdend met phab-correctie (dus som van phab-fracties is minstens 1)), per level 4-cel die een polygoon met het type omvat:
+
+```{r fig.height=2.5, fig.width=7}
+count_3_in_4 <- 
+    type_grts %>% 
+    group_by(type, level3, level4) %>% 
+    summarise(nrlevel0_in_3 = sum(phab) / 100) %>% 
+    group_by(type, level4) %>% 
+    summarise(nrlevel3cells_with_type_per_level4cell = sum(nrlevel0_in_3 >= 1)) %>% 
+    ungroup %>% 
+    mutate(nrlevel3cells_with_type_per_level4cell = factor(nrlevel3cells_with_type_per_level4cell) %>% fct_rev)
+count_3_in_4 %>% 
+    ggplot(aes(x = "terrestrial_types", 
+               fill = nrlevel3cells_with_type_per_level4cell)) +
+    geom_bar(position = "fill") +
+    labs(x = NULL, y = "distribution of level4-cells", fill = "nr of level3-cells\nwith type\nper level4-cell\nmatching polygon") +
+    coord_flip()
+```
+
+Apart per type:
+
+```{r fig.height=12, fig.width=7}
+typelev34 <- 
+    count_3_in_4 %>% 
+    count(type, nrlevel3cells_with_type_per_level4cell) %>% 
+    pivot_wider(names_from = nrlevel3cells_with_type_per_level4cell,
+                values_from = n,
+                values_fill = list(n = 0)) %>% 
+    mutate(total = `0` + `1` + `2` + `3` + `4`,
+           prop01 = (`0` + `1`) / total,
+           prop2 = `2` / total) %>% 
+    arrange(-prop01, -prop2) %>% 
+    pull(type) %>% 
+    as.character
+count_3_in_4 %>%
+    mutate(type = factor(type, levels = typelev34)) %>% 
+    ggplot(aes(x = type, 
+               fill = nrlevel3cells_with_type_per_level4cell)) +
+    geom_bar(position = "fill") +
+    labs(x = NULL, y = "distribution of level4-cells", fill = "nr of level3-cells\nwith type\nper level4-cell\nmatching polygon") +
+    coord_flip()
+```
+
+
+### Aantal level0-cellen binnen de hogere-orde-cellen van een type
+
+#### Level3-niveau
+
+Houden we rekening met de trefkans op een type, dan zien we dat bij een minderheid van types de level3-cellen typisch heel wat level0-cellen ter beschikking hebben:
+
+```{r fig.width=8, fig.height=10}
+count_0_in_3 <- 
+    type_grts %>% 
+    group_by(type, level3) %>% 
+    summarise(nrlevel0cells_per_level3cell = sum(phab) / 100)
+typelev2 <- 
+    count_0_in_3 %>% 
+    summarise(med = median(nrlevel0cells_per_level3cell)) %>% 
+    arrange(med) %>% 
+    pull(type) %>% 
+    as.character
+count_0_in_3 %>% 
+    ungroup %>% 
+    mutate(type = factor(type, levels = typelev2)) %>% 
+    ggplot(aes(x = type, y = nrlevel0cells_per_level3cell)) +
+    geom_boxplot(outlier.size = 0.2, outlier.alpha = 0.3) +
+    coord_flip() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+Dit is dus voor heel wat types veel beperkter.
+
+Vergelijking van de verdeling van level3-cellen tussen centroïd- en celgebaseerde koppeling, rekening houdend met de trefkans (verdeling volgens het aantal level0-cellen = som van de level0-trefkansen):
+
+```{r fig.height=12, fig.width=7}
+typelev3 <- 
+    count_0_in_3 %>% 
+    summarise(prop0 = sum(nrlevel0cells_per_level3cell < 0.5) / n(),
+              prop1 = sum(nrlevel0cells_per_level3cell < 1) / n()) %>% 
+    arrange(prop1, prop0) %>% 
+    pull(type) %>% 
+    as.character
+cut_0_in_3 <- function(x) {
+    cut(x, 
+        c(0, 0.5, 1, 1.5, 2.5, 3.5, 5.5, 7.5, 64),
+        include.lowest = TRUE,
+        right = FALSE) %>% 
+        fct_rev
+}
+count_0_in_3_class <- 
+    count_0_in_3 %>% 
+    ungroup %>% 
+    mutate(nrlevel0cells_per_level3cell_class = 
+               cut_0_in_3(nrlevel0cells_per_level3cell),
+           type = factor(type, levels = typelev3) %>% fct_rev
+           )
+p1 <- 
+    count_0_in_3_class %>% 
+    ggplot(aes(x = type, fill = nrlevel0cells_per_level3cell_class)) +
+    geom_bar(position = "fill") +
+    coord_flip() +
+    labs(y = "distribution of level3-cells",
+         title = "Centroid-based, level 3") +
+    theme(legend.position = "bottom")
+```
+
+
+```{r message=FALSE, results="hide"}
+# use bbox of level 3 (see read_GRTSmh_diffres(level=3)):
+# system("g.proj -c datumtrans=1 epsg=31370") # this was necessary when linkGRASS() overwrited this, is fixed now
+system("g.region w=22030 e=259086 s=153054 n=244190 res=256")
+
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.stats",
+              flags = "c",
+              input = str_c("lev3_summax_", types_hmt[i]),
+              separator = "tab",
+              nsteps = 100)
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        enframe(name = NULL, value = "string") %>% 
+        separate(col = string,
+                 into = c("phabsummax", "count"),
+                 sep = "\t") %>% 
+        filter(phabsummax != "*") %>% 
+        mutate(phabsummax1 = str_sub(phabsummax, 1, 
+                               str_locate(.$phabsummax, "-")[,1] - 1) %>% as.numeric,
+               phabsummax2 = str_sub(phabsummax, 
+                               str_locate(.$phabsummax, "-")[,1] + 1) %>% as.numeric,
+               count = as.numeric(count),
+               type = types_hmt[i]) %>% 
+        rowwise %>% 
+        # divide by 100 to get phab as fraction
+        mutate(nrlevel0 = mean(c(phabsummax1, phabsummax2) / 100)) %>% 
+        ungroup %>% 
+        select(type, nrlevel0, count)
+    
+    if (i == 1) {
+        hmt_nrlevel0 <- type_result
+        } else {
+        hmt_nrlevel0 <- 
+            hmt_nrlevel0 %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+```
+
+```{r fig.height=12, fig.width=7}
+typelev4 <- 
+    hmt_nrlevel0 %>% 
+    group_by(type) %>% 
+    summarise(prop0 = sum(.data$count[.data$nrlevel0 < 0.5]) / sum(count),
+              prop1 = sum(.data$count[.data$nrlevel0 < 1]) / sum(count)
+              ) %>% 
+    arrange(prop1, prop0) %>% 
+    pull(type) %>% 
+    as.character
+p2 <- 
+    hmt_nrlevel0 %>% 
+    mutate(nrlevel0cells_per_level3cell_class = cut_0_in_3(nrlevel0),
+           type = factor(type, levels = typelev4) %>% fct_rev
+           ) %>% 
+    group_by(type, nrlevel0cells_per_level3cell_class) %>% 
+    summarise(freq = sum(count)) %>% 
+    ggplot(aes(x = type, y = freq, fill = nrlevel0cells_per_level3cell_class)) +
+    geom_col(position = "fill") +
+    coord_flip() +
+    labs(y = "distribution of level3-cells",
+         title = "Cell-based, level 3") +
+    theme(legend.position = "bottom")
+```
+
+```{r fig.height=12, fig.width=15}
+gridExtra::grid.arrange(p1, p2, nrow = 1)
+```
+
+_Noot: voor celgebaseerd zal het resultaat in werkelijkheid nog beter zijn. De trefkans per level0-cel is immers heel conservatief berekend._
+
+Het is hieruit duidelijk dat we met de centroïdgebaseerde benadering nog geregeld bij heel wat types level3-cellen (na kartering) zullen moeten afstoten omdat geen enkele level0-cel het type bevat.
+
+
+#### Level4-niveau
+
+Een optie is om ook level4-cellen te karteren (i.h.b. indien de ene level3-cel niets oplevert).
+
+```{r fig.height=12, fig.width=7}
+count_0_in_4 <- 
+    type_grts %>% 
+    group_by(type, level4) %>% 
+    summarise(nrlevel0cells_per_level4cell = sum(phab) / 100)
+typelev04 <- 
+    count_0_in_4 %>% 
+    summarise(prop0 = sum(nrlevel0cells_per_level4cell < 0.5) / n(),
+              prop1 = sum(nrlevel0cells_per_level4cell < 1) / n()) %>% 
+    arrange(prop1, prop0) %>% 
+    pull(type) %>% 
+    as.character
+p3 <- 
+    count_0_in_4 %>% 
+    ungroup %>% 
+    mutate(nrlevel0cells_per_level4cell_class = cut(nrlevel0cells_per_level4cell, 
+                                                c(0, 0.5, 1, 1.5, 2.5, 3.5, 7.5, 64, 256),
+                                                include.lowest = TRUE,
+                                                right = FALSE) %>% fct_rev,
+           type = factor(type, levels = typelev04) %>% fct_rev
+           ) %>% 
+    ggplot(aes(x = type, fill = nrlevel0cells_per_level4cell_class)) +
+    geom_bar(position = "fill") +
+    coord_flip() +
+    labs(y = "distribution of level4-cells",
+         title = "Centroid-based, level 4") +
+    theme(legend.position = "bottom")
+```
+
+```{r fig.height=12, fig.width=15}
+gridExtra::grid.arrange(p1, p3, nrow = 1)
+```
+    
+Deze grafiek toont enige verbetering aan in de reductie van level4-cellen zonder level0-cel, maar beperkt.
+Dit komt doordat in meer dan de helft van de gevallen maar 0 of 1 level3-cellen per level4-cel beschikbaar zijn die effectief het type bevatten.
+
+We besluiten om (standaard) niet verder naar vervangende level0-cellen te zoeken op level4-niveau.
+
+### Aantal 16 x 16 m² cellen binnen de level3-cellen van een type
+
+We gaan aanvullend na in hoeverre voor de centroïd-gebaseerde koppeling verbetering optreedt in het aantal type-bevattende cellen (binnen een level3-cel) door sampling units te nemen van 16 x 16 m² (level '-1').
+
+```{r include=FALSE}
+vc_polygon_id16 <- all(file.exists("grts16_polygon_id.tsv", "grts16_polygon_id.yml")) | !params$regenerate_large_files
+```
+
+```{r results="hide", eval=!vc_polygon_id16}
+# again use bbox & resolution of GRTSmh:
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+system("g.region -p
+        g.proj -w")
+```
+
+```{r results="hide", warning=FALSE, eval=!vc_polygon_id16}
+# read GRTS level0 & level3 in the GRASS database
+execGRASS("r.in.gdal",
+          flags = "o",
+          input = file.path(fileman_up("n2khab_data"), "10_raw/GRTSmaster_habitats/GRTSmaster_habitats.tif"),
+          output = "GRTSmh_lev0"
+          )
+execGRASS("r.in.gdal",
+          flags = "o",
+          input = file.path(fileman_up("n2khab_data"), "20_processed/GRTSmh_diffres/GRTSmh_diffres.3.tif"),
+          output = "GRTSmh_lev3"
+          )
+```
+
+
+```{r results="hide", eval=!vc_polygon_id16}
+# use resolution of 16 m:
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=16")
+system("g.region -p
+        g.proj -w")
+```
+
+
+```{r results="hide", eval=!vc_polygon_id16}
+system("v.to.rast input=hmt_pol_id output=hmt_pol_ras16 use=attr attribute_column=pol_id memory=3000 --overwrite")
+```
+
+
+
+```{r results="hide", eval=!vc_polygon_id16}
+system("i.group group=basemaps_for_res16 input=hmt_pol_ras16,GRTSmh_lev0,GRTSmh_lev3")
+system("r.out.gdal input=basemaps_for_res16 output=rasters_16.tif type=Int32 -m -c --overwrite")
+```
+
+```{r eval=!vc_polygon_id16}
+rasters_16 <- brick("rasters_16.tif")
+names(rasters_16) <- c("pol_id", "grts0_16", "level3")
+NAvalue(rasters_16) <- -1 # also all values lower than -1 will be NA
+```
+
+```{r eval=!vc_polygon_id16}
+rasters_16$pol_id[] %>% summary
+rasters_16$grts0_16[] %>% summary
+rasters_16$level3[] %>% summary
+```
+
+
+```{r eval=!vc_polygon_id16}
+hmt_pol_id <- 
+    hmt_pol %>% 
+    mutate(pol_id = 1:n())
+```
+
+
+```{r eval=!vc_polygon_id16}
+grts16_polygon_id <- 
+    rasters_16[!is.na(rasters_16$pol_id)] %>% 
+    as_tibble %>% 
+    filter(!is.na(grts0_16)) %>% # removes a series of border cells
+    inner_join(hmt_pol_id %>% st_drop_geometry, 
+               by = "pol_id") %>% 
+    select(-pol_id)
+```
+
+
+```{r eval=!vc_polygon_id16, warning=FALSE}
+# an idea for n2khab_data (+ reading function in n2khab):
+grts16_polygon_id %>% git2rdata::write_vc("grts16_polygon_id", sorting = "grts0_16")
+```
+
+```{r}
+grts16_polygon_id <- git2rdata::read_vc("grts16_polygon_id") %>% as_tibble
+# but perhaps still better to do this with type_grts16
+```
+
+
+```{r}
+type_grts16 <- 
+    hmt_occ %>% 
+    select(polygon_id, type, phab) %>% 
+    group_by(polygon_id, type) %>% 
+    summarise(phab = mean(phab)) %>% 
+    ungroup %>% 
+    inner_join(grts16_polygon_id, 
+               by = "polygon_id")
+```
+
+```{r fig.height=12, fig.width=7}
+count_16_in_3 <- 
+    type_grts16 %>% 
+    group_by(type, level3) %>% 
+    summarise(nrres16cells_per_level3cell = sum(phab) / 100)
+typelev_16_in_3 <- 
+    count_16_in_3 %>% 
+    summarise(prop0 = sum(nrres16cells_per_level3cell < 0.5) / n(),
+              prop1 = sum(nrres16cells_per_level3cell < 1.5) / n()) %>% 
+    arrange(prop1, prop0) %>% 
+    pull(type) %>% 
+    as.character
+p16 <- 
+    count_16_in_3 %>% 
+    ungroup %>% 
+    mutate(nrres16cells_per_level3cell = cut(nrres16cells_per_level3cell, 
+                                                c(0, 0.5, 0.75, 1.5, 2.5, 3.5, 7.5, 64, 256),
+                                                include.lowest = TRUE,
+                                                right = FALSE) %>% fct_rev,
+           type = factor(type, levels = typelev_16_in_3) %>% fct_rev
+           ) %>% 
+    ggplot(aes(x = type, fill = nrres16cells_per_level3cell)) +
+    geom_bar(position = "fill") +
+    coord_flip() +
+    labs(y = "distribution of level3-cells",
+         title = "Centroid-based for res 16 m, level 3") +
+    theme(legend.position = "bottom")
+```
+
+Een vergelijking van de verdeling van level3-cellen, volgens het aantal type-bevattende level0- resp. level '-1' cellen, toont een verbetering op het '-1' niveau die nog iets beter is dan de celgebaseerde koppeling voor level0:
+
+```{r fig.height=12, fig.width=15}
+gridExtra::grid.arrange(p1, p16, nrow = 1)
+```
+
+```{r fig.height=12, fig.width=15, eval=FALSE}
+gridExtra::grid.arrange(p3, p16, nrow = 1)
+```
+
+We beschouwen deze winst als onvoldoende, gegeven de nadelen dat 16x16 m² centroïden andere punten zijn dan de centroïden van het meetnet biotische habitatkwaliteit, en dat dit de populatiegrootte sterk zou doen toenemen.
+
+Bijgevolg besluiten we om te kijken naar level0-cellen, binnen level3-cellen voor de vervanging.
+
+```{r results="hide"}
+# again use bbox & resolution of GRTSmh:
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+# system("g.region -p
+#         g.proj -w")
+```
+
+## Naar een praktische aanpak
+
+We beschouwen hier een tweetal mogelijkheden om het dikwijls vrij grote aantal level3-cellen met minder dan 1 level0-cel te verhelpen, **voor specifieke types**:
+
+- gebruik van de **celgebaseerde koppelingsmethode**.
+Normaal hanteren we de centroïdgebaseerde methode omdat we met de steekproef een correct beeld van de totale oppervlakte willen weergeven waarbij iedere steekproefeenheid hetzelfde gewicht kan krijgen in de inferentie (dus: minder bedekkende cellen moeten een overeenkomstig lagere celselectiekans hebben).
+Het gebruik van de celgebaseerde methode is binnen dezelfde context (oppervlaktevertegenwoordiging) maar verantwoord indien een groot deel van de type-oppervlakte bepaald wordt door laagbedekkende cellen (dwz doordat het type als kleine vlekken voorkomt of als smalle, langwerpige vlekken).
+- de **polygonen met phab ≤ 10% buiten de doelpopulatie houden**.
+Deze benadering is toegepast in het meetnet biotische habitatkwaliteit.
+Dit is enkel verantwoord indien dit overeenstemt met een heel beperkt oppervlakte-aandeel van het type in Vlaanderen.
+We onderzoeken voor deze toepassing de grens van 5% oppervlakte-aandeel.
+Het betekent dat voor deze types de locaties met phab ≤ 10% maar maximum 1/20 zouden bijdragen aan de totale uitspraak, terwijl zij op terrein relatief veel missers kunnen genereren op level3- en level0-niveau.
+
+We onderzoeken daarom:
+
+- het oppervlaktegewogen aandeel van de verschillende level0-oppervlakteproporties per type, om een (beperkter) aantal (voor level 3 meer problematische) types te kunnen selecteren waarvoor een celgebaseerde benadering verantwoord is;
+- het bijkomende effect van het uitsluiten van polygonen met phab ≤ 10%, voor die types waar dit minder dan 5% van de totale oppervlakte behelst.
+
+### Vergelijking van distributie (per type) van level3-cellen met die van level0-oppervlakteproporties {#level3-0-distr}
+
+Distributie van level0-cellen, gesorteerd volgens de within-level0-areal-proportion < 0.3:
+
+```{r fig.height=12, fig.width=7, out.width='60%', out.height='60%'}
+typelev_areaprop0.3 <- 
+    hmt_freq_sub32_dens %>% 
+    group_by(type) %>% 
+    summarise(prop0.3 = sum(weight[.data$areaprop < 0.3])) %>% 
+    arrange(prop0.3) %>% 
+    pull(type) %>% 
+    as.character
+level0_areaprop_classes <- 
+    hmt_freq_sub32_dens %>% 
+    mutate(level0_areaprop = cut(areaprop, 
+                                breaks = seq(0, 1, 0.1), 
+                                include.lowest = TRUE) %>% 
+                            fct_rev,
+         type = factor(type, levels = typelev_areaprop0.3) %>% fct_rev
+         ) %>% 
+    group_by(level0_areaprop, type) %>% 
+    summarise(count = sum(count))
+plot_areaprop <- 
+    level0_areaprop_classes %>% 
+    ggplot(aes(x = type, y = count, fill = level0_areaprop)) +
+    geom_col(position = "fill") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "distribution of level0 cells",
+         title = "Expected type's areal proportion within level0 cells",
+         fill = "areal proportion within\na level0 cell") +
+    theme(legend.position = "bottom")
+plot_areaprop
+```
+
+Bemerk dat we in wezen via een centroïdgebaseerde methode niet meer de cellen zouden treffen waarvan het centroïd _buiten de polygoon_ valt (grafiek onder), dus de complete distributie zoals hierboven is meer een worst-case benadering.
+
+```{r fig.height=12, fig.width=7, out.width='60%', out.height='60%'}
+typelev_areaprop0.3_centroid <- 
+    type_grts %>% 
+    group_by(type) %>% 
+    summarise(prop0.3 = sum(phab <= 30) / n()) %>% 
+    arrange(prop0.3) %>% 
+    pull(type) %>% 
+    as.character
+type_grts %>% 
+    mutate(level0_areaprop_centroid = cut(phab / 100, 
+                                breaks = seq(0, 1, 0.1), 
+                                include.lowest = TRUE) %>% 
+                            fct_rev,
+         type = factor(type, levels = typelev_areaprop0.3_centroid) %>% fct_rev
+         ) %>% 
+    count(type, level0_areaprop_centroid) %>% 
+    ggplot(aes(x = type, y = n, fill = level0_areaprop_centroid)) +
+    geom_col(position = "fill") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "distribution of centroid-based level0 cells",
+         title = "Expected type's areal proportion within centroid-based level0 cells",
+         fill = "areal proportion within\na (centroid) level0 cell") +
+    theme(legend.position = "bottom")
+```
+
+<!-- Gesorteerd volgens proportion < 0.1: -->
+
+```{r fig.height=12, fig.width=7, eval=FALSE, include=FALSE, out.width='60%', out.height='60%'}
+typelev_areaprop0.1_centroid <- 
+    type_grts %>% 
+    group_by(type) %>% 
+    summarise(prop0.1 = sum(phab <= 10) / n()) %>% 
+    arrange(prop0.1) %>% 
+    pull(type) %>% 
+    as.character
+type_grts %>% 
+    mutate(level0_areaprop_centroid = cut(phab / 100, 
+                                breaks = seq(0, 1, 0.1), 
+                                include.lowest = TRUE) %>% 
+                            fct_rev,
+         type = factor(type, levels = typelev_areaprop0.1_centroid) %>% fct_rev
+         ) %>% 
+    count(type, level0_areaprop_centroid) %>% 
+    ggplot(aes(x = type, y = n, fill = level0_areaprop_centroid)) +
+    geom_col(position = "fill") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "distribution of centroid-based level0 cells",
+         title = "Expected type's areal proportion within centroid-based level0 cells",
+         fill = "areal proportion within\na (centroid) level0 cell") +
+    theme(legend.position = "bottom")
+```
+
+_Oppervlaktegewogen_ distributie van de level0-cellen, gesorteerd volgens de within-level0-areal-proportion < 0.3:
+
+```{r fig.height=12, fig.width=7}
+cell_area <- 32^2 %>% set_units("m^2")
+hmt_freq_sub32_area <- 
+    hmt_freq_sub32_dens %>% 
+    mutate(area = areaprop * cell_area * count) %>% 
+    select(-weight)
+typelev_areaprop0.3_area <- 
+    hmt_freq_sub32_area %>% 
+    group_by(type) %>%
+    mutate(weight =  drop_units(area / sum(area))) %>% 
+    summarise(prop0.3 = sum(weight[.data$areaprop < 0.3])) %>% 
+    arrange(prop0.3) %>% 
+    pull(type) %>% 
+    as.character
+level0_areaprop_classes_area <- 
+    hmt_freq_sub32_area %>% 
+    mutate(level0_areaprop = cut(areaprop, 
+                                breaks = seq(0, 1, 0.1), 
+                                include.lowest = TRUE) %>% 
+                            fct_rev,
+         type = factor(type, levels = typelev_areaprop0.3_area) %>% fct_rev
+         ) %>% 
+    group_by(level0_areaprop, type) %>% 
+    summarise(area = sum(area) %>% drop_units)
+```
+
+
+```{r fig.height=12, fig.width=7, out.width='60%', out.height='60%'}
+plot_areaprop_area <- 
+    level0_areaprop_classes_area %>% 
+    ggplot(aes(x = type, y = area, fill = level0_areaprop)) +
+    geom_col(position = "fill") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "areal distribution",
+         title = "Expected type's areal proportion within level0 cells",
+         fill = "areal proportion within\na level0 cell") +
+    theme(legend.position = "bottom")
+plot_areaprop_area
+```
+
+<!-- Gesorteerd volgens areal proportion < 0.1: -->
+
+```{r fig.height=12, fig.width=7, eval=FALSE, include=FALSE, out.width='60%', out.height='60%'}
+typelev_areaprop0.1_area <- 
+    hmt_freq_sub32_area %>% 
+    group_by(type) %>%
+    mutate(weight =  drop_units(area / sum(area))) %>% 
+    summarise(prop0.1 = sum(weight[.data$areaprop < 0.1])) %>% 
+    arrange(prop0.1) %>% 
+    pull(type) %>% 
+    as.character
+level0_areaprop_classes_area_0.1 <- 
+    level0_areaprop_classes_area %>% 
+    mutate(type = factor(type, levels = typelev_areaprop0.1_area) %>% 
+               fct_rev
+           )
+plot_areaprop_area_0.1 <- 
+    level0_areaprop_classes_area_0.1 %>% 
+    ggplot(aes(x = type, y = area, fill = level0_areaprop)) +
+    geom_col(position = "fill") +
+    scale_y_continuous(breaks = seq(0,1,0.1)) +
+    coord_flip() +
+    labs(x = NULL, 
+         y = "areal distribution",
+         title = "Expected type's areal proportion in level0 cells",
+         fill = "areal proportion within\na level0 cell") +
+    theme(legend.position = "bottom")
+plot_areaprop_area_0.1
+```
+
+Zoomen we nu in op enkel die types die minstens 1/3 level3-cellen bevatten met minder dan 1 level0-cel (de meest problematische), dan kunnen we de level3-celdistributie en de distributie van de level0-cellen beter vergelijken (sortering in beide grafieken is dezelfde).
+Hierbij worden alleen nog de types weergegeven waarvoor `unresolved = FALSE`.
+
+```{r fig.height=8, fig.width=13}
+types_many_missers <- 
+    count_0_in_3 %>% 
+    summarise(prop1 = sum(nrlevel0cells_per_level3cell < 1) / n()) %>% 
+    filter(prop1 >= 1/3) %>%
+    semi_join(types_mne_expanded %>% 
+                  filter(!unresolved), 
+              by = "type") %>% 
+    arrange(-prop1)
+p1m <- p1 %+% (count_0_in_3_class %>% filter(type %in% types_many_missers$type))
+plot_areaprop_m <- plot_areaprop %+% (level0_areaprop_classes %>% 
+                                          filter(type %in% types_many_missers$type) %>% 
+                                          mutate(type = factor(as.character(type), 
+                                                               levels = typelev3) %>% 
+                                                     fct_rev
+                                                 ))
+plot_areaprop_area_m <- 
+    plot_areaprop_area %+% (level0_areaprop_classes_area %>% 
+                                          filter(type %in% types_many_missers$type) %>% 
+                                          mutate(type = factor(as.character(type), 
+                                                               levels = typelev3) %>% 
+                                                     fct_rev
+                                                 ))
+```
+
+
+```{r fig.height=8, fig.width=13}
+gridExtra::grid.arrange(p1m, plot_areaprop_m, nrow = 1)
+```
+
+Dezelfde grafiek, maar de rechterzijde oppervlaktegewogen:
+
+```{r fig.height=8, fig.width=13}
+gridExtra::grid.arrange(p1m, plot_areaprop_area_m, nrow = 1)
+```
+
+We beschouwen de oppervlaktegewogen versie als de belangrijkste om tot een keuze van types te komen om celgebaseerd te selecteren op terrein.
+We verkiezen een celgebaseerde selectie voor die types waarvan de level0-cellen met hoogstens 30% bedekking (binnen de cel) een oppervlakte-aandeel van minstens 55% ^[
+55%: licht bijgesteld t.o.v. 50% om geen verschillende aanpak te veroorzaken tussen subtypes van 6230.]
+van het type vertegenwoordigen.
+
+Dit zijn dus de volgende types:
+
+```{r}
+types_areaprop0.3_area_0.5 <- 
+    hmt_freq_sub32_area %>% 
+    group_by(type) %>%
+    mutate(weight =  drop_units(area / sum(area))) %>% 
+    summarise(prop0.3 = sum(weight[.data$areaprop < 0.3])) %>% 
+    arrange(-prop0.3) %>% 
+    mutate(majority_level0coverlessthan0.3 = prop0.3 >= 0.55)
+```
+
+
+```{r cell-based-types}
+read_types(lang = "nl") %>% 
+    select(type, type_name) %>% 
+    semi_join(types_areaprop0.3_area_0.5 %>% 
+                  filter(majority_level0coverlessthan0.3), 
+              by = "type") %>% 
+    kable(caption = "Types met een celgebaseerde koppeling bij het bepalen van de steekproefeenheid.")
+```
+
+Inspectie op kaart toont aan dat de lage within-cell-cover van deze types vaak het gevolg is van een ruimtelijke verschijning met veel lijnvormige of kleine elementen.
+Uitzonderlijk is het een gevolg van consequent lage phab-waarden in polygonen.
+
+### Op zoek naar verdere type-eigenschappen voor de aanpak
+
+We verkennen de relaties tussen:
+
+- het oppervlakte-aandeel per type voor zijn occurrences in de polygonen met phab ≤ 10%: variabele `type_areaprop_phab10`
+- het aandeel level3-cellen zonder level0-cel (gedefinieerd als aantal level0-cellen < 1, i.e. rekening houdend met phab): variabele `type_level3prop_nolevel0avail`
+- de success-rate (zie paragraaf \@ref(opptypes-in-pol)): variabele `success_rate`
+- de totale oppervlakte van het type (uitgedrukt in eenheden van 1024 m² = level0-celoppervlakte): variabele `area_as_cells`
+- de selectie van types waarvan de level0-cellen met hoogstens 30% bedekking (binnen de cel) een oppervlakte-aandeel van minstens 55% van het type vertegenwoordigen: variabele `majority_level0coverlessthan0.3` (`TRUE` impliceert celgebaseerde koppeling).
+
+In de grafieken worden steeds de types weergegeven volgens een centroïdgebaseerde koppeling, met behoud van alle polygonen.
+
+De onderstaande interactieve grafiek toont:
+
+- elk type als een punt (alleen de types waarvoor `unresolved = FALSE`)
+- op de X-as het oppervlakte-aandeel per type voor zijn occurrences in de polygonen met phab ≤ 10%, met een verticale lijn ter hoogte van 4.5%
+- op de Y-as het aandeel level3-cellen zonder level0-cel (aantal level0-cellen < 1), met een horizontale stippellijn ter hoogte van 1/3: boven de stippellijn is de selectie van types die in de eerdere figuren waren opgenomen
+- in het paars de types die worden weerhouden voor een celgebaseerde koppeling
+
+```{r}
+type_stats <- 
+    hmt_occ_area %>% 
+    mutate(area = area %>% as.numeric) %>% 
+    group_by(type) %>% 
+    summarize(type_areaprop_phab10 = sum(area[.data$phab <= 10]) / sum(area)) %>% 
+    inner_join(
+        count_0_in_3 %>% 
+            summarise(type_level3prop_nolevel0avail = 
+                          sum(nrlevel0cells_per_level3cell < 1) / n()),
+        by = "type"
+    ) %>% 
+    inner_join(types_areaprop0.3_area_0.5,
+              by = "type") %>% 
+    inner_join(type_areastats,
+              by = "type") %>% 
+    semi_join(types_mne_expanded %>% 
+                  filter(!unresolved), 
+              by = "type")
+```
+
+
+```{r fig.width=8, fig.height=8, out.width='100%', out.height='100%'}
+p <- 
+    type_stats %>% 
+    ggplot(aes(x = type_areaprop_phab10, 
+               y = type_level3prop_nolevel0avail, 
+               label = type,
+               colour = majority_level0coverlessthan0.3,
+               extra1 = area_as_cells,
+               extra2 = success_rate)) +
+    geom_point() +
+    geom_text(size = 2, vjust = -1) +
+    geom_vline(xintercept = 0.045, colour = "blue") +
+    # geom_vline(xintercept = 0.105, colour = "lightblue") +
+    geom_hline(yintercept = 0.33, 
+               colour = "blue",
+               linetype = "dotted") +
+    scale_colour_manual(values = c("black", "purple")) +
+    coord_fixed()
+plotly::ggplotly(p)
+```
+
+Het valt hierbij op dat de meeste types met een problematische distributie van de level3-cellen (boven de stippellijn) een meer substantieel oppervlakte-aandeel (> 5%) hebben van occurrences in polygonen met een phab-waarde ≤ 10 (rechts van de verticale lijn) (en vice-versa).
+Behalve voor de celgebaseerde types zal dit niet op te lossen zijn, aangezien we deze types in hun geheel willen bekijken.
+
+We zien wel dat de meest problematische gevallen (bovenaan in bovenstaande grafiek) celgebaseerd zullen worden benaderd, zodat deze situaties alvast opgelost worden.
+
+Als we de succes-rate uitzetten in dezelfde grafiek, dan kunnen we zien dat deze maat duidelijk gecorreleerd is met de beide andere (onderling gecorreleerde) maten.
+
+```{r fig.width=8, fig.height=8, out.width='100%', out.height='100%'}
+p5 <- 
+    type_stats %>% 
+    ggplot(aes(x = type_areaprop_phab10, 
+               y = type_level3prop_nolevel0avail, 
+               label = type,
+               extra = area_as_cells,
+               shape = majority_level0coverlessthan0.3,
+               colour = success_rate)) +
+    geom_point() +
+    geom_text(size = 2, vjust = -1) +
+    geom_vline(xintercept = 0.045, colour = "blue") +
+    # geom_vline(xintercept = 0.105, colour = "lightblue") +
+    geom_hline(yintercept = 0.33, 
+               colour = "blue",
+               linetype = "dotted") +
+    scale_colour_distiller(palette = "YlOrRd") +
+    coord_fixed()
+plotly::ggplotly(p5)
+```
+
+De type-oppervlakte volgt minder strak dit patroon:
+
+```{r fig.width=8, fig.height=8, out.width='100%', out.height='100%'}
+p4 <- 
+    type_stats %>% 
+    ggplot(aes(x = type_areaprop_phab10, 
+               y = type_level3prop_nolevel0avail, 
+               label = type,
+               colour = drop_units(area_as_cells),
+               shape = majority_level0coverlessthan0.3,
+               extra = success_rate)) +
+    geom_point() +
+    geom_text(size = 2, vjust = -1) +
+    geom_vline(xintercept = 0.045, colour = "blue") +
+    # geom_vline(xintercept = 0.105, colour = "lightblue") +
+    geom_hline(yintercept = 0.33, 
+               colour = "blue",
+               linetype = "dotted") +
+    scale_colour_distiller(trans = "log", palette = "YlOrRd") +
+    coord_fixed()
+plotly::ggplotly(p4)
+```
+
+We zien inderdaad in volgende 2 grafieken dat area_cells minder goed gelinkt is met succes-rate en met de level3-celdistributie (de eerste grafiek is een verdere update van de grafiek in paragraaf \@ref(opptypes-in-pol)):
+
+```{r fig.width=8, fig.height=8, out.width='100%', out.height='100%'}
+p3 <- 
+  type_stats %>% 
+  ggplot(aes(x = area_as_cells, 
+             y = success_rate,
+             label = type,
+             colour = type_areaprop_phab10 < 0.045,
+             shape = majority_level0coverlessthan0.3)) +
+  geom_point() +
+  geom_text(size = 2, vjust = -1) +
+  geom_hline(yintercept = 0.5, 
+             colour = "blue")
+ggplotly(p3) %>% 
+  layout(yaxis = list(fixedrange = TRUE))
+```
+
+
+
+```{r warning=FALSE}
+type_stats %>% 
+  ggplot(aes(y = type_level3prop_nolevel0avail, 
+             x = area_as_cells,
+             # label = type,
+             colour = type_areaprop_phab10 < 0.045,
+             shape = majority_level0coverlessthan0.3)) +
+  geom_point() +
+  scale_x_unit(limits = c(0, 45e3))
+```
+
+In de bovenstaande grafiek is trouwens opnieuw de minder gunstige level3-celdistributie, van types die veel oppervlakte hebben in polygonen met phab ≤ 10%, duidelijk zichtbaar.
+Ook is duidelijk dat types met een grote oppervlakte een gunstiger level3-celdistributie vertonen.
+
+```{r eval=FALSE, include=FALSE}
+p2 <- 
+  type_stats %>% 
+  ggplot(aes(x = type_level3prop_nolevel0avail, 
+             y = success_rate,
+             label = type,
+             size = area_as_cells %>% drop_units,
+             colour = type_areaprop_phab10 < 0.045,
+             shape = majority_level0coverlessthan0.3)) +
+  geom_point()
+p2
+```
+
+
+### Effect van het weglaten van polygonen met phab ≤ 10%
+
+We onderzoeken het effect van de uitsluiting van polygonen met phab ≤ 10% voor die types waar het oppervlakte-aandeel met phab ≤ 10% kleiner is dan ca. 5% (in realiteit licht verschoven naar 4.5% om logisch samenhorende types niet uiteen te halen qua aanpak).
+
+#### Effect op de distributie van level3-cellen
+
+De onderstaande grafiek toont de verandering in de distributie van level3-cellen bij toepassen van zowel de celgebaseerde koppeling bij een beperkt aantal types, als het weglaten van polygonen met phab ≤ 10% wanneer dit minder dan 4.5% van de type-oppervlakte beslaat.
+
+
+```{r}
+phab10_decide <- 
+    hmt_occ_area %>% 
+    mutate(area = area %>% as.numeric) %>% 
+    group_by(type) %>% 
+    summarize(type_areaprop_phab10 = sum(area[.data$phab <= 10]) / sum(area)) %>% 
+    mutate(phab10_below_0.05 = type_areaprop_phab10 < 0.045,
+           phab10_below_0.1 = type_areaprop_phab10 < 0.105)
+
+cell_based_0_in_3 <- 
+    hmt_nrlevel0 %>% 
+    filter(type %in% (types_areaprop0.3_area_0.5 %>% 
+                          filter(majority_level0coverlessthan0.3) %>% 
+                          pull(type))
+           ) %>% 
+    uncount(count) %>% 
+    rename(nrlevel0cells_per_level3cell = nrlevel0) %>% 
+    mutate(nrlevel0cells_nophab10_per_level3cell = 
+               nrlevel0cells_per_level3cell)
+
+count_0_in_3_implement <- 
+    type_grts %>% 
+    filter(type %in% (types_areaprop0.3_area_0.5 %>% 
+                          filter(!majority_level0coverlessthan0.3) %>% 
+                          pull(type))
+           ) %>% 
+    group_by(type, level3) %>% 
+    summarise(nrlevel0cells_per_level3cell = sum(phab) / 100,
+              nrlevel0cells_nophab10_per_level3cell = 
+                  sum(phab[.data$phab > 10]) / 100) %>% 
+    ungroup %>% 
+    select(-level3) %>% 
+    bind_rows(cell_based_0_in_3)
+
+count_0_in_3_implement_phab10_0.05 <- 
+    count_0_in_3_implement %>% 
+    inner_join(phab10_decide, by = "type") %>% 
+    mutate(nrlevel0cells_per_level3cell = 
+               ifelse(phab10_below_0.05,
+                      nrlevel0cells_nophab10_per_level3cell,
+                      nrlevel0cells_per_level3cell)
+           ) %>% 
+    select(-nrlevel0cells_nophab10_per_level3cell) %>% 
+    filter(!phab10_below_0.05 | 
+               (phab10_below_0.05 & nrlevel0cells_per_level3cell > 0)
+           )
+```
+
+
+```{r fig.height=12, fig.width=7}
+p_implement_phab10_0.05 <- 
+    count_0_in_3_implement_phab10_0.05 %>% 
+    mutate(nrlevel0cells_per_level3cell_class = 
+               cut_0_in_3(nrlevel0cells_per_level3cell),
+           type = factor(type, levels = typelev3) %>% fct_rev
+           ) %>% 
+    ggplot(aes(x = type, fill = nrlevel0cells_per_level3cell_class)) +
+    geom_bar(position = "fill") +
+    coord_flip() +
+    labs(y = "distribution of level3-cells",
+         title = "Same, but 7 types cell-based & no phab ≤ 10 when its area < 4.5 %") +
+    theme(legend.position = "bottom")
+```
+
+```{r fig.height=12, fig.width=15}
+gridExtra::grid.arrange(p1, p_implement_phab10_0.05, nrow = 1)
+```
+
+We vergelijken specifiek de proportie van level3-cellen met minder dan 1 level0-cel:
+
+```{r fig.width=10}
+count_0_in_3 %>% 
+  summarise(type_level3prop_nolevel0avail = 
+              sum(nrlevel0cells_per_level3cell < 1) / n()) %>% 
+  mutate(approach = "reference") %>% 
+  bind_rows(
+    count_0_in_3_implement_phab10_0.05 %>% 
+      group_by(type) %>% 
+      summarise(type_level3prop_nolevel0avail = 
+              sum(nrlevel0cells_per_level3cell < 1) / n()) %>% 
+  mutate(approach = "omit phab≤10 &\nuse cell-based\nfor 7 types")
+  ) %>% 
+  mutate(type = factor(type, levels = typelev3)) %>% 
+  ggplot(aes(x = type, 
+             y = type_level3prop_nolevel0avail,
+             colour = approach,
+             group = approach)) + 
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+Behalve voor de enkele celgebaseerde types aan de rechterkant van de grafiek en voor enkele specifieke types, is er geen drastische verbetering op het level3-niveau.
+Dat komt doordat we de weglating alleen maar toepassen waar phab ≤ 10% minder oppervlakte-aandeel (van het typetotaal) vertegenwoordigt.
+Aan de linkerkant van de grafiek is het relatieve effect wel groot, maar daar zitten we in het bereik van de level3-proportie die op zich al goed is (en waar een oplossing niet hoeft).
+
+De meer problematische level3-verdeling in de rechterkant van de grafiek is anderzijds niet oplosbaar voor de types waar het oppervlakte-aandeel van het type in polygonen met phab ≤ 10% groter is.
+Dit zijn de types waarvoor beide lijnen van de bovenstaande grafiek samenvallen.
+
+```{r fig.height=12, fig.width=15, eval=FALSE, include=FALSE}
+count_0_in_3_implement_phab10_0.1 <-
+    count_0_in_3_implement %>%
+    inner_join(phab10_decide, by = "type") %>%
+    mutate(nrlevel0cells_per_level3cell =
+               ifelse(phab10_below_0.1,
+                      nrlevel0cells_nophab10_per_level3cell,
+                      nrlevel0cells_per_level3cell)
+           ) %>%
+    filter(!phab10_below_0.1 |
+               (phab10_below_0.1 & nrlevel0cells_per_level3cell > 0)
+           )
+p_implement_phab10_0.1 <-
+    count_0_in_3_implement_phab10_0.1 %>%
+    mutate(nrlevel0cells_per_level3cell_class =
+               cut_0_in_3(nrlevel0cells_per_level3cell),
+           type = factor(type, levels = typelev3) %>% fct_rev
+           ) %>%
+    ggplot(aes(x = type, fill = nrlevel0cells_per_level3cell_class)) +
+    geom_bar(position = "fill") +
+    coord_flip() +
+    labs(y = "distribution of level3-cells",
+         title = "Same, but 7 types cell-based & no phab ≤ 10 when its area < 10.5 %") +
+    theme(legend.position = "bottom")
+gridExtra::grid.arrange(p1, p_implement_phab10_0.1, nrow = 1)
+```
+
+
+#### Effect op de success-rate
+
+De success-rate is de verhouding tussen de reële oppervlakte van het type (phab-gecorrigeerd) en de totale oppervlakte van de polygonen waarin het voorkomt.
+Het is dus ook de gemiddelde trefkans op level0-niveau (met centroïd-gebaseerde koppeling):
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 <- 
+    hmt_occ_area %>% 
+    group_by(type) %>% 
+    summarise(area_pol_phab_greaterthan_10 = sum(area_pol[.data$phab > 10]),
+            area_phab_greaterthan_10 = sum(area[.data$phab > 10]),
+            nr_polygons_phab_greaterthan_10 = n_distinct(polygon_id[.data$phab > 10]),
+            area_pol = sum(area_pol),
+            area = sum(area),
+            nr_polygons = n_distinct(polygon_id)
+            ) %>% 
+    inner_join(type_stats %>% 
+                 mutate(keep_phab10 = type_areaprop_phab10 >= 0.045) %>% 
+                 select(type, keep_phab10),
+               by = "type"
+    ) %>% 
+    mutate(
+           mean_area_per_polygon = set_units(area, "m^2") / nr_polygons,
+           mean_area_per_polygon_phab_greaterthan_10 = 
+               ifelse(
+               keep_phab10,
+               mean_area_per_polygon,
+               set_units(area_phab_greaterthan_10, "m^2") / nr_polygons_phab_greaterthan_10
+               ),
+           area_as_cells = area %>% set_units("cell0units"),
+           area_as_cells_phab_greaterthan_10 = 
+               ifelse(
+               keep_phab10,
+               area_as_cells,
+               area_phab_greaterthan_10 %>% set_units("cell0units")
+               ) %>% set_units("cell0units"),
+           area_pol_as_cells = area_pol %>% set_units("cell0units"),
+           area_pol_as_cells_phab_greaterthan_10 = 
+               ifelse(
+               keep_phab10,
+               area_pol_as_cells,
+               area_pol_phab_greaterthan_10 %>% set_units("cell0units")
+               ) %>% set_units("cell0units"),
+           success_rate = (area / area_pol) %>% drop_units,
+           success_rate_phab_greaterthan_10 = 
+             ifelse(
+               keep_phab10,
+               success_rate,
+               (area_phab_greaterthan_10 / area_pol_phab_greaterthan_10) %>% drop_units
+             ),
+           type = factor(type, levels = typelevels_phab)
+           )
+```
+
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 %>% 
+    pivot_longer(cols = contains("success"),
+                 names_to = "drop_phab≤10",
+                 values_to = "success_rate") %>% 
+    mutate(`drop_phab≤10` =
+               factor(`drop_phab≤10` == "success_rate_phab_greaterthan_10",
+                      levels = c(TRUE, FALSE))
+           ) %>% 
+    ggplot(aes(x = type, 
+             y = success_rate,
+             colour = `drop_phab≤10`,
+             group = `drop_phab≤10`)) + 
+    geom_line() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+De types zijn gesorteerd volgens toenemende oppervlakteproportie (van de totale type-oppervlakte) waarvoor het type voorkomt in polygonen met een phab ≤ 10 (ook in grafieken van volgende paragrafen).
+Dit maakt dat rechts de success_rate lager is dan links.
+
+Van zodra deze proportie > 4.5% willen we die locaties niet laten vallen (beide lijnen vallen samen).
+De grafiek houdt er geen rekening mee dat voor 7 types aan de rechterkant een celgebaseerde benadering wordt gevolgd.
+
+Meer naar links zien we weinig effect.
+In het midden is het verschil wat groter. 
+
+#### Effect op de populatiegrootte
+
+Dit illustreert in wezen de regel die we toepassen om alleen polygonen met phab ≤ 10% te laten vallen wanneer dit minder dan 4.5% van de type-oppervlakte beslaat.
+Dus ze behouden heeft dan ook dit kleiner effect:
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 %>% 
+    mutate(popsize_reldiff = drop_units((area_as_cells - area_as_cells_phab_greaterthan_10) /
+               area_as_cells_phab_greaterthan_10) * 100) %>% 
+    ggplot(aes(x = type, 
+               y = popsize_reldiff)) + 
+    geom_col(fill = "white", colour = "grey60") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+    ylab("population size increase (%) by not dropping phab≤10")
+```
+
+#### Effect op de oppervlakte (het aantal cellen) van het steekproefkader
+
+Reeds uit Figuur \@ref(fig:typecover) was duidelijk dat het betrekken van phab≤10-polygonen tot een veel grotere bezoekbare oppervlakte leidt voor heel wat types, ook wanneer de hiermee corresponderende type-oppervlakte < 4.5%.
+Net op die locaties is de trefkans maximum 0.1, wat betekent dat in de meeste van deze gevallen een kartering op een hoger niveau (level 1, 2 of 3) nodig zou zijn.
+
+De polygoonoppervlakte uitgedrukt als aantal level0-celeenheden (1024 m²) levert de grootte van het steekproefkader (sampling frame) op.
+De onderstaande grafieken tonen het effect op de grootte van het steekproefkader.
+Bemerk dat aan de rechterzijde geen effect wordt getoond: hier is het aandeel van de type-occurrences in polygonen met phab ≤ 10% t.o.v. de totale type-oppervlakte groter dan 4.5%, dus alles wordt behouden ondanks de negatieve impact op level3-vervangsucces, succes-rate en polygoonoppervlakte.
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 %>% 
+    pivot_longer(cols = contains("area_pol_as_cells"),
+                 names_to = "drop_phab≤10",
+                 values_to = "area_pol_as_cells") %>% 
+    mutate(`drop_phab≤10` =
+               factor(`drop_phab≤10` == "area_pol_as_cells_phab_greaterthan_10",
+                      levels = c(TRUE, FALSE))
+           ) %>% 
+    ggplot(aes(x = type, 
+               y = area_pol_as_cells,
+               fill = `drop_phab≤10`,
+               group = `drop_phab≤10`)) + 
+    geom_col(position = "dodge") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+    scale_y_unit(name = "polygon_area_as_level0_cells") +
+    coord_cartesian(ylim = c(0, 65e3)) +
+    labs(title = "Sampling frame size")
+```
+
+```{r fig.width=10}
+type_areastats_implement_phab10_0.05 %>% 
+    mutate(polygonarea_reldiff = drop_units((area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10) /
+               area_pol_as_cells_phab_greaterthan_10) * 100) %>% 
+    ggplot(aes(x = type, 
+               y = polygonarea_reldiff)) + 
+    geom_col(fill = "white", colour = "grey60") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+    labs(title = "Sampling frame size: relative difference (%)",
+         y = "polygon area increase (%) by not dropping phab≤10")
+```
+
+```{r fig.width=10, eval=FALSE, include=FALSE}
+# note: a visually identical result is obtained by doing this based on the centroid-based list of level0-cells
+type_grts %>% 
+    group_by(type) %>% 
+    summarise(nr_cells_samplingframe = n(),
+              nr_cells_samplingframe_phab_greaterthan_10 = 
+                  sum(phab > 10)) %>% 
+    inner_join(type_stats %>% 
+                 mutate(keep_phab10 = type_areaprop_phab10 >= 0.045) %>% 
+                 select(type, keep_phab10),
+               by = "type"
+    ) %>% 
+    mutate(nr_cells_samplingframe_phab_greaterthan_10 = 
+               ifelse(keep_phab10,
+                      nr_cells_samplingframe,
+                      nr_cells_samplingframe_phab_greaterthan_10),
+           framesize_reldiff = (nr_cells_samplingframe - 
+                                    nr_cells_samplingframe_phab_greaterthan_10) / 
+               nr_cells_samplingframe_phab_greaterthan_10 * 100,
+           type = factor(type, levels = typelevels_phab)) %>% 
+    ggplot(aes(x = type, 
+               y = framesize_reldiff,
+               group = 1)) + 
+    geom_col(fill = "white", colour = "grey60") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+    ylab("sampling frame size increase (%) by not dropping phab≤10")
+```
+
+
+```{r fig.width=10, fig.height=7, warning=FALSE}
+type_areastats_implement_phab10_0.05 %>% 
+    mutate(polygonarea_diff = drop_units(area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10),
+           polygonarea_reldiff = drop_units((area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10) /
+               area_pol_as_cells_phab_greaterthan_10) * 100
+           ) %>% 
+    ggplot(aes(x = type, 
+               y = polygonarea_reldiff,
+               fill = polygonarea_diff,
+               label = polygonarea_diff %>% round(0))) + 
+    geom_col(colour = "grey60") +
+    geom_text(size = 3, 
+              hjust = -0.2,
+              angle = 90) +
+    scale_fill_viridis_c(option = "magma", 
+                         direction = -1,
+                         guide = "legend",
+                         breaks = seq(0, 7500, 500)) +
+    labs(title = "Sampling frame size: relative and absolute difference",
+         fill = "absolute polygon area increase\nas level0 cells units\n(continuous scale; see also labels)",
+         y = "polygon area increase (%) by not dropping phab≤10") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4),
+          legend.position = "bottom")
+```
+
+```{r fig.width=10, warning=FALSE}
+type_areastats_implement_phab10_0.05 %>% 
+    mutate(polygonarea_diff = area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10,
+           polygonarea_reldiff = drop_units((area_pol_as_cells - area_pol_as_cells_phab_greaterthan_10) /
+               area_pol_as_cells_phab_greaterthan_10) * 100
+           ) %>% 
+    ggplot(aes(x = type, 
+               y = polygonarea_diff,
+               fill = polygonarea_reldiff,
+               label = polygonarea_diff %>% round(0))) + 
+    geom_col(colour = "grey60") +
+    geom_text(size = 3) +
+    scale_y_unit(name = "polygon_area_increase_as_level0_cells",
+                 trans = "log10") +
+    scale_fill_distiller(palette = "YlOrRd", direction = 1) +
+    labs(title = "Sampling frame size: relative and absolute difference",
+         fill = "polygon area increase (%)\nby not dropping phab≤10") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4),
+          legend.position = "bottom")
+```
+
+We kunnen besluiten dat voor heel wat types een aanzienlijke toename zou optreden van level0-cellen, t.o.v. de situatie waarbij we de regel toepassen (en dus t.o.v. het biotisch meetnet).
+In minstens 9/10 van deze cellen zou een vervangprocedure op hoger hiërarchisch niveau (karteren van een cel van hogere orde) nodig zijn, _indien de steekproefprocedure alle cellen van het steekproefkader gelijk weegt_.
+(In 50-100% van de gevallen zal men ook een vervanger vinden, zodat dit tot een veel geringere overlap zou leiden met het biotisch meetnet.)
+Het betekent alleszins een aanzienlijk meerwerk voor deze types, waarbij die cellen maar voor maximum 5% van de uitspraak meespelen.
+
+Het is dus duidelijk dat de geringe winst op level3-niveau overschaduwd kan worden door een grotere impact op level0-niveau.
+
+**Om deze reden onderzoeken we in het volgende hoofdstuk of we reeds bij de steekproeftrekking rekening kunnen houden met de phab-waarde.**
+
+

@@ -5,11 +5,9 @@
 Specifieke uitleg bij de respectievelijke milieudrukken is beschikbaar als een [google spreadsheet](https://docs.google.com/spreadsheets/d/1aVUQWQlaL3k5hjuwyH-8c0lW7hjIkPz8VZbNgyMlN0A/edit?usp=sharing).
 
 ```{r message=FALSE, warning=FALSE, results='asis', echo=FALSE}
-read_csv("../../data/BijlageMilieudrukken.csv") %>% 
-    select(1:2) %>% 
-    mutate(Milieudrukklasse = ifelse(is.na(Milieudrukklasse),
-                                     "",
-                                     Milieudrukklasse)) %>% 
+read_env_pressures(lang = "nl") %>% 
+    select(Milieudrukklasse = ep_class_name,
+           Milieudruk = ep_name) %>% 
     pandoc.table(
          split.table = Inf ,
          split.cells = c(30,50),
@@ -22,32 +20,48 @@ read_csv("../../data/BijlageMilieudrukken.csv") %>%
 
 ### Lijst van de types
 
+Onderstaande lijst toont de types die betrokken worden in de MNM.
+Onder de [downloads](#downloads) is ook een standaardlijst te vinden van de actuele codes van alle habitat(sub)types en RBB's.
+
 ```{r message=FALSE, warning=FALSE, echo=FALSE}
 milieudruk_rangschikking <-
-    read_csv("../../data/Milieudruk_rangschikking.csv") %>% 
-    mutate(Typeklasse = factor(Typeklasse, levels = 
-                                   .$Typeklasse %>% 
-                                   unique),
-           Categorie = factor(Categorie, levels = c("H", "M", "L", "S", "P")))
+    read_vc("data/milieudruk_rangschikking", root = "../..")
+milieudruk_rangschikking %>% 
+    select(-EffIndActie,
+           -Categorie_voorstel,
+           -Rang_voorstel) %>% 
+    write_tsv("../../data/milieudruk_rangschikking.txt")
+types_completelist <- 
+    read_types(lang = "nl") %>% 
+    select(Typeklasse = typeclass_name,
+           Type = type,
+           Naam = type_name,
+           VerkorteNaam = type_shortname) %>% 
+    arrange(Typeklasse, Type)
+types_completelist %>% 
+    write_tsv("../../data/types_completelist.txt")
+```
+
+```{r echo=FALSE, message=FALSE}
+types_mnm <- 
+    read_schemes(lang = "nl") %>% 
+    filter(programme == "MNE") %>% 
+    inner_join(read_scheme_types(lang = "nl")) %>% 
+    distinct(type) %>% 
+    inner_join(read_types(lang = "nl")) %>% 
+    select(Typeklasse = typeclass_name,
+           Type = type,
+           Naam = type_name,
+           VerkorteNaam = type_shortname) %>% 
+    arrange(Typeklasse, Type)
+types_mnm %>% 
+    write_tsv("../../data/types_mnm.txt")
 ```
 
 
 ```{r message=FALSE, warning=FALSE, results='asis', echo=FALSE}
-# library(googlesheets)
-# bestand <- gs_key("1dK0S1Tt3RlVEh4WrNF5N_-hn0OXiTUVOvsL2JRhSl78")
-# bestand %>%
-#     gs_read(ws=1,check.names = T) %>%
-#     select(contains("geïntegr"), contains("niveau.1"), contains("Verkorte.naam")) %>%
-#     rename(Vegcode = Code.geïntegreerd, Typeklasse = Groepering.niveau.1) %>% 
-#     write_csv("../../data/types.csv")
-read_csv("../../data/types.csv") %>% 
-    select(2, 1, 3) %>% 
-    semi_join(milieudruk_rangschikking) %>% 
-    mutate(Typeklasse = factor(Typeklasse,
-                               levels = levels(milieudruk_rangschikking$Typeklasse))) %>% 
-    rename(Type = Vegcode,
-           VerkorteNaam = Verkorte.naam) %>% 
-    arrange(Typeklasse, Type) %>% 
+types_mnm %>% 
+    select(-Naam) %>% 
     pandoc.table(
          split.table = Inf ,
          justify = "left",

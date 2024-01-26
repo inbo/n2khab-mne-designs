@@ -1,0 +1,172 @@
+# Datavoorbereiding
+
+## Lijst van types om met de habitatgerelateerde databronnen te koppelen
+
+```{r}
+scheme_types_mne <-
+    read_scheme_types(extended = TRUE) %>%
+    filter(programme == "MNE") %>%
+    distinct(scheme, type)
+scheme_types_mne
+```
+
+Expanderen van types per meetnet:
+
+```{r}
+scheme_types_mne_expanded <-
+    scheme_types_mne %>%
+    group_by(scheme) %>%
+    expand_types %>%
+    ungroup
+scheme_types_mne_expanded
+```
+
+Types die voorkomen in de geëxpandeerde lijst, met hun waterhuishoudingsklasse (WHH-klasse):
+
+```{r}
+types_mne_expanded <-
+    scheme_types_mne_expanded %>%
+    distinct(type) %>%
+    inner_join(read_types() %>% select(type, hydr_class, hydr_class_shortname),
+               by = "type") %>%
+    arrange(type)
+types_mne_expanded <-
+    types_mne_expanded %>%
+    mutate(unresolved = type %in% (types_mne_expanded %>%
+                                    anti_join(scheme_types_mne,
+                                              by = "type") %>%
+                                    .$type))
+types_mne_expanded
+```
+
+De variabele `unresolved` is `TRUE` voor de extra types, toegevoegd door expansie van de lijst.
+Het betekent dat zulke types niet voorkomen in de definiërende typelijst van de doelpopulatie (als gevolg van hoofd- vs. subtypeniveau), maar dat polygonen met deze types in `habitatmap_terr` (geïnterpreteerde versie van het terrestrisch deel van de habitatkaart) vermoedelijk (of voor extra subtypes: zeker) _deel uitmaken_ van de doelpopulatie.
+Of een polygoon, met een hoofdtypecode waarvoor `unresolved == TRUE`, ook werkelijk deel uitmaakt van de doelpopulatie, zal op terrein moeten blijken.
+
+De volgende types werden toegevoegd als gevolg van de expansie:
+
+```{r}
+types_mne_expanded %>%
+    filter(unresolved)
+```
+
+Frequentie van WHH-klassen:
+
+```{r}
+types_mne_expanded %>%
+    count(hydr_class, hydr_class_shortname)
+```
+
+
+## Geospatiale databronnen van habitattypes en RBB's
+
+- We lezen de ruimtelijke data in van de terrestrische types (incl. 'semi-terrestrisch'), met uitsluiting van resterende aquatische types (binnen deze potentieel terrestrische polygonen).
+Na de beperking tot de types in `types_mne_expanded` mergen we tevens de geëxpandeerde subtypes 9120_qb, rbbkam+, rbbzil+, rbbvos+, 5130_hei en 5130_kalk terug in hun hoofdtype, aangezien in de MNM op dat niveau wordt gewerkt bij die types.
+
+```{r}
+hmt <- read_habitatmap_terr(keep_aq_types = FALSE)
+hmt_occ <-
+    hmt$habitatmap_terr_types %>%
+    semi_join(types_mne_expanded,
+              by = "type") %>%
+    mutate(type = recode(type,
+                         "rbbkam+" = "rbbkam",
+                         "rbbvos+" = "rbbvos",
+                         "rbbzil+" = "rbbzil",
+                         "9120_qb" = "9120",
+                         "5130_hei" = "5130",
+                         "5130_kalk" = "5130") %>%
+               as.character %>%
+               factor(levels = levels(types_mne_expanded$type))
+           )
+hmt_pol <-
+    hmt$habitatmap_terr_polygons %>%
+    select(polygon_id)
+# Note that
+# hmt$habitatmap_terr_polygons %>% semi_join(hmt_occ, by = "polygon_id")
+# yields the same number of polygons: non-terrestrial polygons were already excluded
+```
+
+Daarin is het aantal types per hydroklasse als volgt verdeeld:
+
+```{r}
+hmt_occ %>%
+    distinct(type) %>%
+    inner_join(types_mne_expanded, "type") %>%
+    count(hydr_class, hydr_class_shortname)
+```
+
+- We doen hetzelfde voor de watervlaktypes (d.w.z. aquatische types uitgezonderd 3260):
+
+```{r}
+wsh <- read_watersurfaces_hab(interpreted = TRUE)
+wsh_pol <-
+    wsh$watersurfaces_polygons %>%
+    select(polygon_id)
+wsh_occ <- wsh$watersurfaces_types
+```
+
+```{r}
+wsh_occ %>%
+    distinct(type) %>%
+    inner_join(types_mne_expanded,
+              by = "type") %>%
+    arrange(type)
+```
+
+
+- We lezen de spatiale data ook in voor de 'bijzondere' types 3260, 7220 en 8310, die elk hun eigen databron hebben.
+
+```{r}
+habstream <- read_habitatstreams()
+```
+
+```{r}
+flanders_buffer <- 
+    read_admin_areas(dsn = "flanders") %>% 
+    st_buffer(40)
+habspring <- 
+    read_habitatsprings(units_7220 = TRUE) %>% 
+            # note that the one 7230 point is covered by habitatmap_terr
+    .[flanders_buffer, ]
+```
+
+```{r}
+# this automatically restricts to Flemish polygons:
+habquarries <- read_habitatquarries(filter_hab = TRUE)
+```
+
+```{r}
+types_mne_expanded %>%
+    filter(type %in% c("3260", "7220", "8310"))
+```
+
+Voor zwaardere geospatiale berekeningen rekenen we op [GRASS](https://grass.osgeo.org/), via de packages `link2GI` en `rgrass7` en soms via bash-commando's.
+
+```{r}
+grass_areal_exists <- file.exists("grass_areal/PERMANENT/PROJ_INFO")
+if (!dir.exists("grass_areal")) dir.create("grass_areal")
+```
+
+
+```{r results="hide"}
+# CREATE OR LINK to a permanent GRASS location
+initGRASS(gisBase = gisbase_grass,
+          gisDbase = ".",
+          home = "grass_areal",
+          location = "grass_areal",
+          mapset = "PERMANENT", 
+          override = TRUE)
+if (!grass_areal_exists) {
+    execGRASS("g.proj", c("c", "quiet"), 
+              epsg = 31370)
+}
+# gmeta()
+use_sf()
+```
+
+
+```{r}
+stopifnot(file.exists("grass_areal/PERMANENT/PROJ_INFO"))
+```
+

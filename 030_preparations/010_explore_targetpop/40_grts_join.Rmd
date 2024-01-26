@@ -1,0 +1,752 @@
+# Wat zijn de implicaties van de koppelingswijze met het GRTS raster bij terrestrische types? {#koppeling}
+
+Voor de opbouw van het _steekproefkader_ kunnen de GRTS-rastercellen op twee manieren met de polygonen worden gekoppeld:
+
+1. puntgebaseerd: op basis van het centroïd of een random punt in elke rastercel: de steekproefeenheid wordt alleen betrokken wanneer dit _punt_ overlapt met een polygoon met het type (op terrein: wanneer het punt _effectief_ overlapt met het type).
+De centroïdmethode is toegepast in het meetnet biotische habitatkwaliteit.
+1. celgebaseerd: de steekproefeenheid wordt betrokken wanneer de _rastercel_ overlapt met een polygoon met het type
+
+We kijken per type naar het effect op de trefkans (aanwezigheid van het type in een rastercel), op de juistheid van de oppervlakteschatting en op de populatiegrootte (i.e. aantal cellen).
+
+```{r}
+grass_grts_join <- file.exists("grts_join/PERMANENT/PROJ_INFO")
+if (!dir.exists("grts_join")) dir.create("grts_join")
+```
+
+
+```{r results="hide"}
+# CREATE OR LINK to a permanent GRASS location
+initGRASS(gisBase = gisbase_grass,
+          gisDbase = ".",
+          home = "grts_join",
+          location = "grts_join",
+          mapset = "PERMANENT", 
+          override = TRUE)
+if (!grass_grts_join) {
+    execGRASS("g.proj", c("c", "quiet"), 
+              epsg = 31370)
+}
+# gmeta()
+```
+
+```{r}
+stopifnot(file.exists("grts_join/PERMANENT/PROJ_INFO"))
+```
+
+```{r eval=!grass_grts_join}
+hmt_polpat <- 
+    hmt_pol %>% 
+    inner_join(hmt_occ, by = "polygon_id") %>% 
+    select(type, phab)
+```
+
+```{r results="hide", eval=!grass_grts_join}
+read_admin_areas(dsn = "flanders") %>% 
+    writeVECT("flanders",
+              v.in.ogr_flags = c("overwrite", "o"))
+```
+
+```{r results="hide", eval=!grass_grts_join}
+hmt_polpat %>% 
+    writeVECT("hmt_polpat",
+              v.in.ogr_flags = c("overwrite", "o"))
+```
+
+```{r results="hide"}
+# use bbox & resolution of GRTSmh:
+reg <- execGRASS("g.region", flags = c("m", "quiet"))
+if (attr(reg, "resOut")[11] != "cells=21041043") {
+    system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+    system("g.region -p
+            g.proj -w")
+}
+```
+
+```{r results="hide"}
+# test for correct resolution
+reg <- execGRASS("g.region", flags = c("m", "quiet"))
+stopifnot(attr(reg, "resOut")[11] == "cells=21041043")
+```
+
+```{r eval=FALSE, include=FALSE}
+hmt_occ$type %>% unique %>% sort %>% as.matrix() %>% cat(sep = "\n")
+```
+
+
+```{r results="hide", eval=!grass_grts_join}
+system("shellscripts/shellscript_04_v.to.rast32_r.mapcalc_parallel.sh")
+```
+
+
+
+## Effect van koppelingsmethode op de trefkans
+
+### Puntgebaseerd: de oppervlakteproportie van elk type in de cellen
+
+We beschouwen de distributie van de (verwachte) oppervlakteproportie binnen elke cel van het GRTS mastergrid (resolutie 32 m).
+Dit is berekend als de proportie van deelcellen (resolutie 3.2 m) waarvan het centroid met de polygoon overlapt x de gemiddelde phab-waarde (als proportie) in de deelcellen.
+
+Dit is tevens de trefkans bij selectie op basis van 1 random punt in de rastercel.
+
+```{r eval=!grass_grts_join}
+# use bbox of GRTSmh, 10-fold higher resolution:
+# system("g.proj -c datumtrans=1 epsg=31370") # this was necessary when linkGRASS() overwrited this, is fixed now
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=3.2")
+```
+
+
+```{r eval=!grass_grts_join}
+system("g.region -p
+        g.proj -w")
+```
+
+```{r results="hide", eval=!grass_grts_join}
+# rasterization of phab values per type, on a 10-fold resolution of GRTSmh
+system("shellscripts/shellscript_01_v.to.rast_parallel.sh")
+```
+
+
+```{r eval=!grass_grts_join, echo=FALSE}
+# use bbox & resolution of GRTSmh:
+system("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+system("g.region -p
+        g.proj -w")
+```
+
+```{r eval=!grass_grts_join}
+system("shellscripts/shellscript_02_r.resamp.stats_parallel.sh")
+```
+
+```{r}
+# Explanation of the created layers in the GRASS database (location 'grts_join'):
+# 
+# - phabs_xxxx: phab-values of subcells (type xxxx), i.e. for centroid at resolution 3.2 m
+# - sum_xxxx: sum of phabs-subcell values, at resolution 32 m (GRTSmh)
+# - max_xxxx: maximum of phabs-subcell values, at resolution 32 m (GRTSmh)
+# - count_xxxx: count of non-null phabs-subcells, at resolution 32 m (GRTSmh)
+# - phab_xxxx: phab-values of cells, i.e. for centroid at resolution 32 m (GRTSmh)
+# - centr_touched_xxxx: filled for complete region at resolution 32 m (GRTSmh); is 0 for null-cells of phab_xxxx and 1 otherwise
+# - hmt_polpat: the vector layer, created above. It duplicates a feature if more types are present.
+# - hmt_polpat_xxxx: the hmt_polpat features, limited to those of type xxxx.
+```
+
+```{r}
+types_hmt <- unique(hmt_occ$type) %>% sort
+```
+
+```{r message=FALSE, results="hide"}
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.stats",
+              flags = "c",
+              input = str_c("sum_", types_hmt[i]),
+              separator = "tab",
+              nsteps = 100)
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        enframe(name = NULL, value = "string") %>% 
+        separate(col = string,
+                 into = c("phabsum", "count"),
+                 sep = "\t") %>% 
+        filter(phabsum != "*") %>% 
+        mutate(phabsum1 = str_sub(phabsum, 1, 
+                               str_locate(.$phabsum, "-")[,1] - 1) %>% as.numeric,
+               phabsum2 = str_sub(phabsum, 
+                               str_locate(.$phabsum, "-")[,1] + 1) %>% as.numeric,
+               count = as.numeric(count),
+               type = types_hmt[i]) %>% 
+        rowwise %>% 
+        # divide by 100 to get phab as fraction
+        # another divide by 100 to get areal proportion
+        mutate(areaprop = mean(c(phabsum1, phabsum2) / 10^4)) %>% 
+        ungroup %>% 
+        select(type, areaprop, count)
+    
+    if (i == 1) {
+        hmt_freq_sub32 <- type_result
+        } else {
+        hmt_freq_sub32 <- 
+            hmt_freq_sub32 %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+```
+
+```{r}
+hmt_freq_sub32_dens <- 
+    hmt_freq_sub32 %>% 
+    group_by(type) %>% 
+    mutate(weight = count / sum(count),
+           totalnrcells = sum(count)) %>% 
+    ungroup
+```
+
+De onderstaande grafiek toont de verdeling (als densiteit) van de celproportie, dus van de trefkans in een rastercel.
+Elke lijn komt overeen met één type en de grijswaarde varieert volgens het aantal betrokken cellen per type.
+
+```{r}
+hmt_freq_sub32_dens %>% 
+    ggplot(aes(x = areaprop, 
+               weight = weight, 
+               colour = totalnrcells, 
+               group = type)) + 
+        geom_density() +
+        scale_colour_gradient(low = "grey90", high = "black", trans = "log") +
+        ylim(0, 8)
+```
+
+```{r echo=FALSE, eval=FALSE}
+hmt_freq_sub32_dens %>% 
+    ggplot(aes(x = areaprop, 
+               weight = weight, 
+               group = type)) + 
+        geom_density(alpha = 0.1, colour = "grey80", fill = "grey70") +
+        theme(panel.background = element_blank())
+```
+
+De grafiek voor alle types samen (waarin _elke cel_ een even grote rol speelt, dus niet elk type):
+
+```{r detprob-point, fig.cap="Distributiefunctie van de oppervlakteproportie per level0-cel, dus van de trefkans bij een puntgebaseerde koppeling tussen polygonen en rastercellen. De figuur totaliseert alle cellen van alle types."}
+hmt_freq_sub32_dens %>% 
+    mutate(weight = count / sum(count)) %>%
+    ggplot(aes(x = areaprop, 
+               weight = weight)) + 
+        geom_density()
+```
+
+De verwachte trefkans op basis van een punt (random, centroid, ...) is dus vaak vrij laag.
+Dit komt door een combinatie van onvolledig door polygonen afgedekte rastercellen, en doordat types vaak een kleiner deel van de polygoon bestrijken.
+
+```{r}
+hmt_freq_sub32_dens %>% 
+    arrange(desc(areaprop)) %>% 
+    mutate(cum_relfreq = cumsum(count) / sum(count)) %>% 
+    ggplot(aes(x = areaprop, 
+               y = cum_relfreq)) + 
+    geom_line() +
+    xlim(1,0)
+```
+
+### Celgebaseerd: verwachte kans dat het type binnen de rastercel voorkomt
+
+Bij deze benadering wordt een type als aanwezig beschouwd in een rastercel van zodra het voorkomt in minstens één van de deelcellen.
+Eenvoudigheidshalve beschouwen we de trefkans van het type als de maximale phab-waarde (uitgedrukt als fractie) die voorkomt bij de deelcellen van de rastercel.^[
+In principe zou voor de berekening met alle joint probabilities tussen de deelcellen rekening gehouden moeten worden, maar we beschouwden dit als niet haalbaar.
+]
+Deze benadering zal de trefkans vergroten, maar zorgt anderzijds voor een uitdaging/probleem om met de tussen cellen variërende oppervlakteproportie rekening te houden (zie verder).
+
+```{r message=FALSE, results="hide"}
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.stats",
+              flags = "c",
+              input = str_c("max_", types_hmt[i]),
+              separator = "tab",
+              nsteps = 100)
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        enframe(name = NULL, value = "string") %>% 
+        separate(col = string,
+                 into = c("phabmax", "count"),
+                 sep = "\t") %>% 
+        filter(phabmax != "*") %>% 
+        mutate(phabmax1 = str_sub(phabmax, 1, 
+                               str_locate(.$phabmax, "-")[,1] - 1) %>% as.numeric,
+               phabmax2 = str_sub(phabmax, 
+                               str_locate(.$phabmax, "-")[,1] + 1) %>% as.numeric,
+               count = as.numeric(count),
+               type = types_hmt[i]) %>% 
+        rowwise %>% 
+        # divide by 100 to get phab as fraction
+        mutate(det_prob = mean(c(phabmax1, phabmax2) / 100)) %>% 
+        ungroup %>% 
+        select(type, det_prob, count)
+    
+    if (i == 1) {
+        hmt_det_prob <- type_result
+        } else {
+        hmt_det_prob <- 
+            hmt_det_prob %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+```
+
+```{r}
+hmt_det_prob_dens <- 
+    hmt_det_prob %>% 
+    group_by(type) %>% 
+    mutate(weight = count / sum(count),
+           totalnrcells = sum(count)) %>% 
+    ungroup
+```
+
+De densiteitsgrafieken per type en voor alle types samen:
+
+```{r warning=FALSE}
+hmt_det_prob_dens %>% 
+    ggplot(aes(x = det_prob, 
+               weight = weight, 
+               colour = totalnrcells, 
+               group = type)) + 
+        geom_density() +
+        scale_colour_gradient(low = "grey90", high = "black", trans = "log")
+```
+
+```{r warning=FALSE, echo=FALSE, eval=FALSE}
+hmt_det_prob_dens %>% 
+    ggplot(aes(x = det_prob, 
+               weight = weight, 
+               group = type)) + 
+        geom_density(alpha = 0.1, colour = "grey80", fill = "grey70") +
+        theme(panel.background = element_blank())
+```
+
+```{r detprob-cell, fig.cap="Distributiefunctie van de maximale phab (als fractie) per cel bij een celgebaseerde koppeling tussen polygonen en rastercellen. Dit is nog een conservatieve benadering van de werkelijke trefkans (daarvoor zouden alle paarsgewijze kansen binnen de cel en het aandeel in de cel van de celoverlappende polygoon/polygonen betrokken moeten worden). De figuur totaliseert alle cellen van alle types."}
+hmt_det_prob_dens %>% 
+    mutate(weight = count / sum(count)) %>%
+    ggplot(aes(x = det_prob, 
+               weight = weight)) + 
+        geom_density()
+```
+
+Het is hieruit duidelijk dat deze methode in elk geval tot een gemiddeld veel hogere trefkans leidt.
+
+```{r}
+hmt_det_prob_dens %>% 
+    arrange(desc(det_prob)) %>% 
+    mutate(cum_relfreq = cumsum(count) / sum(count)) %>% 
+    ggplot(aes(x = det_prob, 
+               y = cum_relfreq)) + 
+    geom_line() +
+    xlim(1,0)
+```
+
+```{r detprob-point-cell, fig.cap="Cumulatieve relatieve frequentie van de trefkans per cel voor punt- en voor celgebaseerde koppeling tussen polygonen en rastercellen (conservatief ingeschat voor celgebaseerd), beginnend bij cellen met kans 1 en afdalend naar kans 0. De figuur totaliseert alle cellen van alle types."}
+hmt_freq_sub32_dens %>% 
+    arrange(desc(areaprop)) %>% 
+    mutate(cum_relfreq = cumsum(count) / sum(count),
+           approach = "point-based") %>% 
+    select(approach, type, detection_prob = areaprop, cum_relfreq) %>% 
+    bind_rows(
+        hmt_det_prob_dens %>% 
+        arrange(desc(det_prob)) %>% 
+        mutate(cum_relfreq = cumsum(count) / sum(count),
+           approach = "cell-based") %>% 
+    select(approach, type, detection_prob = det_prob, cum_relfreq)
+    ) %>% 
+    ggplot(aes(x = detection_prob, 
+               y = cum_relfreq,
+               colour = approach,
+               group = approach)) + 
+    geom_line() +
+    xlim(1,0)
+```
+
+
+## De relatie tussen koppelingsmethode, oppervlaktevertegenwoordiging en grootte van een sampling unit, en populatiegrootte
+
+### Koppelingsmethode versus oppervlaktevertegenwoordiging van een sampling unit
+
+Een belangrijk element van de steekproefopzet is de definitie van de steekproefeenheid.
+Als we dit definiëren als een rastercel van 32 x 32 m², waarbij op een van de voormelde manieren (punt- of celgebaseerd) wordt bepaald of de rastercel deel uitmaakt van het steekproefkader / de steekproef, is de default in een equal-probability design om deze cellen ook elk evenveel rol te laten spelen in het inferentiestadium. ^[
+Behalve de voordelen naar flexibiliteit voor veranderingen in vragen in de toekomst,
+is equal probability _in de design_ ook een vereiste om gebruik te kunnen maken van de reverse hierarchical order in een GRTS-design.
+]
+We stelden hoger reeds vast dat de typebedekking in een cel sterk verschilt van cel tot cel: de oppervlakteproportie (zie puntgebaseerde methode) geeft aan hoeveel van het type een cel vertegenwoordigt bij een celgebaseerde koppeling.
+Er zijn hiervoor verschillende benaderingen te onderscheiden  _in het inferentiestadium_:
+
+- voor de puntgebaseerde koppeling:
+hier kan reeds worden verwacht dat de oppervlakte met equal probability wordt vertegenwoordigd, omdat cellen vaker gekoppeld zijn wanneer de proportie (trefkans) hoger is.
+Er is geen specifieke extra bewerking nodig.
+- voor de celgebaseerde koppeling:
+    - Ofwel worden _in het inferentiestadium_ de _sampling weights aangepast_ (cf. de benadering bij poststratificatie en de analogie met de oppervlaktegewogen inferentie bij waterplassen).
+Wel is de consequentie dat de steekproefgrootte dan eveneens op basis van deze gewichten bepaald wordt (som van de sampling unit gewichten)^[
+De som van deze sampling unit gewichten voor de doelpopulatie komt dan overeen met de totale oppervlakte van de doelpopulatie, uitgedrukt als het aantal keer 1024 m^2^ (oppervlakte van 1 cel).
+Men kan in het algemeen verwachten dat dit overeenkomt met het aantal cellen waar het type door het celcentroid wordt getroffen.
+]: dit zou betekenen dat meer cellen bemonsterd moeten worden om eenzelfde steekproefgrootte te bereiken.
+    - Ofwel wordt voor elk type _aangenomen dat elke cel overeenkomt met de gemiddelde oppervlakte per cel voor dat type_.
+Hierbij is dan geen verdere weging nodig (er wordt uitgegaan van equal probability):
+er wordt expliciet van uit gegaan dat elke cel even veel belang heeft (cf. analogie met standaard voorziene inferentie voor waterplassen).
+De populatiegrootte van een type komt in dat geval overeen met het werkelijke aantal cellen dat het type bevat, ongeacht de bedekking per cel.
+De cel wordt daarbij gelijkgesteld met een kleinere oppervlakte, die ze vertegenwoordigt.
+De som van deze waarden is dan per definitie de totale oppervlakte van de doelpopulatie.
+
+De celgebaseerde koppeling heeft het voordeel van een hogere trefkans en ze biedt een gedeeltelijke oplossing voor het vaak voorkomen van kleine habitatvlekken.
+Daarnaast laat deze benadering makkelijker toe om de grootte van de steekproefeenheid te variëren van meetnet tot meetnet (ifv milieuvariabele) zonder dat dit leidt tot verminderde koppeling tussen deze meetnetten.
+Door minder rastercellen te moeten verwerpen op terrein, vermindert sowieso wel de synergie met het biotisch meetnet.
+
+### Koppelingsmethode en sample support
+
+De sample support omvat de grootte, vorm en oriëntatie van de steekproefeenheid.
+De steekproefeenheid is een GRTS-cel waarbinnen het type wordt bemonsterd (op basis van de regels voor een punt- of celgebaseerde koppeling).
+
+Het komt vaak voor dat een type maar in een deel van deze cel voorkomt, en dan wordt ook alleen dat deel bemonsterd, om op die manier de steekproefeenheid (de cel) te vertegenwoordigen.
+De bemonsterde oppervlakte binnen de cel kan variëren, bv. indien met gepoolde deelstalen/-metingen wordt gewerkt.
+
+- Het is een mogelijkheid om binnen de cel maar op één plaats te bemonsteren om de volledige vlek in de cel te vertegenwoordigen, indien aangenomen of aangetoond kan worden dat hierdoor geen grote meetfout optreedt (het punt moet de cel redelijkerwijze kunnen vertegenwoordigen).
+Dit zal afhangen van de milieuvariabele in kwestie.
+- Het is tevens mogelijk dat de milieuvariabele voor een groter bereik geldt dan de habitatvlek.
+Voorbeelden zijn grondwater- en atmosferische variabelen.
+In dat geval hoeft de meting niet noodzakelijk in een habitatvlek te gebeuren, en is het zelfs mogelijk dat de meting meerdere aanwezige types afdekt.
+
+Voor ruimtelijk weinig variërende milieuvariabelen kan worden geopteerd voor een hoger GRTS-celniveau als steekproefeenheid (bv. level1: 64 x 64 m² of zelfs level2: 128 x 128 m²):
+
+- een voordeel van deze benadering is tevens de kleinere populatiegrootte;
+- dit behoudt bij een celgebaseerde koppeling hoge synergie met MNM-meetnetten op een andere resolutie (bv. 32 x 32 m²) aangezien de cellen van verschillende niveaus elkaar omvatten en dezelfde volgorde van cellen wordt gehanteerd in de GRTS-rangschikkingen op verschillende niveaus;
+- een nadeel bij de interpretatie voor een celgebaseerde koppeling is wel dat er in het geval van niet-weging van units een grotere absolute range aan vlekoppervlaktes binnen cellen zal worden gelijkgesteld aan de gemiddelde celoppervlakte;
+- werken op een hoger GRTS-celniveau dan 32 x 32 m² zal minder interessant zijn voor de puntgebaseerde koppeling vermits er dan nog vaker mismatches zullen optreden met de doelpopulatie.
+Tevens zou de synergie met MNM-meetnetten op andere resoluties en met het biotische meetnet compleet verloren gaan, omdat er dan effectief volgens andere punten wordt gekoppeld.
+
+Voor toepassing op terrein van de celgebaseerde koppeling zou wel een minimum bedekkingspercentage kunnen worden geëist van het type in een cel, dit om de bemonstering van bv. bodem fysisch mogelijk te maken.
+Het voldoen aan deze vereiste is te verifiëren op terrein (niet via een theoretische preselectie).
+
+### Effect van koppelingsmethode op de populatiegrootte
+
+Voor de concrete implementatie van de puntgebaseerde methode werken we met de centroïden, zoals toegepast in het meetnet biotische habitatkwaliteit.
+
+We gaan na wat het effect is van de koppelingsmethode -- 'centroïd-based' versus 'cell-based' -- op de populatiegrootte.
+Daarbij houden we rekening met de trefkans op basis van phab (ter hoogte van het centroid, resp. de maximale waarde binnen de cel).
+
+```{r message=FALSE, results="hide"}
+# summing phab-values (as fractions) at centroids:
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.univar",
+                     flags = "t",
+                     map = str_c("phab_", types_hmt[i]),
+                     separator = "comma")
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        str_c(collapse = "\n") %>% 
+        read_csv %>% 
+        # divide by 100 to get phab as fraction
+        # the sum statistic is the sum of phab *, so:
+        mutate(phab_sum = sum / 100,
+               count = non_null_cells,
+               type = types_hmt[i]) %>% 
+        select(type,
+               phab_sum,
+               count)
+    
+    if (i == 1) {
+        hmt_popsize_centroid <- type_result
+        } else {
+        hmt_popsize_centroid <- 
+            hmt_popsize_centroid %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+# * phab_xxxx: phab-values of cells, i.e. for centroid at resolution 32 m (GRTSmh)
+```
+
+
+```{r message=FALSE, results="hide"}
+# summing maximum phab-values (as fractions) - i.e. for joining at cell level:
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.univar",
+                     flags = "t",
+                     map = str_c("max_", types_hmt[i]),
+                     separator = "comma")
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        str_c(collapse = "\n") %>% 
+        read_csv %>% 
+        # divide by 100 to get phab as fraction
+        # the sum statistic is the sum of phabs-max *, so:
+        mutate(detprob_sum = sum / 100,
+               type = types_hmt[i]) %>% 
+        select(type,
+               detprob_sum)
+    
+    if (i == 1) {
+        hmt_popsize_cells <- type_result
+        } else {
+        hmt_popsize_cells <- 
+            hmt_popsize_cells %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+# * max_xxxx: maximum of phabs-subcell values, at resolution 32 m (GRTSmh)
+```
+
+We combineren beide resultaten en schrijven dit weg.
+
+```{r}
+pop_size <- 
+    hmt_popsize_cells %>% 
+    rename(cellbased = detprob_sum) %>% 
+    inner_join(hmt_popsize_centroid %>% 
+                select(type,
+                       centroidbased = phab_sum), 
+               by = "type") %>% 
+    pivot_longer(cols = 2:3,
+                 names_to = "count_method",
+                 values_to = "population_size")
+pop_size %>% git2rdata::write_vc("pop_size_terr", 
+                                 sorting = c("type", "count_method"))
+```
+
+Het verschil tussen beide methoden, per type:
+
+```{r fig.height=20, fig.width=12}
+pop_size %>% 
+    ggplot(aes(x = count_method, y = population_size)) +
+    geom_col(position = "dodge") +
+    facet_wrap(~type, scales = "free_y") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+```
+
+De populatiegrootte volgens celgebaseerde koppeling is overwegend 50% tot 150% groter, afhankelijk van het type.
+Dit is goed te zien in de spreiding van de relatieve verschillen ((cellbased - centroidbased) / centroidbased * 100):
+
+```{r popsize-surplus, message=FALSE, fig.cap="Histogram van het relatieve verschil in populatiegrootte van een type, tussen de centroïd- en de celgebaseerde koppeling tussen polygonen en rastercellen. Betreft volgende formule: (cellbased - centroidbased) / centroidbased * 100."}
+pop_size %>% 
+    pivot_wider(names_from = count_method,
+                values_from = population_size) %>% 
+    mutate(pct_diff = (cellbased - centroidbased) / centroidbased * 100) %>% 
+    ggplot(aes(x = pct_diff)) +
+    geom_histogram(fill = "white", colour = "grey60")
+```
+
+Een grafiek over alle types heen benadrukt de grote variatie in populatiegrootte tussen types:
+
+```{r popsize-abs, fig.width=5, fig.height=5, fig.cap="Absolute populatiegroottes van types, bij de centroïd- en de celgebaseerde koppeling tussen polygonen en rastercellen."}
+pop_size %>% 
+    ggplot(aes(x = count_method, y = population_size)) +
+    geom_jitter(width = 0.1, alpha = 0.4) +
+    coord_cartesian(ylim = c(0, 7.5e4))
+```
+
+Ingezoomd op de waarden tot 13000:
+
+```{r fig.width=5, fig.height=5}
+pop_size %>% 
+    ggplot(aes(x = count_method, y = population_size)) +
+    geom_jitter(width = 0.1, alpha = 0.4) +
+    scale_y_continuous(breaks = seq(0, 15e3, 1e3)) +
+    coord_cartesian(ylim = c(0, 1.3e4))
+```
+
+Nadere inspectie van enkele percentielen:
+
+```{r}
+pop_size %>% 
+    split(.$count_method) %>% 
+    lapply(function(x) quantile(x$population_size, c(0,.1,.25,.5,.75,.9,1)))
+```
+
+De geschatte totale oppervlakte van een type volgens een celgebaseerde koppeling komt per definitie exact overeen met de doelpopulatie-oppervlakte op basis van de polygonen + phab-waarde, vermits de reële oppervlakte per cel wordt aangenomen (al dan niet gemiddeld over cellen).
+
+De geschatte totale oppervlakte van een type volgens een centroïdgebaseerde koppeling, in verhouding tot de totale oppervlakte van het type op basis van de polygonen + phab-waarde, toont dat de concrete implementatie van de centroïdgebaseerde koppeling meestal een goede match oplevert met de reële oppervlakte:
+
+```{r popsize-centroid-rel, message=FALSE, warning=FALSE, fig.cap="Histogram van de verhouding tussen de geschatte totale oppervlakte o.b.v. centroïden en o.b.v. de habitatkaart. Dus volgens formule area_centroid / area_vectorbased."}
+cell_area <- 32^2 %>% set_units("m^2") %>% set_units("ha")
+pop_size %>% 
+    filter(count_method == "centroidbased") %>% 
+    mutate(area_centroid = population_size * cell_area) %>% 
+    select(-count_method, -population_size) %>% 
+    inner_join(typest_area %>% rename(area_vectorbased = area), 
+               by = "type") %>% 
+    mutate(area_rel = (area_centroid / area_vectorbased) %>% drop_units) %>% 
+    ggplot(aes(x = area_rel)) + 
+    geom_histogram(fill = "white", colour = "grey60")
+```
+
+
+### Populatiegrootte onder restrictie van `shallowgroundwater`
+
+Aangezien we voor verschillende meetnetten de populatiegroottes nodig hebben binnen `shallowgroundwater` (zie hoofdstuk \@ref(shallow)), rekenen we ook dit resultaat uit, zowel centroïd- als celgebaseerd.
+
+Concreet beperken we:
+
+- de centroïdgebaseerde 'phab'-rasters met behulp van een centroïdgebaseerd raster, afgeleid van `shallowgroundwater`
+- de celgebaseerde 'max'-rasters met behulp van een celgebaseerd raster, afgeleid van `shallowgroundwater`
+
+Het resultaat wordt niet verder in dit rapport gebruikt.
+
+```{r results="hide", eval=!grass_grts_join || params$repopulate_grts_join_shallowgw}
+fileman_up("n2khab_data") %>% 
+    file.path("10_raw/shallowgroundwater/shallowgroundwater.gpkg") %>% 
+    execGRASS("v.in.ogr",
+              input = .,
+              output = "shallowgroundwater",
+              flags = c("overwrite", "o"))
+```
+
+```{r results="hide"}
+# test for correct resolution
+reg <- execGRASS("g.region", flags = c("m", "quiet"))
+stopifnot(attr(reg, "resOut")[11] == "cells=21041043")
+```
+
+```{r results="hide", eval=!grass_grts_join || params$repopulate_grts_join_shallowgw}
+execshell("v.to.rast input=shallowgroundwater use=val value=1 output=sg memory=4000 --overwrite")
+```
+
+```{r eval=!grass_grts_join || params$repopulate_grts_join_shallowgw}
+# use bbox of GRTSmh, 10-fold higher resolution:
+execshell("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=3.2")
+```
+
+
+```{r eval=!grass_grts_join || params$repopulate_grts_join_shallowgw}
+execshell("g.region -p
+           g.proj -w")
+```
+
+```{r results="hide", eval=!grass_grts_join || params$repopulate_grts_join_shallowgw}
+# rasterization of shallowgroundwater, on a 10-fold resolution of GRTSmh
+execshell("v.to.rast input=shallowgroundwater use=val value=1 output=sg3.2 memory=4000 --overwrite")
+```
+
+```{r eval=!grass_grts_join || params$repopulate_grts_join_shallowgw, echo=FALSE}
+# use bbox & resolution of GRTSmh:
+execshell("g.region w=22029.6 e=258861.6 s=153054.1 n=244030.1 res=32")
+execshell("g.region -p
+           g.proj -w")
+```
+
+```{r results="hide"}
+# test for correct resolution
+reg <- execGRASS("g.region", flags = c("m", "quiet"))
+stopifnot(attr(reg, "resOut")[11] == "cells=21041043")
+```
+
+```{r results="hide", eval=!grass_grts_join || params$repopulate_grts_join_shallowgw}
+# maximum of sg3.2 values (res 3.2) per cell at current resolution (32)
+execshell("r.resamp.stats input=sg3.2 output=sg_cell method=maximum --overwrite")
+```
+
+```{r results="hide", eval=!grass_grts_join || params$repopulate_grts_join_shallowgw}
+# calculating shallowgroundwater-restricted versions of phab_xxx and max_xxx (32 m)
+execshell("shellscripts/shellscript_06_r.mapcalc_sg_parallel.sh")
+```
+
+```{r message=FALSE, results="hide"}
+# summing phab-values (as fractions) at centroids:
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.univar",
+                     flags = "t",
+                     map = str_c("phab_sg_", types_hmt[i]),
+                     separator = "comma")
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        str_c(collapse = "\n") %>% 
+        read_csv %>% 
+        # divide by 100 to get phab as fraction
+        # the sum statistic is the sum of phab *, so:
+        mutate(phab_sum = sum / 100,
+               count = non_null_cells,
+               type = types_hmt[i]) %>% 
+        select(type,
+               phab_sum,
+               count)
+    
+    if (i == 1) {
+        hmt_sg_popsize_centroid <- type_result
+        } else {
+        hmt_sg_popsize_centroid <- 
+            hmt_sg_popsize_centroid %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+hmt_sg_popsize_centroid <- 
+    hmt_sg_popsize_centroid %>% 
+    mutate(phab_sum = ifelse(is.na(phab_sum), 0, phab_sum))
+# * phab_sg_xxxx: phab-values of cells, restricted by centroid-based shallowgroundwater, i.e. for centroid at resolution 32 m (GRTSmh)
+```
+
+
+```{r message=FALSE, results="hide"}
+# summing maximum phab-values (as fractions) - i.e. for joining at cell level:
+sink(tempfile())
+for (i in 1:length(types_hmt)) {
+    out <- execGRASS("r.univar",
+                     flags = "t",
+                     map = str_c("max_sg_", types_hmt[i]),
+                     separator = "comma")
+    
+    type_result <- 
+        out %>% 
+        attr("resOut") %>% 
+        str_c(collapse = "\n") %>% 
+        read_csv %>% 
+        # divide by 100 to get phab as fraction
+        # the sum statistic is the sum of phabs-max *, so:
+        mutate(detprob_sum = sum / 100,
+               type = types_hmt[i]) %>% 
+        select(type,
+               detprob_sum)
+    
+    if (i == 1) {
+        hmt_sg_popsize_cells <- type_result
+        } else {
+        hmt_sg_popsize_cells <- 
+            hmt_sg_popsize_cells %>% 
+            bind_rows(type_result)
+    }
+}
+sink()
+hmt_sg_popsize_cells <- 
+    hmt_sg_popsize_cells %>% 
+    mutate(detprob_sum = ifelse(is.na(detprob_sum), 0, detprob_sum))
+# * max_sg_xxxx: maximum of phabs-subcell values, restricted by cell-based shallowgroundwater, at resolution 32 m (GRTSmh)
+```
+
+We combineren beide resultaten en schrijven dit weg.
+
+```{r}
+pop_size_sg <- 
+    hmt_sg_popsize_cells %>% 
+    rename(cellbased = detprob_sum) %>% 
+    inner_join(hmt_sg_popsize_centroid %>% 
+                select(type,
+                       centroidbased = phab_sum), 
+               by = "type") %>% 
+    pivot_longer(cols = 2:3,
+                 names_to = "count_method",
+                 values_to = "population_size")
+pop_size_sg %>% git2rdata::write_vc("pop_size_terr_sg", 
+                                    sorting = c("type", "count_method"))
+```
+
+Het verband tussen populatiegrootte zonder en met restrictie:
+
+```{r warning=FALSE, fig.cap="Spreiding in de relatie tussen populatiegrootte zonder en met restrictie door `shallowgroundwater`. 'population_size_sg' vertegenwoordigt de ingeperkte populatiegrootte. De lijn is de eerste bissectrice. Zowel celgebaseerd als centroïdgekoppeld."}
+pop_size %>% 
+    inner_join(pop_size_sg %>% 
+                   rename(population_size_sg = population_size),
+               by = c("type", "count_method")) %>% 
+    ggplot(aes(x = population_size, 
+               y = population_size_sg, 
+               colour = count_method)) +
+    geom_abline() +
+    geom_point() +
+    scale_x_log10() +
+    scale_y_log10()
+```
+
+
+
+
+
+
+
