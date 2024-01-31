@@ -389,12 +389,6 @@ units_non_cell_n2khab_grts <-
   st_drop_geometry()
 ```
 
-Assigning the units with GRTS addresses to the corresponding strata in `n2khab_strata_expanded`.
-
-```{r}
-# result will be a tibble of stratum, unit_id, grts_address
-```
-
 <!-- Er zijn gevallen met hetzelfde GRTS-adres; een oplossing is hiervoor uit te werken: -->
 <!-- > units_non_cell_n2khab_grts %>% count(sample_support_code, grts_address) %>% filter(n > 1) %>% count(sample_support_code, n) -->
 <!-- Storing counts in `nn`, as `n` already present in input -->
@@ -410,7 +404,76 @@ Assigning the units with GRTS addresses to the corresponding strata in `n2khab_s
 <!-- 6 watersurface            4     8 -->
 <!-- 7 watersurface            5     2 -->
 
+Listing the non-cell units per stratum (within the target population of MNE and MHQ), needed in order to connect the GRTS addresses with strata.
+
+```{r}
+stratum_units_non_cell_n2khab <- 
+  bind_cols(
+    tibble(sample_support_code = "watersurface"),
+    wsh_pol_area_class %>% 
+      distinct() %>% 
+      extract_interval_limits() %>% 
+      unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>% 
+      select(stratum, unit_id)
+  ) %>% 
+  bind_rows(
+    bind_cols(
+      tibble(sample_support_code = "watercourse_segment"),
+      segm_3260 %>%
+        st_drop_geometry() %>% 
+        mutate(stratum = "3260", .before = everything())
+    )
+  ) %>%
+  bind_rows(
+    bind_cols(
+      tibble(sample_support_code = "spring"),
+      habspring_units %>% 
+        st_drop_geometry() %>% 
+        mutate(
+          stratum = "7220",
+          unit_id = as.character(unit_id), 
+          .keep = "none",
+          .before = everything()
+        )
+    )
+  ) %>%
+  bind_rows(
+    bind_cols(
+      tibble(sample_support_code = "quarry"), 
+      habquarries_area_class %>% 
+        extract_interval_limits() %>% 
+        unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>% 
+        select(stratum, unit_id)
+      )
+  ) %>% 
+  mutate(
+    sample_support_code = factor(
+      sample_support_code,
+      levels = levels(n2khab_types_expanded_properties$sample_support_code)
+    ),
+    stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
+  )
+```
+
+Note that `stratum_units_non_cell_n2khab` has `r nrow(stratum_units_non_cell_n2khab)` rows which is larger than the `r nrow(units_non_cell_n2khab_grts)` rows of `units_non_cell_n2khab_grts`.
+This is because some watersurface units are attached to more than 1 stratum (i.e. more than 1 type).
+
+Assigning the GRTS addresses of the units to the corresponding strata in `n2khab_strata_expanded`.
+
+```{r}
+stratum_grts_non_cell_n2khab <- 
+  stratum_units_non_cell_n2khab %>% 
+  inner_join(
+    units_non_cell_n2khab_grts,
+    by = c("sample_support_code", "unit_id")
+  ) %>% 
+  select(-sample_support_code, -unit_id) %>% 
+  # distinct() leads to less rows because of units with same GRTS address.
+  distinct()
+```
+
 #### For the cell units
+
 
 
 ## Writing the base sampling frame
