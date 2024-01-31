@@ -182,7 +182,13 @@ wsh_pol_area_class <-
            area %>% 
            cut(c(0, 1, 5, 50, 150)) %>% 
            as.character()) %>% 
-  inner_join(wsh_occ, ., by = "polygon_id")
+  inner_join(
+    wsh_occ %>% 
+      select(polygon_id, type), 
+    ., 
+    by = "polygon_id"
+  ) %>% 
+  rename(unit_id = polygon_id)
 wsh_pol_strata <- 
   wsh_pol_area_class %>% 
   extract_interval_limits() %>% 
@@ -192,11 +198,12 @@ habquarries_area_class <-
   habquarries %>%
   mutate(area = st_area(.) %>% set_units("ha")) %>% 
   st_drop_geometry %>% 
-  select(type, area) %>% 
+  select(unit_id, type, area) %>% 
   mutate(stratum = 
            area %>% 
            cut(c(0, 2, 6, 40)) %>% 
-           as.character())
+           as.character()) %>% 
+  mutate(unit_id = as.character(unit_id))
 habquarries_strata <- 
   habquarries_area_class %>% 
   extract_interval_limits() %>% 
