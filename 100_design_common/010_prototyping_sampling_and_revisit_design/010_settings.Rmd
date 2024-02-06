@@ -17,38 +17,36 @@ schemes <-
   select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction)
 ```
 
-<!-- Still have to apply a 'real' scheme restriction before the below artificial one; i.e. the schemes that are going to be implemented in 'the first wave', both for MNE and MHQ. -->
+Further restriction of schemes to the ones that are in scope for implementation in the first phase.
 
 ```{r}
-core_schemes_1st_wave <- c(
+core_schemes_1st_phase <- c(
   "GW_03.3",
   "SOIL_03.2",
   "SURF_03.4_lentic",
   "SURF_03.4_lotic"
 )
 
-schemes_1st_wave <- c(
-  core_schemes_1st_wave,
+schemes_1st_phase <- c(
+  core_schemes_1st_phase,
   "GW_04.2",
   "GW_05.1_aq",
-  "GW_05.1_quarries",
-  "GW_05.1_terr",
+  "GW_05.1_terr", # don't take the whole target population here!! Only groups 2, 3, 5
   "GW_05.2",
   "GW_07.1",
-  "SOIL_08.2",
+  "SURF_064_lentic", # this one's existence is still to be confirmed
   "SURF_07.2"
 )
 
-schemes <- filter(schemes, scheme %in% schemes_1st_wave)
+schemes <- filter(schemes, scheme %in% schemes_1st_phase)
 ```
-
 
 ```{r restriction-1}
 # ARTIFICIAL RESTRICTION 1
 schemes <- 
   schemes %>% 
   filter(scheme %in% c(
-    "GW_05.1_terr", 
+    "GW_05.1_terr",
     "GW_07.1", 
     "SOIL_03.2", 
     "SURF_03.4_lentic", 
@@ -56,11 +54,31 @@ schemes <-
   ))
 ```
 
+Defining the target population based on selected schemes.
+
 ```{r}
 targetpop <- 
   read_scheme_types(lang = lang) %>% 
   select(scheme, type) %>% 
   semi_join(schemes, by = "scheme")
+```
+
+Further restriction of the target population as decided for the first implementation phase.
+
+<!-- This restricts target pops to 03.2/3/4, + adds 6430_mr for 05.1_terr (group 3 completion) & for 05.2 (to complete its target pop) -->
+
+```{r}
+targetpop_exclude_from_1st_phase <- 
+  read_scheme_types(lang = lang) %>% 
+  filter(
+    scheme == "GW_05.1_terr",
+    str_detect(typegroup, "GW_05.1_terr_group(1|4)")
+  ) %>% 
+  select(scheme, type)
+
+targetpop <- 
+  targetpop %>% 
+  anti_join(targetpop_exclude_from_1st_phase, by = c("scheme", "type"))
 ```
 
 ```{r restriction-2}
@@ -73,7 +91,9 @@ type_shortlist <- c(
     "2190_a",
     "3130_aom",
     "3130_na",
+    "2130_hd",
     "2310",
+    "6430_bz",
     "7140_base",
     "9120",
     "7150"
@@ -85,10 +105,11 @@ targetpop <- targetpop %>%
 Extending `schemes` and `targetpop` with MHQ schemes.
 
 ```{r}
-schemes <- read_schemes(lang = lang) %>% 
+schemes <- 
+  read_schemes(lang = lang) %>% 
   filter(programme == "MHQ") %>% 
   select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction) %>% 
-  semi_join( ### REVISIT THIS: do we want to restrict MHQ to the types in MNE? (trivial at the time of writing)
+  semi_join( ### REVISIT THIS: do we want to restrict MHQ to the types in MNE?
     read_scheme_types() %>% 
       select(scheme, type) %>% 
       semi_join(targetpop, by = "type"),
@@ -98,8 +119,23 @@ schemes <- read_schemes(lang = lang) %>%
 targetpop <- 
   read_scheme_types(lang = lang) %>% 
   select(scheme, type) %>% 
-  semi_join(schemes, by = "scheme") %>%
-  # re-apply artificial restriction:
+  ### REVISIT THIS: in case we want to restrict MHQ to the types in MNE, below
+  ### code may still include too many subtypes for MHQ (schemes in MHQ may
+  ### consist of multiple subtypes)
+  semi_join(schemes, by = "scheme")
+```
+
+Re-apply extra restriction of the target population as decided for the first implementation phase.
+
+```{r}
+targetpop <- 
+  targetpop %>% 
+  anti_join(targetpop_exclude_from_1st_phase, by = c("scheme", "type"))
+```
+
+```{r restriction-3}
+# RE-APPLY ARTIFICIAL RESTRICTION 2:
+targetpop <- targetpop %>%
   filter(type %in% type_shortlist)
 ```
 
