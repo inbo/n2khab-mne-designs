@@ -493,7 +493,7 @@ Filtering units of `GRTSmaster_habitats` that are part of the target population 
 hmt_pol_centroid <- 
   n2khab_types_expanded_properties %>% 
   filter(sample_support_code == "cell_conditioned_centroid") %>% 
-  semi_join(hmt_occ, ., by = "type") %>% 
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
   semi_join(hmt_pol, ., by = "polygon_id") %>% 
   vect()
 # takes < 1 minute:
@@ -527,7 +527,7 @@ Filtering units of GRTSmaster_habitats that are part of the target population of
 hmt_pol_cell <- 
   n2khab_types_expanded_properties %>% 
   filter(sample_support_code == "cell") %>% 
-  semi_join(hmt_occ, ., by = "type") %>% 
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
   semi_join(hmt_pol, ., by = "polygon_id") %>% 
   vect()
 
@@ -552,7 +552,7 @@ Note that `hmt_pol_grts_centroid` and `hmt_pol_grts_cell` share a number of poly
 stratum_polygons_cell_all_n2khab <- 
   n2khab_types_expanded_properties %>% 
   filter(str_detect(sample_support_code, "^cell")) %>% 
-  semi_join(hmt_occ, ., by = "type") %>% 
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
   select(stratum = type, polygon_id)
 ```
 
@@ -567,7 +567,7 @@ We don't need `n2khab_strata_expanded` since for terrestrial types the strata ar
 stratum_grts_cell_all_n2khab <- 
   n2khab_types_expanded_properties %>% 
   filter(sample_support_code == "cell_conditioned_centroid") %>% 
-  semi_join(hmt_occ, ., by = "type") %>% 
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
   select(polygon_id, stratum = type) %>% 
   inner_join(
     hmt_pol_grts_centroid, 
@@ -578,7 +578,7 @@ stratum_grts_cell_all_n2khab <-
   bind_rows(
     n2khab_types_expanded_properties %>% 
       filter(sample_support_code == "cell") %>% 
-      semi_join(hmt_occ, ., by = "type") %>% 
+      semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
       select(polygon_id, stratum = type) %>% 
       inner_join(
         hmt_pol_grts_cell, 
@@ -657,8 +657,12 @@ for (name in c(
 phab_centroid_n2khab <- 
   n2khab_types_expanded_properties %>% 
   filter(sample_support_code == "cell_conditioned_centroid") %>% 
-  semi_join(hmt_occ, ., by = "type") %>% 
-  select(polygon_id, type, phab)
+  semi_join(
+    hmt_occ %>% 
+      summarize(phab = sum(phab), .by = c(polygon_id, type)), 
+    ., 
+    by = "type"
+  )
 ```
 
 
