@@ -60,7 +60,7 @@ n2khab_types_expanded_properties <-
     ) %>%
       as_tibble() %>% 
       mutate(
-        grts_join_method = ifelse(approach_cellbased, "cell", "centroid_of_cell")
+        grts_join_method = ifelse(approach_cellbased, "cell", "cell_center")
       ) %>% 
       select(type, grts_join_method),
     by = "type"
@@ -71,17 +71,17 @@ n2khab_types_expanded_properties <-
         type == "7220" ~ "original_point",
         type == "3260" ~ "endpoint_of_segment",
         type == "8310" | hydr_class == "HC3" ~ "point_on_surface",
-        .default = "centroid_of_cell"
+        .default = "cell_center"
     ) %>% 
       factor(levels = c(
-        "centroid_of_cell", 
+        "cell_center", 
         "cell", 
         "point_on_surface", 
         "endpoint_of_segment", 
         "original_point"
       )),
     sample_support = case_when(
-      grts_join_method == "centroid_of_cell" ~ "area of type within 1024 m² cell (centroid must be type)",
+      grts_join_method == "cell_center" ~ "area of type within 1024 m² cell (cell center must be type)",
       grts_join_method == "cell" ~ "area of type within 1024 m² cell",
       type == "3260" ~ "predefined watercourse segment (mostly 100 m)",
       type == "7220" ~ "population unit inferred from read_habitatsprings(units_7220 = TRUE)",
@@ -91,7 +91,7 @@ n2khab_types_expanded_properties <-
       factor(),
     sample_support_code = fct_recode(
       sample_support,
-      cell_conditioned_centroid = "area of type within 1024 m² cell (centroid must be type)",
+      cell_conditioned_on_center = "area of type within 1024 m² cell (cell center must be type)",
       cell = "area of type within 1024 m² cell",
       watercourse_segment = "predefined watercourse segment (mostly 100 m)",
       spring = "population unit inferred from read_habitatsprings(units_7220 = TRUE)",
@@ -263,7 +263,7 @@ This allows for dynamic changes in the occurrence of types.
 
 We don't need points for `grts_join_method == "cell"`.
 
-We will use centroids on the fly for `grts_join_method == "centroid_of_cell"`.
+We will use cell centers on the fly for `grts_join_method == "cell_center"`.
 
 Defining points that represent the watersurface units (object `points_watsurf`).
 
@@ -487,23 +487,23 @@ Check that no empty GRTS addresses occur:
 
 #### For the cell units
 
-Filtering units of `GRTSmaster_habitats` that are part of the target population of MNE and MHQ with sample support `cell_conditioned_centroid`, and storing their polygon ID and GRTS address.
+Filtering units of `GRTSmaster_habitats` that are part of the target population of MNE and MHQ with sample support `cell_conditioned_on_center`, and storing their polygon ID and GRTS address.
 
 ```{r eval = params$regenerate_binary_files}
-hmt_pol_centroid <- 
+hmt_pol_cellcenter <- 
   n2khab_types_expanded_properties %>% 
-  filter(sample_support_code == "cell_conditioned_centroid") %>% 
+  filter(sample_support_code == "cell_conditioned_on_center") %>% 
   semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
   semi_join(hmt_pol, ., by = "polygon_id") %>% 
   vect()
 # takes < 1 minute:
-hmt_pol_grts_centroid <- 
-  extract(grts_mh, hmt_pol_centroid, small = FALSE) %>% 
+hmt_pol_grts_cellcenter <- 
+  extract(grts_mh, hmt_pol_cellcenter, small = FALSE) %>% 
   as_tibble() %>% 
   inner_join(
     tibble(
-      ID = seq_len(nrow(hmt_pol_centroid)),
-      polygon_id = hmt_pol_centroid$polygon_id
+      ID = seq_len(nrow(hmt_pol_cellcenter)),
+      polygon_id = hmt_pol_cellcenter$polygon_id
     ),
     .,
     by = "ID"
@@ -511,14 +511,17 @@ hmt_pol_grts_centroid <-
   select(-ID, grts_address = GRTSmaster_habitats) %>% 
   filter(!is.na(grts_address))
 saveRDS(
-  hmt_pol_grts_centroid, 
-  file.path(datapath, "binary/intermediate/hmt_pol_grts_centroid.rds")
+  hmt_pol_grts_cellcenter, 
+  file.path(datapath, "binary/intermediate/hmt_pol_grts_cellcenter.rds")
 )
 ```
 
 ```{r}
-hmt_pol_grts_centroid <-
-  readRDS(file.path(datapath, "binary/intermediate/hmt_pol_grts_centroid.rds"))
+hmt_pol_grts_cellcenter <-
+  readRDS(file.path(
+    datapath, 
+    "binary/intermediate/hmt_pol_grts_cellcenter.rds"
+  ))
 ```
 
 Filtering units of GRTSmaster_habitats that are part of the target population of MNE and MHQ with sample support `cell`, and storing their polygon ID and GRTS address.
@@ -546,7 +549,7 @@ hmt_pol_grts_cell <-
   select(-ID, grts_address = GRTSmaster_habitats)
 ```
 
-Note that `hmt_pol_grts_centroid` and `hmt_pol_grts_cell` share a number of polygons so this should be used with care, i.e. not mixing the link of `polygon_id` with `grts_address` between centroid vs. cell types.
+Note that `hmt_pol_grts_cellcenter` and `hmt_pol_grts_cell` share a number of polygons so this should be used with care, i.e. not mixing the link of `polygon_id` with `grts_address` between cell-center vs. cell types.
 
 ```{r}
 stratum_polygons_cell_all_n2khab <- 
@@ -566,11 +569,11 @@ We don't need `n2khab_strata_expanded` since for terrestrial types the strata ar
 ```{r}
 stratum_grts_cell_all_n2khab <- 
   n2khab_types_expanded_properties %>% 
-  filter(sample_support_code == "cell_conditioned_centroid") %>% 
+  filter(sample_support_code == "cell_conditioned_on_center") %>% 
   semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
   select(polygon_id, stratum = type) %>% 
   inner_join(
-    hmt_pol_grts_centroid, 
+    hmt_pol_grts_cellcenter, 
     by = "polygon_id", 
     relationship = "many-to-many"
   ) %>% 
@@ -665,12 +668,12 @@ for (name in c(
 
 ## Defining all inputs to draw samples
 
-`phab` values of `cell_conditioned_centroid` types.
+`phab` values of `cell_conditioned_on_center` types.
 
 ```{r}
-phab_centroid_n2khab <- 
+phab_cellcenter_n2khab <- 
   n2khab_types_expanded_properties %>% 
-  filter(sample_support_code == "cell_conditioned_centroid") %>% 
+  filter(sample_support_code == "cell_conditioned_on_center") %>% 
   semi_join(
     hmt_occ %>% 
       summarize(phab = sum(phab), .by = c(polygon_id, type)), 
