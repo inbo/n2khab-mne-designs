@@ -1,40 +1,90 @@
 # Creating spatial sampling frames
 
-Making an expanded form of `targetpop` and `types`, needed for joining with the `base_samplingframe` (see earlier explanation).
+## Collapse the base sampling frame to match the strata in `n2khab_strata`
 
-<!-- De variabele `added` is `TRUE` voor de extra types, toegevoegd door expansie van de lijst. -->
-<!-- Het betekent dat zulke types niet voorkomen in de definiërende typelijst van de doelpopulatie (als gevolg van hoofd- vs. subtypeniveau), maar dat polygonen met deze types in de geïnterpreteerde spatiale dataset `habitatmap_terr` vermoedelijk _deel uitmaken_ van de doelpopulatie. -->
-<!-- Na koppeling met het `base_samplingframe` kunnen de toegevoegde SUBtypes terug worden omgezet naar het hoofdtype. -->
-<!-- Of een polygoon met een hoofdtypecode waarvoor `added == TRUE`, ook werkelijk deel uitmaakt van de doelpopulatie, zal op terrein moeten blijken. -->
+We 'unexpand' the base sampling frame in order to match it properly with `targetpop`.
+We don't include this step _inside_ the base sampling frame so that the latter better reflects the information from the spatial data sources on which it is based.
+
+This collapsing comprises two aspects:
+
+- replacing subtype codes by their main type code (where the target population is defined by the latter)
+- adding units, associated with a main type, to each corresponding subtype layer that triggered the expansion to the main type.
+
+**Missing functionality**: including the second aspect in an attribute that reflects uncertainty about the stated type.
+
+In effect, 'collapsing' means less stratum levels, but _more_ rows.
+
+Note that collapsing only affects cell-based units.
+
+<!-- Note that below hasn't been coded in a generic way; it is specified based upon the observed expansion. -->
+<!-- However it is clear that no other expansions occur in MNE + MHQ when comparing `n2khab_types` with `n2khab_types_expanded`. -->
 
 ```{r}
-targetpop_expanded <-
-    targetpop %>%
-    group_by(scheme) %>%
-    expand_types %>%
-    ungroup
-types_expanded <-
-    targetpop_expanded %>%
-    distinct(type) %>%
-    arrange(type) %>%
-    mutate(added = type %in% (targetpop_expanded %>% 
-                                       distinct(type) %>%
-                                       anti_join(targetpop,
-                                                 by = "type") %>%
-                                       .$type))
+stratum_grts_n2khab_collapsed <- 
+  stratum_grts_n2khab %>% 
+  mutate(
+    stratum = case_match(
+      stratum,
+      "5130_hei" ~ "5130",
+      "5130_kalk" ~ "5130",
+      "rbbkam+" ~ "rbbkam",
+      "rbbvos+" ~ "rbbvos",
+      "rbbzil+" ~ "rbbzil",
+      "9120_qb" ~ "9120",
+      .default = stratum
+    )
+  ) %>% 
+  left_join(
+    tribble(
+      ~main_type, ~subtype,
+      "2330", "2330_bu",
+      "2330", "2330_dw",
+      "6230", "6230_ha",
+      "6230", "6230_hmo",
+      "6230", "6230_hn",
+      "91E0", "91E0_va",
+      "91E0", "91E0_vm",
+      "91E0", "91E0_vn"
+    ),
+    by = c("stratum" = "main_type"),
+    relationship = "many-to-many"
+  ) %>% 
+  mutate(
+    stratum = ifelse(is.na(subtype), stratum, subtype) %>%
+      as.character %>%
+      factor(levels = levels(n2khab_strata_expanded$stratum))
+  ) %>% 
+  select(-subtype) %>% 
+  # subtypes and main types that are attached to the same GRTS address, i.e.
+  # were attached to the same habitatmap polygon, have induced duplicates. We
+  # need to solve that:
+  distinct()
 ```
 
-<!-- De volgende types werden toegevoegd als gevolg van de expansie: -->
+Check that GRTS addresses occur only once in each stratum:
 
-```{r eval=FALSE, include=FALSE}
-types_expanded %>%
-    filter(added) %>% 
-    inner_join(read_types() %>% select(type, typelevel),
-               by = "type") %>% 
-    select(type, typelevel) %>% 
-    kable(caption = "Toegevoegde typecodes om optimaal te koppelen met de geïnterpreteerde kaartlaag van terrestrische types `habitatmap_terr`") %>% 
-    kable_styling(full_width = FALSE)
+```{r}
+!any(duplicated(stratum_grts_n2khab_collapsed))
 ```
+
+Check that no empty GRTS addresses occur:
+
+```{r}
+!anyNA(stratum_grts_n2khab_collapsed$grts_address)
+```
+
+Check that no strata exist that don't occur in `n2khab_strata`:
+
+```{r}
+stratum_grts_n2khab_collapsed %>% 
+  distinct(stratum) %>% 
+  anti_join(n2khab_strata, by = "stratum") %>% 
+  nrow == 0
+```
+
+
+
+
 
 
 
