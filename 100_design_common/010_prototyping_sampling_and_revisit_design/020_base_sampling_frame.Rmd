@@ -572,7 +572,7 @@ Assigning the GRTS addresses of the units to the corresponding strata in `n2khab
 We can use `n2khab_types_expanded` since for terrestrial types the strata are the types without subdivision.
 
 ```{r}
-stratum_grts_cell_all_n2khab <- 
+hmt_pol_stratum_grts_cellcenter <- 
   n2khab_types_expanded_properties %>% 
   filter(sample_support_code == "cell_conditioned_on_center") %>% 
   semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
@@ -581,22 +581,27 @@ stratum_grts_cell_all_n2khab <-
     hmt_pol_grts_cellcenter, 
     by = "polygon_id", 
     relationship = "many-to-many"
-  ) %>% 
-  select(-polygon_id) %>% 
-  bind_rows(
-    n2khab_types_expanded_properties %>% 
-      filter(sample_support_code == "cell") %>% 
-      semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
-      select(polygon_id, stratum = type) %>% 
-      inner_join(
-        hmt_pol_grts_cell, 
-        by = "polygon_id", 
-        relationship = "many-to-many"
-      ) %>% 
-      select(-polygon_id) %>% 
-      # adjacent polygons can share the same type AND grts_address here, so:
-      distinct()
   )
+stratum_grts_cellcenter <- 
+  hmt_pol_stratum_grts_cellcenter %>% 
+  select(-polygon_id)
+hmt_pol_stratum_grts_cell <- 
+  n2khab_types_expanded_properties %>% 
+  filter(sample_support_code == "cell") %>% 
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
+  select(polygon_id, stratum = type) %>% 
+  inner_join(
+    hmt_pol_grts_cell, 
+    by = "polygon_id", 
+    relationship = "many-to-many"
+  )
+stratum_grts_cell <- 
+  hmt_pol_stratum_grts_cell %>% 
+  select(-polygon_id) %>% 
+  # adjacent polygons can share the same type AND grts_address here, so:
+  distinct()
+stratum_grts_cell_all_n2khab <- 
+  bind_rows(stratum_grts_cellcenter, stratum_grts_cell)
 ```
 
 Check that GRTS addresses occur only once in each stratum:
