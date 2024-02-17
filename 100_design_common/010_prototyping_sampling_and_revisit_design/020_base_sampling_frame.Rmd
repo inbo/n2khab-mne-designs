@@ -582,7 +582,7 @@ hmt_pol_stratum_grts_cellcenter <-
     by = "polygon_id", 
     relationship = "many-to-many"
   )
-stratum_grts_cellcenter <- 
+stratum_grts_cellcenter_n2khab <- 
   hmt_pol_stratum_grts_cellcenter %>% 
   select(-polygon_id)
 hmt_pol_stratum_grts_cell <- 
@@ -595,13 +595,13 @@ hmt_pol_stratum_grts_cell <-
     by = "polygon_id", 
     relationship = "many-to-many"
   )
-stratum_grts_cell <- 
+stratum_grts_cell_n2khab <- 
   hmt_pol_stratum_grts_cell %>% 
   select(-polygon_id) %>% 
   # adjacent polygons can share the same type AND grts_address here, so:
   distinct()
 stratum_grts_cell_all_n2khab <- 
-  bind_rows(stratum_grts_cellcenter, stratum_grts_cell)
+  bind_rows(stratum_grts_cellcenter_n2khab, stratum_grts_cell_n2khab)
 ```
 
 Check that GRTS addresses occur only once in each stratum:
@@ -665,6 +665,8 @@ for (name in c(
   "stratum_units_non_cell_n2khab",
   "units_non_cell_n2khab_grts",
   "stratum_grts_non_cell_n2khab",
+  "stratum_grts_cellcenter_n2khab",
+  "stratum_grts_cell_n2khab",
   "stratum_grts_cell_all_n2khab",
   "stratum_grts_n2khab"
 )) {
@@ -683,7 +685,7 @@ for (name in c(
 <!-- XXXXXXX I think we should further process below object to a form that extends the `stratum_grts_cellcenter` object with a phab column! -->
 
 ```{r}
-phab_cellcenter_n2khab <- 
+hmt_pol_phab_cellcenter_n2khab <- 
   hmt_occ %>% 
   summarize(phab = sum(phab), .by = c(polygon_id, type)) %>% 
   semi_join(
