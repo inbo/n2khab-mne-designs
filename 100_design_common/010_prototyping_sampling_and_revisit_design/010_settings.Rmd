@@ -143,16 +143,40 @@ targetpop <- targetpop %>%
 targetpop
 ```
 
-
-Setting domains.
+Defining domains, including their geometry.
 
 ```{r}
+sfg_flanders <- 
+  read_admin_areas(dsn = "flanders") %>% 
+  st_geometry() %>%
+  .[[1]]
+sac <- read_admin_areas(dsn = "sac")
+sfg_sac_network <- st_combine(sac)[[1]]
+sfg_sac_subset_5 <- 
+  sac %>% 
+  filter(sac_code %in% c(
+    "BE2100015", # Kalmthoutse Heide
+    "BE2100024", # Vennen, heiden en moerassen rond Turnhout
+    "BE2200028", # De Maten
+    "BE2200035", # Mechelse heide en vallei van de Ziepbeek
+    "BE2200039"  # Voerstreek
+  )) %>% 
+  st_combine() %>%
+  .[[1]]
+sfg_be2100024 <- 
+  sac %>% 
+  filter(sac_code == "BE2100024") %>% 
+  st_combine() %>%
+  .[[1]]
 domains <- tribble(
-  ~domain, ~domain_name_nl, ~domain_name_en,
-  1L, "Vlaams Gewest", "Flemish Region",
-  2L, "SBZ-H-netwerk", "SAC network",
-  3L, "BE2100024", "BE2100024"
-)
+  ~domain, ~domain_name_nl, ~domain_name_en, ~geometry,
+  "Flanders", "Vlaams Gewest", "Flemish Region", sfg_flanders,
+  "SAC_network", "SBZ-H-netwerk", "SAC network", sfg_sac_network,
+  "SAC_subset_5", "SBZ-H-subset van 5 PAS-maatwerkgebieden", "SAC subset of 5 protected areas", sfg_sac_subset_5,
+  "BE2100024", "SBZ-H BE2100024", "SAC BE2100024", sfg_be2100024
+) %>% 
+  mutate(domain = factor(domain, levels = domain)) %>% 
+  st_as_sf(crs = 31370)
 ```
 
 
