@@ -493,13 +493,17 @@ Check that no empty GRTS addresses occur:
 
 Filtering units of `GRTSmaster_habitats` that are part of the target population of MNE and MHQ with sample support `cell_conditioned_on_center`, and storing their polygon ID and GRTS address.
 
-```{r eval = params$regenerate_binary_files}
+```{r}
 hmt_pol_cellcenter <- 
   n2khab_types_expanded_properties %>% 
   filter(sample_support_code == "cell_conditioned_on_center") %>% 
   semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
   semi_join(hmt_pol, ., by = "polygon_id") %>% 
   vect()
+```
+
+
+```{r eval = params$regenerate_binary_files}
 # takes < 1 minute:
 hmt_pol_grts_cellcenter <- 
   extract(grts_mh, hmt_pol_cellcenter, small = FALSE) %>% 
@@ -649,6 +653,41 @@ stratum_grts_n2khab <-
   stratum_grts_n2khab %>% 
   filter(!is.na(grts_address))
 ```
+
+
+## Subsetted versions of GRTSmaster_habitats
+
+Create SpatRaster layers that are masked with the 3 vector layers that represent the base sampling frame.
+
+Created for ad-hoc use; to be revisited.
+
+<!-- XXXXXXXX REVISIT the need for this! -->
+
+```{r}
+grts_mh_non_cell <- mask(grts_mh, points_non_cell_n2khab)
+grts_mh_cellcenter <- mask(grts_mh, hmt_pol_cellcenter, touches = FALSE)
+grts_mh_cell <- mask(grts_mh, hmt_pol_cell)
+grts_mh_n2khab <- max(
+   grts_mh_non_cell, 
+   grts_mh_cellcenter, 
+   grts_mh_cell,
+   na.rm = TRUE
+ ) %>% 
+  as.int()
+```
+
+
+```{r eval=FALSE, include=FALSE}
+# compare to units_non_cell_n2khab_grts %>% distinct(grts_address) %>% nrow:
+global(grts_mh_non_cell, "notNA")
+# compare to nrow(hmt_pol_grts_cellcenter):
+global(grts_mh_cellcenter, "notNA")
+# compare to hmt_pol_grts_cell %>% distinct(grts_address) %>% nrow:
+global(grts_mh_cell, "notNA")
+# compare to stratum_grts_n2khab %>% distinct(grts_address) %>% nrow:
+global(grts_mh_n2khab, "notNA")
+```
+
 
 
 ## Overview of most relevant objects
