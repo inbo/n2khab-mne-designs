@@ -46,3 +46,6 @@ schemes %>%
 
 non_core_types %>%
   write_sheet(gs_id, "non_core_types")
+
+domain_scheme_stats %>%
+  write_sheet(gs_id, "domain_scheme_stats")
