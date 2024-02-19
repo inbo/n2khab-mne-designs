@@ -1,6 +1,86 @@
-# Creating spatial sampling frames
+# Processing the base sampling frame
 
-## Collapse the base sampling frame to match the strata in `n2khab_strata`
+Using the base sampling frame, objects are generated in this chapter that pertain to all schemes in MNE & MHQ.
+
+These objects are needed in preparing scheme-specific sampling frames or samples.
+
+## Raster layers that represent the base sampling frame
+
+### Subsetting `GRTSmaster_habitats` according to the base sampling frame
+
+Create SpatRaster layers that are masked with the 3 vector layers that represent the base sampling frame.
+
+Created for ad-hoc use; to be revisited.
+
+<!-- XXXXXXXX REVISIT the need for this! -->
+
+```{r}
+grts_mh_non_cell <- mask(grts_mh, points_non_cell_n2khab)
+grts_mh_cellcenter <- mask(grts_mh, hmt_pol_cellcenter, touches = FALSE)
+grts_mh_cell <- mask(grts_mh, hmt_pol_cell)
+grts_mh_n2khab <- max(
+   grts_mh_non_cell, 
+   grts_mh_cellcenter, 
+   grts_mh_cell,
+   na.rm = TRUE
+ ) %>% 
+  as.int()
+```
+
+
+```{r eval=FALSE, include=FALSE}
+# compare to units_non_cell_n2khab_grts %>% distinct(grts_address) %>% nrow:
+global(grts_mh_non_cell, "notNA")
+# compare to nrow(hmt_pol_grts_cellcenter):
+global(grts_mh_cellcenter, "notNA")
+# compare to hmt_pol_grts_cell %>% distinct(grts_address) %>% nrow:
+global(grts_mh_cell, "notNA")
+# compare to stratum_grts_n2khab %>% distinct(grts_address) %>% nrow:
+global(grts_mh_n2khab, "notNA")
+```
+
+## Determining the GRTS addresses per domain
+
+Determining all GRTS addresses of the base sampling frame per domain.
+
+Since this does not distinguish between strata, stratum collapsing is irrelevant.
+
+```{r eval = params$regenerate_binary_files}
+domain_grts_n2khab <-
+  extract(grts_mh_n2khab, vect(domains)) %>%
+  as_tibble() %>% 
+  filter(!is.na(GRTSmaster_habitats)) %>% 
+  inner_join(
+    tibble(
+      ID = seq_len(nrow(domains)),
+      domain = domains$domain
+    ),
+    .,
+    by = "ID"
+  ) %>% 
+  select(
+    -ID,
+    grts_address = GRTSmaster_habitats
+  )
+saveRDS(
+  domain_grts_n2khab, 
+  file.path(datapath, "binary/intermediate/domain_grts_n2khab.rds")
+)
+```
+
+```{r}
+domain_grts_n2khab <-
+  readRDS(file.path(
+    datapath, 
+    "binary/intermediate/domain_grts_n2khab.rds"
+  ))
+```
+
+
+
+## Objects in preparation of scheme-specific sampling frames
+
+### Collapse the base sampling frame to match the strata in `n2khab_strata`
 
 We 'unexpand' the base sampling frame in order to match it properly with `targetpop`.
 We don't include this step _inside_ the base sampling frame so that the latter better reflects the information from the spatial data sources on which it is based.
@@ -55,7 +135,38 @@ stratum_grts_n2khab_collapsed %>%
 glimpse(stratum_grts_n2khab_collapsed)
 ```
 
-## Apply bernouilli sampling to the collapsed base sampling frame, depending on phab value
+### Apply bernouilli sampling to the collapsed base sampling frame, depending on phab value
+
+`phab` values of `cell_conditioned_on_center` types.
+
+<!-- XXXXXXX I think we should further process below object to a form that extends the `stratum_grts_cellcenter` object with a phab column! -->
+
+<!-- Also, since this has to be used for the collapsed sampling frame, the -->
+<!-- collapsing should happen too. So this should probably move to a next chapter. -->
+<!-- Also prevent code duplication where such thing is already done (further down) to -->
+<!-- calculate number of population units per domain. -->
+<!-- * See object `hmt_pol_stratum_cellcenter_nunits` -->
+
+```{r}
+hmt_pol_phab_cellcenter_n2khab <- 
+  hmt_occ %>% 
+  summarize(phab = sum(phab), .by = c(polygon_id, type)) %>% 
+  semi_join(
+    n2khab_types_expanded_properties %>% 
+      filter(sample_support_code == "cell_conditioned_on_center"),
+    by = "type"
+  )
+```
+
+**Missing functionality**:
+dissolving polygons _per type_ based on a similar value:
+
+- aimed 21 interval levels are [0, 2.5], (2.5, 7.5], (7.5, 12.5], …, (97.5, 100].
+(`cut(c(0, 100), c(0, seq(2.5, 97.5, 5), 100), include.lowest = TRUE)`).
+- the resulting polygons are only needed for the replacement protocol.
+Filtering in order to create spatial sampling frames can just be done at the cell level.
+
+<!-- PHAB correction still to be done! -->
 
 ```{r}
 # dummy step
@@ -63,20 +174,117 @@ stratum_grts_n2khab_phabcorrected <- stratum_grts_n2khab_collapsed
 ```
 
 
-## Define target population as strata
+## Calculating the spatial population size of strata in each domain
 
-This is needed to extract scheme- or stratum-specific sampling frames.
+### Approximately by using the phab-corrected data frame of stratum x grts addresses in MNE + MHQ
+
+The phab-corrected (i.e. subsampled) data frame of stratum x grts addresses is one approach to approximate the population sizes; however beside inaccuracy due to phab-based subsampling, this is also compounded by the fact that some cells include multiple (non-cell) units that belong to the same stratum.
+
+<!-- However we did NOT YET APPLY this phab correction!!
+This results in an overestimation for the cell-centered types,
+but it's still a good base to DROP strata from domains XXXXXX -->
 
 ```{r}
-targetpop_strata <- 
-  targetpop %>% 
-  inner_join(n2khab_strata, by = "type", relationship = "many-to-many") %>% 
-  select(-type)
+domain_stratum_ncells <- 
+  stratum_grts_n2khab_phabcorrected %>% 
+  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>% 
+  count(domain, stratum, name = "ncells")
 ```
 
-## Apply scheme-specific spatial restrictions to certain types
+### More correctly by combining different unit-level data sources
 
-**Missing functionality**: apply spatial restrictions depending on scheme x stratum.
+Determining the population size per domain for strata with non-cell-based units.
+
+```{r}
+domain_stratum_non_cell_nunits <- 
+  stratum_units_non_cell_n2khab %>% 
+  inner_join(
+    units_non_cell_n2khab_grts,
+    by = c("sample_support_code", "unit_id")
+  ) %>% 
+  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>% 
+  count(domain, stratum, name = "nunits")
+```
+
+Determining the population size per domain for strata with cell-center-based units.
+
+<!-- XXXXXX Below simplicifaction (taking domain-overlapping polygons 
+completely into account) can be improved by actually intersecting by domains. -->
+
+```{r}
+# polygon_ids that intersect each domain:
+domain_hmt_pol <- 
+  domains %>% 
+  st_drop_geometry() %>% 
+  select(domain) %>% 
+  mutate(id = unclass(st_intersects(domains, hmt_pol))) %>% 
+  unnest(id) %>% 
+  inner_join(
+    tibble(
+      id = seq_len(nrow(hmt_pol)),
+      polygon_id = hmt_pol$polygon_id
+    ),
+    by = "id"
+  ) %>% 
+  select(-id)
+# number of units per polygon_id x stratum (taking into account surface area & phab):
+# (since we start from hmt, we also need to collapse the types to the n2khab_strata!)
+hmt_pol_stratum_cellcenter_nunits <- 
+  hmt_pol_phab_cellcenter_n2khab %>% 
+  inner_join(
+    hmt_pol %>% 
+      mutate(area = st_area(.) %>% drop_units()) %>% 
+      st_drop_geometry(),
+    by = "polygon_id"
+  ) %>% 
+  mutate(nunits = area * phab / 100 / (32^2), .keep = "unused") %>% 
+  rename(stratum = type) %>% 
+  collapse_strata() %>% 
+  summarize(
+    nunits = sum(nunits),
+    .by = c(polygon_id, stratum)
+  )
+# population size per domain x stratum:
+domain_stratum_cellcenter_nunits <- 
+  domain_hmt_pol %>% 
+  inner_join(
+    hmt_pol_stratum_cellcenter_nunits, 
+    by = "polygon_id",
+    relationship = "many-to-many"
+  ) %>% 
+  summarize(nunits = sum(nunits), .by = c(domain, stratum))
+```
+
+Determining the population size per domain for strata with cell-based units.
+
+```{r}
+domain_stratum_cell_nunits <- 
+  stratum_grts_cell_n2khab %>% 
+  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>% 
+  count(domain, stratum, name = "nunits")
+```
+
+Integrating these 3 different types of strata.
+
+```{r}
+domain_stratum_nunits <- 
+  bind_rows(
+    domain_stratum_non_cell_nunits,
+    domain_stratum_cellcenter_nunits,
+    domain_stratum_cell_nunits
+  )
+```
+
+Check that this coincides with the domain x stratum combinations of `domain_stratum_ncells`.
+
+```{r}
+inner_join(
+  domain_stratum_ncells, 
+  domain_stratum_nunits, 
+  by = c("domain", "stratum")
+) %>% 
+  nrow() == nrow(domain_stratum_nunits)
+```
 
 
 
