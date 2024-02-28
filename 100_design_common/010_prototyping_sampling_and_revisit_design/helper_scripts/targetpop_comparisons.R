@@ -103,12 +103,6 @@ crossing(p = 0:5, k = 10:30) %>%
 schemes <- read_schemes(lang = lang) %>%
   filter(programme == "MHQ") %>%
   select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction) %>%
-  semi_join( ### REVISIT THIS: do we want to restrict MHQ to the types in MNE? (trivial at the time of writing)
-    read_scheme_types() %>%
-      select(scheme, type) %>%
-      semi_join(targetpop, by = "type"),
-    by = "scheme"
-  ) %>%
   bind_rows(schemes, .)
 targetpop <-
   read_scheme_types(lang = lang) %>%

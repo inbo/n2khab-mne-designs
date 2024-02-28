@@ -105,43 +105,37 @@ targetpop <- targetpop %>%
 Extending `schemes` and `targetpop` with MHQ schemes.
 
 ```{r}
-schemes <- 
+schemes_mhq <- 
   read_schemes(lang = lang) %>% 
   filter(programme == "MHQ") %>% 
-  select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction) %>% 
-  semi_join( ### REVISIT THIS: do we want to restrict MHQ to the types in MNE?
-    read_scheme_types() %>% 
-      select(scheme, type) %>% 
-      semi_join(targetpop, by = "type"),
-    by = "scheme"
-  ) %>% 
-  bind_rows(schemes, .)
+  select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction)
+schemes <- bind_rows(schemes, schemes_mhq)
 targetpop <- 
   read_scheme_types(lang = lang) %>% 
   select(scheme, type) %>% 
-  ### REVISIT THIS: in case we want to restrict MHQ to the types in MNE, below
-  ### code may still include too many subtypes for MHQ (schemes in MHQ may
-  ### consist of multiple subtypes)
-  semi_join(schemes, by = "scheme")
-```
-
-Re-apply extra restriction of the target population as decided for the first implementation phase.
-
-```{r}
-targetpop <- 
-  targetpop %>% 
-  anti_join(targetpop_exclude_from_1st_phase, by = c("scheme", "type"))
+  semi_join(schemes_mhq, by = "scheme") %>% 
+  bind_rows(targetpop, .)
 ```
 
 ```{r restriction-3}
 # RE-APPLY ARTIFICIAL RESTRICTION 2:
-targetpop <- targetpop %>%
+targetpop <- 
+  targetpop %>%
   filter(type %in% type_shortlist)
+schemes <- 
+  schemes %>% 
+  # dropping HQ-schemes not represented by type_shortlist:
+  semi_join(targetpop, by = "scheme")
 ```
 
 ```{r}
 targetpop
 ```
+
+```{r}
+schemes
+```
+
 
 ## Setting domains
 
