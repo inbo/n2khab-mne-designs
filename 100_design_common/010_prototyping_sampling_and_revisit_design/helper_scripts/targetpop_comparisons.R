@@ -113,3 +113,24 @@ read_scheme_types(lang = lang) %>%
   select(type) %>%
   anti_join(targetpop, by = "type")
 
+
+
+# Good to know: all MHQ schemes are covered by the focal schemes of MNE
+
+schemes_focal <-
+  read_schemes(lang = lang) %>%
+  filter(programme == "MNE", tag_1 == "focal")
+targetpop_focal <-
+  read_scheme_types(lang = lang) %>%
+  semi_join(schemes_focal, by = "scheme")
+schemes_mhq <-
+  read_schemes(lang = lang) %>%
+  filter(programme == "MHQ")
+targetpop_mhq <-
+  read_scheme_types(lang = lang) %>%
+  semi_join(schemes_mhq, by = "scheme")
+targetpop_mhq %>%
+  distinct(type) %>%
+  anti_join(targetpop_focal %>% distinct(type), by = "type") %>%
+  nrow == 0
+
