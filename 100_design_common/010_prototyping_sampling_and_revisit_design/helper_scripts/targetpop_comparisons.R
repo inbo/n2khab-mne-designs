@@ -38,7 +38,7 @@ targetpop <-
   targetpop %>%
   anti_join(targetpop_exclude_from_1st_phase, by = c("scheme", "type"))
 
-# MHQ has no unique types relative to the MNE target population for GW+SURF+SOIL
+# MHQ has no unique types relative to the MNE target populations for GW+SURF+SOIL
 read_scheme_types() %>%
   select(scheme, type) %>%
   semi_join(
