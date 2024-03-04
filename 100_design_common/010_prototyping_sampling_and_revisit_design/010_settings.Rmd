@@ -137,7 +137,29 @@ schemes
 ```
 
 
-## Setting domains
+## Setting modules and domains
+
+### Modules
+
+A module is like a project.
+It determines budget, cycle duration, end year and scheme-specific properties regarding sampling design, sample sizes and start year.
+
+```{r}
+modules <- tribble(
+  ~module, ~cycle_duration, ~end_year,
+  "phase_1_flanders", 6, 2037,
+  "phase_1_sac_subset_5", 6, 2037,
+  "phase_1_be2100024", 3, 2030
+) %>% 
+  mutate(
+    module = fct(module),
+    cycle_duration = as.integer(cycle_duration),
+    end_year = as.integer(end_year)
+  )
+```
+
+
+### Domains
 
 Defining domains, including their geometry.
 
@@ -148,42 +170,70 @@ sfg_flanders <-
   .[[1]]
 sac <- read_admin_areas(dsn = "sac")
 sfg_sac_network <- st_combine(sac)[[1]]
-sfg_sac_subset_5 <- 
+sac_subset_5 <- c(
+  "BE2100015", # Kalmthoutse Heide
+  "BE2100024", # Vennen, heiden en moerassen rond Turnhout
+  "BE2200028", # De Maten
+  "BE2200035", # Mechelse heide en vallei van de Ziepbeek
+  "BE2200039"  # Voerstreek
+)
+for (sac_i in sac_subset_5) {
   sac %>% 
-  filter(sac_code %in% c(
-    "BE2100015", # Kalmthoutse Heide
-    "BE2100024", # Vennen, heiden en moerassen rond Turnhout
-    "BE2200028", # De Maten
-    "BE2200035", # Mechelse heide en vallei van de Ziepbeek
-    "BE2200039"  # Voerstreek
-  )) %>% 
+  filter(sac_code == sac_i) %>% 
   st_combine() %>%
-  .[[1]]
-sfg_be2100024 <- 
-  sac %>% 
-  filter(sac_code == "BE2100024") %>% 
-  st_combine() %>%
-  .[[1]]
+  .[[1]] %>% 
+  assign(str_c("sfg_", tolower(sac_i)), ., envir = .GlobalEnv)
+}
 domains <- tribble(
   ~domain, ~domain_name_nl, ~domain_name_en, ~geometry,
   "Flanders", "Vlaams Gewest", "Flemish Region", sfg_flanders,
   "SAC_network", "SBZ-H-netwerk", "SAC network", sfg_sac_network,
-  "SAC_subset_5", "SBZ-H-subset van 5 PAS-maatwerkgebieden", "SAC subset of 5 protected areas", sfg_sac_subset_5,
-  "BE2100024", "SBZ-H BE2100024", "SAC BE2100024", sfg_be2100024
+  "BE2100015", "SBZ-H BE2100015", "SAC BE2100015", sfg_be2100015,
+  "BE2100024", "SBZ-H BE2100024", "SAC BE2100024", sfg_be2100024,
+  "BE2200028", "SBZ-H BE2200028", "SAC BE2200028", sfg_be2200028,
+  "BE2200035", "SBZ-H BE2200035", "SAC BE2200035", sfg_be2200035,
+  "BE2200039", "SBZ-H BE2200039", "SAC BE2200039", sfg_be2200039
 ) %>% 
-  mutate(domain = factor(domain, levels = domain)) %>% 
+  mutate(domain = fct(domain)) %>% 
   st_as_sf(crs = 31370)
 ```
 
-The domains `SAC_subset_5` and `BE2100024` are more than just domains.
-They also represent their own target populations for scheme implementations that aim at a higher precision than what would be obtained by subpopulation estimation from the Flemish schemes.
-Hence, seen from the Flemish level, these represent a further level of stratification (crossed with type-based strata) as sample sizes are tailored to those domains.
+### Domains per module
+
+Each module is linked to one or more domains, hence the target populations (and consequently the schemes) will differ between modules.
+
+At this level, we also define which domains get a specific sample size allocation for the target populations represented in the domain.
+
+```{r}
+module_domains <- tibble::tribble(
+  ~module, ~domain, ~sample_size_predetermined,
+  "phase_1_flanders", "Flanders", TRUE,
+  "phase_1_flanders", "SAC_network", FALSE,
+  "phase_1_sac_subset_5", "BE2100015", TRUE,
+  "phase_1_sac_subset_5", "BE2100024", TRUE,
+  "phase_1_sac_subset_5", "BE2200028", TRUE,
+  "phase_1_sac_subset_5", "BE2200035", TRUE,
+  "phase_1_sac_subset_5", "BE2200039", TRUE,
+  "phase_1_be2100024", "BE2100024", TRUE
+) %>% 
+  mutate(
+    module = factor(module, levels = levels(modules$module)),
+    domain = factor(domain, levels = levels(domains$domain))
+  )
+```
+
+**When more than one module is active** and their domains overlap, the relevant sample parts can be stitched together with adjustment of sampling weights.
+This means that overlapping domains give rise to:
+
+- stratification -- if domain sizes differ -- of the larger domain into the domains from the other module + the remaining part;
+- a split panel in case a different revisit design applies.
 
 In order to not complicate terminology, we just denote all these geographical boundaries as 'domains' but we need to consider the stratification when generating samples and calculating sampling weights.
 
-<!-- Nog verder te verbeteren is domein SAC_subset_5, want het gaat om 5 domeinen, niet 1 domein. -->
 
 ## Setting scheme properties
+
+<!-- Revisit design and start year, depending on module. -->
 
 **Missing functionality**: getting the primary and additional site characteristics and environmental variables for each scheme in MNE from existing datasets such as googlesheets.
 
