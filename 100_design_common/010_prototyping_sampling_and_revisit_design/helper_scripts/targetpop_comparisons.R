@@ -21,12 +21,12 @@ schemes_1st_phase <- c(
   "SURF_07.2"
 )
 
-targetpop <-
+targetpops <-
   read_scheme_types(lang = lang) %>%
   select(scheme, type) %>%
   semi_join(schemes, by = "scheme")
 
-targetpop_exclude_from_1st_phase <-
+targetpops_exclude_from_1st_phase <-
   read_scheme_types(lang = lang) %>%
   filter(
     scheme == "GW_05.1_terr",
@@ -34,9 +34,9 @@ targetpop_exclude_from_1st_phase <-
   ) %>%
   select(scheme, type)
 
-targetpop <-
-  targetpop %>%
-  anti_join(targetpop_exclude_from_1st_phase, by = c("scheme", "type"))
+targetpops <-
+  targetpops %>%
+  anti_join(targetpops_exclude_from_1st_phase, by = c("scheme", "type"))
 
 # MHQ has no unique types relative to the MNE target populations for GW+SURF+SOIL
 read_scheme_types() %>%
@@ -46,9 +46,9 @@ read_scheme_types() %>%
       filter(programme == "MHQ"),
     by = "scheme"
   ) %>%
-  anti_join(targetpop, by = "type")
+  anti_join(targetpops, by = "type")
 
-# Which types belong to targetpop of schemes_1st_phase and NOT to targetpop of core_schemes_1st_phase?
+# Which types belong to targetpops of schemes_1st_phase and NOT to targetpops of core_schemes_1st_phase?
 # This also needs the stratum_props object from 'type_exploration_to_select_in_poc.R'
 non_core_types <-
   read_scheme_types(lang = lang) %>%
@@ -97,21 +97,21 @@ crossing(p = 0:5, k = 10:30) %>%
     fill = "Needed relative\nsample size increase"
   )
 
-# The MNE + MHQ '1st phase' targetpop comprises all types targeted by scheme
+# The MNE + MHQ '1st phase' targetpops comprises all types targeted by scheme
 # ATM_03.1
 
 schemes <- read_schemes(lang = lang) %>%
   filter(programme == "MHQ") %>%
   select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction) %>%
   bind_rows(schemes, .)
-targetpop <-
+targetpops <-
   read_scheme_types(lang = lang) %>%
   select(scheme, type) %>%
   semi_join(schemes, by = "scheme")
 read_scheme_types(lang = lang) %>%
   filter(scheme == "ATM_03.1") %>%
   select(type) %>%
-  anti_join(targetpop, by = "type")
+  anti_join(targetpops, by = "type")
 
 
 
@@ -120,17 +120,17 @@ read_scheme_types(lang = lang) %>%
 schemes_focal <-
   read_schemes(lang = lang) %>%
   filter(programme == "MNE", tag_1 == "focal")
-targetpop_focal <-
+targetpops_focal <-
   read_scheme_types(lang = lang) %>%
   semi_join(schemes_focal, by = "scheme")
 schemes_mhq <-
   read_schemes(lang = lang) %>%
   filter(programme == "MHQ")
-targetpop_mhq <-
+targetpops_mhq <-
   read_scheme_types(lang = lang) %>%
   semi_join(schemes_mhq, by = "scheme")
-targetpop_mhq %>%
+targetpops_mhq %>%
   distinct(type) %>%
-  anti_join(targetpop_focal %>% distinct(type), by = "type") %>%
+  anti_join(targetpops_focal %>% distinct(type), by = "type") %>%
   nrow == 0
 

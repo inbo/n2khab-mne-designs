@@ -57,7 +57,7 @@ schemes <-
 Defining the target populations based on selected schemes.
 
 ```{r}
-targetpop <- 
+targetpops <- 
   read_scheme_types(lang = lang) %>% 
   select(scheme, type) %>% 
   semi_join(schemes, by = "scheme")
@@ -68,7 +68,7 @@ Further restriction of the target populations as decided for the first implement
 <!-- This restricts target pops to 03.2/3/4, + adds 6430_mr for 05.1_terr (group 3 completion) & for 05.2 (to complete its target pop) -->
 
 ```{r}
-targetpop_exclude_from_1st_phase <- 
+targetpops_exclude_from_1st_phase <- 
   read_scheme_types(lang = lang) %>% 
   filter(
     scheme == "GW_05.1_terr",
@@ -76,9 +76,9 @@ targetpop_exclude_from_1st_phase <-
   ) %>% 
   select(scheme, type)
 
-targetpop <- 
-  targetpop %>% 
-  anti_join(targetpop_exclude_from_1st_phase, by = c("scheme", "type"))
+targetpops <- 
+  targetpops %>% 
+  anti_join(targetpops_exclude_from_1st_phase, by = c("scheme", "type"))
 ```
 
 ```{r restriction-2, eval=params$apply_restrictions, echo=params$apply_restrictions}
@@ -98,11 +98,11 @@ type_shortlist <- c(
     "9120",
     "7150"
   )
-targetpop <- targetpop %>%
+targetpops <- targetpops %>%
   filter(type %in% type_shortlist)
 ```
 
-Extending `schemes` and `targetpop` with MHQ schemes.
+Extending `schemes` and `targetpops` with MHQ schemes.
 
 ```{r}
 schemes_mhq <- 
@@ -110,26 +110,26 @@ schemes_mhq <-
   filter(programme == "MHQ") %>% 
   select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction)
 schemes <- bind_rows(schemes, schemes_mhq)
-targetpop <- 
+targetpops <- 
   read_scheme_types(lang = lang) %>% 
   select(scheme, type) %>% 
   semi_join(schemes_mhq, by = "scheme") %>% 
-  bind_rows(targetpop, .)
+  bind_rows(targetpops, .)
 ```
 
 ```{r restriction-3, eval=params$apply_restrictions, echo=params$apply_restrictions}
 # RE-APPLY ARTIFICIAL RESTRICTION 2:
-targetpop <- 
-  targetpop %>%
+targetpops <- 
+  targetpops %>%
   filter(type %in% type_shortlist)
 schemes <- 
   schemes %>% 
   # dropping HQ-schemes not represented by type_shortlist:
-  semi_join(targetpop, by = "scheme")
+  semi_join(targetpops, by = "scheme")
 ```
 
 ```{r}
-targetpop
+targetpops
 ```
 
 ```{r}

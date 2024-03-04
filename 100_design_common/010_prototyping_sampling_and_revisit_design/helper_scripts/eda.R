@@ -30,7 +30,7 @@ schemes_plot <-
   filter(domain != "SAC_network") %>%
   inner_join(n2khab_strata, by = "stratum") %>%
   select(domain, type) %>%
-  inner_join(targetpop, by = "type", relationship = "many-to-many") %>%
+  inner_join(targetpops, by = "type", relationship = "many-to-many") %>%
   select(domain, scheme, type) %>%
   distinct() %>%
   filter(str_detect(scheme, "_03")) %>%
@@ -55,7 +55,7 @@ ggsave(
 
 polygons <-
   stratum_polygons_cell_all_n2khab %>%
-  semi_join(targetpop_strata, by = "stratum") %>%
+  semi_join(targetpops_strata, by = "stratum") %>%
   semi_join(hmt_pol, ., by = "polygon_id")
 
 domains_plot <-
@@ -87,12 +87,12 @@ ggsave(
 
 # not used:
 
-targetpop_grts <-
+targetpops_grts <-
   stratum_grts_n2khab_phabcorrected %>%
-  semi_join(targetpop_strata, by = "stratum") %>%
+  semi_join(targetpops_strata, by = "stratum") %>%
   distinct(grts_address) %>%
   pull(grts_address)
 
 # subsetting by values is very inefficient (slow):
-grts_mh_targetpop <- mask(grts_mh_n2khab, grts_mh_n2khab, targetpop_grts, inverse = TRUE)
+grts_mh_targetpops <- mask(grts_mh_n2khab, grts_mh_n2khab, targetpops_grts, inverse = TRUE)
 # from https://gis.stackexchange.com/questions/421821/how-to-subset-a-spatraster-by-value-in-r

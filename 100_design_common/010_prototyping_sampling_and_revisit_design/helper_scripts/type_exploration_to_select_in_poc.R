@@ -1,7 +1,7 @@
 # This code requires the 'prepare-strata' chunk to have run.
-# Below code narrows down to targetpop, for exploratory purposes.
+# Below code narrows down to targetpops, for exploratory purposes.
 
-# building blocks for the exploration which types to select from targetpop for
+# building blocks for the exploration which types to select from targetpops for
 # the POC
 
 pop_size_terr <-
@@ -46,14 +46,14 @@ pop_size_3260 <-
             population_size = sum(population_size))
 pop_size_lentic <-
   wsh_pol_area_class %>%
-  semi_join(targetpop, by = "type") %>%
+  semi_join(targetpops, by = "type") %>%
   count(type, stratum, name = "population_size")
 pop_size_8310 <-
   habquarries_area_class %>%
   count(type, stratum, name = "population_size")
-join_targetpop <- function(df) {
+join_targetpops <- function(df) {
   df  %>%
-    inner_join(targetpop %>%
+    inner_join(targetpops %>%
                  select(scheme,
                         type,
                         contains("typegroup")),
@@ -66,29 +66,29 @@ join_targetpop <- function(df) {
              (type == "7220" & stratum == "terrestrial" & str_detect(scheme, "terr"))
     )
 }
-targetpop_stratumsize <-
+targetpops_stratumsize <-
   bind_rows(pop_size_terr,
             pop_size_7220,
             pop_size_3260,
             pop_size_lentic,
             pop_size_8310) %>%
-  join_targetpop
+  join_targetpops
 
 
-# targetpop_stratumsize comprises the whole targetpop!
-targetpop %>% anti_join(targetpop_stratumsize, by = c("scheme", "type"))
-# targetpop_stratumsize has no empty population sizes!
-targetpop_stratumsize %>% filter(is.na(population_size))
-# targetpop_stratumsize has no type, stratum, population_size combinations that
+# targetpops_stratumsize comprises the whole targetpops!
+targetpops %>% anti_join(targetpops_stratumsize, by = c("scheme", "type"))
+# targetpops_stratumsize has no empty population sizes!
+targetpops_stratumsize %>% filter(is.na(population_size))
+# targetpops_stratumsize has no type, stratum, population_size combinations that
 # are different between schemes (it's obvious from the code above)
-targetpop_stratumsize %>%
+targetpops_stratumsize %>%
   distinct(type, stratum, population_size) %>%
   count(type, stratum) %>%
   filter(n > 1)
 # the type_stratum_props object created below is the object we use to explore
 # and decide which types to select for prototyping
 stratum_props <-
-  targetpop_stratumsize %>%
+  targetpops_stratumsize %>%
   distinct(type, stratum, population_size) %>%
   arrange(type, stratum) %>%
   inner_join(
@@ -97,7 +97,7 @@ stratum_props <-
   )
 # add relation to MNE schemes:
 stratum_props %>%
-  inner_join(targetpop, by = "type", relationship = "many-to-many") %>%
+  inner_join(targetpops, by = "type", relationship = "many-to-many") %>%
   filter(!str_detect(scheme, "^HQ")) %>%
   pivot_wider(
     names_from = scheme,
