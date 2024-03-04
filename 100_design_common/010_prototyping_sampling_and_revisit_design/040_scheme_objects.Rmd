@@ -38,7 +38,121 @@ domain_scheme_stats <-
 
 ### Applying scheme-specific spatial restrictions to certain types
 
-**Missing functionality**: apply spatial restrictions depending on scheme x stratum.
+By default, the spatial sampling frame of a scheme is the base sampling frame, subsetted by the scheme's target population.
+This is a restriction that can easily be applied on the fly while defining the sample for each scheme.
+
+However **some scheme x stratum combinations** apply a further spatial restriction of the spatial sampling frame.
+
+To this end, we shrink the base sampling frame in different ways, in order to replace the base sampling frames for these schemes.
+
+```{r}
+schemes %>% 
+  filter(!is.na(spatial_restriction)) %>% 
+  select(scheme, spatial_restriction)
+```
+
+```{r}
+schemes %>% 
+  distinct(spatial_restriction) %>% 
+  filter(!is.na(spatial_restriction)) %>% 
+  pull(spatial_restriction)
+```
+
+- **Restriction 1**: _For terrestrial types: restrict to zones with shallow groundwater (in reach of vegetation). Don't exclude locations with types that are '(almost) everywhere groundwater dependent' (GD2)_
+
+Masking `grts_mh_n2khab` according to the `shallowgroundwater` layer.
+To be conservative, we don't require cell centers to intersect the polygons.
+
+```{r}
+sg <- 
+  locate_n2khab_data() %>% 
+  file.path("10_raw/shallowgroundwater/shallowgroundwater.gpkg") %>% 
+  vect()
+sg_grts_n2khab <- 
+  mask(grts_mh_n2khab, sg) %>% 
+  values(na.rm = TRUE) %>% 
+  as.vector()
+```
+
+Preparing restricted result `stratum_grts_n2khab_phabc_1`.
+
+```{r}
+strata_for_restriction_1 <- 
+  n2khab_types_expanded_properties %>% 
+  filter(groundw_dep != "GD2", hydr_class != "HC3") %>% 
+  semi_join(n2khab_strata_expanded, ., by = "type") %>% 
+  pull(stratum)
+strata_gd2 <- 
+  n2khab_types_expanded_properties %>% 
+  filter(groundw_dep == "GD2") %>% 
+  semi_join(n2khab_strata_expanded, ., by = "type") %>% 
+  pull(stratum)
+stratum_grts_n2khab_phabc_1 <-
+  stratum_grts_n2khab_phabcorrected %>% 
+  group_by(grts_address) %>% 
+  mutate(
+    to_restrict = stratum %in% strata_for_restriction_1,
+    gd2 = stratum %in% strata_gd2,
+    gd2_in_cell = any(gd2)
+  ) %>% 
+  ungroup() %>% 
+  filter(
+    !to_restrict | 
+      gd2_in_cell | 
+      grts_address %in% sg_grts_n2khab
+  ) %>% 
+  select(stratum, grts_address)
+```
+
+- **Restriction 2**: _Restrict to zones with shallow groundwater (in reach of vegetation). Exclude aquatic (i.e. rivulet) forms of type 7220. Don't exclude locations with types that are '(almost) everywhere groundwater dependent' (GD2)_
+
+Preparing restricted result `stratum_grts_n2khab_phabc_2`.
+
+```{r}
+grts_7220_allowed_2 <- 
+  extract(
+    grts_mh_n2khab, 
+    habspring_units %>% 
+      filter(system_type != "rivulet") %>% 
+      st_coordinates()
+  ) %>% 
+  filter(!is.na(GRTSmaster_habitats)) %>% 
+  pull(GRTSmaster_habitats)
+stratum_grts_n2khab_phabc_2 <-
+  stratum_grts_n2khab_phabcorrected %>% 
+  filter(stratum != "7220" | grts_address %in% grts_7220_allowed_2) %>% 
+  group_by(grts_address) %>% 
+  mutate(
+    gd2 = stratum %in% strata_gd2,
+    gd2_in_cell = any(gd2)
+  ) %>% 
+  ungroup() %>% 
+  filter(gd2_in_cell | grts_address %in% sg_grts_n2khab) %>% 
+  select(stratum, grts_address)
+```
+
+- **Restriction 3**: _Exclude terrestrial (i.e. mire) forms of type 7220, if applicable. Exclude locations where the surface water is not connected with (nor affected by) the phreatic aquifer_
+- **Restriction 4**: _Exclude terrestrial (i.e. mire) forms of type 7220, if applicable_
+
+We combine both restriction since the condition relating to surface water - groundwater interaction is to be assessed in situ.
+
+Preparing restricted result `stratum_grts_n2khab_phabc_3`.
+
+```{r}
+grts_7220_allowed_3 <- 
+  extract(
+    grts_mh_n2khab, 
+    habspring_units %>% 
+      filter(system_type != "mire") %>% 
+      st_coordinates()
+  ) %>% 
+  filter(!is.na(GRTSmaster_habitats)) %>% 
+  pull(GRTSmaster_habitats)
+stratum_grts_n2khab_phabc_3 <-
+  stratum_grts_n2khab_phabcorrected %>% 
+  filter(stratum != "7220" | grts_address %in% grts_7220_allowed_3)
+```
+
 
 
 
