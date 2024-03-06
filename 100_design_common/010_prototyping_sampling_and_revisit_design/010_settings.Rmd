@@ -141,15 +141,20 @@ schemes
 
 ### Modules
 
-A module is like a project.
-It determines budget, cycle duration, end year and scheme-specific properties regarding sampling design, sample sizes and start year.
+A module is like a project, that aims at realizing some well-defined part of MNE + MHQ.
+
+- A module determines budget, cycle duration, end year and scheme-specific properties regarding sampling design, sample sizes and start year.
+- In general, a module also determines which schemes and which part of the target populations are in scope.
+  - We have defined `schemes` and `targetpops` globally, but the module will further determine whether the MHQ programme is included or not.
+  - Another property of a module are the involved domains (see \@ref(domains-per-module)), and these geographical boundaries can in turn restrict `schemes` and `targetpops`.
+- Also, we distinguish different components as different modules if it's reasonable to assume that funding or period may diverge in the future, even though they have the same characteristics below.
 
 ```{r}
 modules <- tribble(
-  ~module, ~cycle_duration, ~end_year,
-  "phase_1_flanders", 6, 2037,
-  "phase_1_sac_subset_5", 6, 2037,
-  "phase_1_be2100024", 3, 2030
+  ~module, ~cycle_duration, ~end_year, ~includes_mhq,
+  "phase_1_flanders", 6, 2037, FALSE,
+  "phase_1_sac_subset_5", 6, 2037, TRUE,
+  "phase_1_be2100024", 3, 2030, TRUE
 ) %>% 
   mutate(
     module = fct(module),
@@ -222,7 +227,7 @@ module_domains <- tibble::tribble(
   )
 ```
 
-**When more than one module is active** and their domains overlap, the relevant sample parts can be stitched together with adjustment of sampling weights.
+**Where domains with predetermined sample size overlap and if the module(s) they belong to is/are active**, then the relevant sample parts can be stitched together with adjustment of sampling weights.
 This means that overlapping domains give rise to:
 
 - stratification -- if domain sizes differ -- of the larger domain into the domains from the other module + the remaining part;
@@ -232,6 +237,8 @@ In order to not complicate terminology, we just denote all these geographical bo
 
 
 ## Setting scheme properties
+
+<!-- Only set the stable, module-agnostic scheme properties here. The module and domain specific scheme properties (for domains with predetermined sample size) can only be set completely once the spatial sampling frames are created for each scheme: it will also determine which types, hence schemes do apply in specific domains. -->
 
 <!-- Revisit design and start year, depending on module. -->
 
