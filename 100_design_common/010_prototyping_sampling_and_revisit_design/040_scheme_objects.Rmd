@@ -13,30 +13,6 @@ targetpops_strata <-
   select(-type)
 ```
 
-## Determining schemes per domain
-
-Some of the domains also play a role in scheme implementation (see \@ref(domains-per-module)).
-
-The schemes that apply to each domain, according to the _current_ (!) presence of strata in domains:
-
-```{r}
-domain_scheme_stats <-
-  targetpops_strata %>% 
-  inner_join(domain_stratum_nunits, by = "stratum", relationship = "many-to-many") %>% 
-  summarize(
-    stratum_count = n(),
-    stratum_nunits_min = min(nunits),
-    stratum_nunits_q1 = quantile(nunits, 0.25),
-    stratum_nunits_q3 = quantile(nunits, 0.75),
-    stratum_nunits_max = max(nunits),
-    .by = c(domain, scheme)
-  ) %>% 
-  arrange(domain, scheme)
-```
-
-Note that the unit statistics in `domain_scheme_stats` only apply to the base sampling frame, not necessarily to further spatial restrictions.
-So this will need further recalculation.
-
 ## Generating spatial sampling frames per scheme
 
 ### Applying scheme-specific spatial restrictions to certain types
@@ -333,8 +309,30 @@ scheme_ssf_domain_stratum_nunits <-
 ```
 
 
+## Determining schemes per domain
 
+Some of the domains also play a role in scheme implementation (see \@ref(domains-per-module)).
 
+The schemes that apply to each domain, according to the _current_ (!) presence of strata in domains:
+
+```{r}
+domain_scheme_stats <-
+  scheme_ssf_domain_stratum_nunits %>% 
+  summarize(
+    stratum_count = n(),
+    stratum_nunits_min = min(nunits),
+    stratum_nunits_q1 = quantile(nunits, 0.25),
+    stratum_nunits_q2 = quantile(nunits, 0.5),
+    stratum_nunits_q3 = quantile(nunits, 0.75),
+    stratum_nunits_max = max(nunits),
+    .by = c(domain, scheme)
+  ) %>% 
+  arrange(domain, scheme)
+```
+
+<!-- XXXXX Note that quite some polygons have been dropped in domain_hmt_pol_grts after the join with hmt_pol_grts_cellcenter was added, leading to a clearly lower number of units; this may be because of the clipping effect of grts_mh (which is too small) and also because of dropping small polygons (small=FALSE), i.e. that didn't intersect any cell center. -->
+<!-- This effect should be scrutinized further, but this effect may be want we want for now. -->
+<!-- XXXXX Above result is to be confronted to the ncells result after PHAB correction has been applied -->
 
 
 
