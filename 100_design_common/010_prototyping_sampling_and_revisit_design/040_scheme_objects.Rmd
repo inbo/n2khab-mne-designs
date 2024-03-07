@@ -365,3 +365,98 @@ This means that we cover all secondary schemes by constructing samples for the f
 Nevertheless, we must check for unexpected sample sizes emerging in the secondary schemes as a consequence.
 
 
+## Set the module-specific properties of schemes x variable-sets
+
+Some schemes can be dropped depending on the module.
+
+```{r}
+year_first_default <- 2025L
+mhq_proportion_aquatic_per_module <- 
+  scheme_ssf_domain_stratum_nunits %>% 
+  inner_join(n2khab_strata, by = "stratum") %>% 
+  semi_join(read_types() %>% filter(str_detect(hydr_class, "3$")), by = "type") %>% 
+  filter(str_detect(scheme, "^HQ")) %>% 
+  inner_join(
+    module_domains %>% filter(sample_size_predetermined) %>% select(module, domain),
+    by = "domain",
+    relationship = "many-to-many"
+  ) %>% 
+  summarize(
+    nunits = sum(nunits),
+    .by = c(module, scheme)
+  ) %>% 
+  mutate(
+    prop_in_module = nunits / sum(nunits),
+    .by = module,
+    .keep = "unused"
+  ) %>% 
+  arrange(across(-prop_in_module))
+```
+
+Joining module and scheme properties to `domain_scheme_stats`, needing those attributes to generate further attributes, keeping them duplicated here for now.
+
+```{r}
+modules %>% 
+  inner_join(module_domains, by = "module") %>% 
+  filter(sample_size_predetermined) %>% 
+  select(-sample_size_predetermined) %>% 
+  inner_join(
+    domain_scheme_stats %>% select(domain, scheme, stratum_count),
+    by = "domain",
+    relationship = "many-to-many"
+  ) %>% 
+  # step to drop schemes depending on module:
+  filter(includes_mhq | !str_detect(scheme, "^HQ")) %>% 
+  select(-includes_mhq) %>% 
+  inner_join(schemes %>% select(scheme, attribute_1, tag_1), by = "scheme") %>% 
+  inner_join(scheme_design, by = "scheme") %>% 
+  mutate(
+    year_first = case_match(
+      attribute_1,
+      "SURF" ~ year_first_default + 1L,
+      "SOIL" ~ year_first_default + 2L,
+      .default = year_first_default
+    ),
+    panel_count = as.integer(cycle_duration_y * years(1) / panel_period)
+  ) %>% 
+  inner_join(
+    scheme_variableset_fieldmethod,
+    by = "scheme",
+    relationship = "many-to-many"
+  ) %>% 
+  left_join(mhq_proportion_aquatic_per_module, by = c("module", "scheme")) %>% 
+  mutate(
+    sp_sample_size_all_panels = cycle_duration_y * case_when(
+      tag_1 == "secondary" ~ NA_integer_,
+      module == "phase_1_flanders" & attribute_1 == "GW" ~ 300,
+      module == "phase_1_flanders" & attribute_1 == "SOIL" ~ 333,
+      module == "phase_1_flanders" & scheme == "SURF_03.4_lentic" ~ 106,
+      module == "phase_1_flanders" & scheme == "SURF_03.4_lotic" ~ 27,
+      module == "phase_1_sac_subset_5" & attribute_1 == "GW" ~ 50,
+      module == "phase_1_sac_subset_5" & attribute_1 == "SOIL" ~ 56,
+      module == "phase_1_sac_subset_5" & scheme == "SURF_03.4_lentic" ~ 18,
+      module == "phase_1_sac_subset_5" & scheme == "SURF_03.4_lotic" ~ 4,
+      module == "phase_1_be2100024" & attribute_1 == "GW" ~ 70,
+      # still need to split this one depending on variable set:
+      module == "phase_1_be2100024" & attribute_1 == "SOIL" ~ 133,
+      module == "phase_1_be2100024" & scheme == "SURF_03.4_lentic" ~ 14,
+      module == "phase_1_be2100024" & scheme == "SURF_03.4_lotic" ~ 4,
+      module == "phase_1_be2100024" & str_detect(scheme, "^HQ3") ~ 18 * prop_in_module,
+      module == "phase_1_be2100024" & str_detect(scheme, "^HQ(23|40|91(20|60))") ~ 28,
+      module == "phase_1_be2100024" & str_detect(scheme, "^HQ(6230|9190)") ~ 84,
+      module == "phase_1_be2100024" & scheme == "HQ7140" ~ 84,
+      # still missing here: MHQ schemes in phase_1_sac_subset_5
+      # NA in MHQ means a census instead of a sample
+      .default = NA_integer_
+    ) %>% 
+      as.integer()
+  ) %>% 
+  select(-attribute_1, -tag_1, -prop_in_module) %>% 
+  glimpse
+  # relocate(module, domain, scheme, ...)
+```
+
+
+
+
+
