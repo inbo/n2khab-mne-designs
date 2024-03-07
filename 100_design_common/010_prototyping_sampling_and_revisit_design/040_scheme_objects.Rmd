@@ -339,4 +339,29 @@ domain_scheme_stats <-
 <!-- XXXXX Above result is to be confronted to the ncells result after PHAB correction has been applied -->
 
 
+## Check the strata overlap between focal and secondary MNE schemes
+
+Determining which types in a domain x compartment (GW, SURF, SOIL) are covered by a secondary scheme and _not_ by a focal scheme.
+
+```{r}
+scheme_ssf_domain_stratum_nunits %>% 
+  inner_join(schemes %>% filter(programme == "MNE"), by = "scheme") %>% 
+  distinct(
+    domain, 
+    stratum, 
+    compartment = attribute_1, 
+    category = tag_1
+  ) %>% 
+  summarize(
+    covered_by_focal_scheme = any(category != "focal"),
+    .by = c(domain, stratum, compartment)
+  ) %>% 
+  filter(!covered_by_focal_scheme)
+```
+
+We see that, in each domain, the represented strata of the schemes in a specific compartment are all covered by at least one focal scheme in that compartment.
+
+This means that we cover all secondary schemes by constructing samples for the focal schemes.
+Nevertheless, we must check for unexpected sample sizes emerging in the secondary schemes as a consequence.
+
 
