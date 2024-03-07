@@ -240,15 +240,94 @@ In order to not complicate terminology, we just denote all these geographical bo
 
 <!-- Only set the stable, module-agnostic scheme properties here. The module and domain specific scheme properties (for domains with predetermined sample size) can only be set completely once the spatial sampling frames are created for each scheme: it will also determine which types, hence schemes do apply in specific domains. -->
 
-<!-- Revisit design and start year, depending on module. -->
+Defining variable sets and field methods per scheme.
+This is module-agnostic.
+
+```{r}
+scheme_variableset_fieldmethod <-
+  # MNE schemes phase 1
+  tribble(
+    ~scheme, ~variable_set, ~field_method,
+    "GW_03.3", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
+    "GW_04.2", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
+    "GW_05.1_aq", "grondwaterpeil automatisch", "meting stijghoogte",
+    "GW_05.1_aq", "oppervlaktewaterpeil automatisch", "meting oppervlaktewaterpeil",
+    "GW_05.1_terr", "grondwaterpeil automatisch", "meting stijghoogte",
+    "GW_05.2", "grondwaterpeil automatisch", "meting stijghoogte",
+    "GW_07.1", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
+    "SOIL_03.2", "standaardpakket labo bodem anorganisch + C & N + Olsen P + textuur", "bemonsteren bodem via oppervlaktemonsters",
+    "SOIL_03.2", "standaardpakket labo bodem anorganisch + C & N + Olsen P", "bemonsteren bodem via grondboring",
+    "SURF_03.4_lentic", "standaardpakket labo water anorganisch + totaal P water", "bemonsteren waterkolom stilstaande wateren",
+    "SURF_03.4_lotic", "standaardpakket labo water anorganisch", "bemonsteren waterkolom waterlopen",
+    "SURF_07.2", "standaardpakket labo water anorganisch", "bemonsteren waterkolom stilstaande wateren"
+  ) %>% 
+  mutate(scheme = factor(scheme, levels = levels(schemes$scheme))) %>% 
+  bind_rows(
+    schemes %>% 
+      filter(programme == "MHQ") %>% 
+      select(scheme) %>% 
+      mutate(
+        variable_set = "LSVI", 
+        field_method = "LSVI-beoordeling"
+      )
+  ) %>% 
+  mutate(across(
+    c(variable_set, field_method), 
+    ~factor(.) %>% fct_relevel(~.[!str_detect(., "LSVI")])
+  ))
+```
+
+For MHQ the variables are summarized as one variable 'LSVI', and the hierarchy of involved measurement variables for each scheme (type) is incorporated in the [LSVI](https://packages.inbo.be/LSVI/) package.
+
+For MNE we may want to define summarized sets of variables here, linked to a specific terrain method, and link _those_ to schemes.
+
+Checking that all schemes are covered by `scheme_variableset_fieldmethod`.
+
+```{r}
+schemes %>% 
+  anti_join(scheme_variableset_fieldmethod, by = "scheme") %>% 
+  nrow() == 0
+```
+
+Setting other module-agnostic scheme design attributes.
+
+```{r}
+scheme_design <-
+  schemes %>% 
+  select(scheme) %>% 
+  mutate(
+    targetvar_temporal_resolution = case_when(
+      str_detect(scheme, "^HQ|^GW_05") ~ years(1),
+      str_detect(scheme, "^SURF_") ~ months(1),
+      .default = months(3)
+    ),
+    revisit_design = case_when(
+      str_detect(scheme, "^GW_05") ~ "pure_panel",
+      .default = "serially_alternating"
+    ) %>% 
+      factor(),
+    revisit_maintenance = case_when(
+      str_detect(scheme, "^GW_05") ~ "serially_alternating"
+    ) %>% 
+      factor(levels = levels(revisit_design)),
+    panel_period = case_when(
+      str_detect(scheme, "^HQ|^SURF_") ~ years(1),
+      .default = months(3)
+    ),
+    revisit_subdesign = case_when(
+      str_detect(scheme, "^SURF_") ~ "pure_panel"
+    ) %>% 
+      factor(levels = levels(revisit_design)),
+    panel_subperiod = case_match(
+      revisit_subdesign,
+      "pure_panel" ~ targetvar_temporal_resolution
+    )
+  )
+```
 
 **Missing functionality**: getting the primary and additional site characteristics and environmental variables for each scheme in MNE from existing datasets such as googlesheets.
 
 Additional site characteristics / environmental variables might need spatial restrictions that are more stringent than the one at the scheme level.
-
-For MHQ the variables will be summarized as one variable 'LSVI', and the hierarchy of involved measurement variables for each scheme (type) is incorporated in the [LSVI](https://packages.inbo.be/LSVI/) package.
-
-For MNE we may want to define summarized sets of variables here, linked to a specific terrain method, and link _those_ to schemes.
 
 <!-- Selectie van variabelen te voorzien. -->
 
