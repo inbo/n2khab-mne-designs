@@ -49,3 +49,77 @@ non_core_types %>%
 
 domain_scheme_stats %>%
   write_sheet(gs_id, "domain_scheme_stats")
+
+module_domains %>%
+  filter(sample_size_predetermined) %>%
+  semi_join(domain_stratum_nunits, ., by = "domain") %>%
+  inner_join(n2khab_strata, by = "stratum") %>%
+  summarize(nunits = sum(nunits), .by = c(domain, type)) %>%
+  arrange(type) %>%
+  pivot_wider(names_from = domain, values_from = nunits) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "domain_type_nunits")
+
+module_domains %>%
+  filter(sample_size_predetermined) %>%
+  inner_join(domain_stratum_nunits, by = "domain", relationship = "many-to-many") %>%
+  inner_join(n2khab_strata, by = "stratum") %>%
+  summarize(nunits = sum(nunits), .by = c(module, type)) %>%
+  arrange(type) %>%
+  pivot_wider(names_from = module, values_from = nunits) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "module_type_nunits")
+
+module_domains %>%
+  filter(sample_size_predetermined) %>%
+  semi_join(scheme_ssf_domain_stratum_nunits, ., by = "domain") %>%
+  filter(domain != "Flanders" | !str_detect(scheme, "^HQ")) %>%
+  inner_join(n2khab_strata, by = "stratum") %>%
+  summarize(nunits = sum(nunits), .by = c(domain, scheme, type)) %>%
+  summarize(
+    type_count = n(),
+    type_nunits_min = min(nunits),
+    type_nunits_q1 = quantile(nunits, 0.25),
+    type_nunits_q2 = quantile(nunits, 0.5),
+    type_nunits_q3 = quantile(nunits, 0.75),
+    type_nunits_max = max(nunits),
+    .by = c(domain, scheme)
+  ) %>%
+  arrange(domain, scheme) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "domain_scheme_stats")
+
+
+module_domains %>%
+  filter(sample_size_predetermined) %>%
+  inner_join(
+    scheme_ssf_domain_stratum_nunits,
+    by = "domain",
+    relationship = "many-to-many"
+  ) %>%
+  filter(domain != "Flanders" | !str_detect(scheme, "^HQ")) %>%
+  inner_join(n2khab_strata, by = "stratum") %>%
+  summarize(nunits = sum(nunits), .by = c(module, scheme, type)) %>%
+  arrange(scheme, type) %>%
+  pivot_wider(names_from = module, values_from = nunits) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "scheme_type_nunits_per_module")
+
+
+module_domains %>%
+  filter(sample_size_predetermined) %>%
+  semi_join(scheme_ssf_domain_stratum_nunits, ., by = "domain") %>%
+  filter(domain != "Flanders" | !str_detect(scheme, "^HQ")) %>%
+  inner_join(n2khab_strata, by = "stratum") %>%
+  summarize(nunits = sum(nunits), .by = c(domain, scheme, type)) %>%
+  arrange(scheme, type) %>%
+  pivot_wider(names_from = domain, values_from = nunits) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "scheme_type_nunits_per_domain")
+
+
