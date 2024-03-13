@@ -220,51 +220,23 @@ domain_stratum_non_cell_nunits <-
 
 Determining the population size per domain for strata with cell-center-based units.
 
-<!-- XXXXXX Below simplification (taking domain-overlapping polygons 
-completely into account) can be improved by actually intersecting by domains. -->
+<!-- Below simplification (representing domains and polygons + their intersection as cells and then using phab) can be slightly improved by actually intersecting polygons by domains, then calculating phab-corrected areas (see git history for such an approach but still lacking st_intersection()). -->
 
 ```{r}
-# polygon_ids that intersect each domain:
-domain_hmt_pol <- 
-  domains %>% 
-  st_drop_geometry() %>% 
-  select(domain) %>% 
-  mutate(id = unclass(st_intersects(domains, hmt_pol))) %>% 
-  unnest(id) %>% 
-  inner_join(
-    tibble(
-      id = seq_len(nrow(hmt_pol)),
-      polygon_id = hmt_pol$polygon_id
-    ),
-    by = "id"
-  ) %>% 
-  select(-id)
-# number of units per polygon_id x stratum (taking into account surface area & phab):
-# (since we start from hmt, we also need to collapse the types to the n2khab_strata!)
-hmt_pol_stratum_cellcenter_nunits <- 
-  hmt_pol_phab_cellcenter_n2khab %>% 
-  inner_join(
-    hmt_pol %>% 
-      mutate(area = st_area(.) %>% drop_units()) %>% 
-      st_drop_geometry(),
-    by = "polygon_id"
-  ) %>% 
-  mutate(nunits = area * phab / 100 / (32^2), .keep = "unused") %>% 
-  rename(stratum = type) %>% 
-  collapse_strata() %>% 
-  summarize(
-    nunits = sum(nunits),
-    .by = c(polygon_id, stratum)
-  )
-# population size per domain x stratum:
 domain_stratum_cellcenter_nunits <- 
-  domain_hmt_pol %>% 
+  domain_grts_n2khab %>% 
+  inner_join(hmt_pol_grts_cellcenter, by = "grts_address") %>% 
   inner_join(
-    hmt_pol_stratum_cellcenter_nunits, 
+    hmt_pol_phab_cellcenter_n2khab, 
     by = "polygon_id",
     relationship = "many-to-many"
   ) %>% 
-  summarize(nunits = sum(nunits), .by = c(domain, stratum))
+  rename(stratum = type) %>% 
+  collapse_strata() %>% 
+  summarize(
+    nunits = sum(phab) / 100,
+    .by = c(domain, stratum)
+  )
 ```
 
 Determining the population size per domain for strata with cell-based units.
@@ -300,22 +272,6 @@ inner_join(
   nrow() == nrow(domain_stratum_nunits)
 ```
 
-<!-- XXXXX -->
-<!-- FALSE ==> st_intersection() needed in crossing `hmt_pol` with `domains`, to achieve a better result! -->
-<!-- It will normally still return 'something', but since no rbbmr _raster cells_ seem to involved, it should be much smaller than '1 unit'. -->
-<!-- One could then further simplify by rounding the result and dropping zeros. -->
-
-<!-- > domain_stratum_nunits %>% anti_join(domain_stratum_ncells, by = c("domain", "stratum")) -->
-<!-- # A tibble: 1 × 3 -->
-<!--   domain    stratum nunits -->
-<!--   <fct>     <fct>    <dbl> -->
-<!-- 1 BE2200039 rbbmr     1.02 -->
-
-<!-- > n2khab_types_expanded_properties %>% filter(type == "rbbmr") %>% select(type, sample_support_code) -->
-<!-- # A tibble: 1 × 2 -->
-<!--   type  sample_support_code        -->
-<!--   <fct> <fct>                      -->
-<!-- 1 rbbmr cell_conditioned_on_center -->
 
 
 
