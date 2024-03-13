@@ -212,26 +212,37 @@ ssf_domain_stratum_non_cell_nunits <-
 
 Determining the sampling frame specific population size per domain for strata with cell-center-based units.
 
-<!-- Below simplification (representing domains and polygons + their intersection as cells and then using phab) can be slightly improved by actually intersecting polygons by domains, then calculating phab-corrected areas (see git history for such an approach but still lacking st_intersection()). -->
+<!-- Below simplifications (either counting cells in phab-corrected sampling frames, or representing domains and polygons + their intersection as cells and then summing phab) can be slightly improved by actually intersecting polygons by domains, then calculating phab-corrected areas (see git history for such an approach but still lacking st_intersection()). -->
 
 ```{r}
 ssf_domain_stratum_cellcenter_nunits <-
-  hmt_pol_phab_cellcenter_n2khab %>% 
-  rename(stratum = type) %>% 
-  collapse_strata() %>% 
-  summarize(phab = sum(phab), .by = c(polygon_id, stratum)) %>% 
-  inner_join(
-    hmt_pol_grts_cellcenter, 
-    by = "polygon_id",
-    relationship = "many-to-many"
-  ) %>% 
-  select(-polygon_id) %>% 
-  inner_join(
-    sp_samplingframe_domain %>% unnest(sampling_frame_domain),
-    by = c("stratum", "grts_address")
-  ) %>% 
-  summarize(nunits = sum(phab) / 100, .by = c(sampling_frame_id, domain, stratum)) %>% 
-  arrange(across(-nunits))
+  if (phabcorrection_done) {
+    sp_samplingframe_domain %>% 
+      unnest(sampling_frame_domain) %>% 
+      semi_join(
+        n2khab_types_expanded_properties %>% 
+          filter(sample_support_code == "cell_conditioned_on_center"),
+        by = c(stratum = "type")
+      ) %>% 
+      count(sampling_frame_id, domain, stratum, name = "nunits")
+  } else {
+    hmt_pol_phab_cellcenter_n2khab %>% 
+      rename(stratum = type) %>% 
+      collapse_strata() %>% 
+      summarize(phab = sum(phab), .by = c(polygon_id, stratum)) %>% 
+      inner_join(
+        hmt_pol_grts_cellcenter, 
+        by = "polygon_id",
+        relationship = "many-to-many"
+      ) %>% 
+      select(-polygon_id) %>% 
+      inner_join(
+        sp_samplingframe_domain %>% unnest(sampling_frame_domain),
+        by = c("stratum", "grts_address")
+      ) %>% 
+      summarize(nunits = sum(phab) / 100, .by = c(sampling_frame_id, domain, stratum)) %>% 
+      arrange(across(-nunits))
+  }
 ```
 
 Determining the sampling frame specific population size per domain for strata with cell-based units.
