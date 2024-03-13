@@ -186,25 +186,6 @@ stratum_grts_n2khab_phabcorrected <- stratum_grts_n2khab_collapsed
 Note: this is not useful for every scheme, since some schemes need further spatial restriction of the base sampling frame (see \@ref(scheme-objects)).
 Hence it will need scheme-specific recalculation anyway (\@ref(scheme-objects)).
 
-<!-- XXXXX Revisit the need for this! -->
-
-### Approximately by using the phab-corrected data frame of stratum x grts addresses in MNE + MHQ
-
-The phab-corrected (i.e. subsampled) data frame of stratum x grts addresses is one approach to approximate the population sizes; however beside inaccuracy due to phab-based subsampling, this is also compounded by the fact that some cells include multiple (non-cell) units that belong to the same stratum.
-
-<!-- However we did NOT YET APPLY this phab correction!!
-This results in an overestimation for the cell-centered types,
-but it's still a good base to DROP strata from domains XXXXXX -->
-
-```{r}
-domain_stratum_ncells <- 
-  stratum_grts_n2khab_phabcorrected %>% 
-  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>% 
-  count(domain, stratum, name = "ncells")
-```
-
-### More correctly by combining different unit-level data sources
-
 Determining the population size per domain for strata with non-cell-based units.
 
 ```{r}
@@ -260,19 +241,4 @@ domain_stratum_nunits <-
   arrange(across(-nunits)) %>% 
   mutate(nunits = round(nunits) %>% as.integer())
 ```
-
-Check that this coincides with the domain x stratum combinations of `domain_stratum_ncells`.
-
-```{r}
-inner_join(
-  domain_stratum_ncells, 
-  domain_stratum_nunits, 
-  by = c("domain", "stratum")
-) %>% 
-  nrow() == nrow(domain_stratum_nunits)
-```
-
-
-
-
 
