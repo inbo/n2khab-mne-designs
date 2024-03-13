@@ -47,8 +47,15 @@ schemes %>%
 non_core_types %>%
   write_sheet(gs_id, "non_core_types")
 
+# following is no longer used in the gsheet:
 domain_scheme_stats %>%
   write_sheet(gs_id, "domain_scheme_stats")
+
+# Below code requires the availability of:
+# - module_domains
+# - domain_stratum_nunits
+# - n2khab_strata
+# - scheme_ssf_domain_stratum_nunits
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
