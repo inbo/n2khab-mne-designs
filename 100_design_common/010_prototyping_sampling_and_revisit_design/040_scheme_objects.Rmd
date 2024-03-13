@@ -287,10 +287,18 @@ scheme_ssf_domain_stratum_nunits <-
 
 Some of the domains also play a role in scheme implementation (see \@ref(domains-per-module)).
 
-The schemes that apply to each domain, according to the _current_ (!) presence of strata in domains:
+Determining the schemes that apply to each domain, according to the _current_ (!) presence of strata in domains.
 
 ```{r}
-domain_scheme_stats <-
+domain_schemes <- 
+  scheme_ssf_domain_stratum_nunits %>% 
+  distinct(domain, scheme)
+```
+
+Calculating statistics of the population size per **stratum**, per domain x scheme.
+
+```{r}
+domain_scheme_stratumstats <-
   scheme_ssf_domain_stratum_nunits %>% 
   summarize(
     stratum_count = n(),
@@ -304,7 +312,24 @@ domain_scheme_stats <-
   arrange(domain, scheme)
 ```
 
-<!-- type_count nog toevoegen! Substrata in één type krijgen elk een gelijke (infinite) fractie van het typetotaal dat hetzelfde is als voor andere types. -->
+Calculating statistics of the population size per **type**, per domain x scheme.
+
+```{r}
+domain_scheme_typestats <-
+  scheme_ssf_domain_stratum_nunits %>% 
+  inner_join(n2khab_strata, by = "stratum") %>%
+  summarize(nunits = sum(nunits), .by = c(domain, scheme, type)) %>%
+  summarize(
+    type_count = n(),
+    type_nunits_min = min(nunits),
+    type_nunits_q1 = quantile(nunits, 0.25),
+    type_nunits_q2 = quantile(nunits, 0.5),
+    type_nunits_q3 = quantile(nunits, 0.75),
+    type_nunits_max = max(nunits),
+    .by = c(domain, scheme)
+  ) %>% 
+  arrange(domain, scheme)
+```
 
 <!-- XXXXX Note that quite some polygons have been dropped in domain_hmt_pol_grts after the join with hmt_pol_grts_cellcenter was added, leading to a clearly lower number of units; this may be because of the clipping effect of grts_mh (which is too small) and also because of dropping small polygons (small=FALSE), i.e. that didn't intersect any cell center. -->
 <!-- This effect should be scrutinized further, but this effect may be want we want for now. -->

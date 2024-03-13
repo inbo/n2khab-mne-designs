@@ -53,15 +53,13 @@ domain_scheme_stats %>%
 
 # Below code requires the availability of:
 # - module_domains
-# - domain_stratum_nunits
+# - domain_type_nunits
 # - n2khab_strata
 # - scheme_ssf_domain_stratum_nunits
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
-  semi_join(domain_stratum_nunits, ., by = "domain") %>%
-  inner_join(n2khab_strata, by = "stratum") %>%
-  summarize(nunits = sum(nunits), .by = c(domain, type)) %>%
+  semi_join(domain_type_nunits, ., by = "domain") %>%
   arrange(type) %>%
   pivot_wider(names_from = domain, values_from = nunits) %>%
   write_sheet(
@@ -70,8 +68,7 @@ module_domains %>%
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
-  inner_join(domain_stratum_nunits, by = "domain", relationship = "many-to-many") %>%
-  inner_join(n2khab_strata, by = "stratum") %>%
+  inner_join(domain_type_nunits, by = "domain", relationship = "many-to-many") %>%
   summarize(nunits = sum(nunits), .by = c(module, type)) %>%
   arrange(type) %>%
   pivot_wider(names_from = module, values_from = nunits) %>%
@@ -81,19 +78,8 @@ module_domains %>%
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
-  semi_join(scheme_ssf_domain_stratum_nunits, ., by = "domain") %>%
+  semi_join(domain_scheme_typestats, ., by = "domain") %>%
   filter(domain != "Flanders" | !str_detect(scheme, "^HQ")) %>%
-  inner_join(n2khab_strata, by = "stratum") %>%
-  summarize(nunits = sum(nunits), .by = c(domain, scheme, type)) %>%
-  summarize(
-    type_count = n(),
-    type_nunits_min = min(nunits),
-    type_nunits_q1 = quantile(nunits, 0.25),
-    type_nunits_q2 = quantile(nunits, 0.5),
-    type_nunits_q3 = quantile(nunits, 0.75),
-    type_nunits_max = max(nunits),
-    .by = c(domain, scheme)
-  ) %>%
   arrange(domain, scheme) %>%
   write_sheet(
     ss = gs_id,
