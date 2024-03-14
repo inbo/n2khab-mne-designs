@@ -56,6 +56,7 @@ domain_scheme_stats %>%
 # - domain_type_nunits
 # - n2khab_strata
 # - scheme_ssf_domain_stratum_nunits
+# - non_core_types_per_domain_and_compartment
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
@@ -115,4 +116,19 @@ module_domains %>%
     ss = gs_id,
     sheet = "scheme_type_nunits_per_domain")
 
+non_core_types_per_domain_and_compartment %>%
+  inner_join(
+    read_types(lang = lang) %>%
+      select(type, type_shortname),
+    by = "type"
+  ) %>%
+  inner_join(
+    read_scheme_types(lang = lang) %>%
+      select(-typegroup_name) %>%
+      mutate(group_size = n(), .by = c(scheme, typegroup)),
+    by = c("scheme", "type")
+  ) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "non_core_types_per_dom&comp")
 
