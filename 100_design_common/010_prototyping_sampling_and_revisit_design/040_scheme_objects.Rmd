@@ -336,24 +336,38 @@ domain_scheme_typestats <-
 <!-- XXXXX Above result is to be confronted to the ncells result after PHAB correction has been applied -->
 
 
-## Check the strata overlap between focal and secondary MNE schemes
+## Check the type overlap between core and non-core MNE schemes, by environmental compartment
 
-Determining which types in a domain x compartment (GW, SURF, SOIL) are covered by a secondary scheme and _not_ by a focal scheme.
+Determining which types in a domain x compartment (GW, SURF, SOIL) are covered by a non-core scheme and _not_ by a core scheme.
+Only considering domains that have a predetermined sample size.
+
+In fact looking at smaller domains that are included in a larger one is irrelevant here, unless target populations would be defined different.
 
 ```{r}
-scheme_ssf_domain_stratum_nunits %>% 
+non_core_types_per_domain_and_compartment <- 
+  module_domains %>%
+  filter(sample_size_predetermined) %>%
+  semi_join(scheme_ssf_domain_stratum_nunits, ., by = "domain") %>%
+  inner_join(n2khab_strata, by = "stratum") %>% 
   inner_join(schemes %>% filter(programme == "MNE"), by = "scheme") %>% 
-  distinct(
+  select(
+    scheme,
     domain, 
-    stratum, 
-    compartment = attribute_1, 
-    category = tag_1
+    compartment = attribute_1,
+    type
+  ) %>%
+  arrange(domain, compartment, type) %>% 
+  mutate(
+    is_core_scheme = scheme %in% core_schemes_1st_phase,
+    compartment_has_core_scheme = any(is_core_scheme), 
+    .by = c(domain, compartment, type)
   ) %>% 
-  summarize(
-    covered_by_focal_scheme = any(category == "focal"),
-    .by = c(domain, stratum, compartment)
+  mutate(
+    all_compartments_have_core_scheme = all(compartment_has_core_scheme),
+    .by = c(domain, type)
   ) %>% 
-  filter(!covered_by_focal_scheme)
+  filter(!all_compartments_have_core_scheme) %>% 
+  select(domain, compartment, scheme, is_core_scheme, type)
 ```
 
 We see that, in each domain, the represented strata of the schemes in a specific compartment are all covered by at least one focal scheme in that compartment.
