@@ -41,19 +41,6 @@ schemes_1st_phase <- c(
 schemes <- filter(schemes, scheme %in% schemes_1st_phase)
 ```
 
-```{r restriction-1, eval=params$apply_restrictions, echo=params$apply_restrictions}
-# ARTIFICIAL RESTRICTION 1
-schemes <- 
-  schemes %>% 
-  filter(scheme %in% c(
-    "GW_05.1_terr",
-    "GW_07.1", 
-    "SOIL_03.2", 
-    "SURF_03.4_lentic", 
-    "SURF_03.4_lotic"
-  ))
-```
-
 Defining the target populations based on selected schemes.
 
 ```{r}
@@ -81,27 +68,6 @@ targetpops <-
   anti_join(targetpops_exclude_from_1st_phase, by = c("scheme", "type"))
 ```
 
-```{r restriction-2, eval=params$apply_restrictions, echo=params$apply_restrictions}
-# ARTIFICIAL RESTRICTION 2
-type_shortlist <- c(
-    "7220",
-    "3260",
-    "rbbah",
-    "1330_hpr",
-    "2190_a",
-    "3130_aom",
-    "3130_na",
-    "2130_hd",
-    "2310",
-    "6430_bz",
-    "7140_base",
-    "9120",
-    "7150"
-  )
-targetpops <- targetpops %>%
-  filter(type %in% type_shortlist)
-```
-
 Extending `schemes` and `targetpops` with MHQ schemes.
 
 ```{r}
@@ -115,17 +81,6 @@ targetpops <-
   select(scheme, type) %>% 
   semi_join(schemes_mhq, by = "scheme") %>% 
   bind_rows(targetpops, .)
-```
-
-```{r restriction-3, eval=params$apply_restrictions, echo=params$apply_restrictions}
-# RE-APPLY ARTIFICIAL RESTRICTION 2:
-targetpops <- 
-  targetpops %>%
-  filter(type %in% type_shortlist)
-schemes <- 
-  schemes %>% 
-  # dropping HQ-schemes not represented by type_shortlist:
-  semi_join(targetpops, by = "scheme")
 ```
 
 ```{r}
