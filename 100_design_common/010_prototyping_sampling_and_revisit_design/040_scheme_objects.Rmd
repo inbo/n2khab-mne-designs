@@ -1,10 +1,25 @@
 # Generating scheme-specific objects in preparation of generating samples {#scheme-objects}
 
-These data objects are restricted to the schemes and types defined by `targetpops`.
+These data objects are restricted to the schemes and types defined by the target populations in `scheme_targetpop_sets$targetpops`.
 
 ## Defining the target populations using strata
 
 This is needed to extract scheme- or stratum-specific sampling frames.
+
+Add target populations using strata for each set of schemes + target populations, in `scheme_targetpop_sets`.
+
+```{r}
+scheme_targetpop_sets <- 
+  scheme_targetpop_sets %>% 
+  mutate(
+    targetpops_strata = map(targetpops, function(tp) {
+      inner_join(tp, n2khab_strata, by = "type", relationship = "many-to-many") %>% 
+        select(-type)
+    })
+  )
+```
+
+Creating unioned set of target populations using strata.
 
 ```{r}
 targetpops_strata <- 
@@ -12,6 +27,8 @@ targetpops_strata <-
   inner_join(n2khab_strata, by = "type", relationship = "many-to-many") %>% 
   select(-type)
 ```
+
+Beware that the target populations in `targetpops_strata` may be too wide for application to a scheme in a specific module.
 
 ## Generating spatial sampling frames per scheme
 
@@ -132,6 +149,24 @@ stratum_grts_n2khab_phabc_3 <-
   filter(stratum != "7220" | grts_address %in% grts_7220_allowed_3)
 ```
 
+- **Restriction 5**: _Restrict to 8310 marl quarries that are directly connected with (intersected by) a groundwater aquifer_
+
+**Missing data**: new data source needed to apply this spatial restriction.
+
+```{r}
+# dummy steps
+grts_8310_allowed_5 <- 
+  extract(
+    grts_mh_n2khab, 
+    st_coordinates(points_8310)
+  ) %>% 
+  filter(!is.na(GRTSmaster_habitats)) %>% 
+  pull(GRTSmaster_habitats)
+stratum_grts_n2khab_phabc_5 <-
+  stratum_grts_n2khab_phabcorrected %>% 
+  filter(stratum != "8310" | grts_address %in% grts_8310_allowed_5)
+```
+
 
 ### Defining spatial sampling frames
 
@@ -143,6 +178,7 @@ sp_samplingframes <-
     1L, stratum_grts_n2khab_phabc_1,
     2L, stratum_grts_n2khab_phabc_2,
     3L, stratum_grts_n2khab_phabc_3,
+    5L, stratum_grts_n2khab_phabc_5,
   )
 ```
 
@@ -171,7 +207,7 @@ sp_samplingframe_domain <-
 
 Note that these spatial sampling frames generally still contain strata that don't belong to the scheme's target population, nor belong to the types that exist in a specific domain with preset sample size.
 
-This means we must always join with the scheme's target population (in `targetpops_strata`) _and_ with a domain-specific set of units (`domain_grts_n2khab`).
+This means we must always join with the scheme's target population (in `scheme_targetpop_sets$targetpops_strata`) _and_ with a domain-specific set of units (`domain_grts_n2khab`).
 
 ```{r}
 scheme_sampling_frame <- 
@@ -182,6 +218,7 @@ scheme_sampling_frame <-
       scheme,
       c("GW_03.3", "GW_04.2", "GW_05.2", "GW_07.1") ~ 1L,
       "GW_05.1_terr" ~ 2L,
+      "GW_05.1_quarries" ~ 5L,
       c("GW_05.1_aq", "SURF_03.4_lotic") ~ 3L,
       .default = 0L
     )
@@ -338,43 +375,53 @@ domain_scheme_typestats <-
 
 ## Check the type overlap between core and non-core MNE schemes, by environmental compartment
 
-Determining which types in a domain x compartment (GW, SURF, SOIL) are covered by a non-core scheme and _not_ by a core scheme.
-Only considering domains that have a predetermined sample size.
-
-In fact looking at smaller domains that are included in a larger one is irrelevant here, unless target populations would be defined different.
+Determining which types in a module x compartment (GW, SURF, SOIL) are covered by a non-core scheme and _not_ by a core scheme.
 
 ```{r}
-non_core_types_per_domain_and_compartment <- 
-  module_domains %>%
-  filter(sample_size_predetermined) %>%
-  semi_join(scheme_ssf_domain_stratum_nunits, ., by = "domain") %>%
+non_core_types_per_module_and_compartment <- 
+  modules %>% 
+  semi_join(
+    module_domains %>% filter(domain == "Flanders"),
+    by = "module"
+  ) %>% 
+  inner_join(
+    scheme_targetpop_sets %>% 
+      select(stset_id, scheme_set, targetpops_strata) %>% 
+      mutate(
+        scheme_targetpop = map2(
+          scheme_set, targetpops_strata, function(ss, tp) {
+            inner_join(ss, tp, by = "scheme")
+          }
+        ),
+        .keep = "unused"
+      ) %>% 
+      unnest(cols = scheme_targetpop),
+    by = "stset_id"
+  ) %>% 
   inner_join(n2khab_strata, by = "stratum") %>% 
-  inner_join(schemes %>% filter(programme == "MNE"), by = "scheme") %>% 
+  filter(programme == "MNE") %>% 
   select(
+    module,
     scheme,
-    domain, 
+    is_core_scheme, 
     compartment = attribute_1,
     type
   ) %>%
-  arrange(domain, compartment, type) %>% 
+  arrange(module, compartment, type) %>% 
   mutate(
-    is_core_scheme = scheme %in% core_schemes_1st_phase,
     compartment_has_core_scheme = any(is_core_scheme), 
-    .by = c(domain, compartment, type)
+    .by = c(module, compartment, type)
   ) %>% 
   mutate(
     all_compartments_have_core_scheme = all(compartment_has_core_scheme),
-    .by = c(domain, type)
+    .by = c(module, type)
   ) %>% 
   filter(!all_compartments_have_core_scheme) %>% 
-  select(domain, compartment, scheme, is_core_scheme, type)
+  select(module, compartment, scheme, is_core_scheme, type)
+non_core_types_per_module_and_compartment
 ```
 
-We see that, in each domain, the represented strata of the schemes in a specific compartment are all covered by at least one focal scheme in that compartment.
-
-This means that we cover all secondary schemes by constructing samples for the focal schemes.
-Nevertheless, we must check for unexpected sample sizes emerging in the secondary schemes as a consequence.
-
+The occurrence of types with non-predetermined sample size is very limited.
 
 ## Set the module-specific properties of schemes x variable-sets
 

@@ -4,31 +4,23 @@
 <!-- Use dummy variables for now, but make sure various variable types exist (repetitions within one year, once per year, continuous measurements which need multiple visits per year but only one value per year, etc.) -->
 <!-- Also include necessary aspects for resource allocation in the sampling design, especially time investments per variable. (this may be added later) -->
 
-## Setting schemes and types
+## Setting scheme sets and associated target populations (types)
 
 Setting schemes and deriving associated types, which delineate the target populations.
 
 Also restricting columns to the necessary ones for workflows (unlike for 'displays').
 
 ```{r}
-schemes <- 
-  read_schemes(lang = lang) %>% 
-  filter(attribute_1 %in% c("GW", "SURF", "SOIL") | programme == "MHQ") %>% 
-  select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction)
-```
-
-Further restriction of schemes to the ones that are in scope for implementation in the first phase.
-
-```{r}
-core_schemes_1st_phase <- c(
+n2khab_schemes <- read_schemes(lang = lang)
+pan_phase_1_core_schemes_vec <- c(
   "GW_03.3",
   "SOIL_03.2",
   "SURF_03.4_lentic",
   "SURF_03.4_lotic"
-)
-
-schemes_1st_phase <- c(
-  core_schemes_1st_phase,
+) %>% 
+  factor(levels = levels(n2khab_schemes$scheme))
+pan_phase_1_schemes_vec <- c(
+  as.character(pan_phase_1_core_schemes_vec),
   "GW_04.2",
   "GW_05.1_aq",
   "GW_05.1_terr", # don't take the whole target population here!! Only groups 2 and 3
@@ -37,43 +29,114 @@ schemes_1st_phase <- c(
   "SURF_064_lentic", # this one's existence is still to be confirmed XXXXXXXXX
   "SURF_07.2"
 )
-
-schemes <- filter(schemes, scheme %in% schemes_1st_phase | programme == "MHQ")
+pan_phase_1_schemes <- 
+  n2khab_schemes %>% 
+  filter(scheme %in% pan_phase_1_schemes_vec | programme == "MHQ") %>% 
+  mutate(is_core_scheme = scheme %in% pan_phase_1_core_schemes_vec) %>% 
+  select(
+    scheme,
+    is_core_scheme,
+    programme,
+    attribute_1,
+    attribute_2,
+    attribute_3,
+    tag_1,
+    spatial_restriction
+  )
+mbag_mne_phase_1_schemes <- 
+  n2khab_schemes %>% 
+  filter(attribute_1 %in% c("GW", "SURF", "SOIL"), tag_1 == "focal") %>% 
+  mutate(is_core_scheme = TRUE) %>% 
+  select(
+    scheme,
+    is_core_scheme,
+    programme,
+    attribute_1,
+    attribute_2,
+    attribute_3,
+    tag_1,
+    spatial_restriction
+  )
 ```
 
-Defining the target populations based on selected schemes.
+Defining a variant of `pan_phase_1_schemes` without the MHQ schemes.
 
 ```{r}
-targetpops <- 
-  read_scheme_types(lang = lang) %>% 
-  select(scheme, type) %>% 
-  semi_join(schemes, by = "scheme")
+pan_phase_1_schemes_mne <- 
+  pan_phase_1_schemes %>% 
+  filter(programme == "MNE")
 ```
 
-Further restriction of the target populations as decided for the first implementation phase.
-
-<!-- This restricts target pops to 03.2/3/4, + adds 6430_mr for 05.1_terr (group 3 completion) & for 05.2 (to complete its target pop) -->
+Preparing restriction of target populations for pan_phase_1 to that of schemes SOIL_03.2, GW_03.3 & SURF_03.4_*, including the addition of 6430_mr for GW_05.1_terr (typegroup 3 completion) & for GW_05.2 (to complete its target population).
 
 ```{r}
-targetpops_exclude_from_1st_phase <- 
+targetpops_exclude_from_pan_phase_1 <- 
   read_scheme_types(lang = lang) %>% 
   filter(
     scheme == "GW_05.1_terr",
     str_detect(typegroup, "GW_05.1_terr_group(1|4|5)")
   ) %>% 
   select(scheme, type)
+```
 
+Defining scheme + target population sets, i.e. different collections of schemes with associated target populations, that will be tied to modules.
+A scheme + target population set defines both the schemes and optional subsetting of types in the definition of associated target populations.
+The 'core schemes' of a scheme + target population set are the schemes with a customized sample size in a module.
+
+```{r}
+stset_name <- c(
+  "pan_phase_1_schemes",
+  "pan_phase_1_schemes_mne",
+  "mbag_mne_phase_1_schemes"
+)
+scheme_targetpop_sets <- 
+  tibble(
+    stset_id = seq_along(stset_name),
+    stset_name = stset_name,
+    scheme_set = map(stset_name, ~eval(as.name(.)))
+  ) %>% 
+  mutate(
+    targetpops = map2(scheme_set, stset_name, function(sts, stsn) {
+      read_scheme_types(lang = lang) %>% 
+        select(scheme, type) %>% 
+        semi_join(sts, by = "scheme") %>% 
+        {if (!str_detect(stsn, "pan_phase_1")) . else {
+          anti_join(
+            ., 
+            targetpops_exclude_from_pan_phase_1, 
+            by = c("scheme", "type")
+          )
+        }}
+    })
+  )
+```
+
+View of scheme_sets (for inspection):
+
+```{r}
+scheme_targetpop_sets %>% 
+  select(-targetpops) %>% 
+  unnest(cols = scheme_set)
+```
+
+Unioned set of schemes.
+
+```{r}
+schemes <- 
+  scheme_targetpop_sets$scheme_set %>% 
+  map(~select(., -is_core_scheme)) %>% 
+  reduce(dplyr::union) %>% 
+  arrange(scheme)
+```
+
+Unioned set of target populations.
+
+```{r}
 targetpops <- 
-  targetpops %>% 
-  anti_join(targetpops_exclude_from_1st_phase, by = c("scheme", "type"))
-```
-
-```{r}
+  scheme_targetpop_sets$targetpops %>% 
+  reduce(dplyr::union) %>% 
+  arrange(scheme, type)
 targetpops
-```
-
-```{r}
-schemes
 ```
 
 
@@ -84,22 +147,23 @@ schemes
 A module is like a project, that aims at realizing some well-defined part of MNE + MHQ.
 
 - A module determines budget, cycle duration, end year and scheme-specific properties regarding sampling design, sample sizes and start year.
-- In general, a module also determines which schemes and which part of the target populations are in scope.
-  - We have defined `schemes` and `targetpops` globally, but the module will further determine whether the MHQ programme is included or not.
-  - Another property of a module are the involved domains (see \@ref(domains-per-module)), and these geographical boundaries can in turn restrict `schemes` and `targetpops`.
-- Also, we distinguish different components as different modules if it's reasonable to assume that funding or period may diverge in the future, even though they have the same characteristics below.
+- A module also determines which schemes and which part of the target populations are in scope.
+  - Another property of a module are the involved domains (see \@ref(domains-per-module)), and these geographical boundaries can in turn restrict the applicable schemes and target populations in each domain.
+  Since such restriction is not applied in `scheme_targetpop_sets`, this restriction is also not applied in the module definition below.
+  The module-specific omission of schemes, based on domains, needs the scheme-specific sampling frames and will happen on the fly in chapter \@ref(scheme-objects).
+- Also, we distinguish different components as different modules if it's reasonable to assume that funding or period may diverge in the future, even though if they currently have the same characteristics.
 
 ```{r}
 modules <- tribble(
-  ~module, ~cycle_duration_y, ~year_last, ~includes_mhq,
-  "phase_1_flanders", 6, 2037, FALSE,
-  "phase_1_sac_subset_5", 6, 2037, TRUE,
-  "phase_1_be2100024", 3, 2030, TRUE
+  ~module, ~cycle_duration_y, ~year_last, ~stset_id,
+  "pan_phase_1_flanders", 6, 2037, 2,
+  "pan_phase_1_sac_subset_5", 6, 2037, 1,
+  "pan_phase_1_be2100024", 3, 2030, 1,
+  "mbag_mne_phase_1", 6, 2031, 3
 ) %>% 
   mutate(
     module = fct(module),
-    cycle_duration_y = as.integer(cycle_duration_y),
-    year_last = as.integer(year_last)
+    across(where(is.numeric), as.integer)
   )
 modules
 ```
@@ -153,14 +217,15 @@ At this level, we also define which domains get a specific sample size allocatio
 ```{r}
 module_domains <- tribble(
   ~module, ~domain, ~sample_size_predetermined,
-  "phase_1_flanders", "Flanders", TRUE,
-  "phase_1_flanders", "SAC_network", FALSE,
-  "phase_1_sac_subset_5", "BE2100015", TRUE,
-  "phase_1_sac_subset_5", "BE2100024", TRUE,
-  "phase_1_sac_subset_5", "BE2200028", TRUE,
-  "phase_1_sac_subset_5", "BE2200035", TRUE,
-  "phase_1_sac_subset_5", "BE2200039", TRUE,
-  "phase_1_be2100024", "BE2100024", TRUE
+  "pan_phase_1_flanders", "Flanders", TRUE,
+  "pan_phase_1_flanders", "SAC_network", FALSE,
+  "pan_phase_1_sac_subset_5", "BE2100015", TRUE,
+  "pan_phase_1_sac_subset_5", "BE2100024", TRUE,
+  "pan_phase_1_sac_subset_5", "BE2200028", TRUE,
+  "pan_phase_1_sac_subset_5", "BE2200035", TRUE,
+  "pan_phase_1_sac_subset_5", "BE2200039", TRUE,
+  "pan_phase_1_be2100024", "BE2100024", TRUE,
+  "mbag_mne_phase_1", "Flanders", TRUE,
 ) %>% 
   mutate(
     module = factor(module, levels = levels(modules$module)),
@@ -195,6 +260,7 @@ scheme_variableset_fieldmethod <-
     "GW_05.1_aq", "grondwaterpeil automatisch", "meting stijghoogte",
     "GW_05.1_aq", "oppervlaktewaterpeil automatisch", "meting oppervlaktewaterpeil",
     "GW_05.1_terr", "grondwaterpeil automatisch", "meting stijghoogte",
+    "GW_05.1_quarries", "grondwaterpeil automatisch", "meting stijghoogte",
     "GW_05.2", "grondwaterpeil automatisch", "meting stijghoogte",
     "GW_07.1", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
     "SOIL_03.2", "standaardpakket labo bodem anorganisch + C & N + Olsen P + textuur", "bemonsteren bodem via oppervlaktemonsters",
@@ -203,7 +269,7 @@ scheme_variableset_fieldmethod <-
     "SURF_03.4_lotic", "standaardpakket labo water anorganisch", "bemonsteren waterkolom waterlopen",
     "SURF_07.2", "standaardpakket labo water anorganisch", "bemonsteren waterkolom stilstaande wateren"
   ) %>% 
-  mutate(scheme = factor(scheme, levels = levels(schemes$scheme))) %>% 
+  mutate(scheme = factor(scheme, levels = levels(n2khab_schemes$scheme))) %>% 
   bind_rows(
     schemes %>% 
       filter(programme == "MHQ") %>% 
