@@ -13,7 +13,7 @@ Also restricting columns to the necessary ones for workflows (unlike for 'displa
 ```{r}
 schemes <- 
   read_schemes(lang = lang) %>% 
-  filter(attribute_1 %in% c("GW", "SURF", "SOIL")) %>% 
+  filter(attribute_1 %in% c("GW", "SURF", "SOIL") | programme == "MHQ") %>% 
   select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction)
 ```
 
@@ -38,7 +38,7 @@ schemes_1st_phase <- c(
   "SURF_07.2"
 )
 
-schemes <- filter(schemes, scheme %in% schemes_1st_phase)
+schemes <- filter(schemes, scheme %in% schemes_1st_phase | programme == "MHQ")
 ```
 
 Defining the target populations based on selected schemes.
@@ -66,21 +66,6 @@ targetpops_exclude_from_1st_phase <-
 targetpops <- 
   targetpops %>% 
   anti_join(targetpops_exclude_from_1st_phase, by = c("scheme", "type"))
-```
-
-Extending `schemes` and `targetpops` with MHQ schemes.
-
-```{r}
-schemes_mhq <- 
-  read_schemes(lang = lang) %>% 
-  filter(programme == "MHQ") %>% 
-  select(scheme, programme, attribute_1, attribute_2, attribute_3, tag_1, spatial_restriction)
-schemes <- bind_rows(schemes, schemes_mhq)
-targetpops <- 
-  read_scheme_types(lang = lang) %>% 
-  select(scheme, type) %>% 
-  semi_join(schemes_mhq, by = "scheme") %>% 
-  bind_rows(targetpops, .)
 ```
 
 ```{r}
