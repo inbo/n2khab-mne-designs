@@ -335,23 +335,40 @@ scheme_ssf_domain_stratum_nunits <-
 ```
 
 
-## Determining schemes per domain
+### Filtering result per module
+
+Each module has a restricted set of schemes, associated target populations, and domains.
+
+```{r}
+mod_dom_scheme_ssf_stratum_nunits <- 
+  scheme_ssf_domain_stratum_nunits %>% 
+  inner_join(
+    module_domains %>% select(module, domain), 
+    ., 
+    by = "domain",
+    relationship = "many-to-many"
+    ) %>% 
+  semi_join(module_targetpops_strata, by = c("module", "scheme", "stratum"))
+```
+
+
+## Determining schemes per domain for each module
 
 Some of the domains also play a role in scheme implementation (see \@ref(domains-per-module)).
 
-Determining the schemes that apply to each domain, according to the _current_ (!) presence of strata in domains.
+Determining the schemes that apply to each domain in each module, according to the _current_ (!) presence of strata in domains.
 
 ```{r}
-domain_schemes <- 
-  scheme_ssf_domain_stratum_nunits %>% 
-  distinct(domain, scheme)
+module_domain_schemes <- 
+  mod_dom_scheme_ssf_stratum_nunits %>% 
+  distinct(module, domain, scheme)
 ```
 
-Calculating statistics of the population size per **stratum**, per domain x scheme.
+Calculating statistics of the population size per **stratum**, per module x domain x scheme.
 
 ```{r}
-domain_scheme_stratumstats <-
-  scheme_ssf_domain_stratum_nunits %>% 
+module_domain_scheme_stratumstats <-
+  mod_dom_scheme_ssf_stratum_nunits %>% 
   summarize(
     stratum_count = n(),
     stratum_nunits_min = min(nunits),
@@ -359,18 +376,18 @@ domain_scheme_stratumstats <-
     stratum_nunits_q2 = quantile(nunits, 0.5),
     stratum_nunits_q3 = quantile(nunits, 0.75),
     stratum_nunits_max = max(nunits),
-    .by = c(domain, scheme)
+    .by = c(module, domain, scheme)
   ) %>% 
-  arrange(domain, scheme)
+  arrange(module, domain, scheme)
 ```
 
-Calculating statistics of the population size per **type**, per domain x scheme.
+Calculating statistics of the population size per **type**, per module x domain x scheme.
 
 ```{r}
-domain_scheme_typestats <-
-  scheme_ssf_domain_stratum_nunits %>% 
-  inner_join(n2khab_strata, by = "stratum") %>%
-  summarize(nunits = sum(nunits), .by = c(domain, scheme, type)) %>%
+module_domain_scheme_typestats <-
+  mod_dom_scheme_ssf_stratum_nunits %>% 
+  inner_join(n2khab_strata, by = "stratum") %>% 
+  summarize(nunits = sum(nunits), .by = c(module, domain, scheme, type)) %>%
   summarize(
     type_count = n(),
     type_nunits_min = min(nunits),
@@ -378,9 +395,9 @@ domain_scheme_typestats <-
     type_nunits_q2 = quantile(nunits, 0.5),
     type_nunits_q3 = quantile(nunits, 0.75),
     type_nunits_max = max(nunits),
-    .by = c(domain, scheme)
+    .by = c(module, domain, scheme)
   ) %>% 
-  arrange(domain, scheme)
+  arrange(module, domain, scheme)
 ```
 
 <!-- XXXXX Note that quite some polygons have been dropped in domain_hmt_pol_grts after the join with hmt_pol_grts_cellcenter was added, leading to a clearly lower number of units; this may be because of the clipping effect of grts_mh (which is too small) and also because of dropping small polygons (small=FALSE), i.e. that didn't intersect any cell center. -->
