@@ -478,25 +478,24 @@ Some schemes can be dropped depending on the module.
 ```{r}
 year_first_default <- 2025L
 mhq_proportion_aquatic_per_module <- 
-  scheme_ssf_domain_stratum_nunits %>% 
+  mod_dom_scheme_ssf_stratum_nunits %>% 
+  semi_join(
+    module_domains %>% filter(sample_size_predetermined) %>% select(module, domain),
+    by = "domain"
+  ) %>% 
   inner_join(n2khab_strata, by = "stratum") %>% 
   semi_join(read_types() %>% filter(str_detect(hydr_class, "3$")), by = "type") %>% 
   filter(str_detect(scheme, "^HQ")) %>% 
-  inner_join(
-    module_domains %>% filter(sample_size_predetermined) %>% select(module, domain),
-    by = "domain",
-    relationship = "many-to-many"
+  distinct(module, scheme, type) %>% 
+  mutate(
+    prop_aq_in_module = 1 / n(),
+    .by = module
   ) %>% 
   summarize(
-    nunits = sum(nunits),
+    prop_aq_in_module = sum(prop_aq_in_module),
     .by = c(module, scheme)
   ) %>% 
-  mutate(
-    prop_in_module = nunits / sum(nunits),
-    .by = module,
-    .keep = "unused"
-  ) %>% 
-  arrange(across(-prop_in_module))
+  arrange(module, scheme)
 ```
 
 Joining module and scheme properties to `domain_scheme_stats`, needing those attributes to generate further attributes, keeping them duplicated here for now.
