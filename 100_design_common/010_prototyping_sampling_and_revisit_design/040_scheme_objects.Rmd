@@ -498,7 +498,7 @@ mhq_proportion_aquatic_per_module <-
   arrange(module, scheme)
 ```
 
-Joining module and scheme properties to `domain_scheme_stats`, needing those attributes to generate further attributes, keeping them duplicated here for now.
+Joining module and scheme properties to the count statistics by module, domain and scheme, needing those attributes to generate further attributes, and repeating them here for now.
 
 ```{r}
 modules %>% 
@@ -506,13 +506,21 @@ modules %>%
   filter(sample_size_predetermined) %>% 
   select(-sample_size_predetermined) %>% 
   inner_join(
-    domain_scheme_stats %>% select(domain, scheme, stratum_count),
-    by = "domain",
+    module_domain_schemes,
+    by = c("module", "domain"),
     relationship = "many-to-many"
   ) %>% 
-  # step to drop schemes depending on module:
-  filter(includes_mhq | !str_detect(scheme, "^HQ")) %>% 
-  select(-includes_mhq) %>% 
+  inner_join(
+    module_domain_scheme_typestats %>% 
+      select(module, domain, scheme, type_count),
+    by = c("module", "domain", "scheme")
+  ) %>% 
+  inner_join(
+    module_domain_scheme_stratumstats %>% 
+      select(module, domain, scheme, stratum_count),
+    by = c("module", "domain", "scheme"),
+    relationship = "many-to-many"
+  ) %>% 
   inner_join(schemes %>% select(scheme, attribute_1, tag_1), by = "scheme") %>% 
   inner_join(scheme_design, by = "scheme") %>% 
   mutate(
@@ -532,31 +540,40 @@ modules %>%
   left_join(mhq_proportion_aquatic_per_module, by = c("module", "scheme")) %>% 
   mutate(
     sp_sample_size_all_panels = cycle_duration_y * case_when(
-      tag_1 == "secondary" ~ NA_integer_,
-      module == "phase_1_flanders" & attribute_1 == "GW" ~ 300,
-      module == "phase_1_flanders" & attribute_1 == "SOIL" ~ 333,
-      module == "phase_1_flanders" & scheme == "SURF_03.4_lentic" ~ 106,
-      module == "phase_1_flanders" & scheme == "SURF_03.4_lotic" ~ 27,
-      module == "phase_1_sac_subset_5" & attribute_1 == "GW" ~ 50,
-      module == "phase_1_sac_subset_5" & attribute_1 == "SOIL" ~ 56,
-      module == "phase_1_sac_subset_5" & scheme == "SURF_03.4_lentic" ~ 18,
-      module == "phase_1_sac_subset_5" & scheme == "SURF_03.4_lotic" ~ 4,
-      module == "phase_1_be2100024" & attribute_1 == "GW" ~ 70,
+      !is_core_scheme ~ NA_integer_,
+      module == "pan_phase_1_flanders" & attribute_1 == "GW" ~ 300,
+      module == "pan_phase_1_flanders" & attribute_1 == "SOIL" ~ 333,
+      module == "pan_phase_1_flanders" & scheme == "SURF_03.4_lentic" ~ 106,
+      module == "pan_phase_1_flanders" & scheme == "SURF_03.4_lotic" ~ 27,
+      # pan_phase_1_sac_subset_5 is taken as 'one sixth' of above
+      module == "pan_phase_1_sac_subset_5" & attribute_1 == "GW" ~ 50,
+      module == "pan_phase_1_sac_subset_5" & attribute_1 == "SOIL" ~ 56,
+      module == "pan_phase_1_sac_subset_5" & scheme == "SURF_03.4_lentic" ~ 18,
+      module == "pan_phase_1_sac_subset_5" & scheme == "SURF_03.4_lotic" ~ 4,
+      module == "pan_phase_1_be2100024" & attribute_1 == "GW" ~ 70,
       # still need to split this one depending on variable set:
-      module == "phase_1_be2100024" & attribute_1 == "SOIL" ~ 133,
-      module == "phase_1_be2100024" & scheme == "SURF_03.4_lentic" ~ 14,
-      module == "phase_1_be2100024" & scheme == "SURF_03.4_lotic" ~ 4,
-      module == "phase_1_be2100024" & str_detect(scheme, "^HQ3") ~ 18 * prop_in_module,
-      module == "phase_1_be2100024" & str_detect(scheme, "^HQ(23|40|91(20|60))") ~ 28,
-      module == "phase_1_be2100024" & str_detect(scheme, "^HQ(6230|9190)") ~ 84,
-      module == "phase_1_be2100024" & scheme == "HQ7140" ~ 84,
-      # still missing here: MHQ schemes in phase_1_sac_subset_5
+      module == "pan_phase_1_be2100024" & attribute_1 == "SOIL" ~ 133,
+      module == "pan_phase_1_be2100024" & scheme == "SURF_03.4_lentic" ~ 14,
+      module == "pan_phase_1_be2100024" & scheme == "SURF_03.4_lotic" ~ 4,
+      module == "pan_phase_1_be2100024" & str_detect(scheme, "^HQ3") ~ 18 * prop_aq_in_module,
+      module == "pan_phase_1_be2100024" & str_detect(scheme, "^HQ(23|40|91(20|60))") ~ 28,
+      module == "pan_phase_1_be2100024" & str_detect(scheme, "^HQ(6230|9190)") ~ 84,
+      module == "pan_phase_1_be2100024" & scheme == "HQ7140" ~ 84,
+      # still missing here: MHQ schemes in pan_phase_1_sac_subset_5
+      module == "mbaa_mne_phase_1" & scheme == "GW_03.3" ~ 1200 / 6,
+      module == "mbaa_mne_phase_1" & scheme == "GW_05.1_terr" ~ 1200 / 6,
+      # this probably needs correction (400/6):
+      module == "mbaa_mne_phase_1" & scheme == "GW_05.1_aq" ~ 400 / 6,
+      module == "mbaa_mne_phase_1" & scheme == "GW_05.1_quarries" ~ 25 / 6,
+      module == "mbaa_mne_phase_1" & attribute_1 == "SOIL" ~ 1400 / 6,
+      module == "mbaa_mne_phase_1" & scheme == "SURF_03.4_lentic" ~ 106,
+      module == "mbaa_mne_phase_1" & scheme == "SURF_03.4_lotic" ~ 27,
       # NA in MHQ means a census instead of a sample
       .default = NA_integer_
     ) %>% 
       as.integer()
   ) %>% 
-  select(-attribute_1, -tag_1, -prop_in_module) %>% 
+  select(-attribute_1, -tag_1, -prop_aq_in_module) %>% 
   glimpse
   # relocate(module, domain, scheme, ...)
 ```
