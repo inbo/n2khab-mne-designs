@@ -340,7 +340,7 @@ scheme_ssf_domain_stratum_nunits <-
 Each module has a restricted set of schemes, associated target populations, and domains.
 
 ```{r}
-mod_dom_scheme_ssf_stratum_nunits <- 
+mod_dom_scheme_ssf_stratum_nunits <-
   scheme_ssf_domain_stratum_nunits %>% 
   inner_join(
     module_domains %>% select(module, domain), 
@@ -348,7 +348,23 @@ mod_dom_scheme_ssf_stratum_nunits <-
     by = "domain",
     relationship = "many-to-many"
     ) %>% 
-  semi_join(module_targetpops_strata, by = c("module", "scheme", "stratum"))
+  semi_join(module_targetpops_strata, by = c("module", "scheme", "stratum")) %>% 
+  # adding the is_core_scheme variable, which is module x scheme specific
+  inner_join(
+    modules %>% 
+      select(module, stset_id) %>% 
+      inner_join(
+        scheme_targetpop_sets %>% 
+          select(stset_id, scheme_set) %>% 
+          unnest(scheme_set) %>% 
+          select(stset_id, scheme, is_core_scheme),
+        by = "stset_id",
+        relationship = "many-to-many"
+      ) %>% 
+      select(-stset_id),
+    by = c("module", "scheme")
+  ) %>% 
+  relocate(is_core_scheme, .after = scheme)
 ```
 
 
@@ -361,7 +377,7 @@ Determining the schemes that apply to each domain in each module, according to t
 ```{r}
 module_domain_schemes <- 
   mod_dom_scheme_ssf_stratum_nunits %>% 
-  distinct(module, domain, scheme)
+  distinct(module, domain, scheme, is_core_scheme)
 ```
 
 Calculating statistics of the population size per **stratum**, per module x domain x scheme.
