@@ -523,13 +523,18 @@ mhq_proportions_sac_subset5 <-
   ) %>% 
   # don't sample terrestrial units when area is smaller than 10 ha
   filter(nunits >= 10e4 / 32^2 | category != "terrestrial") %>% 
+  # count the number of types that is sampled in each scheme
+  mutate(
+    type_count_mhq_sampling = n(),
+    .by = c(domain, scheme)
+  ) %>% 
   mutate(
     prop_domaintype_per_cat = 1 / n(),
     .by = category
   ) %>% 
   summarize(
     prop_mhq_domainscheme_per_cat = sum(prop_domaintype_per_cat),
-    .by = c(domain, category, scheme)
+    .by = c(domain, scheme, category, type_count_mhq_sampling)
   ) %>% 
   arrange(domain, scheme)
 
@@ -598,6 +603,11 @@ module_domain_scheme_design <-
   left_join(mhq_proportions_sac_subset5, by = c("domain", "scheme")) %>% 
   left_join(mne_core_proportions_sac_subset5, by = c("domain", "scheme")) %>% 
   mutate(
+    type_count_for_sampling = case_when(
+      str_detect(scheme, "^HQ") & is.na(type_count_mhq_sampling) ~ 0L,
+      str_detect(scheme, "^HQ") ~ type_count_mhq_sampling,
+      .default = type_count
+    ),
     sp_sample_size_all_panels = cycle_duration_y * case_when(
       # NA in MNE means adopting the locations of the core scheme in the same compartment:
       !is_core_scheme & !str_detect(scheme, "^HQ") ~ NA_integer_,
@@ -635,9 +645,14 @@ module_domain_scheme_design <-
       round() %>% 
       as.integer()
   ) %>% 
-  select(-attribute_1, -tag_1, -category, -starts_with("prop")) %>% 
+  select(-attribute_1, -tag_1, -category, -starts_with("prop"), -type_count_mhq_sampling) %>% 
   mutate(
-    sp_sample_size_all_panels_type = round(sp_sample_size_all_panels / type_count) %>% as.integer
+    sp_sample_size_all_panels_type = ifelse(
+      type_count_for_sampling == 0L | is.na(sp_sample_size_all_panels),
+      NA_integer_,
+      round(sp_sample_size_all_panels / type_count_for_sampling)
+    ) %>% 
+      as.integer()
   ) %>% 
   relocate(
     module, 
@@ -648,6 +663,7 @@ module_domain_scheme_design <-
     sampling_frame_id,
     type_count,
     stratum_count,
+    type_count_for_sampling,
     targetvar_temporal_resolution,
     cycle_duration_y,
     year_first,
