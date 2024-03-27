@@ -137,7 +137,7 @@ non_core_types_per_module_and_compartment %>%
 # Below code requires availability of:
 # - module_domain_scheme_design
 
-module_domain_scheme_design %>%
+module_domain_scheme_designattr %>%
   select(module, domain, scheme, cycle_duration_y, type_count, type_count_for_sampling, sp_sample_size_all_panels) %>%
   mutate(yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y)) %>%
   write_sheet(
