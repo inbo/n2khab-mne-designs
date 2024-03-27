@@ -143,3 +143,10 @@ module_domain_scheme_designattr %>%
   write_sheet(
     ss = gs_id,
     sheet = "module_domain_scheme_design_spatial")
+
+module_domain_scheme_designattr %>%
+  distinct(pick(module, scheme, targetvar_temporal_resolution:panel_count)) %>%
+  mutate(across(where(is.period), as.character)) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "mod_scheme_properties_temporal&revisit")
