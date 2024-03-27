@@ -151,16 +151,16 @@ A module is like a project, that aims at realizing some well-defined part of MNE
 - A module also determines which schemes and which part of the target populations are in scope.
   - Another property of a module are the involved domains (see \@ref(domains-per-module)), and these geographical boundaries can in turn restrict the applicable schemes and target populations in each domain.
   Since such restriction is not applied in `scheme_targetpop_sets`, this restriction is also not applied in the module definition below.
-  The module-specific omission of schemes, based on domains, needs the scheme-specific sampling frames and will happen on the fly in chapter \@ref(scheme-objects).
+  The module-specific omission of schemes, based on domains, needs the scheme-specific sampling frames and will happen in chapter \@ref(scheme-objects).
 - Also, we distinguish different components as different modules if it's reasonable to assume that funding or period may diverge in the future, even though if they currently have the same characteristics.
 
 ```{r}
 modules <- tribble(
-  ~module, ~cycle_duration_y, ~year_last, ~stset_id,
-  "pan_phase_1_flanders", 6, 2037, 2,
-  "pan_phase_1_sac_subset_5", 6, 2037, 1,
-  "pan_phase_1_be2100024", 3, 2030, 1,
-  "mbaa_mne_phase_1", 6, 2031, 3
+  ~module, ~year_last, ~stset_id,
+  "pan_phase_1_flanders", 2037, 2,
+  "pan_phase_1_sac_subset_5", 2037, 1,
+  "pan_phase_1_be2100024", 2030, 1,
+  "mbaa_mne_phase_1", 2031, 3
 ) %>% 
   mutate(
     module = fct(module),
@@ -262,8 +262,6 @@ In order to not complicate terminology, we just denote all these geographical bo
 
 ## Setting scheme properties
 
-<!-- Only set the stable, module-agnostic scheme properties here. The module and domain specific scheme properties (for domains with predetermined sample size) can only be set completely once the spatial sampling frames are created for each scheme: it will also determine which types, hence schemes do apply in specific domains. -->
-
 Defining variable sets and field methods per scheme.
 This is module-agnostic.
 
@@ -317,7 +315,8 @@ schemes %>%
   nrow() == 0
 ```
 
-Setting other module-agnostic scheme design attributes.
+Setting other _**so-far**_ module-agnostic scheme design attributes.
+'So far' because these are not guaranteed to apply to every future module.
 
 ```{r}
 scheme_design <-
@@ -352,6 +351,24 @@ scheme_design <-
     )
   )
 scheme_design
+```
+
+In order to anticipate that above properties _may_ become module-specific in the future, we already expand this to modules.
+Also, we add `cycle_duration_y`, which effectively depends on the combination of module x scheme already.
+
+Note that schemes, hence scheme properties, can only be correctly linked to a module x domain combination (i.e. for domains with predetermined sample size) once the spatial sampling frames are created for each scheme: the sampling frames will also determine which types, hence schemes do apply in specific domains (because schemes with just a few rarer types will not apply to every domain).
+So the below `module_scheme_design` object will be filtered and rewritten based on `module_domain_schemes` once the latter has been created (chapter \@ref(scheme-objects)).
+
+```{r}
+module_scheme_design <-
+  module_targetpops %>% 
+  distinct(module, scheme) %>% 
+  inner_join(scheme_design, by = "scheme") %>% 
+  mutate(cycle_duration_y = case_when(
+    module == "pan_phase_1_be2100024" ~ 3L,
+    str_detect(scheme, "^SURF") ~ 3L,
+    .default = 6L
+  ))
 ```
 
 **Missing functionality**: getting the primary and additional site characteristics and environmental variables for each scheme in MNE from existing datasets such as googlesheets.
