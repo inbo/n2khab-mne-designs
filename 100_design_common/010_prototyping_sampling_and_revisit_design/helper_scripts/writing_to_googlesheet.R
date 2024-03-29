@@ -148,6 +148,7 @@ module_domain_scheme_designattr %>%
 module_domain_scheme_designattr %>%
   distinct(pick(module, scheme, targetvar_temporal_resolution:panel_count)) %>%
   mutate(across(where(is.period), as.character)) %>%
+  arrange(module, scheme) %>%
   write_sheet(
     ss = gs_id,
     sheet = "mod_scheme_properties_temporal&revisit")
