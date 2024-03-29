@@ -367,12 +367,138 @@ mod_dom_scheme_ssf_stratum_nunits <-
   relocate(is_core_scheme, .after = scheme)
 ```
 
+Note that we will update `mod_dom_scheme_ssf_stratum_nunits` once again after the restriction of MHQ schemes below.
+
+### Restriction of MHQ schemes and associated types per domain based on required surface area
+
+Module-specific rules can apply to exclude some types or schemes from the MHQ programme in a domain, based on the surface area in such a domain.
+
+In fact, those excluded types (see objects below) are measured in other ways, but we don't consider them in the sampling and revisit design.
+This choice is also made because for several of such types this rule had already been applied at the Flemish level in MHQ which makes them not even appear in `read_scheme_types()`, hence they were already absent from objects like `targetpops` and `scheme_targetpop_sets`.
+
+Creating some helper objects that add types and categories to `mod_dom_scheme_ssf_stratum_nunits` partim MHQ.
+
+```{r}
+mhq_mod_dom_scheme_ssf_stratum_nunits_type <- 
+  mod_dom_scheme_ssf_stratum_nunits %>% 
+  semi_join(
+    module_domains %>% filter(sample_size_predetermined),
+    by = "domain"
+  ) %>% 
+  inner_join(n2khab_strata, by = "stratum") %>% 
+  filter(str_detect(scheme, "^HQ"))
+
+mhq_mod_dom_scheme_ssf_stratum_nunits_type_category <- 
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>% 
+  inner_join(
+    read_types() %>% 
+      mutate(category = case_when(
+        type %in% c("3260", "7220") ~ "lotic",
+        str_detect(hydr_class, "3$") ~ "lentic",
+        .default = "terrestrial"
+      )) %>% 
+      select(type, category), 
+    by = "type"
+  )
+
+mhq_scheme_category <- 
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type_category %>% 
+  distinct(scheme, category) %>% 
+  arrange(scheme, category)
+```
+
+The `mhq_sampled_types_per_domain` object below reflects which types are being sampled in the considered MHQ schemes according to a minimum surface area condition at the domain level.
+Hence this is a subset of the target population of these schemes at the Flemish level.
+The complements (non-sampled types in MHQ) are created below.
+For the non-sampled types in MHQ (except RIBs) the whole target population is to be measured as (a census).
+
+```{r}
+mhq_sampled_types_per_domain <- 
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type_category %>% 
+  summarize(
+    nunits = sum(nunits),
+    .by = c(domain, scheme, type, category)
+  ) %>% 
+  # don't sample terrestrial units when area is smaller than 10 ha
+  filter(nunits >= 10e4 / 32^2 | category != "terrestrial") %>% 
+  select(-nunits)
+```
+
+Determining the types, resp strata, for each module x domain x **scheme**, that are _not_ measured with a sample in the considered MHQ schemes (i.e. in the modules that do have MHQ schemes).
+
+```{r}
+mhq_mod_dom_scheme_type_no_sample <- 
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>% 
+  summarize(
+    nunits = sum(nunits),
+    .by = c(module, domain, scheme, type)
+  ) %>% 
+  anti_join(mhq_sampled_types_per_domain, by = c("domain", "scheme", "type"))
+mhq_mod_dom_scheme_stratum_no_sample <- 
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>% 
+  anti_join(mhq_sampled_types_per_domain, by = c("domain", "scheme", "type")) %>% 
+  select(module, domain, scheme, stratum, nunits)
+```
+
+Both above objects are equal except for the column name and associated factor levels, since these type are not further divided as strata:
+
+```{r}
+all.equal(
+  mhq_mod_dom_scheme_type_no_sample, 
+  mhq_mod_dom_scheme_stratum_no_sample %>% 
+    rename(type = stratum),
+  check.attributes = FALSE
+)
+```
+
+Determining the types, _for each module x domain_, that are _not_ measured with a sample in the considered MHQ schemes.
+This also includes the types that are not defined as part of any MHQ scheme.
+Note that, for clarity, we don't exclude RIBs in the below object.
+
+```{r}
+mhq_mod_dom_type_no_sample <- 
+  mod_dom_scheme_ssf_stratum_nunits %>% 
+  filter(str_detect(scheme, "^HQ")) %>% 
+  distinct(module, domain) %>% 
+  inner_join(
+    domain_type_nunits,
+    by = "domain",
+    relationship = "many-to-many"
+  ) %>% 
+  anti_join(
+    mhq_sampled_types_per_domain %>% 
+      distinct(domain, type), 
+    by = c("domain", "type")
+  ) %>% 
+  left_join(
+    targetpops %>% 
+      filter(str_detect(scheme, "^HQ")),
+    by = "type"
+  )
+```
+
+### Applying the MHQ restriction for module x domain x scheme x stratum to the complete set
+
+Updating `mod_dom_scheme_ssf_stratum_nunits`.
+
+```{r}
+mod_dom_scheme_ssf_stratum_nunits <- 
+  mod_dom_scheme_ssf_stratum_nunits %>% 
+  anti_join(
+    mhq_mod_dom_scheme_stratum_no_sample,
+    by = c("module", "domain", "scheme", "stratum")
+  )
+```
 
 ## Determining schemes and population sizes per domain for each module
+
+We restrict all schemes based on the presence of strata in domains.
 
 Some of the domains also play a role in scheme implementation (see \@ref(domains-per-module)).
 
 Determining the schemes that apply to each domain in each module, according to the _current_ (!) presence of strata in domains.
+This already includes the MHQ restriction of schemes and _sampled_ types that has been obtained above.
+Hence from here on, we only consider sampling approaches.
 
 ```{r}
 module_domain_schemes <- 
@@ -507,35 +633,6 @@ mhq_proportion_aquatic_per_module <-
   ) %>% 
   arrange(module, scheme)
 
-mhq_mod_dom_scheme_ssf_stratum_nunits_type <- 
-  mod_dom_scheme_ssf_stratum_nunits %>% 
-  semi_join(
-    module_domains %>% filter(sample_size_predetermined),
-    by = "domain"
-  ) %>% 
-  inner_join(n2khab_strata, by = "stratum") %>% 
-  filter(str_detect(scheme, "^HQ"))
-
-mhq_sampled_types_per_domain <- 
-  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>% 
-  inner_join(
-    read_types() %>% 
-      mutate(category = case_when(
-        type %in% c("3260", "7220") ~ "lotic",
-        str_detect(hydr_class, "3$") ~ "lentic",
-        .default = "terrestrial"
-      )) %>% 
-      select(type, category), 
-    by = "type"
-  ) %>% 
-  summarize(
-    nunits = sum(nunits),
-    .by = c(domain, scheme, type, category)
-  ) %>% 
-  # don't sample terrestrial units when area is smaller than 10 ha
-  filter(nunits >= 10e4 / 32^2 | category != "terrestrial") %>% 
-  select(-nunits)
-
 mhq_proportions_sac_subset5 <-
   mhq_sampled_types_per_domain %>% 
   semi_join(
@@ -578,18 +675,6 @@ mne_core_proportions_sac_subset5 <-
     .by = c(domain, scheme)
   ) %>% 
   arrange(domain, scheme)
-```
-
-Determining the types, for each module x domain x scheme, that are _not_ measured with a sample in the considered MHQ schemes.
-
-```{r}
-mhq_mod_dom_scheme_type_no_sample <- 
-  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>% 
-  summarize(
-    nunits = sum(nunits),
-    .by = c(module, domain, scheme, type)
-  ) %>% 
-  anti_join(mhq_sampled_types_per_domain, by = c("domain", "scheme", "type"))
 ```
 
 Joining module and scheme properties to the count statistics by module, domain and scheme, needing those attributes to generate further attributes, and repeating them here for now.

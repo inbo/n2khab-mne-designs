@@ -136,6 +136,7 @@ non_core_types_per_module_and_compartment %>%
 
 # Below code requires availability of:
 # - module_domain_scheme_design
+# - mhq_mod_dom_type_no_sample
 
 module_domain_scheme_designattr %>%
   select(module, domain, scheme, cycle_duration_y, type_count, type_count_for_sampling, sp_sample_size_all_panels) %>%
@@ -150,3 +151,11 @@ module_domain_scheme_designattr %>%
   write_sheet(
     ss = gs_id,
     sheet = "mod_scheme_properties_temporal&revisit")
+
+mhq_mod_dom_type_no_sample %>%
+  pivot_wider(names_from = domain, values_from = nunits) %>%
+  arrange(module, type) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "MHQ_mod_dom_type_NOTSAMPLED_nunits")
+
