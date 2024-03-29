@@ -739,8 +739,58 @@ sample_size_check1 %>%
 
 Expanding `module_domain_scheme_designattr` with strata and distributing spatial sample sizes over strata.
 
-```{r}
+- This excludes the types that are not measured with a sample in MHQ.
+- Non-core MNE schemes do not adopt sample sizes from the core MNE schemes: only the locations that are common between the respective sampling frames will be adopted in the non-core schemes, hence this can be a subset and it happens at the spatial sampling stage.
+However we do attribute extra sample sizes in non-core MNE schemes, for those types not covered by core schemes -- see object `non_core_types_per_module_and_compartment`.
 
+```{r}
+module_domain_scheme_stratum_target_sample_size <- 
+  module_domain_scheme_designattr %>%
+  inner_join(
+    mod_dom_scheme_ssf_stratum_nunits %>% 
+      select(-is_core_scheme, -sampling_frame_id), 
+    by = c("module", "domain", "scheme")
+  ) %>% 
+  inner_join(n2khab_strata, by = "stratum") %>% 
+  filter(
+    !str_detect(scheme, "^HQ") |
+      type_count_for_sampling == type_count |
+      str_c(domain, scheme, type) %in% (
+        mhq_sampled_types_per_domain %>% 
+          mutate(united = str_c(domain, scheme, type)) %>% 
+          pull(united)
+      )
+  ) %>% 
+  left_join(
+    schemes %>% 
+      filter(programme == "MNE") %>% 
+      select(
+        scheme, 
+        compartment = attribute_1
+      ),
+    by = "scheme"
+  ) %>% 
+  left_join(
+    non_core_types_per_module_and_compartment %>% 
+      select(module, compartment, scheme, type) %>% 
+      mutate(add_to_sample = TRUE),
+    by = c("module", "compartment", "scheme", "type")
+  ) %>% 
+  mutate(
+    sp_sample_size_all_panels_type = ifelse(
+      is.na(sp_sample_size_all_panels_type) & add_to_sample,
+      max(sp_sample_size_all_panels_type, na.rm = TRUE),
+      sp_sample_size_all_panels_type
+    ),
+    .by = c(module, compartment)
+  ) %>% 
+  mutate(
+    sp_sample_size_all_panels_stratum = 
+      round(sp_sample_size_all_panels_type / n()) %>% as.integer(),
+    .by = c(module, domain, scheme, type)
+  ) %>% 
+  select(-compartment, -add_to_sample) %>% 
+  relocate(type, stratum, nunits, .before = sp_sample_size_all_panels_type)
 ```
 
 Overdimensioning spatial sample sizes to represent the infinite case and subsequently applying finite population correction in order to achieve sample sizes roughly the same as the preset ones.
