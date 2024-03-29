@@ -507,16 +507,17 @@ mhq_proportion_aquatic_per_module <-
   ) %>% 
   arrange(module, scheme)
 
-mhq_proportions_sac_subset5 <-
+mhq_mod_dom_scheme_ssf_stratum_nunits_type <- 
   mod_dom_scheme_ssf_stratum_nunits %>% 
   semi_join(
-    module_domains %>% 
-      filter(module == "pan_phase_1_sac_subset_5", sample_size_predetermined) %>% 
-      select(module, domain),
+    module_domains %>% filter(sample_size_predetermined),
     by = "domain"
   ) %>% 
   inner_join(n2khab_strata, by = "stratum") %>% 
-  filter(str_detect(scheme, "^HQ")) %>% 
+  filter(str_detect(scheme, "^HQ"))
+
+mhq_sampled_types_per_domain <- 
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>% 
   inner_join(
     read_types() %>% 
       mutate(category = case_when(
@@ -533,6 +534,15 @@ mhq_proportions_sac_subset5 <-
   ) %>% 
   # don't sample terrestrial units when area is smaller than 10 ha
   filter(nunits >= 10e4 / 32^2 | category != "terrestrial") %>% 
+  select(-nunits)
+
+mhq_proportions_sac_subset5 <-
+  mhq_sampled_types_per_domain %>% 
+  semi_join(
+    module_domains %>% 
+      filter(module == "pan_phase_1_sac_subset_5", sample_size_predetermined),
+    by = "domain"
+  ) %>% 
   # count the number of types that is sampled in each scheme
   mutate(
     type_count_mhq_sampling = n(),
@@ -568,6 +578,18 @@ mne_core_proportions_sac_subset5 <-
     .by = c(domain, scheme)
   ) %>% 
   arrange(domain, scheme)
+```
+
+Determining the types, for each module x domain x scheme, that are _not_ measured with a sample in the considered MHQ schemes.
+
+```{r}
+mhq_mod_dom_scheme_type_no_sample <- 
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>% 
+  summarize(
+    nunits = sum(nunits),
+    .by = c(module, domain, scheme, type)
+  ) %>% 
+  anti_join(mhq_sampled_types_per_domain, by = c("domain", "scheme", "type"))
 ```
 
 Joining module and scheme properties to the count statistics by module, domain and scheme, needing those attributes to generate further attributes, and repeating them here for now.
