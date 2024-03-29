@@ -410,8 +410,8 @@ mhq_scheme_category <-
 
 The `mhq_sampled_types_per_domain` object below reflects which types are being sampled in the considered MHQ schemes according to a minimum surface area condition at the domain level.
 Hence this is a subset of the target population of these schemes at the Flemish level.
-The complements (non-sampled types in MHQ) are created below.
-For the non-sampled types in MHQ (except RIBs) the whole target population is to be measured as (a census).
+The complement of this (non-sampled types in MHQ) is created in chunks that follow.
+For these non-sampled types in MHQ (except RIBs) the whole target population is to be measured (a census).
 
 ```{r}
 mhq_sampled_types_per_domain <- 
@@ -494,7 +494,6 @@ mod_dom_scheme_ssf_stratum_nunits <-
 ## Determining schemes and population sizes per domain for each module
 
 We restrict all schemes based on the presence of strata in domains.
-
 Some of the domains also play a role in scheme implementation (see \@ref(domains-per-module)).
 
 Determining the schemes that apply to each domain in each module, according to the _current_ (!) presence of strata in domains.
@@ -606,7 +605,12 @@ non_core_types_per_module_and_compartment
 
 The occurrence of types with non-predetermined sample size is very limited.
 
-## Set the module x domain specific properties of schemes x variable-sets
+## Set and collect the module x domain specific design attributes of schemes x strata (x variable-sets)
+
+The objects that will be created in this paragraph represent the design attributes of schemes x strata (and if needed variable sets) for each module x domain combination.
+Together with `scheme_sampling_frame` and `sp_samplingframe_domain`, we will have the necessary and sufficient information to draw spatial samples and allocate locations to panels and date-time intervals (chapter \@ref(sampling)).
+
+### Helper objects in distributing sample sizes
 
 Preparing objects that will distribute sample sizes that have been set at a level higher than module x domain x scheme:
 
@@ -678,8 +682,12 @@ mne_core_proportions_sac_subset5 <-
   arrange(domain, scheme)
 ```
 
+### Collecting and setting design attributes at the module x domain x scheme level
+
 Joining module and scheme properties to the count statistics by module, domain and scheme, needing those attributes to generate further attributes, and repeating them here for now.
 Also distributing the spatial sample sizes over schemes by module x domain.
+
+Note that from here on, we only consider the domains with predetermined sample size, i.e. those that have their own design.
 
 ```{r}
 module_domain_scheme_designattr <- 
@@ -814,6 +822,8 @@ aggregate_sample_size(
   print(n = Inf)
 ```
 
+### Generate non-corrected target sample sizes for strata in module x domain x scheme combinations
+
 Expanding `module_domain_scheme_designattr` with strata and distributing spatial sample sizes over strata.
 
 - Non-core MNE schemes do not adopt sample sizes from the core MNE schemes: only the locations that are common between the respective sampling frames will be adopted in the non-core schemes, hence this can be a subset and it happens at the spatial sampling stage.
@@ -884,6 +894,8 @@ aggregate_sample_size(
   print(n = Inf)
 ```
 
+### Redistributing stratum-level target sample sizes based on finite-population correction
+
 Overdimensioning spatial sample sizes to represent the infinite case and subsequently applying finite population correction in order to achieve sample sizes at a higher level, roughly the same size as the preset ones.
 
 The infinite sample size is to be obtained by applying a fixed coefficient per module x domain x scheme in MNE, or per module x domain x category in MHQ, to the target sample sizes.
@@ -892,6 +904,8 @@ This is needed to make sure the allocation for the _infinite_ population remains
 ```{r}
 
 ```
+
+### Adjustments depending on variable sets
 
 Expanding with variables and field methods and adjusting sample sizes where needed.
 
