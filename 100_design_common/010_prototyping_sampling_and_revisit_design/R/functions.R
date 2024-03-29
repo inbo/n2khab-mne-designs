@@ -34,3 +34,24 @@ collapse_strata <- function(df) {
     ) %>%
     select(-subtype)
 }
+
+
+aggregate_sample_size <- function(df, sample_size_all_panels_var, mhq_scheme_category) {
+    df %>%
+    mutate(yearly_sample_size = .data[[sample_size_all_panels_var]] / cycle_duration_y) %>%
+    summarize(
+      yearly_sample_size = sum(yearly_sample_size, na.rm = TRUE),
+      .by = c(module, scheme)
+    ) %>%
+    filter(!is.na(yearly_sample_size), yearly_sample_size > 0) %>%
+    arrange(module, scheme) %>%
+    left_join(mhq_scheme_category, by = "scheme") %>%
+    mutate(
+      is_mhq = str_detect(scheme, "^HQ"),
+      scheme_aggr = ifelse(is_mhq, str_c("MHQ_", category), as.character(scheme))
+    ) %>%
+    summarize(
+      yearly_sample_size = sum(yearly_sample_size) %>% round() %>% as.integer(),
+      .by = c(module, scheme_aggr)
+    )
+}
