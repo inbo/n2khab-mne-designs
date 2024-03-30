@@ -14,6 +14,8 @@ csl: https://raw.githubusercontent.com/citation-style-language/styles/master/res
 bibliography: ../../refs_mne_design.yaml
 lang: nl
 site: bookdown::bookdown_site
+params:
+  update_rdata_file: FALSE
 output:
   bookdown::html_document2:
     keep_md: TRUE
@@ -34,25 +36,57 @@ output:
 ```{r setup, include=FALSE}
 options(scipen = 999)
 conflictRules("n2khab", exclude = c("read_schemes", "read_scheme_types"))
+conflictRules("lubridate", exclude = c("intersect", "union"))
 conflictRules("tidyr", exclude = "extract")
 conflictRules("knitr", exclude = "spin")
 conflictRules("kableExtra", exclude = "group_rows")
 library(rprojroot)
 projroot <- find_root(is_rstudio_project)
 gitroot <- find_root(is_git_root)
+datapath <- file.path(projroot, "data")
+for (subdir in c(
+  "binary/intermediate"
+)) {
+  path <- file.path(datapath, subdir)
+  if (!dir.exists(path)) dir.create(path, recursive = TRUE)
+}
 library(knitr)
 library(kableExtra)
 library(dplyr)
 library(tidyr)
+library(lubridate)
 library(n2khab)
 library(n2khabmon)
+# Setup for googledrive authentication. Set the appropriate env vars in
+# .Renviron and make sure you ran drive_auth() interactively with these settings
+# for the first run (or to renew an expired Oauth token)
+if (Sys.getenv("GARGLE_OAUTH_EMAIL") != "") {
+    options(gargle_oauth_email = Sys.getenv("GARGLE_OAUTH_EMAIL"))
+}
+if (Sys.getenv("GARGLE_OAUTH_CACHE") != "") {
+    options(gargle_oauth_cache = Sys.getenv("GARGLE_OAUTH_CACHE"))
+}
+library(googledrive)
 opts_chunk$set(
   echo = FALSE,
   dpi = 300
 )
 ```
 
+```{r set-rdata-path}
+rdata_path <- file.path(datapath, "binary/intermediate/objects_mbaa_mne_phase_1.RData")
+```
 
+```{r get-rdata-file, eval = !file.exists(rdata_path) || params$update_rdata_file}
+with_drive_quiet({
+  drive_download(
+    as_id("14XXjgvEJmt6pqSSLuJNhNL-ZgMUNjGZ1"), 
+    path = rdata_path, 
+    overwrite = TRUE
+  )
+})
+```
 
-
-
+```{r load-rdata-content}
+load(rdata_path)
+```
