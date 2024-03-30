@@ -1,0 +1,43 @@
+rdata_set <- c(
+  "schemes",
+  "targetpops",
+  "modules",
+  "domains",
+  "module_domains",
+  "scheme_variableset_fieldmethod",
+  "n2khab_types_expanded_properties",
+  "n2khab_strata_expanded",
+  "n2khab_strata",
+  "n2khab_targetpops_expanded",
+  "n2khab_targetpops",
+  "stratum_grts_n2khab",
+  "stratum_grts_n2khab_collapsed",
+  "domain_stratum_nunits",
+  "domain_type_nunits",
+  "scheme_targetpop_sets",
+  "module_targetpops_strata",
+  "targetpops_strata",
+  "module_scheme_design",
+  "scheme_sampling_frame",
+  "sp_samplingframes",
+  "sp_samplingframe_domain",
+  "mhq_sampled_types_per_domain",
+  "mhq_mod_dom_scheme_type_no_sample",
+  "mhq_mod_dom_type_no_sample",
+  "mod_dom_scheme_ssf_stratum_nunits",
+  "module_domain_schemes",
+  "module_domain_scheme_typestats",
+  "module_domain_scheme_stratumstats",
+  "module_domain_scheme_designattr"
+)
+module_suffix <- if (length(params$active_modules) > 1) "" else {
+  str_c("_", params$active_modules)
+}
+save(
+  list = rdata_set,
+  file = file.path(
+    datapath,
+    "binary/intermediate",
+    str_c("objects", module_suffix, ".RData")
+  )
+)
