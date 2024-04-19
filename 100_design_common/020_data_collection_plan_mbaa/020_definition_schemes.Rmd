@@ -3,7 +3,7 @@
 De MNM omvatten meerdere meetnetten die niet allemaal tegelijkertijd kunnen opgestart worden.
 Een gefaseerde implementatie van de verschillende meetnetten is te verkiezen omwille van praktische redenen (niet alle functies kunnen tegelijkertijd geworven en opgeleid worden) en beleidsprioriteiten die zich vertalen naar financiële opportuniteiten.
 
-In het MBAG worden de volgende hoofdmeetnetten van de MNM beschouwd voor een eerste implementatiefase:
+In het MBAG worden de volgende hoofdmeetnetten van de MNM beschouwd in een eerste implementatiefase:
 
 -   eutrofiëring via bodem (SOIL_03.2);
 
@@ -23,6 +23,52 @@ In het MBAG worden de volgende hoofdmeetnetten van de MNM beschouwd voor een eer
 De meetplannen van deze hoofdmeetnetten worden prioritair uitgewerkt.
 De meetplannen van de hoofdmeetnetten eutrofiëring via inundatiewater, eutrofiëring via atmosfeer en verzuring via atmosfeer worden in een of volgende fasen uitgewerkt voor implementatie.
 
-De MNM hebben als default Vlaanderen als domein waarop de uitspraken worden gerapporteerd.
+De MNM beogen uitspraken op het niveau Vlaanderen en hebben bijgevolg bij default Vlaanderen als ruimtelijk domein voor de implementatie van de meetnetten.
 
-figuren: doelpopulaties per meetnet?
+De doelpopulaties van elk van de bovenvermelde meetnetten en submeetnetten bestaan uit een selectie van Natura 2000 habitattypes en regionaal belangrijke biotopen zoals weergegeven in \@ref(fig:targetpopperscheme).
+
+```{r typecount, echo=FALSE, message=FALSE, warning=FALSE}
+tcSOIL_03.2=sum(scheme_targetpop_sets[[4]][[3]]$ scheme=="SOIL_03.2")
+tcGW_03.3=sum(scheme_targetpop_sets[[4]][[3]]$scheme=="GW_03.3")
+tcSURF_03.4_lentic=sum(scheme_targetpop_sets[[4]][[3]]$scheme=="SURF_03.4_lentic")
+tcSURF_03.4_lotic=sum(scheme_targetpop_sets[[4]][[3]]$scheme=="SURF_03.4_lotic")
+tcGW_05.1_terr=sum(scheme_targetpop_sets[[4]][[3]]$scheme=="GW_05.1_terr")
+tcGW_05.1_aq=sum(scheme_targetpop_sets[[4]][[3]]$scheme=="GW_05.1_aq")
+tcGW_05.1_quarries=sum(scheme_targetpop_sets[[4]][[3]]$scheme=="GW_05.1_quarries")
+
+```
+
+De doelpopulaties van de hoofmeetnetten eutrofiëring via bodem en eutrofiëring via grondwater bevatten respectievelijk `r tcSOIL_03.2` en `r tcGW_03.3` types.
+De doelpopulaties van de submeetnetten van het meetnet eutrofiëring via oppervlaktewater bestaan uit `r tcSURF_03.4_lentic` types in het lentische submeetnet en `r tcSURF_03.4_lotic` types in het lotische submeetnet.
+De doelpopulaties van de submeetnetten terrestrische types, aquatische types en mergelgroeven van het meetnet verdroging via grondwater bevatten, respectievelijk, `r tcGW_05.1_terr` types, `r tcGW_05.1_aq` types en `r tcGW_05.1_quarries` type.
+
+```{r targetpopperscheme, fig.height=10, fig.width=10,echo=false,message=FALSE, warning=FALSE,  fig.cap="Doelpopulaties van de (sub)meetnetten in beschouwing genomen in de eerste implementatiegolf in het kader van het MBAG. Voor de verklaring van de meetnetcodes, zie boven."}
+
+scheme_targetpop_sets[[4]][[3]] %>%
+  mutate(target = 1,
+         type_num = as.numeric(type)) %>%
+  pivot_wider(names_from = scheme, 
+              values_from = target,
+              values_fill = 0) %>% 
+  pivot_longer(3:9, names_to = "scheme", 
+               values_to = "target") %>%
+  ggplot(aes(scheme, type, fill = factor(target))) +
+  geom_tile() +
+  #coord_fixed(ratio=0.5)+
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_y_discrete(limits=rev,expand = c(0, 0))+
+  scale_fill_manual(values=c("0"="white",
+                               "1"="darkgrey"))+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+          axis.text.x = element_text(size=8, angle = 45,
+                                     hjust = 1),
+          axis.text.y = element_text(size=8),
+          legend.position="none",
+          strip.background = element_blank(),
+          strip.text.x = element_blank())+
+  labs(x="Meetnet", y="Type")+
+  facet_wrap(~ifelse(type_num<37, 1,
+                     ifelse(type_num < 74, 2, 3)),
+             scales ="free_y")
+```
