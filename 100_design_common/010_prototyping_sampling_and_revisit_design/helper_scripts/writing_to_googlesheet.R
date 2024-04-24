@@ -135,7 +135,7 @@ non_core_types_per_module_and_compartment %>%
 
 
 # Below code requires availability of:
-# - module_domain_scheme_design
+# - module_domain_scheme_designattr
 # - mhq_mod_dom_type_no_sample
 
 module_domain_scheme_designattr %>%
