@@ -55,3 +55,35 @@ aggregate_sample_size <- function(df, sample_size_all_panels_var, mhq_scheme_cat
       .by = c(module, scheme_aggr)
     )
 }
+
+
+#' Add point coordinate columns to a data frame with a GRTS address column
+add_point_coords_grts <- function(
+    df,
+    grts_var = "grts_address",
+    spatrast = grts_mh_n2khab,
+    spatial = TRUE) {
+
+  addresses <- df %>%
+    distinct(.data[[grts_var]]) %>%
+    pull(.data[[grts_var]]) %>%
+    sort()
+
+  grts_cells <- grts_mh_n2khab_index %>%
+    filter(grts_address %in% addresses) %>%
+    arrange(grts_address) %>%
+    pull(id)
+
+  coords <- xyFromCell(spatrast, grts_cells)
+
+  df %>%
+    left_join(
+      tibble(grts_address = addresses, cell = as.integer(grts_cells), x = coords[,"x"], y = coords[,"y"]),
+      join_by(grts_address)
+    ) %>%
+    {if (isFALSE(spatial)) . else {
+      st_as_sf(., coords = c("x", "y"), crs = crs(spatrast))
+    }}
+}
+
+
