@@ -23,7 +23,7 @@ inner_join(
   scale_y_log10()
 
 
-# Input MBAG presentation -------------------------------------------------
+# Input MBAA presentation 2024-02-23 --------------------------------------
 
 schemes_plot <-
   domain_stratum_nunits %>%
@@ -96,3 +96,110 @@ targetpops_grts <-
 # subsetting by values is very inefficient (slow):
 grts_mh_targetpops <- mask(grts_mh_n2khab, grts_mh_n2khab, targetpops_grts, inverse = TRUE)
 # from https://gis.stackexchange.com/questions/421821/how-to-subset-a-spatraster-by-value-in-r
+
+
+# Input MBAA presentation 2024-04-30 --------------------------------------
+
+schemes_plot_mbaa_mne_phase_1 <-
+  module_targetpops %>%
+  filter(module == "mbaa_mne_phase_1") %>%
+  # don't highlight 8310; artificially move it to terr:
+  mutate(scheme = fct_recode(scheme, "GW_05.1_terr" = "GW_05.1_quarries")) %>%
+  inner_join(read_types(lang = "nl"), by = "type") %>%
+  ggplot(aes(x = scheme, fill = typeclass_name)) +
+  geom_bar() +
+  scale_fill_discrete_c4a_cat("carto.safe") +
+  # facet_wrap(~ domain) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  labs(
+    x = "Meetnet",
+    y = "Aantal types",
+    title = "Aantal types per meetnet",
+    fill = "Typeklasse"
+  )
+ggsave(
+  file.path(plotpath, "schemes_plot_mbaa_mne_phase_1_8310_moved.png"),
+  schemes_plot_mbaa_mne_phase_1,
+  width = 9,
+  height = 5
+)
+
+# Exploring approaches to get XY-coordinates from GRTSmaster_habitats
+
+grts_addresses <- scheme_domain_stratum_spsamples %>%
+  filter(domain == "Flanders") %>%
+  distinct(grts_address) %>%
+  pull(grts_address)
+
+tictoc::tic()
+grts_cells <- cells(grts_mh_n2khab, grts_addresses)[[1]]
+tictoc::toc()
+
+tictoc::tic()
+grts_cells2 <-
+  grts_mh_n2khab_index %>%
+  filter(grts_address %in% grts_addresses) %>%
+  arrange(grts_address) %>%
+  pull(id)
+tictoc::toc()
+
+all.equal(grts_cells, grts_cells2)
+# [1] "Mean relative difference: 0.50066098969208"
+# see https://github.com/rspatial/terra/issues/1487
+
+tictoc::tic()
+res <- xyFromCell(grts_mh_n2khab, grts_cells2)
+tictoc::toc()
+
+# Going for the real-time calculation, since cells() is quite fast (about 1 s).
+
+scheme_types <- read_scheme_types(lang = lang)
+
+spsamples <-
+  scheme_domain_stratum_spsamples %>%
+  filter(domain == "Flanders") %>%
+  select(-domain) %>%
+  inner_join(n2khab_strata, join_by(stratum)) %>%
+  inner_join(scheme_types, join_by(scheme, type))
+
+spsamples %>%
+  count(scheme, type)
+
+spsamples %>%
+  count(scheme)
+
+spsamples_points <- add_point_coords_grts(spsamples)
+
+old <- theme_set(theme_bw())
+theme_update(
+  panel.grid = element_blank(),
+  axis.text = element_blank(),
+  axis.ticks = element_blank()
+)
+flanders <- read_admin_areas()
+scheme_names <-
+  read_schemes(lang = lang) %>%
+  select(scheme, scheme_name)
+
+for (scheme_i in sort(unique(spsamples$scheme))) {
+  plot_i <-
+    ggplot() +
+    geom_sf(data = flanders, fill = "white") +
+    geom_sf(
+      data = spsamples_points %>%
+        filter(scheme == scheme_i),
+      size = 0.5,
+      colour = "#843860"
+    ) +
+    coord_sf(datum = 31370) +
+    facet_wrap(~ typegroup_shortname) +
+    ggtitle(scheme_names %>% filter(scheme == scheme_i) %>% pull(scheme_name))
+  ggsave(
+    file.path(plotpath, str_c("sample_map_", scheme_i, ".png")),
+    plot_i,
+    width = 9,
+    height = 6,
+    dpi = 600
+  )
+}
+
