@@ -8,7 +8,55 @@
 <!-- Where one module-domain overlaps (contains) another module-domain, those sample sizes cannot be added but an appropriate offset must be taken into account when sampling in the shared area (the smaller domain), in order to respect the GRTS ordering. -->
 <!-- This also holds for MHQ Flanders (not in this POC) vs MHQ in SACs. -->
 
+For this proof of concept, we restrict the allowed modules.
+
+```{r}
+module_domain_scheme_stratum_sample_size_2 <- 
+  module_domain_scheme_stratum_sample_size %>% 
+  filter(module %in% c("pan_phase_1_sac_subset_5", "mbaa_mne_phase_1"))
+```
+
 ## Defining the samples
+
+For now still without:
+
+- non-core schemes
+- GRTS address offset in the common area between different but overlapping domains (including MHQ at Flemish level = undefined module)
+- panel membership (try to do this by field method (aggregating schemes) if this causes no clashes)
+- module labelling of sampling units
+- adding (and labelling) spare sampling units
+- collapsing nearby units for groundwater schemes
+
+```{r}
+scheme_domain_stratum_spsamples <- 
+  module_domain_scheme_stratum_sample_size_2 %>% 
+  select(module, domain, scheme, sampling_frame_id, stratum, sp_sample_size_all_panels_stratum) %>% 
+  # for MNE non-core schemes (dropped below) have yet to be taken back (but I
+  # think this step also drops things we always need to drop):
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
+  summarize(
+    sp_sample_size_all_panels_stratum = sum(sp_sample_size_all_panels_stratum),
+    .by = c(domain, scheme, sampling_frame_id, stratum)
+  ) %>% 
+  nest(domain_stratum_spsamplesize = c(domain, stratum, sp_sample_size_all_panels_stratum)) %>% 
+  inner_join(sp_samplingframe_domain, by = join_by(sampling_frame_id)) %>% 
+  mutate(
+    spsample = map2(domain_stratum_spsamplesize, sampling_frame_domain, function(dss, sfd) {
+      sfd %>% 
+        nest(grts_addresses = grts_address) %>% 
+        inner_join(dss, ., by = join_by(domain, stratum)) %>% 
+        mutate(sample = 
+                 map2(sp_sample_size_all_panels_stratum, grts_addresses, function(sss, grts) {
+                   grts %>% slice_min(grts_address, n = sss)
+                 })
+        ) %>% 
+        select(domain, stratum, sample) %>% 
+        unnest(sample)
+    })
+  ) %>% 
+  select(scheme, spsample) %>% 
+  unnest(spsample)
+```
 
 ## Deriving datasets and layers for use and visualization
 
