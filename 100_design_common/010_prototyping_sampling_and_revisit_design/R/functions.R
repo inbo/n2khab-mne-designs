@@ -62,6 +62,7 @@ add_point_coords_grts <- function(
     df,
     grts_var = "grts_address",
     spatrast = grts_mh_n2khab,
+    spatrast_index = grts_mh_n2khab_index,
     spatial = TRUE) {
 
   addresses <- df %>%
@@ -69,7 +70,7 @@ add_point_coords_grts <- function(
     pull(.data[[grts_var]]) %>%
     sort()
 
-  grts_cells <- grts_mh_n2khab_index %>%
+  grts_cells <- spatrast_index %>%
     filter(grts_address %in% addresses) %>%
     arrange(grts_address) %>%
     pull(id)
