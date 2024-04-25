@@ -151,7 +151,8 @@ tictoc::tic()
 res <- xyFromCell(grts_mh_n2khab, grts_cells2)
 tictoc::toc()
 
-# Going for the real-time calculation, since cells() is quite fast (about 1 s).
+# Going for the indexed approach; slightly faster than cells() (and for cells()
+# see https://github.com/rspatial/terra/issues/1487)
 
 scheme_types <- read_scheme_types(lang = lang)
 
