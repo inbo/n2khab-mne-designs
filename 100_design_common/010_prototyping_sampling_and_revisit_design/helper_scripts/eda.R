@@ -177,7 +177,7 @@ theme_update(
   axis.text = element_blank(),
   axis.ticks = element_blank()
 )
-flanders <- read_admin_areas()
+provinces <- read_admin_areas(dsn = "provinces")
 scheme_names <-
   read_schemes(lang = lang) %>%
   select(scheme, scheme_name)
@@ -185,7 +185,7 @@ scheme_names <-
 for (scheme_i in sort(unique(spsamples$scheme))) {
   plot_i <-
     ggplot() +
-    geom_sf(data = flanders, fill = "white") +
+    geom_sf(data = provinces, fill = "white", colour = "grey80") +
     geom_sf(
       data = spsamples_points %>%
         filter(scheme == scheme_i),
@@ -194,9 +194,14 @@ for (scheme_i in sort(unique(spsamples$scheme))) {
     ) +
     coord_sf(datum = 31370) +
     facet_wrap(~ typegroup_shortname) +
-    ggtitle(scheme_names %>% filter(scheme == scheme_i) %>% pull(scheme_name))
+    ggtitle(
+      scheme_names %>%
+        filter(scheme == scheme_i) %>%
+        mutate(title = str_c(scheme_name, " (", scheme, ")")) %>%
+        pull(title)
+    )
   ggsave(
-    file.path(plotpath, str_c("sample_map_", scheme_i, ".png")),
+    file.path(plotpath, str_c("sample_map_provinces_", scheme_i, ".png")),
     plot_i,
     width = 9,
     height = 6,
