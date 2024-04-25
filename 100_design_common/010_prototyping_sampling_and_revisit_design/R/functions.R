@@ -78,7 +78,7 @@ add_point_coords_grts <- function(
 
   df %>%
     left_join(
-      tibble(grts_address = addresses, cell = as.integer(grts_cells), x = coords[,"x"], y = coords[,"y"]),
+      tibble(grts_address = addresses, x = coords[,"x"], y = coords[,"y"]),
       join_by(grts_address)
     ) %>%
     {if (isFALSE(spatial)) . else {
