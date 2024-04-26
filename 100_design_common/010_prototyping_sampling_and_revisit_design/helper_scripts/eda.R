@@ -132,7 +132,11 @@ grts_addresses <- scheme_domain_stratum_spsamples %>%
   pull(grts_address)
 
 tictoc::tic()
-grts_cells <- cells(grts_mh_n2khab, grts_addresses)[[1]]
+grts_cells <-
+  cells(grts_mh_n2khab, grts_addresses, pairs = TRUE)[[1]] %>%
+    as_tibble() %>%
+    arrange(value) %>%
+    pull(cell)
 tictoc::toc()
 
 tictoc::tic()
@@ -144,15 +148,13 @@ grts_cells2 <-
 tictoc::toc()
 
 all.equal(grts_cells, grts_cells2)
-# [1] "Mean relative difference: 0.50066098969208"
-# see https://github.com/rspatial/terra/issues/1487
+# TRUE
 
 tictoc::tic()
 res <- xyFromCell(grts_mh_n2khab, grts_cells2)
 tictoc::toc()
 
-# Going for the indexed approach; slightly faster than cells() (and for cells()
-# see https://github.com/rspatial/terra/issues/1487)
+# Going for the indexed approach; slightly faster than cells()
 
 type_target_spsamplesizes <-
   module_domain_scheme_stratum_sample_size_2 %>%
