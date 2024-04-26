@@ -154,14 +154,40 @@ tictoc::toc()
 # Going for the indexed approach; slightly faster than cells() (and for cells()
 # see https://github.com/rspatial/terra/issues/1487)
 
-scheme_types <- read_scheme_types(lang = lang)
+type_target_spsamplesizes <-
+  module_domain_scheme_stratum_sample_size_2 %>%
+  filter(module == "mbaa_mne_phase_1", domain == "Flanders") %>%
+  distinct(scheme, type, sp_sample_size_all_panels_type)
+
+scheme_types_attr <-
+  read_scheme_types(lang = lang) %>%
+  inner_join(type_target_spsamplesizes, join_by(scheme, type)) %>%
+  mutate(
+    typegroup_name2 = str_c(
+      coalesce(typegroup_shortname, ""),
+      " (",
+      n(),
+      " type",
+      ifelse(n() == 1, "", "s"),
+      ", ",
+      sum(sp_sample_size_all_panels_type) %>% as.integer(),
+      " locs)"
+    ) %>%
+      str_trim(),
+    .by = c(scheme, typegroup)
+  ) %>%
+  mutate(
+    typegroup_name2 = typegroup_name2 %>%
+      fct_reorder(coalesce(as.numeric(typegroup), 0))
+  ) %>%
+  select(scheme, type, typegroup_name2)
 
 spsamples <-
   scheme_domain_stratum_spsamples %>%
   filter(domain == "Flanders") %>%
   select(-domain) %>%
   inner_join(n2khab_strata, join_by(stratum)) %>%
-  inner_join(scheme_types, join_by(scheme, type))
+  inner_join(scheme_types_attr, join_by(scheme, type))
 
 spsamples %>%
   count(scheme, type)
@@ -191,7 +217,7 @@ for (scheme_i in sort(unique(spsamples$scheme))) {
       colour = "#843860"
     ) +
     coord_sf(datum = 31370) +
-    facet_wrap(~ typegroup_shortname) +
+    facet_wrap(~ typegroup_name2) +
     ggtitle(scheme_i)
   ggsave(
     file.path(plotpath, str_c("sample_map_provinces_", scheme_i, ".png")),
