@@ -175,12 +175,10 @@ old <- theme_set(theme_bw())
 theme_update(
   panel.grid = element_blank(),
   axis.text = element_blank(),
-  axis.ticks = element_blank()
+  axis.ticks = element_blank(),
+  plot.title = element_text(size = 12, hjust = 0.5)
 )
 provinces <- read_admin_areas(dsn = "provinces")
-scheme_names <-
-  read_schemes(lang = lang) %>%
-  select(scheme, scheme_name)
 
 for (scheme_i in sort(unique(spsamples$scheme))) {
   plot_i <-
@@ -189,22 +187,17 @@ for (scheme_i in sort(unique(spsamples$scheme))) {
     geom_sf(
       data = spsamples_points %>%
         filter(scheme == scheme_i),
-      size = 0.5,
+      size = 0.3,
       colour = "#843860"
     ) +
     coord_sf(datum = 31370) +
     facet_wrap(~ typegroup_shortname) +
-    ggtitle(
-      scheme_names %>%
-        filter(scheme == scheme_i) %>%
-        mutate(title = str_c(scheme_name, " (", scheme, ")")) %>%
-        pull(title)
-    )
+    ggtitle(scheme_i)
   ggsave(
     file.path(plotpath, str_c("sample_map_provinces_", scheme_i, ".png")),
     plot_i,
-    width = 9,
-    height = 6,
+    width = 11,
+    height = 7,
     dpi = 600
   )
 }
