@@ -57,6 +57,47 @@ aggregate_sample_size <- function(df, sample_size_all_panels_var, mhq_scheme_cat
 }
 
 
+#' Apply finite population correction to a sample size for infinite populations
+#'
+#' @param n_inf Sample size for infinite populations. Can be a vector.
+#' @param pop Population size. Can be a vector.
+apply_fpc <- function(n_inf, pop) {
+  ifelse(
+    n_inf != 0 & !is.na(n_inf),
+    n_inf * pop / (n_inf + pop),
+    n_inf
+  )
+}
+
+
+#' Calculate deviation from a total budgeted finite sample size over strata
+#'
+#' First calculate infinite sample sizes from a vector of budgeted finite sample
+#' sizes (for strata), using a fixed coefficient for the whole vector.
+#' Then apply finite population correction for each stratum, making use of its
+#' guessed infinite sample size and its population size.
+#' Finally, return the difference between the sum of resulting sample sizes and
+#' the sum of the initial sample sizes (which together reflect the overall
+#' budgeted sample size).
+#'
+#' The idea is to take control of the precision of estimators, which is tied to
+#' the sample size.
+#' Typically one wants to get at similar (equal) precision between strata,
+#' as represented in the vector of initially set sample sizes for strata,
+#' ignoring finite populations, and which together reflect the budgeted number
+#' of sampling units.
+#'
+#' @param x Coefficient (scalar numeric).
+#' @param n Vector of initially set sample sizes for strata (see Details).
+#' @param pop Vector of stratum sizes.
+get_fpc_sample_size_difference <- function(x, n, pop) {
+  n <- ifelse(is.na(n), 0, n)
+  n_inf <- n * x
+  n_fin <- apply_fpc(n_inf, pop)
+  abs(sum(n_fin) - sum(n))
+}
+
+
 #' Add point coordinate columns to a data frame with a GRTS address column
 add_point_coords_grts <- function(
     df,

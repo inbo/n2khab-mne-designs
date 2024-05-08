@@ -901,13 +901,102 @@ The infinite sample size is to be obtained by applying a fixed coefficient per m
 This is needed to make sure the allocation for the _infinite_ population remains evenly spread over strata as reflected in the above pro-forma stratum-level sample sizes, which we (for simplicity) assume to correspond to a similar precision.
 
 ```{r}
-#  dummy steps
-module_domain_scheme_stratum_sample_size <-
-  module_domain_scheme_stratum_target_sample_size
+upper_optim_bound <- 100
+module_domain_scheme_stratum_sample_size_infinite <-
+  module_domain_scheme_stratum_target_sample_size %>% 
+  left_join(mhq_scheme_category, join_by(scheme)) %>% 
+  arrange(module, scheme) %>% 
+  mutate(
+    pool_with_equal_type_precision = ifelse(
+      str_detect(scheme, "^HQ"),
+      str_c(module, "MHQ", category, sep = "_"),
+      str_c(module, scheme, sep = "_")
+    )
+  ) %>% 
+  mutate(
+    coef = optimize(
+      get_fpc_sample_size_difference, 
+      c(1, upper_optim_bound), 
+      sp_sample_size_all_panels_stratum, 
+      nunits
+    )$minimum,
+    coef = ifelse(is.na(sp_sample_size_all_panels_stratum), NA_real_, coef),
+    sp_sample_size_all_panels_stratum_inf = 
+      sp_sample_size_all_panels_stratum * coef,
+    .by = pool_with_equal_type_precision
+  )
 ```
 
-```{r}
+Cases may exist for which the pooled budgeted sample size (target sample size of a pool) is larger than the corresponding population size.
+These will need adjustment of target sample sizes for respective strata.
+Check if such cases exist:
 
+<!-- XXX In this case, type 3260 has not yet got a sufficiently reliable sampling frame, so this must be revisited. -->
+
+```{r}
+module_domain_scheme_stratum_sample_size_infinite %>% 
+  filter(coef > upper_optim_bound - 1) %>% 
+  summarize(
+    pooled_pop_size = sum(nunits), 
+    budgeted_sp_sample_size_all_panels = sum(sp_sample_size_all_panels_stratum),
+    .by = pool_with_equal_type_precision
+  )
+```
+
+Overview of pools, pooled budgeted (target) sample sizes, and coefficients to set the infinite population sizes of the strata contained within each pool.
+
+```{r}
+module_domain_scheme_stratum_sample_size_infinite %>% 
+  filter(!is.na(coef)) %>% 
+  summarize(
+    budgeted_sp_sample_size_all_panels = sum(sp_sample_size_all_panels_stratum),
+    coef = first(coef),
+    .by = pool_with_equal_type_precision
+  )
+```
+
+Summary of coefficient values, excluding potential extremes (which relate to insufficient availability of population units).
+
+```{r}
+module_domain_scheme_stratum_sample_size_infinite %>% 
+  distinct(pool_with_equal_type_precision, coef) %>% 
+  filter(coef < upper_optim_bound - 1) %>% 
+  pull(coef) %>% 
+  summary()
+```
+
+Applying the finite population correction.
+
+```{r}
+module_domain_scheme_stratum_sample_size <-
+  module_domain_scheme_stratum_sample_size_infinite %>% 
+  mutate(
+    sp_sample_size_all_panels_stratum = apply_fpc(
+      sp_sample_size_all_panels_stratum_inf,
+      nunits
+    ),
+    sp_sample_size_all_panels_type = sum(sp_sample_size_all_panels_stratum),
+    .by = c(module, domain, scheme, type)
+  ) %>% 
+  select(-c(
+    category,
+    pool_with_equal_type_precision,
+    coef,
+    sp_sample_size_all_panels_stratum_inf
+  )) %>% 
+  mutate(across(starts_with("sp_sample_size"), ~as.integer(round(.))))
+```
+
+Rechecking the aggregated sample size.
+Small differences with previous result arise because of rounding to integer values.
+
+```{r paged.print = FALSE}
+aggregate_sample_size(
+  module_domain_scheme_stratum_sample_size, 
+  "sp_sample_size_all_panels_stratum",
+  mhq_scheme_category
+) %>% 
+  print(n = Inf)
 ```
 
 ### Adjustments depending on variable sets
