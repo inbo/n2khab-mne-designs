@@ -144,13 +144,80 @@ non_core_types_per_module_and_compartment %>%
 # Below code requires availability of:
 # - module_domain_scheme_designattr
 # - mhq_mod_dom_type_no_sample
+# - module_domain_scheme_stratum_sample_size
 
 module_domain_scheme_designattr %>%
-  select(module, domain, scheme, cycle_duration_y, type_count, sp_sample_size_all_panels) %>%
+  select(
+    module,
+    domain,
+    scheme,
+    cycle_duration_y,
+    type_count,
+    sp_sample_size_all_panels
+  ) %>%
+  mutate(
+    yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y),
+    sp_sample_size_all_panels = round(sp_sample_size_all_panels)
+  ) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "mod_dom_scheme_design_spatial_before_FPC_redistrib"
+  )
+
+module_domain_scheme_stratum_sample_size %>%
+  distinct(
+    module,
+    domain,
+    scheme,
+    cycle_duration_y,
+    type_count,
+    sp_sample_size_all_panels
+  ) %>%
   mutate(yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y)) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "module_domain_scheme_design_spatial"
+    sheet = "mod_dom_scheme_design_spatial_after_FPC_redistrib"
+  )
+
+module_domain_scheme_stratum_sample_size %>%
+  summarize(
+    nunits = sum(nunits),
+    .by = c(
+      module,
+      domain,
+      scheme,
+      cycle_duration_y,
+      type,
+      sp_sample_size_all_panels_type
+    )
+  ) %>%
+  mutate(
+    yearly_sample_size = round(sp_sample_size_all_panels_type / cycle_duration_y, 1),
+    fraction_sampled = sp_sample_size_all_panels_type / nunits
+  ) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "mod_dom_scheme_type_sample_sizes"
+  )
+
+module_domain_scheme_stratum_sample_size %>%
+  select(
+    module,
+    domain,
+    scheme,
+    cycle_duration_y,
+    type,
+    stratum,
+    sp_sample_size_all_panels_stratum,
+    nunits
+  ) %>%
+  mutate(
+    yearly_sample_size = round(sp_sample_size_all_panels_stratum / cycle_duration_y, 1),
+    fraction_sampled = sp_sample_size_all_panels_stratum / nunits
+  ) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "mod_dom_scheme_stratum_sample_sizes"
   )
 
 module_domain_scheme_designattr %>%
