@@ -26,7 +26,8 @@ n2khab_types_expanded_properties %>%
   relocate(type_shortname, .after = type) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "type_properties")
+    sheet = "type_properties"
+  )
 
 schemes %>%
   select(-spatial_restriction) %>%
@@ -67,7 +68,8 @@ module_domains %>%
   pivot_wider(names_from = domain, values_from = nunits) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "domain_type_nunits")
+    sheet = "domain_type_nunits"
+  )
 
 module_targetpops %>%
   distinct(module, type) %>%
@@ -83,7 +85,8 @@ module_targetpops %>%
   pivot_wider(names_from = module, values_from = nunits) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "module_type_nunits")
+    sheet = "module_type_nunits"
+  )
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
@@ -91,7 +94,8 @@ module_domains %>%
   arrange(module, domain, scheme) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "module_domain_scheme_stats")
+    sheet = "module_domain_scheme_stats"
+  )
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
@@ -102,7 +106,8 @@ module_domains %>%
   pivot_wider(names_from = module, values_from = nunits) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "scheme_type_nunits_per_module")
+    sheet = "scheme_type_nunits_per_module"
+  )
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
@@ -113,7 +118,8 @@ module_domains %>%
   pivot_wider(names_from = domain, values_from = nunits) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "scheme_type_nunits_per_mod&dom")
+    sheet = "scheme_type_nunits_per_mod&dom"
+  )
 
 non_core_types_per_module_and_compartment %>%
   inner_join(
@@ -129,7 +135,8 @@ non_core_types_per_module_and_compartment %>%
   ) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "non_core_types_per_mod&comp")
+    sheet = "non_core_types_per_mod&comp"
+  )
 
 
 
@@ -143,7 +150,8 @@ module_domain_scheme_designattr %>%
   mutate(yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y)) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "module_domain_scheme_design_spatial")
+    sheet = "module_domain_scheme_design_spatial"
+  )
 
 module_domain_scheme_designattr %>%
   distinct(pick(module, scheme, targetvar_temporal_resolution:panel_count)) %>%
@@ -151,12 +159,13 @@ module_domain_scheme_designattr %>%
   arrange(module, scheme) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "mod_scheme_properties_temporal&revisit")
+    sheet = "mod_scheme_properties_temporal&revisit"
+  )
 
 mhq_mod_dom_type_no_sample %>%
   pivot_wider(names_from = domain, values_from = nunits) %>%
   arrange(module, type) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "MHQ_mod_dom_type_NOTSAMPLED_nunits")
-
+    sheet = "MHQ_mod_dom_type_NOTSAMPLED_nunits"
+  )
