@@ -667,7 +667,7 @@ mne_core_proportions_sac_subset5 <-
       filter(module == "pan_phase_1_sac_subset_5", is_core_scheme),
     by = c("module", "domain", "scheme")
   ) %>% 
-  # actually superfluous filter:
+  # actually superfluous filter; keep it to make sure:
   filter(!str_detect(scheme, "^HQ")) %>% 
   inner_join(n2khab_strata, by = "stratum") %>% 
   distinct(domain, scheme, type) %>% 
@@ -700,6 +700,12 @@ module_domain_scheme_designattr <-
     by = c("module", "domain"),
     relationship = "many-to-many"
   ) %>% 
+  # note that, for MHQ schemes, mod_dom_scheme_ssf_stratum_nunits was already 
+  # restricted to module x domain x type combinations that are approached
+  # with a sample. See the 'mhq_mod_dom_type_no_sample' object to get the 
+  # remainder.
+  # Below _typestats/_stratumstats objects are based on 
+  # mod_dom_scheme_ssf_stratum_nunits:
   inner_join(
     module_domain_scheme_typestats %>% 
       select(module, domain, scheme, type_count),
@@ -727,11 +733,6 @@ module_domain_scheme_designattr <-
   left_join(mhq_proportions_sac_subset5, by = c("domain", "scheme")) %>% 
   left_join(mne_core_proportions_sac_subset5, by = c("domain", "scheme")) %>% 
   mutate(
-    type_count_for_sampling = case_when(
-      str_detect(scheme, "^HQ") & is.na(type_count_mhq_sampling) ~ 0L,
-      str_detect(scheme, "^HQ") ~ type_count_mhq_sampling,
-      .default = type_count
-    ),
     sp_sample_size_all_panels = cycle_duration_y * case_when(
       # NA in MNE means adopting the locations of the core scheme in the same compartment:
       !is_core_scheme & !str_detect(scheme, "^HQ") ~ NA_real_,
@@ -765,16 +766,16 @@ module_domain_scheme_designattr <-
       module == "mbaa_mne_phase_1" & attribute_1 == "SOIL" ~ 1400 / 6,
       module == "mbaa_mne_phase_1" & scheme == "SURF_03.4_lentic" ~ 106,
       module == "mbaa_mne_phase_1" & scheme == "SURF_03.4_lotic" ~ 27,
-      # NA in MHQ means a census instead of a sample:
+      # NA in MHQ means a census instead of a sample (but it's not present!):
       .default = NA_real_
     )
   ) %>% 
   select(-attribute_1, -tag_1, -category, -starts_with("prop"), -type_count_mhq_sampling) %>% 
   mutate(
     sp_sample_size_all_panels_type = ifelse(
-      type_count_for_sampling == 0L | is.na(sp_sample_size_all_panels),
+      is.na(sp_sample_size_all_panels),
       NA_real_,
-      sp_sample_size_all_panels / type_count_for_sampling
+      sp_sample_size_all_panels / type_count
     )
   ) %>% 
   relocate(
@@ -786,7 +787,6 @@ module_domain_scheme_designattr <-
     sampling_frame_id,
     type_count,
     stratum_count,
-    type_count_for_sampling,
     targetvar_temporal_resolution,
     cycle_duration_y,
     year_first,
@@ -834,20 +834,15 @@ However we do attribute extra sample sizes in non-core MNE schemes, for those ty
 module_domain_scheme_stratum_target_sample_size <- 
   module_domain_scheme_designattr %>%
   inner_join(
+    # note that, for MHQ schemes, mod_dom_scheme_ssf_stratum_nunits was already 
+    # restricted to module x domain x type combinations that are approached
+    # with a sample. See the 'mhq_mod_dom_type_no_sample' object to get the 
+    # remainder.
     mod_dom_scheme_ssf_stratum_nunits %>% 
       select(-is_core_scheme, -sampling_frame_id), 
     by = c("module", "domain", "scheme")
   ) %>% 
   inner_join(n2khab_strata, by = "stratum") %>% 
-  filter(
-    !str_detect(scheme, "^HQ") |
-      type_count_for_sampling == type_count |
-      str_c(domain, scheme, type) %in% (
-        mhq_sampled_types_per_domain %>% 
-          mutate(united = str_c(domain, scheme, type)) %>% 
-          pull(united)
-      )
-  ) %>% 
   left_join(
     schemes %>% 
       filter(programme == "MNE") %>% 

@@ -139,7 +139,7 @@ non_core_types_per_module_and_compartment %>%
 # - mhq_mod_dom_type_no_sample
 
 module_domain_scheme_designattr %>%
-  select(module, domain, scheme, cycle_duration_y, type_count, type_count_for_sampling, sp_sample_size_all_panels) %>%
+  select(module, domain, scheme, cycle_duration_y, type_count, sp_sample_size_all_panels) %>%
   mutate(yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y)) %>%
   write_sheet(
     ss = gs_id,
