@@ -156,14 +156,14 @@ tictoc::toc()
 
 # Going for the indexed approach; slightly faster than cells()
 
-type_target_spsamplesizes <-
+type_spsamplesizes <-
   module_domain_scheme_stratum_sample_size_2 %>%
   filter(module == "mbaa_mne_phase_1", domain == "Flanders") %>%
   distinct(scheme, type, sp_sample_size_all_panels_type)
 
 scheme_types_attr <-
   read_scheme_types(lang = lang) %>%
-  inner_join(type_target_spsamplesizes, join_by(scheme, type)) %>%
+  inner_join(type_spsamplesizes, join_by(scheme, type)) %>%
   mutate(
     typegroup_name2 = str_c(
       coalesce(typegroup_shortname, ""),
