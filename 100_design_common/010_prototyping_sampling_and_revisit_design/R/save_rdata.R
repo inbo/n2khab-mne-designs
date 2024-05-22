@@ -10,6 +10,8 @@ rdata_set <- c(
   "n2khab_strata",
   "n2khab_targetpops_expanded",
   "n2khab_targetpops",
+  "grts_mh_n2khab",
+  "grts_mh_n2khab_index",
   "stratum_grts_n2khab",
   "stratum_grts_n2khab_collapsed",
   "domain_stratum_nunits",
@@ -28,7 +30,10 @@ rdata_set <- c(
   "module_domain_schemes",
   "module_domain_scheme_typestats",
   "module_domain_scheme_stratumstats",
-  "module_domain_scheme_designattr"
+  "module_domain_scheme_designattr",
+  "module_domain_scheme_stratum_target_sample_size",
+  "module_domain_scheme_stratum_sample_size",
+  "scheme_domain_stratum_spsamples"
 )
 module_suffix <- if (length(params$active_modules) > 1) "" else {
   str_c("_", params$active_modules)
