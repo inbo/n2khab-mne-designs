@@ -95,9 +95,94 @@ module_domain_scheme_stratum_sample_size %>%
   kable_styling(full_width = FALSE)
 ```
 
+(ref:revisit-diagrams-year) Schematische weergave van de meetjaren voor verschillende delen van de ruimtelijke steekproef per meetnet. Steekproefeenheden zijn symbolisch weergegeven met een rangnummer ('0001-0200' staat voor de eerste 200 eenheden in het meetnet, '0201-0400' voor de tweede schijf, enz.). Gekleurde vakjes duiden aan in welke jaren data verzameld worden voor elk deel van de steekproef. Het getal in de vakjes geeft aan hoe vaak deze locaties in het betreffende jaar bemeten worden.
+
+```{r revisit-diagrams-year, fig.cap="(ref:revisit-diagrams-year)", fig.height=10}
+revisit_diagram_start <- min(module_domain_scheme_stratum_sample_size$year_first)
+revisit_diagram_stop <- 2035L
+module_domain_scheme_stratum_sample_size %>% 
+  distinct(pick(
+    scheme,
+    cycle_duration_y,
+    starts_with("year"),
+    starts_with("revisit"),
+    starts_with("panel"),
+    sp_sample_size_all_panels,
+  )) %>% 
+  mutate(
+    # XXX update once revisit design has been stabilized in GW_05.1_quarries:
+    cycle_duration_y = ifelse(scheme == "GW_05.1_quarries", 1, cycle_duration_y),
+    panel_period = case_when(
+      scheme == "GW_05.1_quarries" ~ years(1), 
+      .default = panel_period
+    ),
+    revisit_subject = case_when(
+      scheme == "GW_05.1_quarries" ~ NA_character_,
+      is.na(revisit_maintenance) ~ "bemonstering",
+      .default = "installatie/onderhoud (continumetingen)"
+    ),
+    repetitions_within_year = case_when(
+      scheme == "GW_03.3" ~ 2L,
+      str_detect(scheme, "05\\.1") ~ 365L,
+      !is.na(panel_subperiod) ~ as.integer(panel_period / panel_subperiod),
+      .default = 1L
+    ),
+    # using the last year of the 2nd 6-y cycle, just to demonstrate revisit cycles
+    year_last = revisit_diagram_stop,
+    sample_chunks = map2(
+      sp_sample_size_all_panels, 
+      cycle_duration_y,
+      function(ss, cd) {
+        ysize <- ss / cd
+        start <- seq(1, ss + 1 - ysize, ysize) %>% round()
+        end <- seq(ysize, ss, ysize) %>% round()
+        str_c(str_pad(start, 4, pad = "0"), str_pad(end, 4, pad = "0"), sep = "-")
+      } 
+    ),
+    years = map2(year_first, year_last, ~full_seq(c(.x, .y), 1L)),
+    revisit_pattern = pmap(
+      list(sample_chunks, years, scheme),
+      function(sc, yr, sch) {
+        suppressWarnings(cbind(sample_chunk = sc, year = yr)) %>% 
+          as_tibble() %>% 
+          bind_cols(scheme = sch) %>% 
+          mutate(
+            year = as.integer(year),
+            year_extend = ifelse(
+              str_detect(scheme, "05\\.1_(aq|terr)"), 
+              revisit_diagram_stop, 
+              year
+            ),
+            years_extended = map2(year, year_extend, ~full_seq(c(.x, .y), 1L))
+          ) %>% 
+          unnest(years_extended) %>% 
+          select(sample_chunk, year = years_extended)
+      }
+    )
+  ) %>% 
+  select(-sample_chunks, -years) %>% 
+  unnest(revisit_pattern) %>% 
+  mutate(
+    repetitions_within_year = case_when(
+      repetitions_within_year == 365L & leap_year(year) ~ 366L,
+      .default = repetitions_within_year
+    )
+  ) %>% 
+  ggplot(aes(x = sample_chunk, y = year, label = repetitions_within_year)) +
+  geom_tile(fill = "peachpuff") +
+  geom_text() +
+  scale_y_reverse(breaks = seq(revisit_diagram_start, revisit_diagram_stop)) +
+  facet_wrap(~scheme, scales = "free_x") +
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 90, vjust = 0.4)
+  ) +
+  labs(x = "Rangnummers steekproefeenheden", y = "Meetjaar")
+```
+
 
 ## Panels
-
 
 (ref:scheme-designattr-temporal) De ruimtelijke steekproef van een meetnet wordt volgens een gerandomiseerd en ruimtelijk gebalanceerd 'membership design' verdeeld over panels, die aan een tijdsvak zijn gebonden van 3 tot 12 maanden. Op deze manier wordt in de uitspraken vertekening vermeden die het gevolg zouden zijn van correlatie tussen ruimte- en tijdseffecten. De tabel toont eveneens welk startjaar voor ogen wordt gehouden.
 
