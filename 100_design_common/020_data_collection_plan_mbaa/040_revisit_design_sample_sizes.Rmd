@@ -98,4 +98,49 @@ module_domain_scheme_stratum_sample_size %>%
 ## Panels
 
 
+(ref:scheme-designattr-temporal) De ruimtelijke steekproef van een meetnet wordt volgens een gerandomiseerd en ruimtelijk gebalanceerd 'membership design' verdeeld over panels, die aan een tijdsvak zijn gebonden van 3 tot 12 maanden. Op deze manier wordt in de uitspraken vertekening vermeden die het gevolg zouden zijn van correlatie tussen ruimte- en tijdseffecten. De tabel toont eveneens welk startjaar voor ogen wordt gehouden.
+
+```{r scheme-designattr-temporal}
+module_domain_scheme_stratum_sample_size %>% 
+  distinct(pick(
+    scheme,
+    cycle_duration_y,
+    starts_with("year"),
+    starts_with("revisit"),
+    starts_with("panel"),
+  )) %>% 
+  # glimpse
+  mutate(
+    repetitions_within_year = case_when(
+      scheme == "GW_03.3" ~ "2",
+      str_detect(scheme, "05\\.1") ~ "continu",
+      !is.na(panel_subperiod) ~ as.character(panel_period / panel_subperiod),
+      .default = "1"
+    ),
+    revisit_subject = ifelse(
+      is.na(revisit_maintenance), 
+      "bemonstering",
+      "installatie/onderhoud (continumetingen)"
+    ),
+    # update once revisit design has been stabilized in GW_03.3:
+    panel_count = ifelse(scheme == "GW_03.3", 12, panel_count),
+    months_per_panel = cycle_duration_y / panel_count * 12
+  ) %>% 
+  select(
+    Meetnet = scheme,
+    `Onderwerp herbezoekschema` = revisit_subject,
+    `Cycluslengte (jaar)` = cycle_duration_y,
+    Start = year_first,
+    `Aantal panels per cyclus` = panel_count,
+    `Aantal maand per panel` = months_per_panel,
+    `Metingen per locatie in hetzelfde jaar` = repetitions_within_year
+  ) %>% 
+  kbl(
+    align = "llccccc",
+    caption = "(ref:scheme-designattr-temporal)"
+  ) %>%
+  kable_styling(full_width = FALSE)
+```
+
+
 ## Herbezoekschema's
