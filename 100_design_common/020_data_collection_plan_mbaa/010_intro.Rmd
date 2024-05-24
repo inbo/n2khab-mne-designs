@@ -24,6 +24,23 @@ In het basisrapport [@vanderhaeghe_vraagstelling_2017] werden de beleidsvragen g
 -   hoe is het gesteld met de actuele milieu-aspecten die doorwerken in de bepaling van de regionale staat van instandhouding en en hoe verhouden ze zich ten opzichte van de (tussentijdse) gewestelijke doelstellingen van het Natura 2000-programma? (*beoordeling*)
 -   hoe zullen de diagnose van de milieuknelpunten en de beoordeling van de toestand evolueren over 6 jaar, 12 jaar en in 2050 en zullen we op tijd de toekomstdoelstellingen bereiken? (*toekomstverwachting*)
 
+```{r mne-lists}
+mne_schemes <- 
+  read_schemes(lang = "nl") %>%
+  filter(programme == "MNE")
+mne_types <- 
+  read_types(lang = "nl") %>% 
+  semi_join(
+    read_scheme_types() %>% 
+      semi_join(mne_schemes, join_by(scheme)),
+    join_by(type)
+  )
+mne_scheme_types <- 
+  read_scheme_types(lang = "nl", extended = TRUE) %>%
+  filter(programme == "MNE")
+```
+
+
 ## Milieudrukken {#milieudrukken}
 
 In de monitoring van het natuurlijk milieu, of de milieukwaliteit van natuur, speelt de standplaats een sleutelrol.
@@ -59,8 +76,21 @@ n2khab::read_env_pressures(lang = "nl") %>%
 
 Alle habitat(sub)types en regionaal belangrijke biotopen die voorkomen in Vlaanderen worden opgenomen in de MNM.
 In de MNM wordt hiernaar verwezen onder de benaming 'types'.
-<!-- +aantal? -->
-<!-- +lijst? -->
+
+Het gaat in totaal om `r nrow(mne_types)` types.
+Tabel \@ref(tab:aantal-types-per-typeklasse) toont hun verdeling over verschillende typeklassen.
+De volledige lijst van types is opgenomen in Bijlage \@ref(app-types) (tabel \@ref(tab:type-lijst)).
+
+```{r aantal-types-per-typeklasse}
+mne_types %>% 
+  count(typeclass_name) %>% 
+  select(
+    Typeklasse = typeclass_name,
+    `Aantal types` = n
+  ) %>% 
+  kbl(caption = "Het aantal types per typeklasse in de Meetnetten Natuurlijk Milieu.") %>%
+  kable_styling(full_width = FALSE)
+```
 
 ## Afbakening van milieudrukken en types {#afbakening}
 
@@ -114,18 +144,10 @@ Enkele meetnetten zijn verder opgesplits in deelmeetnetten, nl. verdroging via g
 De partims weerspiegelen de complicatie dat voor eenzelfde standplaatsfactor andere milieuvariabelen dienen opgemeten te worden in verschillende habitattypes.
 
 ```{r meetnetten, message=FALSE, warning=FALSE, results='asis', echo=FALSE}
-n2khabmon::read_schemes(lang = "nl") %>%
-  filter(programme == "MNE") %>%
-  select(
-    Meetnet = scheme_name,
-    Milieudruk = attribute_2_name
-  ) %>%
-  pandoc.table(
-    split.table = Inf,
-    split.cells = c(50, 50),
-    justify = "left",
-    caption = "(\\#tab:meetnetten)Lijst van de meetnetten in MNM"
-  )
+mne_schemes %>%
+  select(Meetnet = scheme_name) %>%
+  kbl(caption = "Lijst van de meetnetten in MNM.") %>%
+  kable_styling()
 ```
 
 Omwille van praktische organisatie worden de meetnetten uit eenzelfde milieucompartiment gegroepeerd tot compartimentmeetnetten.

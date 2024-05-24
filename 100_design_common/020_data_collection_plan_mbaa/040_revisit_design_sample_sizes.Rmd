@@ -2,7 +2,7 @@
 
 Dit hoofdstuk van het meetplan beschrijft de ruimtelijke en temporele toewijzing van de meetlocaties per meetnet.
 
-## Steekproefgroottes
+## Ruimtelijke steekproefgroottes
 
 Enkel voor de hoofdmeetnetten worden steekproefgroottes ingesteld.
 Secundaire meetnetten krijgen geen specifieke steekproefgrootte toebedeeld: enkel die locaties die samen voorkomen in de betrokken steekproefkaders zullen worden opgenomen in de secundaire meetnetten. Echter, voor die types van de secundaire meetnetten die niet voorkomen in de hoofdmeetnetten, worden extra steekproefgroottes toegevoegd.
@@ -21,7 +21,126 @@ Om hiervoor te corrigeren worden de steekproefgroottes per type herberekend reke
 
 <!-- Tabel... overzicht van de steekproefgroottes per meetnet per typegroep, met vermelding van het aantal types per typegroep? -->
 
+(ref:scheme-designattr-spatial1) De typegroepen in de respectievelijke meetnetten verschillen in het aantal types dat ertoe behoort en in de toebedeelde ruimtelijke steekproefgrootte. De steekproefgrootte houdt reeds rekening met de eindige-populatiecorrectie. De ruimtelijke steekproefgroottes per type of per stratum zijn voor elk meetnet te vinden in Bijlage \@ref(app-sample-size-types-strata).
+
+```{r scheme-designattr-spatial1}
+module_domain_scheme_stratum_sample_size %>% 
+  distinct(
+    scheme,
+    type,
+    sp_sample_size_all_panels_type
+  ) %>% 
+  left_join(
+    mne_scheme_types %>% 
+      select(scheme, type, typegroup_name),
+    join_by(scheme, type)
+  ) %>% 
+  summarize(
+    n_types = n(),
+    sp_sample_size_typegroup = sum(sp_sample_size_all_panels_type),
+    .by = c(scheme, typegroup_name)
+  ) %>% 
+  select(
+    Meetnet = scheme,
+    Typegroep = typegroup_name,
+    `Aantal types` = n_types,
+    `Aantal locaties` = sp_sample_size_typegroup
+  ) %>% 
+  kbl(
+    align = "llcc",
+    caption = "(ref:scheme-designattr-spatial1)"
+  ) %>%
+  kable_styling(full_width = FALSE)
+```
+
+## Cycluslengte
+
+(ref:scheme-designattr-spatial2) Jaarlijks wordt een ander deel van de steekproef bezocht. Dit gebeurt volgens een serieel alternerend design over de jaren: elke locatie komt na $x$ jaar (de cycluslengte) opnieuw aan de beurt. Binnen een bezoekjaar is het mogelijk dat locaties vaker dan één keer worden bemeten: dit is afhankelijk van het meetnet. Voor de submeetnetten van `GW_05.1` blijven de metingen doorlopen en betreft het serieel alternerend patroon de onderhoudsbeurt.
+
+```{r scheme-designattr-spatial2}
+module_domain_scheme_stratum_sample_size %>% 
+  distinct(pick(
+    scheme,
+    cycle_duration_y,
+    starts_with("year"),
+    starts_with("revisit"),
+    starts_with("panel"),
+    type_count,
+    sp_sample_size_all_panels
+  )) %>% 
+  # glimpse
+  mutate(
+    yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y) %>% 
+      str_c(ifelse(str_detect(scheme, "05\\.1"), " (installatie/onderhoud)", "")),
+    repetitions_within_year = case_when(
+      scheme == "GW_03.3" ~ "2",
+      str_detect(scheme, "05\\.1") ~ "continu",
+      !is.na(panel_subperiod) ~ as.character(panel_period / panel_subperiod),
+      .default = "1"
+    )
+  ) %>% 
+  select(
+    Meetnet = scheme,
+    `Aantal types` = type_count,
+    `Totaal aantal locaties` = sp_sample_size_all_panels,
+    `Cycluslengte (jaar)` = cycle_duration_y,
+    `Jaarlijks aantal locaties` = yearly_sample_size,
+    `Metingen per locatie in hetzelfde jaar` = repetitions_within_year
+  ) %>% 
+  kbl(
+    align = "lccccc",
+    caption = "(ref:scheme-designattr-spatial2)"
+  ) %>%
+  kable_styling(full_width = FALSE)
+```
+
+
 ## Panels
+
+
+(ref:scheme-designattr-temporal) De ruimtelijke steekproef van een meetnet wordt volgens een gerandomiseerd en ruimtelijk gebalanceerd 'membership design' verdeeld over panels, die aan een tijdsvak zijn gebonden van 3 tot 12 maanden. Op deze manier wordt in de uitspraken vertekening vermeden die het gevolg zouden zijn van correlatie tussen ruimte- en tijdseffecten. De tabel toont eveneens welk startjaar voor ogen wordt gehouden.
+
+```{r scheme-designattr-temporal}
+module_domain_scheme_stratum_sample_size %>% 
+  distinct(pick(
+    scheme,
+    cycle_duration_y,
+    starts_with("year"),
+    starts_with("revisit"),
+    starts_with("panel"),
+  )) %>% 
+  # glimpse
+  mutate(
+    repetitions_within_year = case_when(
+      scheme == "GW_03.3" ~ "2",
+      str_detect(scheme, "05\\.1") ~ "continu",
+      !is.na(panel_subperiod) ~ as.character(panel_period / panel_subperiod),
+      .default = "1"
+    ),
+    revisit_subject = ifelse(
+      is.na(revisit_maintenance), 
+      "bemonstering",
+      "installatie/onderhoud (continumetingen)"
+    ),
+    # update once revisit design has been stabilized in GW_03.3:
+    panel_count = ifelse(scheme == "GW_03.3", 12, panel_count),
+    months_per_panel = cycle_duration_y / panel_count * 12
+  ) %>% 
+  select(
+    Meetnet = scheme,
+    `Onderwerp herbezoekschema` = revisit_subject,
+    `Cycluslengte (jaar)` = cycle_duration_y,
+    Start = year_first,
+    `Aantal panels per cyclus` = panel_count,
+    `Aantal maand per panel` = months_per_panel,
+    `Metingen per locatie in hetzelfde jaar` = repetitions_within_year
+  ) %>% 
+  kbl(
+    align = "llccccc",
+    caption = "(ref:scheme-designattr-temporal)"
+  ) %>%
+  kable_styling(full_width = FALSE)
+```
 
 
 ## Herbezoekschema's
