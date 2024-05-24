@@ -21,28 +21,28 @@ Om hiervoor te corrigeren worden de steekproefgroottes per type herberekend reke
 (ref:scheme-designattr-spatial1) De typegroepen in de respectievelijke meetnetten verschillen in het aantal types dat ertoe behoort en in de toebedeelde ruimtelijke steekproefgrootte. De steekproefgrootte houdt reeds rekening met de eindige-populatiecorrectie. De ruimtelijke steekproefgroottes per type of per stratum zijn voor elk meetnet te vinden in Bijlage \@ref(app-sample-size-types-strata).
 
 ```{r scheme-designattr-spatial1}
-module_domain_scheme_stratum_sample_size %>% 
+module_domain_scheme_stratum_sample_size %>%
   distinct(
     scheme,
     type,
     sp_sample_size_all_panels_type
-  ) %>% 
+  ) %>%
   left_join(
-    mne_scheme_types %>% 
+    mne_scheme_types %>%
       select(scheme, type, typegroup_name),
     join_by(scheme, type)
-  ) %>% 
+  ) %>%
   summarize(
     n_types = n(),
     sp_sample_size_typegroup = sum(sp_sample_size_all_panels_type),
     .by = c(scheme, typegroup_name)
-  ) %>% 
+  ) %>%
   select(
     Meetnet = scheme,
     Typegroep = typegroup_name,
     `Aantal types` = n_types,
     `Aantal locaties` = sp_sample_size_typegroup
-  ) %>% 
+  ) %>%
   kbl(
     align = "llcc",
     caption = "(ref:scheme-designattr-spatial1)"
@@ -55,7 +55,7 @@ module_domain_scheme_stratum_sample_size %>%
 (ref:scheme-designattr-spatial2) Jaarlijks wordt een ander deel van de steekproef bezocht. Dit gebeurt volgens een serieel alternerend design over de jaren: elke locatie komt na $x$ jaar (de cycluslengte) opnieuw aan de beurt. Binnen een bezoekjaar is het mogelijk dat locaties vaker dan één keer worden bemeten: dit is afhankelijk van het meetnet. Voor de submeetnetten van `GW_05.1` blijven de metingen doorlopen en betreft het serieel alternerend patroon de onderhoudsbeurt (dit is niet van toepassing bij `GW_05.1_quarries`).
 
 ```{r scheme-designattr-spatial2}
-module_domain_scheme_stratum_sample_size %>% 
+module_domain_scheme_stratum_sample_size %>%
   distinct(pick(
     scheme,
     cycle_duration_y,
@@ -64,11 +64,11 @@ module_domain_scheme_stratum_sample_size %>%
     starts_with("panel"),
     type_count,
     sp_sample_size_all_panels
-  )) %>% 
+  )) %>%
   mutate(
     # XXX update once revisit design has been stabilized in GW_05.1_quarries:
     cycle_duration_y = ifelse(scheme == "GW_05.1_quarries", NA, cycle_duration_y),
-    yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y) %>% 
+    yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y) %>%
       str_c(ifelse(str_detect(scheme, "05\\.1_(aq|terr)"), " (installatie/onderhoud)", "")),
     repetitions_within_year = case_when(
       scheme == "GW_03.3" ~ "2",
@@ -76,7 +76,7 @@ module_domain_scheme_stratum_sample_size %>%
       !is.na(panel_subperiod) ~ as.character(panel_period / panel_subperiod),
       .default = "1"
     )
-  ) %>% 
+  ) %>%
   select(
     Meetnet = scheme,
     `Aantal types` = type_count,
@@ -84,7 +84,7 @@ module_domain_scheme_stratum_sample_size %>%
     `Cycluslengte (jaar)` = cycle_duration_y,
     `Jaarlijks aantal locaties` = yearly_sample_size,
     `Metingen per locatie in hetzelfde jaar` = repetitions_within_year
-  ) %>% 
+  ) %>%
   kbl(
     align = "lccccc",
     caption = "(ref:scheme-designattr-spatial2)"
@@ -97,7 +97,7 @@ module_domain_scheme_stratum_sample_size %>%
 ```{r revisit-diagrams-year, fig.cap="(ref:revisit-diagrams-year)", fig.height=10}
 revisit_diagram_start <- min(module_domain_scheme_stratum_sample_size$year_first)
 revisit_diagram_stop <- 2035L
-module_domain_scheme_stratum_sample_size %>% 
+module_domain_scheme_stratum_sample_size %>%
   distinct(pick(
     scheme,
     cycle_duration_y,
@@ -105,12 +105,12 @@ module_domain_scheme_stratum_sample_size %>%
     starts_with("revisit"),
     starts_with("panel"),
     sp_sample_size_all_panels,
-  )) %>% 
+  )) %>%
   mutate(
     # XXX update once revisit design has been stabilized in GW_05.1_quarries:
     cycle_duration_y = ifelse(scheme == "GW_05.1_quarries", 1, cycle_duration_y),
     panel_period = case_when(
-      scheme == "GW_05.1_quarries" ~ years(1), 
+      scheme == "GW_05.1_quarries" ~ years(1),
       .default = panel_period
     ),
     revisit_subject = case_when(
@@ -127,44 +127,44 @@ module_domain_scheme_stratum_sample_size %>%
     # using the last year of the 2nd 6-y cycle, just to demonstrate revisit cycles
     year_last = revisit_diagram_stop,
     sample_chunks = map2(
-      sp_sample_size_all_panels, 
+      sp_sample_size_all_panels,
       cycle_duration_y,
       function(ss, cd) {
         ysize <- ss / cd
         start <- seq(1, ss + 1 - ysize, ysize) %>% round()
         end <- seq(ysize, ss, ysize) %>% round()
         str_c(str_pad(start, 4, pad = "0"), str_pad(end, 4, pad = "0"), sep = "-")
-      } 
+      }
     ),
-    years = map2(year_first, year_last, ~full_seq(c(.x, .y), 1L)),
+    years = map2(year_first, year_last, ~ full_seq(c(.x, .y), 1L)),
     revisit_pattern = pmap(
       list(sample_chunks, years, scheme),
       function(sc, yr, sch) {
-        suppressWarnings(cbind(sample_chunk = sc, year = yr)) %>% 
-          as_tibble() %>% 
-          bind_cols(scheme = sch) %>% 
+        suppressWarnings(cbind(sample_chunk = sc, year = yr)) %>%
+          as_tibble() %>%
+          bind_cols(scheme = sch) %>%
           mutate(
             year = as.integer(year),
             year_extend = ifelse(
-              str_detect(scheme, "05\\.1_(aq|terr)"), 
-              revisit_diagram_stop, 
+              str_detect(scheme, "05\\.1_(aq|terr)"),
+              revisit_diagram_stop,
               year
             ),
-            years_extended = map2(year, year_extend, ~full_seq(c(.x, .y), 1L))
-          ) %>% 
-          unnest(years_extended) %>% 
+            years_extended = map2(year, year_extend, ~ full_seq(c(.x, .y), 1L))
+          ) %>%
+          unnest(years_extended) %>%
           select(sample_chunk, year = years_extended)
       }
     )
-  ) %>% 
-  select(-sample_chunks, -years) %>% 
-  unnest(revisit_pattern) %>% 
+  ) %>%
+  select(-sample_chunks, -years) %>%
+  unnest(revisit_pattern) %>%
   mutate(
     repetitions_within_year = case_when(
       repetitions_within_year == 365L & leap_year(year) ~ 366L,
       .default = repetitions_within_year
     )
-  ) %>% 
+  ) %>%
   ggplot(aes(x = sample_chunk, y = year, label = repetitions_within_year)) +
   geom_tile(fill = "peachpuff") +
   geom_text() +
@@ -184,17 +184,17 @@ module_domain_scheme_stratum_sample_size %>%
 (ref:scheme-designattr-temporal) De ruimtelijke steekproef van een meetnet wordt volgens een gerandomiseerd en ruimtelijk gebalanceerd 'membership design' verdeeld over panels, die aan een tijdsvak zijn gebonden van 3 tot 12 maanden. Op deze manier wordt in de uitspraken vertekening vermeden die het gevolg zouden zijn van correlatie tussen ruimte- en tijdseffecten. De tabel toont eveneens welk startjaar voor ogen wordt gehouden.
 
 ```{r scheme-designattr-temporal}
-module_domain_scheme_stratum_sample_size %>% 
+module_domain_scheme_stratum_sample_size %>%
   distinct(pick(
     scheme,
     cycle_duration_y,
     starts_with("year"),
     starts_with("revisit"),
     starts_with("panel"),
-  )) %>% 
+  )) %>%
   # XXX update once revisit design has been stabilized in GW_05.1_quarries:
   # now assuming that GW_05.1_quarries has no panel design
-  filter(scheme != "GW_05.1_quarries") %>% 
+  filter(scheme != "GW_05.1_quarries") %>%
   mutate(
     repetitions_within_year = case_when(
       scheme == "GW_03.3" ~ "2",
@@ -203,14 +203,14 @@ module_domain_scheme_stratum_sample_size %>%
       .default = "1"
     ),
     revisit_subject = ifelse(
-      is.na(revisit_maintenance), 
+      is.na(revisit_maintenance),
       "bemonstering",
       "installatie/onderhoud (continumetingen)"
     ),
     # XXX update once revisit design has been stabilized in GW_03.3:
     panel_count = ifelse(scheme == "GW_03.3", 12, panel_count),
     months_per_panel = cycle_duration_y / panel_count * 12
-  ) %>% 
+  ) %>%
   select(
     Meetnet = scheme,
     `Onderwerp herbezoekschema` = revisit_subject,
@@ -219,7 +219,7 @@ module_domain_scheme_stratum_sample_size %>%
     `Aantal panels per cyclus` = panel_count,
     `Aantal maand per panel` = months_per_panel,
     `Metingen per locatie in hetzelfde jaar` = repetitions_within_year
-  ) %>% 
+  ) %>%
   kbl(
     align = "llccccc",
     caption = "(ref:scheme-designattr-temporal)"
