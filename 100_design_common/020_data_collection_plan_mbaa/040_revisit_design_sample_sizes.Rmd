@@ -55,7 +55,7 @@ module_domain_scheme_stratum_sample_size %>%
 
 ## Cycluslengte
 
-(ref:scheme-designattr-spatial2) Jaarlijks wordt een ander deel van de steekproef bezocht. Dit gebeurt volgens een serieel alternerend design over de jaren: elke locatie komt na $x$ jaar (de cycluslengte) opnieuw aan de beurt. Binnen een bezoekjaar is het mogelijk dat locaties vaker dan één keer worden bemeten: dit is afhankelijk van het meetnet. Voor de submeetnetten van `GW_05.1` blijven de metingen doorlopen en betreft het serieel alternerend patroon de onderhoudsbeurt.
+(ref:scheme-designattr-spatial2) Jaarlijks wordt een ander deel van de steekproef bezocht. Dit gebeurt volgens een serieel alternerend design over de jaren: elke locatie komt na $x$ jaar (de cycluslengte) opnieuw aan de beurt. Binnen een bezoekjaar is het mogelijk dat locaties vaker dan één keer worden bemeten: dit is afhankelijk van het meetnet. Voor de submeetnetten van `GW_05.1` blijven de metingen doorlopen en betreft het serieel alternerend patroon de onderhoudsbeurt (dit is niet van toepassing bij `GW_05.1_quarries`).
 
 ```{r scheme-designattr-spatial2}
 module_domain_scheme_stratum_sample_size %>% 
@@ -69,8 +69,10 @@ module_domain_scheme_stratum_sample_size %>%
     sp_sample_size_all_panels
   )) %>% 
   mutate(
+    # XXX update once revisit design has been stabilized in GW_05.1_quarries:
+    cycle_duration_y = ifelse(scheme == "GW_05.1_quarries", NA, cycle_duration_y),
     yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y) %>% 
-      str_c(ifelse(str_detect(scheme, "05\\.1"), " (installatie/onderhoud)", "")),
+      str_c(ifelse(str_detect(scheme, "05\\.1_(aq|terr)"), " (installatie/onderhoud)", "")),
     repetitions_within_year = case_when(
       scheme == "GW_03.3" ~ "2",
       str_detect(scheme, "05\\.1") ~ "continu",
@@ -108,6 +110,9 @@ module_domain_scheme_stratum_sample_size %>%
     starts_with("revisit"),
     starts_with("panel"),
   )) %>% 
+  # XXX update once revisit design has been stabilized in GW_05.1_quarries:
+  # now assuming that GW_05.1_quarries has no panel design
+  filter(scheme != "GW_05.1_quarries") %>% 
   mutate(
     repetitions_within_year = case_when(
       scheme == "GW_03.3" ~ "2",
