@@ -93,12 +93,13 @@ module_domain_scheme_stratum_sample_size %>%
   kable_styling(full_width = FALSE)
 ```
 
-(ref:revisit-diagrams-year) Schematische weergave van de meetjaren voor verschillende delen van de ruimtelijke steekproef per meetnet. Steekproefeenheden zijn symbolisch weergegeven met een rangnummer ('0001-0200' staat voor de eerste 200 eenheden in het meetnet, '0201-0400' voor de tweede schijf, enz.). Gekleurde vakjes duiden aan in welke jaren data verzameld worden voor elk deel van de steekproef. Het getal in de vakjes geeft aan hoe vaak deze locaties in het betreffende jaar bemeten worden.
+(ref:revisit-diagrams-year) Schematische weergave van de meetjaren voor verschillende delen van de ruimtelijke steekproef van elk meetnet. Steekproefeenheden zijn symbolisch weergegeven met een rangnummer ('0001-0200' staat voor de eerste 200 eenheden in het meetnet, '0201-0400' voor de tweede schijf, enz.). Gekleurde vakjes duiden aan in welke jaren data verzameld worden voor elk deel van de steekproef. Het getal in de vakjes geeft aan hoe vaak deze locaties in het betreffende jaar bemeten worden.
 
-```{r revisit-diagrams-year, fig.cap="(ref:revisit-diagrams-year)", fig.height=10}
+```{r revisit-diagrams-year, fig.cap="(ref:revisit-diagrams-year)", fig.height=6, fig.width=6, out.width="70%", fig.align="center"}
 revisit_diagram_start <- min(module_domain_scheme_stratum_sample_size$year_first)
 revisit_diagram_stop <- 2035L
-module_domain_scheme_stratum_sample_size %>%
+year_patterns <- 
+  module_domain_scheme_stratum_sample_size %>%
   distinct(pick(
     scheme,
     cycle_duration_y,
@@ -109,7 +110,7 @@ module_domain_scheme_stratum_sample_size %>%
   )) %>%
   mutate(
     # XXX update once revisit design has been stabilized in GW_05.1_quarries:
-    cycle_duration_y = ifelse(scheme == "GW_05.1_quarries", 1, cycle_duration_y),
+    cycle_duration_y = ifelse(scheme == "GW_05.1_quarries", 1L, cycle_duration_y),
     panel_period = case_when(
       scheme == "GW_05.1_quarries" ~ years(1),
       .default = panel_period
@@ -153,8 +154,9 @@ module_domain_scheme_stratum_sample_size %>%
             ),
             years_extended = map2(year, year_extend, ~ full_seq(c(.x, .y), 1L))
           ) %>%
-          unnest(years_extended) %>%
-          select(sample_chunk, year = years_extended)
+          unnest(years_extended) %>% 
+          select(sample_chunk, year = years_extended) %>%
+          distinct()
       }
     )
   ) %>%
@@ -164,19 +166,49 @@ module_domain_scheme_stratum_sample_size %>%
     repetitions_within_year = case_when(
       repetitions_within_year == 365L & leap_year(year) ~ 366L,
       .default = repetitions_within_year
-    )
-  ) %>%
-  ggplot(aes(x = sample_chunk, y = year, label = repetitions_within_year)) +
-  geom_tile(fill = "peachpuff") +
-  geom_text() +
-  scale_y_reverse(breaks = seq(revisit_diagram_start, revisit_diagram_stop)) +
-  facet_wrap(~scheme, scales = "free_x") +
+    ),
+    sample_chunk = fct(sample_chunk) %>% fct_rev(),
+  )
+diagram_grid <- 
+  year_patterns %>% 
+  nest(mycol = sample_chunk, .by = scheme) %>% 
+  mutate(
+    grid = map(mycol, function(mc) {
+      crossing(
+        x = seq(revisit_diagram_start, revisit_diagram_stop),
+        y = mc$sample_chunk %>% fct_drop() %>% unique()
+      )
+    })
+  ) %>% 
+  select(-mycol) %>% 
+  unnest(grid)
+year_patterns %>% 
+  ggplot(aes(x = year, y = sample_chunk, label = repetitions_within_year)) +
+  geom_tile(fill = "#F1F2BA") +
+  geom_tile(
+    data = diagram_grid,
+    aes(x = x, y = y, label = NULL),
+    colour = "grey60",
+    fill = NA
+  ) +
+  geom_text(size = 3) +
+  scale_x_continuous(
+    breaks = seq(revisit_diagram_start, revisit_diagram_stop),
+    position = "top",
+    expand = c(0, 0)
+  ) +
+  facet_grid(
+    scheme ~ ., 
+    scales = "free_y", 
+    space = "free_y"
+  ) +
   theme_bw() +
   theme(
     panel.grid = element_blank(),
-    axis.text.x = element_text(angle = 90, vjust = 0.4)
+    strip.text.y = element_text(angle = 0),
+    axis.ticks = element_blank()
   ) +
-  labs(x = "Rangnummers steekproefeenheden", y = "Meetjaar")
+  labs(x = "Meetjaar", y = "Rangnummers steekproefeenheden (pro forma)")
 ```
 
 
