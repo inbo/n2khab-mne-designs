@@ -260,5 +260,67 @@ module_domain_scheme_stratum_sample_size %>%
   kable_styling(full_width = FALSE)
 ```
 
+(ref:revisit-diagrams-quarter) Schematische weergave van de kwartalen binnen één bezoekjaar waarover de ruimtelijke steekproef van een meetnet in dat jaar verder wordt verdeeld als panels. Bezoeken kunnen zowel metingen als installatie & onderhoud betreffen. Gekleurde vakjes duiden aan in welke kwartalen aan elk panel een bezoek wordt gebracht. Drie verschillende mogelijkheden zijn weergegeven, afhankelijk van het herbezoekpatroon binnen een jaar in  het betreffend meetnet.
 
-## Herbezoekschema's
+```{r revisit-diagram-quarter, fig.cap="(ref:revisit-diagrams-quarter)", fig.height=5, fig.width=5, out.width="50%", fig.align="center"}
+quarter_patterns <- 
+  tibble(
+    visits = "elke locatie wordt\néén keer bezocht\nin jaar x\n(4 panels per jaar)",
+    panel = LETTERS[1:4] %>% fct() %>% fct_rev(),
+    quarter = 1:4
+  ) %>% 
+  bind_rows(
+    tibble(
+      visits = "elke locatie wordt\ntwee keer bezocht\nin jaar x\n(2 panels per jaar)",
+      panel = rep(LETTERS[1:2] %>% fct() %>% fct_rev(), 2),
+      quarter = 1:4
+    )
+  ) %>% 
+  bind_rows(
+    tibble(
+      visits = "elke locatie wordt\nminstens vier keer\nbezocht in jaar x\n(1 panel per jaar)",
+      panel = rep("A" %>% fct(), 4),
+      quarter = 1:4
+    )
+  ) %>% 
+  mutate(visits = fct(visits))
+diagram_grid_q <- 
+  quarter_patterns %>% 
+  nest(mycol = c(panel, quarter), .by = visits) %>% 
+  mutate(
+    grid = map(mycol, function(mc) {
+      crossing(
+        x = mc$quarter %>% unique(),
+        y = mc$panel %>% fct_drop() %>% unique()
+      )
+    })
+  ) %>% 
+  select(-mycol) %>% 
+  unnest(grid)
+quarter_patterns %>% 
+  ggplot(aes(x = quarter, y = panel)) +
+  geom_tile(fill = "#F1F2BA") +
+  geom_tile(
+    data = diagram_grid_q,
+    aes(x = x, y = y),
+    colour = "grey60",
+    fill = NA
+  ) +
+  scale_x_continuous(
+    expand = c(0, 0),
+    position = "top"
+  ) +
+  scale_y_discrete(expand = c(0, 0)) +
+  facet_grid(
+    visits ~ ., 
+    scales = "free_y", 
+    space = "free_y"
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    strip.text.y = element_text(angle = 0),
+    axis.ticks = element_blank()
+  ) +
+  labs(x = "Kwartaal in een concreet bezoekjaar x", y = "Panel")
+```
