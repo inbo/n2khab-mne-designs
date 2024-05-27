@@ -25,44 +25,37 @@ Een voorbeeld van de tweede berekeningswijze is de fosfaatverzadigingsgraad die 
 
 Onderstaande tabellen lijsten de primaire milieuvariabelen, de verklarende milieuvariabelen en de milieuvariabelen voor kwaliteitscontrole voor  de meetnetten GW03.3, GW_05.1_terr, GW_05.1_aq, GW_05.1_quarries, SOIL_03.2, SURF_03.4_lentic en SURF_03.4_lotic.
 
+```{r read-gsheet-envvars, eval = !file.exists(file.path(datapath, "text/raw/vars_phase_1_mbag.yml") || params$update_raw_textdata, message = FALSE, warning = FALSE}
+gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
+read_sheet(ss = gs_id_envvars, sheet = "vars_phase_1_mbag") %>% 
+  write_vc(
+    file = "vars_phase_1_mbag", 
+    root = file.path(datapath, "text/raw"),
+    optimize = FALSE,
+    strict = FALSE
+  )
+```
+
+```{r read-vcfile-envvars}
+mv <- 
+  read_vc(
+    file = "vars_phase_1_mbag", 
+    root = file.path(datapath, "text/raw")
+  ) %>% 
+  as_tibble() %>% 
+  rename() # select or rename columns for tables here
+```
 
 (ref:milieuvar-gw-03-3) De primaire milieuvariabelen die de primaire standplaatsfactoren vertegenwoordigen, de verklarende milieuvariabelen en de milieuvariabelen voor kwaliteitscontrole voor het meetnet eutrofiëring via grondwater (GW_03.3)
 
 ```{r milieuvar-gw-03-3}
-gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
-mv <- tribble(
-  ~standplaatsfactor, ~type_milieuvar, ~milieuvar, ~afk_milieuvar, ~meetvar,
-  "N", "primair", "nitraatconcentratie", "NO3", "nitraatconcentratie",
-  "N", "primair", "ammoniumconcentratie", "NH4", "ammoniumconcentratie",
-  "P", "primair", "orthofosfaatconcentratie", "PO4", "orthofosfaatconcentratie",
-  "N&P", "verklarend", "jaargemid. laagste grondwaterstand t.o.v. maaiveld", "LG3", "stijghoogte",
-  "N&P", "verklarend", "jaargemid. hoogste grondwaterstand t.o.v. maaiveld", "HG3", "stijghoogte",
-  "N&P", "verklarend", "sulfaatconcentratie", "SO4", "sulfaatconcentratie",
-  "N&P", "verklarend", "bodemtextuurklasse", "textuur", "nvt",
-  "N&P", "verklarend", "nabijheid grondwaterlichaam", "GWL", "nvt",
-  "N&P", "kwaliteitscontrole", "geleidbaarheid", "EC", "-",
-  "N&P", "kwaliteitscontrole", "kaliumconcentratie", "K", "kaliumconcentratie",
-  "N&P", "kwaliteitscontrole", "calciumconcentratie", "Ca", "calciumconcentratie",
-  "N&P", "kwaliteitscontrole", "magnesiumconcentratie", "Mg", "magnesiumconcentratie",
-  "N&P", "kwaliteitscontrole", "ijzerconcentratie", "Fe", "ijzerconcentratie",
-  "N&P", "kwaliteitscontrole", "nitrietconcentratie", "NO2", "nitrietconcentratie",
-  "N&P", "kwaliteitscontrole", "natriumconcentratie", "Na", "natriumconcentratie",
-  "N&P", "kwaliteitscontrole", "chlorideconcentratie", "Cl", "chlorideconcentratie",
-  "N&P", "kwaliteitscontrole", "waterstofcarbonaatconcentratie", "HCO3", "waterstofcarbonaatconcentratie",
-  "N&P", "kwaliteitscontrole", "zuurtegraad", "pH", "pH"
-)
 mv %>% 
-  mutate(
-    dummy = "X",
-    meetnet = "GW_03.3"
-    ) %>% 
-  relocate(meetnet) %>% 
-  pivot_wider(names_from = type_milieuvar, values_from = dummy) %>% 
-  mutate(
-    variable_set = "",
-    field_method = ""
-  ) %>% 
-  write_sheet(ss = gs_id_envvars, sheet = "vars_phase_1_mbag")
+  filter(meetnet == "GW_03.3") %>% 
+  kbl(
+    align = "lllllcccll",
+    caption = "(ref:milieuvar-gw-03-3)"
+  ) %>%
+  kable_styling(full_width = FALSE)
 ```
 
 <!-- op dezelfde wijze voor GW_05.1_terr, GW_05.1_aq, GW_05.1_quarries, SOIL_03.2, SURF_03.4_lentic en SURF_03.4_lotic-->
