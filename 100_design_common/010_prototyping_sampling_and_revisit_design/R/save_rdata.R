@@ -10,7 +10,6 @@ rdata_set <- c(
   "n2khab_strata",
   "n2khab_targetpops_expanded",
   "n2khab_targetpops",
-  "grts_mh_n2khab",
   "grts_mh_n2khab_index",
   "stratum_grts_n2khab",
   "stratum_grts_n2khab_collapsed",
