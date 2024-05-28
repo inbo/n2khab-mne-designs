@@ -12,7 +12,7 @@ Create SpatRaster layers that are masked with the 3 vector layers that represent
 
 In spatial processing operations, this form (with much less integer values) has shown to be a bit faster to process than `grts_mh`.
 
-```{r}
+```{r eval = params$regenerate_binary_files}
 grts_mh_non_cell <- mask(grts_mh, points_non_cell_n2khab)
 grts_mh_cellcenter <- mask(grts_mh, hmt_pol_cellcenter, touches = FALSE)
 grts_mh_cell <- mask(grts_mh, hmt_pol_cell)
@@ -23,6 +23,10 @@ grts_mh_n2khab <- max(
    na.rm = TRUE
  ) %>% 
   as.int()
+writeRaster(
+  grts_mh_n2khab,
+  file.path(datapath, "binary/intermediate/grts_mh_n2khab.tif")
+)
 ```
 
 ```{r eval=FALSE, include=FALSE}
@@ -34,6 +38,12 @@ global(grts_mh_cellcenter, "notNA")
 global(grts_mh_cell, "notNA")
 # compare to stratum_grts_n2khab %>% distinct(grts_address) %>% nrow:
 global(grts_mh_n2khab, "notNA")
+```
+
+```{r}
+grts_mh_n2khab <- rast(
+  file.path(datapath, "binary/intermediate/grts_mh_n2khab.tif")
+)
 ```
 
 Creating a spatial index of the GRTS values.
