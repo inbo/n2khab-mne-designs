@@ -16,14 +16,40 @@ deze staan allemaal op Zenodo (voor algemeen overzicht zie ook https://inbo.gith
 De doelpopulatie van een aantal meetnetten dient ruimtelijk te worden ingeperkt, zoals aangegeven in tabel \@ref(tab:spatial-restrictions). 
 
 ```{r spatial-restrictions}
-scheme_targetpop_sets %>% 
-  filter(stset_name == "mbaa_mne_phase_1_schemes") %>% 
-  pluck("scheme_set", 1) %>% 
-  filter(!is.na(spatial_restriction)) %>% 
+scheme_targetpop_sets %>%
+  filter(stset_name == "mbaa_mne_phase_1_schemes") %>%
+  pluck("scheme_set", 1) %>%
+  filter(!is.na(spatial_restriction)) %>%
   select(
-    Meetnet = scheme, 
+    Meetnet = scheme,
     `Ruimtelijke inperking (Engels)` = spatial_restriction
-  ) %>% 
+  ) %>%
   kbl(caption = "Voor een deel van de meetnetten wordt de doelpopulatie ruimtelijk ingeperkt.") %>%
   kable_styling(full_width = FALSE)
+```
+
+
+```{r samplingframe-typeclass, fig.cap="Relatieve verdeling van de typeklassen volgens de populatie-eenheden in het steekproefkader van elk meetnet."}
+typeclass_nunits <- 
+  mod_dom_scheme_ssf_stratum_nunits %>% 
+  inner_join(n2khab_strata, by = "stratum") %>% 
+  inner_join(
+    mne_types %>% 
+      select(type, typeclass_name),
+    join_by(type)
+  ) %>% 
+  summarize(nunits = sum(nunits), .by = c(module, domain, scheme, typeclass_name))
+typeclass_nunits %>% 
+  mutate(scheme = fct_rev(scheme)) %>% 
+  ggplot(aes(x = nunits, y = scheme, fill = typeclass_name, label = nunits)) +
+  geom_col(position = "fill") +
+  scale_x_continuous(
+    labels = scales::label_percent(),
+    expand = c(0, 0)
+  ) +
+  labs(x = "Verdeling populatie-eenheden", y = "Meetnet", fill = "Typeklasse") +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank()
+  )
 ```
