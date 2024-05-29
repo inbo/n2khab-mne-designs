@@ -28,8 +28,13 @@ scheme_targetpop_sets %>%
   kable_styling(full_width = FALSE)
 ```
 
+## Verkenning van het steekproefkader
 
-```{r samplingframe-typeclass, fig.cap="Relatieve verdeling van de typeklassen volgens de populatie-eenheden in het steekproefkader van elk meetnet."}
+Het steekproefkader is de best beschikbare beschrijving van de doelpopulatie.
+
+(ref:samplingframe-typeclass) Relatieve verdeling van de typeklassen volgens de populatie-eenheden in het steekproefkader van elk meetnet.
+
+```{r samplingframe-typeclass, fig.cap="(ref:samplingframe-typeclass)"}
 typeclass_nunits <- 
   mod_dom_scheme_ssf_stratum_nunits %>% 
   inner_join(n2khab_strata, by = "stratum") %>% 
@@ -51,5 +56,38 @@ typeclass_nunits %>%
   theme(
     panel.background = element_blank(),
     axis.ticks.y = element_blank()
+  )
+```
+
+```{r nunits-gw-05-1-quarries}
+# used for inline R code
+nunits_gw_05_1_quarries <- 
+  mod_dom_scheme_ssf_stratum_nunits %>% 
+  filter(scheme == "GW_05.1_quarries") %>% 
+  pull(nunits) %>% 
+  sum()
+```
+
+(ref:nunits-typegroup) Het aantal populatie-eenheden in het steekproefkader voor elke typegroep per meetnet. De codes van de typegroepen zijn verklaard in tabel \@ref(tab:typegroups). (Meetnet 'GW_05.1_quarries' heeft slechts één type (met `r nunits_gw_05_1_quarries` eenheden) en er is daarom geen typegroep voor onderscheiden.)
+
+```{r nunits-typegroup, fig.cap="(ref:nunits-typegroup)"}
+mod_dom_scheme_ssf_stratum_nunits %>% 
+  inner_join(n2khab_strata, join_by(stratum)) %>% 
+  inner_join(
+    mne_scheme_types %>% 
+      select(scheme, type, typegroup) %>% 
+      mutate(typegroup = str_sub(typegroup, -6)),
+    join_by(scheme, type)
+  ) %>% 
+  filter(!is.na(typegroup)) %>% 
+  summarize(nunits = sum(nunits), .by = c(scheme, typegroup)) %>% 
+  ggplot(aes(x = typegroup, y = nunits)) +
+  geom_col(fill = "#F1F2BA", colour = "grey70") +
+  facet_wrap(~scheme, scales = "free") +
+  labs(x = "Typegroep", y = "Aantal populatie-eenheden") +
+  theme_bw() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    axis.ticks.x = element_blank()
   )
 ```
