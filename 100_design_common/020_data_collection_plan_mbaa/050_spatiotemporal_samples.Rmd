@@ -5,3 +5,79 @@
 kaartjes presenteren (en tabellen via link)
 
 tabel aantallen/aandelen binnen en buiten SBZ?
+
+```{r prepare-spsample-maps}
+type_spsamplesizes <-
+  module_domain_scheme_stratum_sample_size %>%
+  distinct(scheme, type, sp_sample_size_all_panels_type)
+
+scheme_types_attr <-
+  mne_scheme_types %>%
+  inner_join(type_spsamplesizes, join_by(scheme, type)) %>%
+  mutate(
+    typegroup_name2 = str_c(
+      coalesce(typegroup_shortname, ""),
+      " (",
+      n(),
+      " type",
+      ifelse(n() == 1, "", "s"),
+      ", ",
+      sum(sp_sample_size_all_panels_type) %>% as.integer(),
+      " locs)"
+    ) %>%
+      str_trim(),
+    .by = c(scheme, typegroup)
+  ) %>%
+  mutate(
+    typegroup_name2 = typegroup_name2 %>%
+      fct_reorder(coalesce(as.numeric(typegroup), 0))
+  ) %>%
+  select(scheme, type, typegroup_name2)
+
+spsamples <-
+  scheme_domain_stratum_spsamples %>%
+  select(-domain) %>%
+  inner_join(n2khab_strata, join_by(stratum)) %>%
+  inner_join(scheme_types_attr, join_by(scheme, type))
+
+spsamples_points <- add_point_coords_grts(spsamples)
+```
+
+```{r spsample-maps, results="asis"}
+spsamples_points %>% 
+  nest(data = -scheme) %>% 
+  {walk2(.$scheme, .$data, function(sch, d) {
+    p <- ggplot() +
+      geom_sf(data = provinces, fill = "white", colour = "grey70") +
+      geom_sf(data = d, size = 0.25, colour = "#843860") +
+      facet_wrap(~ typegroup_name2, ncol = 2) +
+      ggtitle(sch) +
+      theme_bw() +
+      theme(
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        plot.title = element_text(size = 12, hjust = 0.5)
+      )
+    if (interactive()) print(p) else {
+      schemename <- str_replace_all(sch, "_|\\.", "-")
+      ntg <- n_distinct(d$typegroup_name2)
+      knit_expand(text = c(paste0("```{r spsample-map-{{schemename}}, ",
+                                  "fig.cap = 'Kaart van de ruimtelijke ",
+                                  "steekproef van meetnet {{sch}}",
+                                  if (ntg > 1) {
+                                    ", opgedeeld volgens typegroepen"
+                                  },
+                                  ". Elke eenheid ",
+                                  "is op deze weergave geabstraheerd ",
+                                  "tot een punt (midden van een rastercel).', ",
+                                  "fig.height=ceiling(ntg/2)*2+0.8}"), 
+                           "print(p)",
+                           "```")) %>% 
+        {knit_child(text = ., 
+                    quiet = TRUE,
+                    envir =  environment())} %>% 
+        cat(sep = '\n')
+    }
+  })}
+```
