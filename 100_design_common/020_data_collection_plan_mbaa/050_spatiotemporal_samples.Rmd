@@ -9,9 +9,9 @@ Dit zal verder worden geoptimaliseerd.
 
 
 
-kaartjes presenteren (en tabellen via link)
+<!-- kaartjes presenteren (en tabellen via link) -->
 
-tabel aantallen/aandelen binnen en buiten SBZ?
+<!-- tabel aantallen/aandelen binnen en buiten SBZ? -->
 
 ```{r prepare-spsample-maps}
 type_spsamplesizes <-
@@ -87,4 +87,120 @@ spsamples_points %>%
         cat(sep = '\n')
     }
   })}
+```
+
+```{r prepare-sacnetwork-subpop}
+scheme_sacnetwork_stratum_spsamples <- 
+  domain_grts_n2khab %>% 
+  filter(domain == "SAC_network") %>% 
+  select(grts_address) %>% 
+  mutate(in_sac_network = TRUE) %>% 
+  left_join(
+    scheme_domain_stratum_spsamples %>% 
+      select(-domain),
+    .,
+    join_by(grts_address)
+  ) %>% 
+  inner_join(n2khab_strata, join_by(stratum)) %>% 
+  inner_join(
+    mne_scheme_types %>% 
+      select(scheme, type, typegroup_name), 
+    join_by(scheme, type)
+  )
+```
+
+(ref:sacnetwork-subpop-table) De verdeling van de ruimtelijke steekproef in elk meetnet en typegroep over de tweedeling binnen vs. buiten het netwerk van habitatrichtlijngebieden (SBZ-H). Deze verdeling komt bij benadering overeen met de mate waarin de betreffende types in het steekproefkader zijn verdeeld over deze twee domeinen.
+
+```{r sacnetwork-subpop-table}
+scheme_sacnetwork_stratum_spsamples %>% 
+  mutate(in_sac_chr = ifelse(
+    !in_sac_network | is.na(in_sac_network),
+    "Buiten SBZ-H-netwerk",
+    "Binnen SBZ-H-netwerk"
+  )) %>% 
+  count(
+    Meetnet = scheme,
+    Typegroep = typegroup_name,
+    in_sac_chr
+  ) %>% 
+  pivot_wider(
+    names_from = in_sac_chr,
+    values_from = n
+  ) %>%
+  kbl(
+    align = "llcc",
+    caption = "(ref:sacnetwork-subpop-table)"
+  ) %>%
+  collapse_rows(columns = 1, valign = "top") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+(ref:sacnetwork-subpop-graph) Grootte van de ruimtelijke steekproef binnen vs. buiten het SBZ-H-netwerk, voor elk meetnet. Het getal betreft het aantal steekproefeenheden.
+
+```{r sacnetwork-subpop-graph, fig.cap="(ref:sacnetwork-subpop-graph)"}
+scheme_sacnetwork_stratum_spsamples %>% 
+  mutate(in_sac_chr = ifelse(
+    !in_sac_network | is.na(in_sac_network),
+    "Buiten SBZ-H-netwerk",
+    "SBZ-H-netwerk"
+  )) %>% 
+  count(scheme, in_sac_chr) %>% 
+  mutate(scheme = fct_rev(scheme)) %>% 
+  ggplot(aes(x = n, y = scheme, fill = in_sac_chr, label = n)) +
+  geom_col(position = position_fill()) +
+  geom_text(size = 3.5, position = position_fill(vjust = .5)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c("#F1F2BA", "#E4E517")) +
+  labs(
+    x = "Relatief aantal steekproefeenheden",
+    y = "Meetnet",
+    fill = "Domein"
+  ) +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+```
+
+(ref:sacnetwork-subpop-graph-dens) Densiteit van de ruimtelijke steekproef binnen vs. buiten het SBZ-H-netwerk, voor elk meetnet. Het getal betreft het gemiddeld aantal steekproefeenheden per 10 x 10 km².
+
+```{r sacnetwork-subpop-graph-dens, fig.cap="(ref:sacnetwork-subpop-graph-dens)"}
+install_unit("100km^2", "100 km^2")
+domain_areas <- 
+  domains %>% 
+  filter(domain %in% c("Flanders", "SAC_network")) %>% 
+  mutate(area = st_area(.)) %>% 
+  st_drop_geometry()
+area_outside <- with(domain_areas, area[1] - area[2]) %>% set_units("100km^2")
+area_inside <- domain_areas$area[2] %>% set_units("100km^2")
+scheme_sacnetwork_stratum_spsamples %>% 
+  mutate(in_sac_chr = ifelse(
+    !in_sac_network | is.na(in_sac_network),
+    "Buiten SBZ-H-netwerk",
+    "SBZ-H-netwerk"
+  )) %>% 
+  count(scheme, in_sac_chr) %>% 
+  mutate(
+    scheme = fct_rev(scheme),
+    n = ifelse(
+      in_sac_chr == "SBZ-H-netwerk",
+      n / area_inside,
+      n / area_outside
+    ) %>% 
+      round(2)
+  ) %>% 
+  ggplot(aes(x = n, y = scheme, fill = in_sac_chr, label = n)) +
+  geom_col(position = position_fill()) +
+  geom_text(size = 3.5, position = position_fill(vjust = .5)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c("#F1F2BA", "#E4E517")) +
+  labs(
+    x = "Relatieve densiteit van steekproefeenheden",
+    y = "Meetnet",
+    fill = "Domein"
+  ) +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank()
+  )
 ```
