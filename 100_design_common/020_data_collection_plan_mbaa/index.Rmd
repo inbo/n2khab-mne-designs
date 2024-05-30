@@ -16,6 +16,7 @@ lang: nl
 site: bookdown::bookdown_site
 params:
   update_rdata_file: FALSE
+  update_raster_file: FALSE
   update_raw_textdata: FALSE
 output:
   bookdown::html_document2:
@@ -55,6 +56,7 @@ for (subdir in c(
   path <- file.path(datapath, subdir)
   if (!dir.exists(path)) dir.create(path, recursive = TRUE)
 }
+source(file.path(projroot, "R/functions.R"))
 library(knitr)
 library(kableExtra)
 library(pander)
@@ -68,6 +70,9 @@ library(lubridate)
 library(n2khab)
 library(n2khabmon)
 library(git2rdata, exclude = "pull")
+library(terra)
+library(sf)
+library(tidyterra)
 # Setup for googledrive authentication. Set the appropriate env vars in
 # .Renviron and make sure you ran drive_auth() interactively with these settings
 # for the first run (or to renew an expired Oauth token)
@@ -85,11 +90,14 @@ opts_chunk$set(
 )
 ```
 
-```{r set-rdata-path}
+```{r set-filepaths}
 rdata_path <- file.path(datapath, "binary/intermediate/objects_mbaa_mne_phase_1.RData")
+raster_path <- file.path(datapath, "binary/intermediate/grts_mh_n2khab.tif")
+update_rdata <- !file.exists(rdata_path) || params$update_rdata_file
+update_raster <- !file.exists(raster_path) || params$update_raster_file
 ```
 
-```{r get-rdata-file, eval = !file.exists(rdata_path) || params$update_rdata_file}
+```{r get-rdata-file, eval = update_rdata}
 with_drive_quiet({
   drive_download(
     as_id("14XXjgvEJmt6pqSSLuJNhNL-ZgMUNjGZ1"),
@@ -99,6 +107,19 @@ with_drive_quiet({
 })
 ```
 
-```{r load-rdata-content}
+```{r get-raster-file, eval = update_raster}
+with_drive_quiet({
+  drive_download(
+    as_id("1B0b5rI6-PlpnSr0kk0mx4GhKhoE9bkpt"),
+    path = raster_path,
+    overwrite = TRUE
+  )
+})
+```
+
+```{r load-datafiles}
 load(rdata_path)
+grts_mh_n2khab <- rast(
+  file.path(datapath, "binary/intermediate/grts_mh_n2khab.tif")
+)
 ```

@@ -91,3 +91,58 @@ mod_dom_scheme_ssf_stratum_nunits %>%
     axis.ticks.x = element_blank()
   )
 ```
+
+
+```{r maps-ssf, results="asis", message=FALSE}
+provinces <- read_admin_areas(dsn = "provinces")
+mbaa_mne_phase_1_scheme_grts <- 
+  module_domain_schemes %>% 
+  select(-is_core_scheme) %>% 
+  inner_join(scheme_sampling_frame, join_by(scheme)) %>% 
+  inner_join(
+    sp_samplingframe_domain %>% 
+      unnest(sampling_frame_domain),
+    join_by(sampling_frame_id, domain),
+    relationship = "many-to-many"
+  ) %>% 
+  semi_join(
+    scheme_targetpop_sets %>% 
+      filter(stset_name == "mbaa_mne_phase_1_schemes") %>% 
+      pluck("targetpops_strata", 1),
+    join_by(scheme, stratum)
+  ) %>% 
+  distinct(scheme, grts_address)
+mbaa_mne_phase_1_scheme_grts %>% 
+  nest(addresses = grts_address) %>% 
+  {walk2(.$scheme, .$addresses, function(sch, add) {
+    r <- filter_grts_mh_by_address(add$grts_address, drop_address = TRUE)
+    p <- ggplot() +
+      geom_sf(data = provinces, fill = "white", colour = "grey60") +
+      geom_spatraster(data = r) +
+      scale_fill_gradient(
+        low = "#843860", 
+        high = "#843860", 
+        na.value = "transparent"
+      ) +
+      theme_bw() +
+      theme(
+        panel.grid = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "none"
+      )
+    if (interactive()) print(p) else {
+      schemename <- str_replace_all(sch, "_|\\.", "-")
+      knit_expand(text = c(paste("```{r map-ssf-{{schemename}},",
+                                 "fig.cap = 'Ruimtelijke weergave van het ",
+                                 "steekproefkader van meetnet {{sch}}.',",
+                                 "message = FALSE}"), 
+                           "print(p)",
+                           "```")) %>% 
+        {knit_child(text = ., 
+                    quiet = TRUE,
+                    envir =  environment())} %>% 
+        cat(sep = '\n')
+    }
+  })}
+```
