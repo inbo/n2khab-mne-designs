@@ -23,7 +23,8 @@ Hiervoor dienen bijkomend locaties te worden getrokken ter vervanging van de loc
 (ref:scheme-designattr-spatial1) De typegroepen in de respectievelijke meetnetten verschillen in het aantal types dat ertoe behoort en in de toebedeelde ruimtelijke steekproefgrootte. De steekproefgrootte houdt reeds rekening met de eindige-populatiecorrectie. De ruimtelijke steekproefgroottes per type of per stratum zijn voor elk meetnet te vinden in Bijlage \@ref(app-sample-size-types-strata).
 
 ```{r scheme-designattr-spatial1}
-module_domain_scheme_stratum_sample_size %>%
+scheme_typegroup_sps_size <- 
+  module_domain_scheme_stratum_sample_size %>%
   distinct(
     scheme,
     type,
@@ -31,15 +32,17 @@ module_domain_scheme_stratum_sample_size %>%
   ) %>%
   left_join(
     mne_scheme_types %>%
-      select(scheme, type, typegroup_name),
+      select(scheme, type, typegroup, typegroup_name),
     join_by(scheme, type)
   ) %>%
   summarize(
     n_types = n(),
     sp_sample_size_typegroup = sum(sp_sample_size_all_panels_type),
-    .by = c(scheme, typegroup_name)
+    .by = c(scheme, typegroup, typegroup_name)
   ) %>%
-  arrange(scheme, typegroup_name) %>% 
+  arrange(scheme, typegroup_name)
+
+scheme_typegroup_sps_size %>% 
   select(
     Meetnet = scheme,
     Typegroep = typegroup_name,
@@ -52,6 +55,32 @@ module_domain_scheme_stratum_sample_size %>%
   ) %>%
   collapse_rows(columns = 1, valign = "top") %>% 
   kable_styling(full_width = FALSE)
+```
+
+```{r sps-size-gw-05-1-quarries}
+# used for inline R code
+sps_size_gw_05_1_quarries <- 
+  module_domain_scheme_stratum_sample_size %>% 
+  filter(scheme == "GW_05.1_quarries") %>% 
+  pull(sp_sample_size_all_panels_type) %>% 
+  unique()
+```
+
+(ref:scheme-designattr-spatial1b) Het aantal steekproefeenheden voor elke typegroep per meetnet is in vergelijking met het aantal populatie-eenheden (tabel \@ref(tab:nunits-typegroup)) gelijkmatiger verdeeld over de typegroepen. Het patroon uit het steekproefkader blijft nog herkenbaar. De codes van de typegroepen zijn verklaard in tabel \@ref(tab:typegroups). (Meetnet 'GW_05.1_quarries' heeft slechts één type (met `r sps_size_gw_05_1_quarries` eenheden) en er is daarom geen typegroep voor onderscheiden.)
+
+```{r scheme-designattr-spatial1b, fig.cap="(ref:scheme-designattr-spatial1b)"}
+scheme_typegroup_sps_size %>% 
+  filter(!is.na(typegroup)) %>% 
+  mutate(typegroup = str_sub(typegroup, -6)) %>% 
+  ggplot(aes(x = typegroup, y = sp_sample_size_typegroup)) +
+  geom_col(fill = "#F1F2BA", colour = "grey70") +
+  facet_wrap(~scheme, scales = "free") +
+  labs(x = "Typegroep", y = "Aantal steekproefeenheden") +
+  theme_bw() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
 ```
 
 ### Cycluslengte
