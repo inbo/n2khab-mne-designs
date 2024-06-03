@@ -67,6 +67,41 @@ typeclass_nunits %>%
   )
 ```
 
+(ref:samplingframe-hydrclass) Relatieve verdeling van de types, gegroepeerd op basis van hun waterhuishoudingsklasse(n) (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)), volgens de populatie-eenheden in het steekproefkader van elk meetnet.
+
+```{r samplingframe-hydrclass, fig.cap="(ref:samplingframe-hydrclass)"}
+hydrclass_nunits <- 
+  mod_dom_scheme_ssf_stratum_nunits %>% 
+  inner_join(n2khab_strata, by = "stratum") %>% 
+  inner_join(
+    mne_types %>% 
+      select(type, hydr_class_shortname),
+    join_by(type)
+  ) %>% 
+  summarize(
+    nunits = sum(nunits), 
+    .by = c(module, domain, scheme, hydr_class_shortname)
+  )
+hydrclass_nunits %>% 
+  mutate(scheme = fct_rev(scheme)) %>% 
+  ggplot(aes(x = nunits, y = scheme, fill = hydr_class_shortname)) +
+  geom_col(position = "fill") +
+  scale_x_continuous(
+    labels = scales::label_percent(),
+    expand = c(0, 0)
+  ) +
+  scale_fill_discrete_c4a_cat("met.manet") +
+  labs(
+    x = "Verdeling populatie-eenheden", 
+    y = "Meetnet", 
+    fill = "Waterhuishoudingsklasse"
+  ) +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+```
+
 De verdeling van de populatie-eenheden in het steekproefkader per meetnet over de typegroepen (Figuur \@ref(fig:nunits-typegroup)) blijkt ongelijkmatig.
 Dit vloeit onder andere voort uit de ongelijkmatige verdeling van de types over de typegroepen (Tabel \@ref(tab:typegroups)).
 
