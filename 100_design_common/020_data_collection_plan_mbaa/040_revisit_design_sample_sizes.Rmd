@@ -282,11 +282,16 @@ module_domain_scheme_stratum_sample_size %>%
   # now assuming that GW_05.1_quarries has no panel design
   filter(scheme != "GW_05.1_quarries") %>%
   mutate(
-    repetitions_within_year = case_when(
+    repetitions_within_year_meas = case_when(
       scheme == "GW_03.3" ~ 2,
       str_detect(scheme, "05\\.1") ~ 365,
       !is.na(panel_subperiod) ~ panel_period / panel_subperiod,
       .default = 1
+    ),
+    repetitions_within_year_visit = ifelse(
+      str_detect(scheme, "05\\.1"),
+      2,
+      repetitions_within_year_meas
     ),
     revisit_subject = ifelse(
       is.na(revisit_maintenance),
@@ -304,7 +309,8 @@ module_domain_scheme_stratum_sample_size %>%
     Startjaar = year_first,
     `Aantal panels per cyclus` = panel_count,
     `Aantal maand per panel` = months_per_panel,
-    `Aantal metingen per locatie in hetzelfde jaar` = repetitions_within_year
+    `Aantal bezoeken per locatie in hetzelfde jaar` = repetitions_within_year_visit,
+    `Aantal metingen per locatie in hetzelfde jaar` = repetitions_within_year_meas
   ) %>%
   kbl(
     align = "llccccc",
@@ -312,8 +318,6 @@ module_domain_scheme_stratum_sample_size %>%
   ) %>%
   kable_styling(full_width = FALSE)
 ```
-
-<!-- KW@FV: in tabel 3.5 GW05.1 aq en terr: die 365 metingen lijken te slaan op installatie/onderhoud. zouden we een extra kolom toevoegen met aantal bezoeken per locatie in hetzelfde jaar? dit is voor de andere meetnetten het zelfde als het aantal metingen per locatie in hetzelfde jaar maar voor GW05.1 niet. dit zou 2 maal per jaar zijn (1e keer: installatie, en vanaf dan elke 6 maanden uitlezen en controle divers) -->
 
 Het schema in Figuur (\@ref(fig:revisit-diagram-quarter)) toont drie voorbeelden van de verdeling van de ruimtelijke steekproef over de panels (in het voorbeeld is dit een tijdsvak van een kwartaal of 3 maanden) in een bezoekjaar.
 Het herbezoekpatroon aan dezelfde eenheden binnen een bezoekjaar (in het voorbeeld één, twee en minstens vier keer per jaar) is afhankelijk van de temporele variabiliteit van de meetvariabelen of beoogde temporele integratie van de meetvariabelen tot milieuvariabelen.
