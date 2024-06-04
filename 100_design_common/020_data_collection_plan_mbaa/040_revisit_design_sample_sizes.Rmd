@@ -83,6 +83,72 @@ scheme_typegroup_sps_size %>%
   )
 ```
 
+<!-- In onderstaande grafieken zie je hoe de types in de steekproef meer gelijkgetrokken zijn qua relatieve vertegenwoordiging, in vgl met de verdeling in het steekproefkader. Dit op basis van de verdeling volgens typeklasse & whh-klasse. -->
+<!-- @KW: dit is optioneel. Indien het volgens jou te weinig bijbrengt tov de analoge vaststelling bij typegroepen (hierboven), kan alles ivm typeklassen en whh-klasse ook vervallen, hier en in verkenning steekproefkader. -->
+
+(ref:sps-size-typeclass) Relatieve verdeling van de types, gegroepeerd in typeklassen (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)), volgens het aantal steekproefeenheden in elk meetnet.
+
+```{r sps-size-typeclass, fig.cap="(ref:sps-size-typeclass)"}
+scheme_typeattr_sps_size <- 
+  module_domain_scheme_stratum_sample_size %>%
+  distinct(
+    scheme,
+    type,
+    sp_sample_size_all_panels_type
+  ) %>%
+  left_join(
+    mne_types %>% 
+      select(type, typeclass_name, hydr_class_shortname),
+    join_by(type)
+  )
+scheme_typeattr_sps_size %>% 
+  summarize(
+    nunits = sum(sp_sample_size_all_panels_type), 
+    .by = c(scheme, typeclass_name)
+  ) %>% 
+  mutate(scheme = fct_rev(scheme)) %>% 
+  ggplot(aes(x = nunits, y = scheme, fill = typeclass_name)) +
+  geom_col(position = "fill") +
+  scale_x_continuous(
+    labels = scales::label_percent(),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(values = RColorBrewer::brewer.pal(10, "Paired")) +
+  labs(x = "Verdeling steekproefeenheden", y = "Meetnet", fill = "Typeklasse") +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+```
+
+(ref:sps-size-hydrclass) Relatieve verdeling van de types, gegroepeerd op basis van hun waterhuishoudingsklasse(n) (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)), volgens het aantal steekproefeenheden in elk meetnet.
+
+```{r sps-size-hydrclass, fig.cap="(ref:sps-size-hydrclass)"}
+scheme_typeattr_sps_size %>% 
+  summarize(
+    nunits = sum(sp_sample_size_all_panels_type), 
+    .by = c(scheme, hydr_class_shortname)
+  ) %>% 
+  mutate(scheme = fct_rev(scheme)) %>% 
+  ggplot(aes(x = nunits, y = scheme, fill = hydr_class_shortname)) +
+  geom_col(position = "fill") +
+  scale_x_continuous(
+    labels = scales::label_percent(),
+    expand = c(0, 0)
+  ) +
+  scale_fill_discrete_c4a_cat("met.manet") +
+  labs(
+    x = "Verdeling steekproefeenheden", 
+    y = "Meetnet", 
+    fill = "Waterhuishoudingsklasse"
+  ) +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+```
+
+
 ### Cycluslengte
 
 Jaarlijks wordt een ander deel van de steekproef bezocht.
