@@ -10,7 +10,9 @@ filter_grts_mh_by_address <- function(
   r <- spatrast[cells, drop = FALSE]
   if (drop_address) {
     ifel(!is.na(r), TRUE, r)
-  } else r
+  } else {
+    r
+  }
 }
 
 add_point_coords_grts <- function(
@@ -19,7 +21,6 @@ add_point_coords_grts <- function(
     spatrast = grts_mh_n2khab,
     spatrast_index = grts_mh_n2khab_index,
     spatial = TRUE) {
-
   addresses <- df %>%
     distinct(.data[[grts_var]]) %>%
     pull(.data[[grts_var]]) %>%
@@ -34,10 +35,14 @@ add_point_coords_grts <- function(
 
   df %>%
     left_join(
-      tibble(grts_address = addresses, x = coords[,"x"], y = coords[,"y"]),
+      tibble(grts_address = addresses, x = coords[, "x"], y = coords[, "y"]),
       join_by(grts_address)
     ) %>%
-    {if (isFALSE(spatial)) . else {
-      st_as_sf(., coords = c("x", "y"), crs = crs(spatrast))
-    }}
+    {
+      if (isFALSE(spatial)) {
+        .
+      } else {
+        st_as_sf(., coords = c("x", "y"), crs = crs(spatrast))
+      }
+    }
 }
