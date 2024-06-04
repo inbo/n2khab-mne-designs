@@ -1,3 +1,5 @@
 linters <- linters_with_defaults(
-  line_length_linter = NULL
+  line_length_linter = NULL,
+  object_length_linter = object_length_linter(length = 40L),
+  object_usage_linter = NULL
 )
