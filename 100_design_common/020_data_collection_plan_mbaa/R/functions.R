@@ -1,3 +1,11 @@
+figdim <- function(x) {
+  if (opts_knit$get("rmarkdown.pandoc.to") == "html") {
+    x
+  } else {
+    x * 0.75
+  }
+}
+
 our_update_theme_bars <- function() theme(
   panel.background = element_blank(),
   panel.grid.major.x = element_blank(),
