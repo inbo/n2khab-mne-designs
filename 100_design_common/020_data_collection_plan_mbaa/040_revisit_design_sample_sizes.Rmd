@@ -66,21 +66,18 @@ sps_size_gw_05_1_quarries <-
   unique()
 ```
 
-(ref:scheme-designattr-spatial1b) Het aantal steekproefeenheden voor elke typegroep per meetnet is in vergelijking met het aantal populatie-eenheden (Figuur \@ref(fig:nunits-typegroup)) gelijkmatiger verdeeld over de typegroepen. Het patroon uit het steekproefkader blijft nog herkenbaar. De codes van de typegroepen zijn verklaard in Tabel \@ref(tab:typegroups). (Meetnet 'GW_05.1_quarries' heeft slechts één type (met `r sps_size_gw_05_1_quarries` eenheden) en er is daarom geen typegroep voor onderscheiden.)
+(ref:scheme-designattr-spatial1b) Het aantal steekproefeenheden voor elke typegroep per meetnet is in vergelijking met het aantal populatie-eenheden (Figuur \@ref(fig:nunits-typegroup)) gelijkmatiger verdeeld over de typegroepen. Het patroon uit het steekproefkader blijft nog herkenbaar. De codes van de typegroepen zijn verklaard in Tabel \@ref(tab:typegroups). (Meetnet `GW_05.1_quarries` heeft slechts één type (met `r sps_size_gw_05_1_quarries` eenheden) en er is daarom geen typegroep voor onderscheiden.)
 
-```{r scheme-designattr-spatial1b, fig.cap="(ref:scheme-designattr-spatial1b)"}
+```{r scheme-designattr-spatial1b, fig.cap="(ref:scheme-designattr-spatial1b)", fig.dim = figdim(c(10, 6))}
 scheme_typegroup_sps_size %>%
   filter(!is.na(typegroup)) %>%
   mutate(typegroup = str_sub(typegroup, -6)) %>%
   ggplot(aes(x = typegroup, y = sp_sample_size_typegroup)) +
-  geom_col(fill = "#F1F2BA", colour = "grey70") +
+  geom_col(fill = inbocol_2) +
   facet_wrap(~scheme, scales = "free") +
   labs(x = "Typegroep", y = "Aantal steekproefeenheden") +
-  theme_bw() +
-  theme(
-    panel.grid.major.x = element_blank(),
-    axis.ticks.x = element_blank()
-  )
+  our_update_theme_bars() +
+  our_update_theme_facets()
 ```
 
 <!-- In onderstaande grafieken zie je hoe de types in de steekproef meer gelijkgetrokken zijn qua relatieve vertegenwoordiging, in vgl met de verdeling in het steekproefkader. Dit op basis van de verdeling volgens typeklasse & whh-klasse. -->
@@ -88,7 +85,7 @@ scheme_typegroup_sps_size %>%
 
 (ref:sps-size-typeclass) Relatieve verdeling van de types, gegroepeerd in typeklassen (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)), volgens het aantal steekproefeenheden in elk meetnet.
 
-```{r sps-size-typeclass, fig.cap="(ref:sps-size-typeclass)"}
+```{r sps-size-typeclass, fig.cap="(ref:sps-size-typeclass)", fig.dim = figdim(c(10, 4))}
 scheme_typeattr_sps_size <-
   module_domain_scheme_stratum_sample_size %>%
   distinct(
@@ -123,7 +120,7 @@ scheme_typeattr_sps_size %>%
 
 (ref:sps-size-hydrclass) Relatieve verdeling van de types, gegroepeerd op basis van hun waterhuishoudingsklasse(n) (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)), volgens het aantal steekproefeenheden in elk meetnet.
 
-```{r sps-size-hydrclass, fig.cap="(ref:sps-size-hydrclass)"}
+```{r sps-size-hydrclass, fig.cap="(ref:sps-size-hydrclass)", fig.dim = figdim(c(10, 4))}
 scheme_typeattr_sps_size %>%
   summarize(
     nunits = sum(sp_sample_size_all_panels_type),
@@ -156,7 +153,7 @@ Dit gebeurt volgens een serieel alternerend design over de jaren: elke locatie k
 Na het doorlopen van een volledige cycluslengte zijn alle locaties uit de ruimtelijke steekproef bezocht.
 Het jaar waarin een locatie wordt bezocht is het bezoekjaar.
 Binnen een bezoekjaar is het mogelijk dat locaties vaker dan één keer worden bemeten.
-Voor de meetnetten van verdroging via het grondwater (GW_05.1) blijven de metingen doorlopen en betreft het serieel alternerend patroon de onderhoudsbeurt.
+Voor de meetnetten van verdroging via het grondwater (`GW_05.1`) blijven de metingen doorlopen en betreft het serieel alternerend patroon de onderhoudsbeurt.
 Dit is niet van toepassing bij het submeetnet `GW_05.1_quarries`.
 De cycluslengte, en dus ook het jaarlijks aantal te bezoeken locaties, en het aantal metingen per locatie in een bezoekjaar zijn afhankelijk van het meetnet (Tabel \@ref(tab:scheme-designattr-spatial2)).
 
@@ -205,7 +202,7 @@ Het aantal metingen per bezoekjaar wordt hierin eveneens weergegeven.
 
 (ref:revisit-diagrams-year) Schematische weergave van de meetjaren voor verschillende delen van de ruimtelijke steekproef van elk meetnet. Steekproefeenheden zijn symbolisch weergegeven met een rangnummer ('0001-0200' staat voor de eerste 200 eenheden in het meetnet, '0201-0400' voor de tweede schijf, enz.). Gekleurde vakjes duiden aan in welke jaren data verzameld worden voor elk deel van de steekproef. Het getal in de vakjes geeft aan hoe vaak deze locaties in het betreffende bezoekjaar bemeten worden.
 
-```{r revisit-diagrams-year, fig.cap="(ref:revisit-diagrams-year)", fig.height=6, fig.width=6, out.width="70%", fig.align="center"}
+```{r revisit-diagrams-year, fig.cap="(ref:revisit-diagrams-year)", fig.dim = figdim(c(9, 9)), out.width="90%", fig.align="center"}
 revisit_diagram_start <- min(module_domain_scheme_stratum_sample_size$year_first)
 revisit_diagram_stop <- 2035L
 year_patterns <-
@@ -294,30 +291,27 @@ diagram_grid <-
   unnest(grid)
 year_patterns %>%
   ggplot(aes(x = year, y = sample_chunk, label = repetitions_within_year)) +
-  geom_tile(fill = "#F1F2BA") +
+  geom_tile(fill = inbocol_2) +
   geom_tile(
     data = diagram_grid,
     aes(x = x, y = y, label = NULL),
     colour = "grey60",
     fill = NA
   ) +
-  geom_text(size = 3) +
+  geom_text(size = 3, colour = inbocol_2_contrast) +
   scale_x_continuous(
     breaks = seq(revisit_diagram_start, revisit_diagram_stop),
     position = "top",
     expand = c(0, 0)
   ) +
+  scale_y_discrete(expand = c(0, 0)) +
   facet_grid(
     scheme ~ .,
     scales = "free_y",
     space = "free_y"
   ) +
-  theme_bw() +
-  theme(
-    panel.grid = element_blank(),
-    strip.text.y = element_text(angle = 0),
-    axis.ticks = element_blank()
-  ) +
+  our_update_theme_facets() +
+  our_update_theme_revisitdiag_horfacets() +
   labs(x = "Meetjaar", y = "Rangnummers steekproefeenheden (pro forma)")
 ```
 
@@ -379,7 +373,7 @@ module_domain_scheme_stratum_sample_size %>%
     `Aantal metingen per locatie in hetzelfde jaar` = repetitions_within_year_meas
   ) %>%
   kbl(
-    align = "llccccc",
+    align = "llcccccc",
     caption = "(ref:scheme-designattr-temporal)"
   ) %>%
   kable_styling(full_width = FALSE)
@@ -417,7 +411,7 @@ Eén panel bevat dus, bij een cycluslengte van zes jaar, één twaalfde van de t
 
 (ref:revisit-diagram-quarter) Schematische weergave van de kwartalen binnen één bezoekjaar waarover de ruimtelijke steekproef van een meetnet in dat jaar verder wordt verdeeld als panels. Bezoeken kunnen zowel metingen als installatie & onderhoud betreffen. Gekleurde vakjes duiden aan in welke kwartalen aan elk panel een bezoek wordt gebracht. Drie verschillende mogelijkheden zijn weergegeven, afhankelijk van het herbezoekpatroon binnen een jaar in  het betreffend meetnet.
 
-```{r revisit-diagram-quarter, fig.cap="(ref:revisit-diagram-quarter)", fig.height=5, fig.width=5, out.width="50%", fig.align="center"}
+```{r revisit-diagram-quarter, fig.cap="(ref:revisit-diagram-quarter)", fig.dim = figdim(c(6, 6)), out.width="60%", fig.align="center"}
 quarter_patterns <-
   tibble(
     visits = "elke locatie wordt\néén keer bezocht\nin jaar x\n(4 panels per jaar)",
@@ -454,7 +448,7 @@ diagram_grid_q <-
   unnest(grid)
 quarter_patterns %>%
   ggplot(aes(x = quarter, y = panel)) +
-  geom_tile(fill = "#F1F2BA") +
+  geom_tile(fill = inbocol_2) +
   geom_tile(
     data = diagram_grid_q,
     aes(x = x, y = y),
@@ -471,11 +465,7 @@ quarter_patterns %>%
     scales = "free_y",
     space = "free_y"
   ) +
-  theme_bw() +
-  theme(
-    panel.grid = element_blank(),
-    strip.text.y = element_text(angle = 0),
-    axis.ticks = element_blank()
-  ) +
+  our_update_theme_facets() +
+  our_update_theme_revisitdiag_horfacets() +
   labs(x = "Kwartaal in een concreet bezoekjaar x", y = "Panel")
 ```
