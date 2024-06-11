@@ -48,6 +48,25 @@ our_update_theme_bars_in_horfacets <- function() theme(
   legend.position = "top"
 )
 
+kbl_bt <- function(x, ...) kbl(x = x, booktabs = TRUE, ...)
+
+longtable_styling <- function(kable_input) {
+  kable_styling(
+    kable_input = kable_input,
+    latex_options = "repeat_header",
+    repeat_header_text = "\\textit{(vervolg)}"
+  )
+}
+
+our_column_spec <- function(kable_input, column, width, ...) {
+  res <- kable_input
+  stopifnot(identical(length(column), length(width)))
+  for (i in seq_along(column)) {
+    res <- column_spec(res, column = column[i], width = width[i])
+  }
+  res
+}
+
 filter_grts_mh_by_address <- function(
     addresses,
     spatrast = grts_mh_n2khab,
