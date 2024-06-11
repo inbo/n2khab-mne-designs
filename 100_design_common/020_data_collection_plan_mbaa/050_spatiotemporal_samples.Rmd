@@ -197,9 +197,9 @@ We kunnen hiermee rekening houden door de densiteit van de ruimtelijke steekproe
 De densiteit van de steekproef in het SBZ-H-netwerk is 12 tot 30 keer hoger dan de densiteit buiten het SBZ-H-netwerk.
 Hieruit blijkt dat per oppervlakte-eenheid het SBZ-H-netwerk veel malen sterker vertegenwoordigd is in de steekproeven dan het gebied buiten het SBZ-H-netwerk.
 
-(ref:sacnetwork-subpop-graph-dens) Densiteit van de ruimtelijke steekproef binnen vs. buiten het SBZ-H-netwerk, voor elk meetnet. De getallen in de balken betreffen het gemiddeld aantal steekproefeenheden per 10 x 10 km².
+(ref:sacnetwork-subpop-graph-dens) Densiteit van de ruimtelijke steekproef binnen vs. buiten het SBZ-H-netwerk, voor elk meetnet. De aangegeven ratio is de verhouding tussen beide densiteiten per meetnet ($d_{binnen}/d_{buiten}$).
 
-```{r sacnetwork-subpop-graph-dens, fig.cap="(ref:sacnetwork-subpop-graph-dens)", fig.dim = figdim(c(10, 4))}
+```{r sacnetwork-subpop-graph-dens, fig.cap="(ref:sacnetwork-subpop-graph-dens)", fig.dim = figdim(c(9, 9))}
 install_unit("100km^2", "100 km^2")
 domain_areas <-
   domains %>%
@@ -216,30 +216,31 @@ scheme_sacnetwork_stratum_spsamples %>%
   )) %>%
   count(scheme, in_sac_chr) %>%
   mutate(
-    scheme = fct_rev(scheme),
-    n = ifelse(
+    dens = ifelse(
       in_sac_chr == "SBZ-H-netwerk",
       n / area_inside,
       n / area_outside
-    ) %>%
-      round(2)
-  ) %>%
-  ggplot(aes(x = n, y = scheme, fill = in_sac_chr, label = n)) +
-  geom_col(position = position_fill()) +
-  geom_text(
-    size = 3.5, 
-    position = position_fill(vjust = .5), 
-    colour = inbocol_2_contrast
-  ) +
+    ),
+    ratio = (dens[str_detect(in_sac_chr, "^SBZ")] / 
+      dens[str_detect(in_sac_chr, "^Buiten")]) %>% 
+      round(1),
+    scheme_ratio = str_c(scheme, "\n(ratio: ", ratio, ")"),
+    .by = scheme
+  ) %>% 
+  ggplot(aes(x = dens, y = in_sac_chr, fill = in_sac_chr)) +
+  geom_col(position = "dodge") +
   scale_x_continuous(expand = c(0, 0)) +
   scale_fill_manual(values = c(inbocol_2_light, inbocol_2)) +
+  facet_grid2(
+    scheme_ratio ~ .,
+    scales = "free_x",
+    independent = "x"
+  ) +
   labs(
-    x = "Relatieve densiteit van steekproefeenheden",
-    y = "Meetnet",
+    x = "Densiteit van steekproefeenheden (aantal per 10 x 10 km²)",
+    y = "Domein",
     fill = "Domein"
   ) +
-  theme(
-    panel.background = element_blank(),
-    axis.ticks.y = element_blank()
-  )
+  our_update_theme_facets() +
+  our_update_theme_bars_in_horfacets()
 ```
