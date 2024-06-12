@@ -36,6 +36,36 @@ our_update_theme_revisitdiag_horfacets <- function() theme(
   strip.text.y = element_text(angle = 0),
   axis.ticks = element_blank()
 )
+our_update_theme_bars_in_horfacets <- function() theme(
+  panel.background = element_blank(),
+  panel.grid.major.y = element_blank(),
+  panel.grid.major.x = element_line(colour = col_gridline_bw),
+  panel.grid.minor.x = element_line(colour = col_gridline_bw),
+  axis.ticks.y = element_blank(),
+  axis.text.y = element_blank(),
+  panel.border = element_rect(colour = col_gridline_bw, fill = NA),
+  strip.text.y = element_text(angle = 0),
+  legend.position = "top"
+)
+
+kbl_bt <- function(x, ...) kbl(x = x, booktabs = TRUE, ...)
+
+longtable_styling <- function(kable_input) {
+  kable_styling(
+    kable_input = kable_input,
+    latex_options = "repeat_header",
+    repeat_header_text = "\\textit{(vervolg)}"
+  )
+}
+
+our_column_spec <- function(kable_input, column, width, ...) {
+  res <- kable_input
+  stopifnot(identical(length(column), length(width)))
+  for (i in seq_along(column)) {
+    res <- column_spec(res, column = column[i], width = width[i], ...)
+  }
+  res
+}
 
 filter_grts_mh_by_address <- function(
     addresses,
