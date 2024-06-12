@@ -62,7 +62,7 @@ our_column_spec <- function(kable_input, column, width, ...) {
   res <- kable_input
   stopifnot(identical(length(column), length(width)))
   for (i in seq_along(column)) {
-    res <- column_spec(res, column = column[i], width = width[i])
+    res <- column_spec(res, column = column[i], width = width[i], ...)
   }
   res
 }
