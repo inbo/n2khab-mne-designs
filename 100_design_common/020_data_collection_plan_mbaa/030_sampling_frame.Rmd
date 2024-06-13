@@ -202,7 +202,7 @@ mod_dom_scheme_ssf_stratum_nunits %>%
 ```
 
 
-```{r maps-ssf, results="asis", message=FALSE}
+```{r maps-ssf, results="asis"}
 mbaa_mne_phase_1_scheme_grts <-
   module_domain_schemes %>%
   select(-is_core_scheme) %>%
@@ -224,10 +224,18 @@ mbaa_mne_phase_1_scheme_grts %>%
   nest(addresses = grts_address) %>%
   {
     walk2(.$scheme, .$addresses, function(sch, add) {
-      r <- filter_grts_mh_by_address(add$grts_address, drop_address = TRUE)
+      fact <- case_when(
+        nrow(add) > 1e5 ~ 4,
+        nrow(add) > 2e4 ~ 16,
+        .default = 32
+      )
+      # aggregating is to make (enough) pixels visible on a map!
+      r <- 
+        filter_grts_mh_by_address(add$grts_address, drop_address = TRUE) %>% 
+        aggregate(fact = fact, fun = "max", na.rm = TRUE)
       p <- ggplot() +
         geom_sf(data = provinces, fill = "white", colour = "grey70") +
-        geom_spatraster(data = r) +
+        geom_spatraster(data = r, maxcell = 2e6) +
         scale_fill_gradient(
           low = inbocol_3,
           high = inbocol_3,
@@ -249,8 +257,9 @@ mbaa_mne_phase_1_scheme_grts %>%
             "```{r map-ssf-{{schemename}},",
             "fig.cap = 'Ruimtelijke weergave van het",
             "steekproefkader van meetnet {{sch}}.",
-            "Elke eenheid is op deze kaart geabstraheerd",
-            "tot een GRTS-rastercel.',",
+            "Voor deze kaart werd elke eenheid geabstraheerd",
+            "tot een GRTS-rastercel. Het raster werd vervolgens verruwd met",
+            "een factor {{fact}} naar een resolutie van {{fact * 32}} m.',",
             "message = FALSE, fig.dim = c(10, 4.2)}"
           ),
           "print(p)",
