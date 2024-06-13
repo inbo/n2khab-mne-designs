@@ -79,7 +79,9 @@ filter_grts_mh_by_address <- function(
   }
   # the detour with raster package can be dropped when bug in terra is
   # solved: see https://github.com/rspatial/terra/issues/1523
-  if (!require(raster)) stop("Please install the raster package.")
+  suppressMessages(
+    if (!require(raster)) stop("Please install the raster package.")
+  )
   spatrast <- raster(spatrast)
   r <- spatrast[cells, drop = FALSE]
   if (drop_address) {
