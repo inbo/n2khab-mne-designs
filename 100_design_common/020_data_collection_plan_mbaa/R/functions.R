@@ -6,47 +6,59 @@ figdim <- function(x) {
   }
 }
 
-our_update_theme_bars <- function() theme(
-  panel.background = element_blank(),
-  panel.grid.major.x = element_blank(),
-  panel.grid.major.y = element_line(colour = col_gridline_bw),
-  panel.grid.minor.y = element_line(colour = col_gridline_bw),
-  axis.ticks.x = element_blank()
-)
-our_update_theme_maps <- function() theme(
-  panel.grid = element_blank(),
-  axis.text = element_blank(),
-  axis.ticks = element_blank()
-)
-our_update_theme_facets <- function() theme(
-  strip.background = element_rect(
-    fill = inbocol_2_light,
-    colour = inbocol_2_light
-  ),
-  strip.text = element_text(colour = inbocol_2_contrast)
-)
-our_update_theme_maps_in_facets <- function() theme(
-  panel.border = element_rect(colour = col_gridline_bw, fill = NA),
-  panel.background = element_blank()
-)
-our_update_theme_revisitdiag_horfacets <- function() theme(
-  panel.grid = element_blank(),
-  panel.border = element_rect(fill = NA),
-  panel.background = element_blank(),
-  strip.text.y = element_text(angle = 0),
-  axis.ticks = element_blank()
-)
-our_update_theme_bars_in_horfacets <- function() theme(
-  panel.background = element_blank(),
-  panel.grid.major.y = element_blank(),
-  panel.grid.major.x = element_line(colour = col_gridline_bw),
-  panel.grid.minor.x = element_line(colour = col_gridline_bw),
-  axis.ticks.y = element_blank(),
-  axis.text.y = element_blank(),
-  panel.border = element_rect(colour = col_gridline_bw, fill = NA),
-  strip.text.y = element_text(angle = 0),
-  legend.position = "top"
-)
+our_update_theme_bars <- function() {
+  theme(
+    panel.background = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(colour = col_gridline_bw),
+    panel.grid.minor.y = element_line(colour = col_gridline_bw),
+    axis.ticks.x = element_blank()
+  )
+}
+our_update_theme_maps <- function() {
+  theme(
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+}
+our_update_theme_facets <- function() {
+  theme(
+    strip.background = element_rect(
+      fill = inbocol_2_light,
+      colour = inbocol_2_light
+    ),
+    strip.text = element_text(colour = inbocol_2_contrast)
+  )
+}
+our_update_theme_maps_in_facets <- function() {
+  theme(
+    panel.border = element_rect(colour = col_gridline_bw, fill = NA),
+    panel.background = element_blank()
+  )
+}
+our_update_theme_revisitdiag_horfacets <- function() {
+  theme(
+    panel.grid = element_blank(),
+    panel.border = element_rect(fill = NA),
+    panel.background = element_blank(),
+    strip.text.y = element_text(angle = 0),
+    axis.ticks = element_blank()
+  )
+}
+our_update_theme_bars_in_horfacets <- function() {
+  theme(
+    panel.background = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_line(colour = col_gridline_bw),
+    panel.grid.minor.x = element_line(colour = col_gridline_bw),
+    axis.ticks.y = element_blank(),
+    axis.text.y = element_blank(),
+    panel.border = element_rect(colour = col_gridline_bw, fill = NA),
+    strip.text.y = element_text(angle = 0),
+    legend.position = "top"
+  )
+}
 
 kbl_bt <- function(x, ...) kbl(x = x, booktabs = TRUE, ...)
 
