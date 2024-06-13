@@ -72,7 +72,8 @@ filter_grts_mh_by_address <- function(
     spatrast = grts_mh_n2khab,
     spatrast_index = grts_mh_n2khab_index,
     cells = NULL,
-    drop_address = FALSE) {
+    drop_address = FALSE,
+    fact = 32) {
   if (is.null(cells)) {
     cells <- subset(spatrast_index, grts_address %in% addresses)$id
   }
@@ -88,6 +89,7 @@ filter_grts_mh_by_address <- function(
   }
   # convert back to SpatRaster
   r <- rast(r)
+  aggregate(r, fact = fact, fun = "max", na.rm = TRUE)
 }
 
 add_point_coords_grts <- function(
