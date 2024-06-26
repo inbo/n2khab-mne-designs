@@ -19,6 +19,7 @@ params:
   regenerate_binary_files: TRUE
   active_modules: !r c("pan_phase_1_flanders", "pan_phase_1_sac_subset_5", "pan_phase_1_be2100024", "mbaa_mne_phase_1")
   save_rdata: FALSE
+  reproduce_r_package_versions: FALSE
 output:
   bookdown::html_document2:
     keep_md: TRUE
@@ -38,7 +39,20 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-# renv::restore()
+# see script R/renv_snapshotting.R to execute the manual steps needed to UPDATE 
+# the file 'renv.lock' with the currently used R and package versions
+if (params$reproduce_r_package_versions) {
+  source("renv/activate.R") # activate renv on demand
+  renv::restore()           # restore package versions from renv.lock
+  status <- renv::status()  # we only proceed if project library is in sync with 
+                            # renv.lock
+  if (!status$synchronized) {
+    stop(
+      "Restoring package versions went wrong. ",
+      "Please run renv::status() manually, solve problems and try again."
+    )
+  }
+}
 options(scipen = 999)
 conflictRules("n2khab", exclude = c("read_schemes", "read_scheme_types"))
 conflictRules("git2rdata", exclude = c("pull", "meta"))
