@@ -372,39 +372,131 @@ schemes %>%
 Setting other _**so-far**_ module-agnostic scheme design attributes.
 'So far' because these are not guaranteed to apply to every future module.
 
+- 'Field activity' covers both measurement and installation or maintenance of in-situ instruments.
+
 ```{r}
-scheme_design <-
-  schemes %>% 
-  select(scheme) %>% 
+scheme_field_activity <- 
+  scheme_variableset_fieldmethod %>% 
+  distinct(scheme, field_method) %>% 
+  rename(field_activity = field_method) %>% 
+  bind_rows(
+    tibble(
+      scheme = c(
+        "GW_03.3",
+        "GW_05.1_terr",
+        "GW_05.1_aq",
+        "GW_05.1_quarries",
+        "GW_04.2",
+        "GW_05.2",
+        "GW_07.1"
+      ),
+      field_activity = "installatie of onderhoud peilbuizen"
+    )
+  )
+```
+
+- `field_activity_pattern` is the revisit design of field activities.
+This will matter most for data collection plans.
+
+```{r}
+field_activity_pattern <-
+  tibble(
+    field_activity = c(
+      "LSVI-beoordeling",
+      "aflezen peillat",
+      "bemonsteren bodem via oppervlaktemonsters",
+      "bemonsteren van ondiepe peilbuizen",
+      "bemonsteren waterkolom stilstaande wateren",
+      "bemonsteren waterkolom waterlopen",
+      "bepaling Secchi-diepte",
+      "installatie of onderhoud peilbuizen",
+      "uitlezen diverloggers",
+      "veldmeting stilstaande wateren",
+      "veldmeting waterlopen"
+    )
+  ) %>% 
+  mutate(
+    revisit_pattern = case_when(
+      str_detect(field_activity, "uitlezen|peillat") ~ "pure_panel",
+      .default = "serially_alternating"
+    ) %>% 
+      factor(),
+    panel_period = case_when(
+      str_detect(field_activity, "^LSVI|water|Secchi") ~ years(1),
+      str_detect(field_activity, "bemonsteren.*peilbuizen") ~ years(1),
+      str_detect(
+        field_activity, 
+        "uitlezen|peillat"
+      ) ~ months(6),
+      .default = months(3)
+    ),
+    enforce_cycle_duration_y = case_when(
+      str_detect(field_activity, "installatie.*onderhoud.*peilbuizen") ~ 6L
+    ),
+    revisit_subpattern = case_when(
+      str_detect(field_activity, "water|Secchi") ~ "pure_panel",
+      str_detect(
+        field_activity, 
+        "bemonsteren.*peilbuizen|uitlezen|peillat"
+      ) ~ "serially_alternating"
+    ) %>% 
+      factor(levels = levels(revisit_pattern)),
+    panel_subperiod = case_when(
+      str_detect(field_activity, "water|Secchi") ~ months(1),
+      str_detect(
+        field_activity, 
+        "bemonsteren.*peilbuizen|uitlezen|peillat"
+      ) ~ months(3)
+    ),
+    limit_n_subpanels_per_panel = case_when(
+      str_detect(field_activity, "bemonsteren.*peilbuizen") ~ 2L
+    )
+  )
+field_activity_pattern
+```
+
+- `scheme_variableset_design` is the revisit design of measurements.
+It is created below to distinguish with `field_activity_pattern` above, but yet unclear whether we'll need it to create data collection plans.
+Its primary relevance is statistical (spatiotemporal pattern of available data), hence it underpins choices made above.
+Notable differences with `field_activity_pattern` are that:
+  - automated frequent measurements are reflected as 'frequent revisit' while fieldwork is much less frequent;
+  - no installation or maintenance is involved.
+
+```{r}
+scheme_variableset_design <-
+  scheme_variableset_fieldmethod %>% 
+  distinct(scheme, variable_set) %>% 
   mutate(
     targetvar_temporal_resolution = case_when(
-      str_detect(scheme, "^HQ|^GW_05") ~ years(1),
+      str_detect(scheme, "^HQ") | str_detect(variable_set, "peil") ~ years(1),
       str_detect(scheme, "^SURF_") ~ months(1),
       .default = months(3)
     ),
     revisit_design = case_when(
-      str_detect(scheme, "^GW_05") ~ "pure_panel",
+      str_detect(variable_set, "peil") ~ "pure_panel",
       .default = "serially_alternating"
     ) %>% 
       factor(),
-    revisit_maintenance = case_when(
-      str_detect(scheme, "^GW_05") ~ "serially_alternating"
-    ) %>% 
-      factor(levels = levels(revisit_design)),
     panel_period = case_when(
-      str_detect(scheme, "^HQ|^SURF_") ~ years(1),
+      str_detect(variable_set, "peil") ~ days(1),
+      str_detect(scheme, "^HQ|^SURF_|^GW_(03|04|07)") ~ years(1),
       .default = months(3)
     ),
     revisit_subdesign = case_when(
-      str_detect(scheme, "^SURF_") ~ "pure_panel"
+      str_detect(scheme, "^SURF_") ~ "pure_panel",
+      str_detect(scheme, "^GW_(03|04|07)") & 
+        revisit_design != "pure_panel" ~ "serially_alternating"
     ) %>% 
       factor(levels = levels(revisit_design)),
-    panel_subperiod = case_match(
-      revisit_subdesign,
-      "pure_panel" ~ targetvar_temporal_resolution
+    panel_subperiod = case_when(
+      !is.na(revisit_subdesign) ~ targetvar_temporal_resolution
+    ),
+    limit_n_subpanels_per_panel = case_when(
+      str_detect(scheme, "^GW_(03|04|07)") & 
+        revisit_design != "pure_panel" ~ 2L
     )
   )
-scheme_design
+scheme_variableset_design
 ```
 
 In order to anticipate that above properties _may_ become module-specific in the future, we already expand this to modules.
