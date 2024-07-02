@@ -284,30 +284,65 @@ In order to not complicate terminology, we just denote all these geographical bo
 
 ## Setting scheme properties
 
+**Missing functionality**: getting the primary and explanatory site factors and environmental variables for **remaining** schemes in MNE from existing datasets such as googlesheets.
+
+Explanatory site factors / environmental variables might need spatial restrictions that are more stringent than the one at the scheme level.
+
+Using what we have already:
+
+<!-- currently this is copied from the dcp_karen branch: -->
+
+```{r}
+envvars_mbaa <- 
+  read_vc(
+    file = "vars_phase_1_mbag",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble() %>% 
+  select(
+    scheme = meetnet,
+    site_factor = standplaatsfactor,
+    environm_var = milieuvar,
+    envvar_abbrev = afk_milieuvar,
+    measurement_var = meetvar,
+    main = primair,
+    explanatory = verklarend,
+    quality_control = kwaliteitscontrole,
+    variable_set,
+    field_method
+  ) %>% 
+  mutate(
+     scheme = scheme %>% factor(levels = levels(n2khab_schemes$scheme)),
+     main = !is.na(main),
+     explanatory = !is.na(explanatory),
+     quality_control = !is.na(quality_control)
+  )
+```
+
 Defining variable sets and field methods per scheme.
 This is module-agnostic.
 
 ```{r}
 scheme_variableset_fieldmethod <-
   # MNE schemes phase 1
-  tribble(
-    ~scheme, ~variable_set, ~field_method,
-    "GW_03.3", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
-    "GW_03.3", "ondiep grondwaterpeil automatisch", "uitlezen diverloggers",
-    "GW_04.2", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
-    "GW_05.1_aq", "ondiep grondwaterpeil automatisch", "uitlezen diverloggers",
-    "GW_05.1_aq", "oppervlaktewaterpeil automatisch", "aflezen peillat",
-    "GW_05.1_terr", "ondiep grondwaterpeil automatisch", "uitlezen diverloggers",
-    "GW_05.1_quarries", "diep grondwaterpeil automatisch", "uitlezen diverloggers",
-    "GW_05.2", "ondiep grondwaterpeil automatisch", "uitlezen diverloggers",
-    "GW_07.1", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
-    "SOIL_03.2", "standaardpakket labo bodem anorganisch + C & N + Olsen P + textuur", "bemonsteren bodem via oppervlaktemonsters",
-    "SOIL_03.2", "standaardpakket labo bodem anorganisch + C & N + Olsen P", "bemonsteren bodem via grondboring",
-    "SURF_03.4_lentic", "standaardpakket labo water anorganisch + totaal P water", "bemonsteren waterkolom stilstaande wateren",
-    "SURF_03.4_lotic", "standaardpakket labo water anorganisch", "bemonsteren waterkolom waterlopen",
-    "SURF_07.2", "standaardpakket labo water anorganisch", "bemonsteren waterkolom stilstaande wateren"
+  envvars_mbaa %>% 
+  distinct(scheme, variable_set, field_method) %>% 
+  filter(
+    !is.na(field_method), 
+    field_method != "te bepalen", 
+    variable_set != "te bepalen"
+    ) %>% 
+  bind_rows(
+    tribble(
+      ~scheme, ~variable_set, ~field_method,
+      "GW_04.2", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
+      "GW_05.2", "ondiep grondwaterpeil automatisch", "uitlezen diverloggers",
+      "GW_07.1", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
+      "SURF_07.2", "standaardpakket labo water anorganisch", "bemonsteren waterkolom stilstaande wateren"
+    )
   ) %>% 
   mutate(scheme = factor(scheme, levels = levels(n2khab_schemes$scheme))) %>% 
+  # MHQ schemes
   bind_rows(
     schemes %>% 
       filter(programme == "MHQ") %>% 
@@ -395,12 +430,6 @@ Setting year of first implementation (this is further used in chapter \@ref(sche
 ```{r}
 year_first_default <- 2025L
 ```
-
-**Missing functionality**: getting the primary and additional site characteristics and environmental variables for each scheme in MNE from existing datasets such as googlesheets.
-
-Additional site characteristics / environmental variables might need spatial restrictions that are more stringent than the one at the scheme level.
-
-<!-- Selectie van variabelen te voorzien. -->
 
 ## Setting data source versions
 
