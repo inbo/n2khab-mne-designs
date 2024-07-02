@@ -230,3 +230,47 @@ for (scheme_i in sort(unique(spsamples$scheme))) {
   )
 }
 
+
+# Plots for MNE video ------------------------------------------------------
+
+provinces <- read_admin_areas(dsn = "provinces")
+
+# below code is inspired by DCP MBAA (tag DCP_MBAA_20240621_poc_0.1.0)
+
+spsamples <-
+  scheme_domain_stratum_spsamples %>%
+  select(-domain) %>%
+  inner_join(n2khab_strata, join_by(stratum)) %>%
+  inner_join(n2khab_schemes %>% select(scheme, scheme_name), join_by(scheme)) %>%
+  mutate(
+    scheme_name = str_replace(scheme_name, ": deelmeetnet", ":\ndeelmeetnet"),
+    scheme_name = str_replace(scheme_name, " \\(incl", "\n(incl")
+  )
+
+spsamples_points <- add_point_coords_grts(spsamples)
+
+spsamples_points %>%
+  nest(data = -c(scheme, scheme_name)) %>%
+  {
+    pwalk(list(.$scheme, .$scheme_name, .$data), function(sch, schn, d) {
+      p <- ggplot() +
+        geom_sf(data = provinces, fill = "white", colour = "grey70") +
+        geom_sf(data = d, size = 0.25, colour = "#843860") +
+        ggtitle(schn) +
+        theme(
+          panel.grid = element_blank(),
+          panel.background = element_blank(),
+          axis.text = element_blank(),
+          axis.ticks = element_blank()
+        ) +
+        theme(plot.title = element_text(size = 12, hjust = 0.5))
+      ggsave(
+        file.path(plotpath, str_c("sample_map_provinces_no_facet_", sch, ".png")),
+        p,
+        width = 6,
+        height = 3,
+        dpi = 300
+      )
+    })
+  }
+
