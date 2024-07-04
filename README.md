@@ -15,6 +15,7 @@ The main folders consider the following topics:
 - `010_making_choices_website`: website on choices (selections) for MNE
 - `020_framework_design_monitoring`: a framework for design choices, inference strategy and other aspects of the monitoring workflow (data management, data quality, analytical, reporting, revision, QAQC)
 - `030_preparations`: preparatory work supporting design choices, not specific to one of the compartments
+- `100_design_common`: design that comprises multiple environmental compartments
 - `110_design_groundwater`: design of the monitoring subprogramme for the groundwater compartment
 - `210_design_surfacewater`: same for the surfacewater compartment
 - `310_design_atmosphere`: same for the atmospheric compartment
