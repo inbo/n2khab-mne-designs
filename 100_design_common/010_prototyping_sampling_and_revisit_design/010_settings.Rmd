@@ -378,7 +378,7 @@ Setting other _**so-far**_ module-agnostic scheme design attributes.
 scheme_field_activity <- 
   scheme_variableset_fieldmethod %>% 
   distinct(scheme, field_method) %>% 
-  rename(field_activity = field_method) %>% 
+  rename(field_activity_name = field_method) %>% 
   bind_rows(
     tibble(
       scheme = c(
@@ -390,9 +390,20 @@ scheme_field_activity <-
         "GW_05.2",
         "GW_07.1"
       ),
-      field_activity = "installatie of onderhoud peilbuizen"
+      field_activity_name = "installatie of onderhoud peilbuizen"
     )
-  )
+  ) %>% 
+  bind_rows(
+    tibble(
+      scheme = "GW_05.1_aq",
+      field_activity_name = "installatie of onderhoud peillatten"
+    )
+  ) %>% 
+  mutate(
+    scheme = factor(scheme, levels = levels(schemes$scheme)),
+    field_activity_name = factor(field_activity_name)
+  ) %>% 
+  arrange(scheme, field_activity_name)
 ```
 
 - `field_activity_pattern` is the revisit design of field activities.
@@ -400,56 +411,62 @@ This will matter most for data collection plans.
 
 ```{r}
 field_activity_pattern <-
-  tibble(
-    field_activity = c(
-      "LSVI-beoordeling",
-      "aflezen peillat",
-      "bemonsteren bodem via oppervlaktemonsters",
-      "bemonsteren van ondiepe peilbuizen",
-      "bemonsteren waterkolom stilstaande wateren",
-      "bemonsteren waterkolom waterlopen",
-      "bepaling Secchi-diepte",
-      "installatie of onderhoud peilbuizen",
-      "uitlezen diverloggers",
-      "veldmeting stilstaande wateren",
-      "veldmeting waterlopen"
-    )
+  tribble(
+    ~field_activity, ~field_activity_name,
+    "LSVI", "LSVI-beoordeling",
+    "SURFLEVREAD", "aflezen peillat",
+    "SOILUPPERSAMP", "bemonsteren bodem via oppervlaktemonsters",
+    "GWSHALLSAMP", "bemonsteren van ondiepe peilbuizen",
+    "SURFLENTSAMP", "bemonsteren waterkolom stilstaande wateren",
+    "SURFLOTSAMP", "bemonsteren waterkolom waterlopen",
+    "SURFSECC", "bepaling Secchi-diepte",
+    "GWLEVINST", "installatie of onderhoud peilbuizen",
+    "SURFLEVINST", "installatie of onderhoud peillatten",
+    "GWLEVREAD", "uitlezen diverloggers",
+    "SURFLENTFIELD", "veldmeting stilstaande wateren",
+    "SURFLOTFIELD", "veldmeting waterlopen"
   ) %>% 
   mutate(
+    field_activity_name = factor(
+      field_activity_name, 
+      levels = levels(scheme_field_activity$field_activity_name)
+    ),
+    field_activity = factor(field_activity) %>% 
+      fct_reorder(as.numeric(field_activity_name)),
     revisit_pattern = case_when(
-      str_detect(field_activity, "uitlezen|peillat") ~ "pure_panel",
+      str_detect(field_activity_name, "(af|uit)lezen") ~ "pure_panel",
       .default = "serially_alternating"
     ) %>% 
       factor(),
     panel_period = case_when(
-      str_detect(field_activity, "^LSVI|water|Secchi") ~ years(1),
-      str_detect(field_activity, "bemonsteren.*peilbuizen") ~ years(1),
+      str_detect(field_activity_name, "^LSVI|water|Secchi") ~ years(1),
+      str_detect(field_activity_name, "bemonsteren.*peilbuizen") ~ years(1),
       str_detect(
-        field_activity, 
-        "uitlezen|peillat"
+        field_activity_name, 
+        "(af|uit)lezen"
       ) ~ months(6),
       .default = months(3)
     ),
     enforce_cycle_duration_y = case_when(
-      str_detect(field_activity, "installatie.*onderhoud.*peilbuizen") ~ 6L
+      str_detect(field_activity_name, "installatie.*onderhoud.*") ~ 6L
     ),
     revisit_subpattern = case_when(
-      str_detect(field_activity, "water|Secchi") ~ "pure_panel",
+      str_detect(field_activity_name, "water|Secchi") ~ "pure_panel",
       str_detect(
-        field_activity, 
-        "bemonsteren.*peilbuizen|uitlezen|peillat"
+        field_activity_name, 
+        "bemonsteren.*peilbuizen|(af|uit)lezen"
       ) ~ "serially_alternating"
     ) %>% 
       factor(levels = levels(revisit_pattern)),
     panel_subperiod = case_when(
-      str_detect(field_activity, "water|Secchi") ~ months(1),
+      str_detect(field_activity_name, "water|Secchi") ~ months(1),
       str_detect(
-        field_activity, 
-        "bemonsteren.*peilbuizen|uitlezen|peillat"
+        field_activity_name, 
+        "bemonsteren.*peilbuizen|(af|uit)lezen"
       ) ~ months(3)
     ),
     limit_n_subpanels_per_panel = case_when(
-      str_detect(field_activity, "bemonsteren.*peilbuizen") ~ 2L
+      str_detect(field_activity_name, "bemonsteren.*peilbuizen") ~ 2L
     )
   )
 field_activity_pattern
