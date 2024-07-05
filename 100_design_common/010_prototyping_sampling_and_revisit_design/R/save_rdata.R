@@ -36,7 +36,13 @@ rdata_set <- c(
   "module_domain_scheme_designattr",
   "module_domain_scheme_stratum_target_sample_size",
   "module_domain_scheme_stratum_sample_size",
-  "scheme_domain_stratum_spsamples"
+  "scheme_domain_stratum_spsamples",
+  "scheme_domain_stratum_spsamples_sf",
+  "scheme_domain_fag_panel_count",
+  "scheme_domain_fag_panels",
+  "scheme_domain_fag_panel_calendar",
+  "scheme_domain_fag_panel_stratum_spsamples",
+  "scheme_domain_fag_stratum_spsamples_calendar"
 )
 module_suffix <- if (length(params$active_modules) > 1) "" else {
   str_c("_", params$active_modules)
