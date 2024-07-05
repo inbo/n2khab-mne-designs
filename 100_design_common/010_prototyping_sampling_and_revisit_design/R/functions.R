@@ -129,3 +129,21 @@ add_point_coords_grts <- function(
 }
 
 
+distribute_sample_over_panels <- function(sps, pan) {
+  remainder <- nrow(sps) %% nrow(pan)
+  if (remainder > 0) {
+    indexes_remainder <- lpm1(remainder, matrix(rep(1, nrow(pan)), ncol = 1))
+    panels_remainder <- pan$generic_panel[indexes_remainder]
+  } else {
+    panels_remainder <- pan$generic_panel[0]
+  }
+  min_group_size <- nrow(sps) %/% nrow(pan)
+  if (min_group_size > 0) {
+    panels_complete <- rep(pan$generic_panel, each = min_group_size)
+  } else {
+    panels_complete <- pan$generic_panel[0]
+  }
+  sps %>%
+    arrange(grts_address) %>%
+    mutate(panel = sort(c(panels_complete, panels_remainder)))
+}
