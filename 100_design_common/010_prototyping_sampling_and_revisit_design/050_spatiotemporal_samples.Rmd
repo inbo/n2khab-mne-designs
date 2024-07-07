@@ -209,9 +209,10 @@ scheme_domain_fag_panel_calendar <-
       df %>% 
         distinct() %>% 
         mutate(
-          # subtracting 6 months because we only start in July of first year:
+          # taking into account month_first_default:
           nr_periods = 
-            (years(year_last - year_first + 1) - months(6)) / panel_period) %>% 
+            (years(year_last - year_first + 1) - 
+               months(13 - month_first_default)) / panel_period) %>% 
         uncount(nr_periods) %>% 
         mutate(
           panel_periodmonths = as.period(panel_period, "months") %>% 
@@ -220,8 +221,8 @@ scheme_domain_fag_panel_calendar <-
           panel_cum_months = cumsum(panel_periodmonths),
           panel_cum_months_lag = lag(panel_cum_months, default = 0L),
           # we only start in July of first year:
-          date_start = make_date(year_first, 7, 1) + months(panel_cum_months_lag),
-          date_end = make_date(year_first, 7, 1) + months(panel_cum_months),
+          date_start = make_date(year_first, month_first_default, 1) + months(panel_cum_months_lag),
+          date_end = make_date(year_first, month_first_default, 1) + months(panel_cum_months),
           date_interval = interval(date_start, date_end)
         ) %>% 
         select(-c(panel_periodmonths, starts_with("panel_cum_months")))
