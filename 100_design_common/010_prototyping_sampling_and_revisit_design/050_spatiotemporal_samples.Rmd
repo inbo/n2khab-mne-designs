@@ -433,6 +433,45 @@ generic_spsample_membership <-
   rename(generic_panel = panel)
 ```
 
+Defining spatial sampling unit groups based on `generic_panel_relations`, i.e. where different periodicities arise, to further pinpoint spatial relations between generic panels of different generic panel sets.
+
+```{r}
+generic_panel_spsunit_groups <- 
+  generic_panel_relations %>% 
+  pivot_longer(
+    cols = c(generic_panel_2, generic_panel_12),
+    names_to = "generic_panel_set",
+    values_to = "generic_panel"
+  ) %>% 
+  select(-generic_panel_set) %>% 
+  relocate(spsunit_group = generic_panel_24, .after = last_col()) %>% 
+  summarize(
+    spsunit_groups = str_c(spsunit_group, collapse = ", "),
+    .by = c(compartment, generic_panel)
+  )
+```
+
+Adding the spatial sampling unit groups to `generic_spsample_membership` and extending them.
+
+```{r}
+generic_spsample_membership <- 
+  generic_spsample_membership %>% 
+  left_join(
+    generic_panel_spsunit_groups,
+    join_by(compartment, generic_panel),
+    unmatched = "error",
+    relationship = "many-to-one"
+  ) %>% 
+  mutate(
+    spsunit_groups = ifelse(
+      is.na(spsunit_groups), 
+      as.character(generic_panel), 
+      spsunit_groups
+    ) %>% 
+      factor()
+  )
+```
+
 #### Panel membership
 
 Deriving panel membership from generic panel membership.
@@ -479,7 +518,15 @@ scheme_domain_fag_panel_stratum_spsamples <-
     scheme_domain_stratum_spsamples,
     join_by(scheme, domain, stratum, grts_address)
   ) %>% 
-  select(scheme, domain, field_activity_group, panel, stratum, grts_address)
+  select(
+    scheme,
+    domain,
+    field_activity_group,
+    panel,
+    stratum,
+    grts_address,
+    spsunit_groups
+  )
 ```
 
 ### Spatiotemporal samples
