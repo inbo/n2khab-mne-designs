@@ -131,17 +131,36 @@ scheme_domain_fa_panel_count <-
     panel_count,
     panel_group_size,
     panel_group_repetitions
-  ) %>% 
+  )
+
+# relation between FA (field activity) and FAG (FA group); done scheme-specific
+# so that joins still work one-to-one (because SURFSECC appears in two FAGs):
+scheme_fag_fa <-
+  scheme_domain_fa_panel_count %>% 
   mutate(field_activity_prefix = str_extract(field_activity, "^(GW|SURF|SOIL)")) %>% 
-  summarize(
+  mutate(
     field_activity_group = str_remove(field_activity, "^(GW|SURF|SOIL)") %>% 
       str_flatten(collapse = "&") %>% 
       str_c(first(field_activity_prefix), .),
     .by = -field_activity
   ) %>% 
-  mutate(field_activity_group = factor(field_activity_group)) %>% 
   select(-field_activity_prefix) %>% 
+  arrange(field_activity) %>% 
+  mutate(field_activity_group = fct(field_activity_group)) %>% 
+  arrange(scheme, field_activity) %>% 
+  distinct(scheme, field_activity_group, field_activity)
+
+scheme_domain_fag_panel_count <-
+  scheme_domain_fa_panel_count %>%
+  inner_join(
+    scheme_fag_fa,
+    join_by(scheme, field_activity),
+    unmatched = "error",
+    relationship = "one-to-one"
+  ) %>% 
+  distinct(pick(-field_activity)) %>% 
   relocate(field_activity_group, .after = domain)
+
 scheme_domain_fag_panel_count %>% 
   kable()
 ```
