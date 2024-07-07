@@ -369,10 +369,35 @@ schemes %>%
   nrow() == 0
 ```
 
+'Field activity' can cover measurement, where it corresponds to 'field method' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
+
+```{r}
+field_activities <- 
+  tribble(
+    ~field_activity, ~field_activity_name,
+    "GWLEVINST", "installatie of onderhoud peilbuizen",
+    "GWLEVREAD", "uitlezen diverloggers",
+    "GWSHALLSAMP", "bemonsteren van ondiepe peilbuizen",
+    "SOILUPPERSAMP", "bemonsteren bodem via oppervlaktemonsters",
+    "SURFLEVINST", "installatie of onderhoud peillatten",
+    "SURFLEVREAD", "aflezen peillat",
+    "SURFLENTSAMP", "bemonsteren waterkolom stilstaande wateren",
+    "SURFLOTSAMP", "bemonsteren waterkolom waterlopen",
+    "SURFSECC", "bepaling Secchi-diepte",
+    "SURFLENTFIELD", "veldmeting stilstaande wateren",
+    "SURFLOTFIELD", "veldmeting waterlopen",
+    "LSVI", "LSVI-beoordeling"
+  ) %>% 
+  mutate(
+    field_activity = fct(field_activity),
+    field_activity_name = fct(field_activity_name)
+  )
+```
+
 Setting other _**so-far**_ module-agnostic scheme design attributes.
 'So far' because these are not guaranteed to apply to every future module.
 
-- 'Field activity' can cover measurement but also installation or maintenance of in-situ instruments.
+- Field activities are scheme specific.
 
   **Missing functionality**: consider making field activities type-specific (i.e. join with the target population), since within a scheme there may be differences by type for explanatory or quality-control variables: scheme sections are only defined for main environmental variables, not additional ones.
 
@@ -403,38 +428,28 @@ scheme_field_activity <-
   ) %>% 
   mutate(
     scheme = factor(scheme, levels = levels(schemes$scheme)),
-    field_activity_name = factor(field_activity_name)
+    field_activity_name = factor(
+      field_activity_name,
+      levels = levels(field_activities$field_activity_name)
+    )
   ) %>% 
-  arrange(scheme, field_activity_name)
+  inner_join(
+    field_activities,
+    join_by(field_activity_name),
+    unmatched = "error"
+  ) %>% 
+  select(-field_activity_name) %>% 
+  arrange(scheme, field_activity)
 ```
 
 - `field_activity_pattern` is the revisit design of field activities.
 This will matter most for data collection plans.
+Note that currently we don't handle this scheme specific, but that might change in future.
 
 ```{r}
 field_activity_pattern <-
-  tribble(
-    ~field_activity, ~field_activity_name,
-    "LSVI", "LSVI-beoordeling",
-    "SURFLEVREAD", "aflezen peillat",
-    "SOILUPPERSAMP", "bemonsteren bodem via oppervlaktemonsters",
-    "GWSHALLSAMP", "bemonsteren van ondiepe peilbuizen",
-    "SURFLENTSAMP", "bemonsteren waterkolom stilstaande wateren",
-    "SURFLOTSAMP", "bemonsteren waterkolom waterlopen",
-    "SURFSECC", "bepaling Secchi-diepte",
-    "GWLEVINST", "installatie of onderhoud peilbuizen",
-    "SURFLEVINST", "installatie of onderhoud peillatten",
-    "GWLEVREAD", "uitlezen diverloggers",
-    "SURFLENTFIELD", "veldmeting stilstaande wateren",
-    "SURFLOTFIELD", "veldmeting waterlopen"
-  ) %>% 
+  field_activities %>% 
   mutate(
-    field_activity_name = factor(
-      field_activity_name, 
-      levels = levels(scheme_field_activity$field_activity_name)
-    ),
-    field_activity = factor(field_activity) %>% 
-      fct_reorder(as.numeric(field_activity_name)),
     revisit_pattern = case_when(
       str_detect(field_activity_name, "(af|uit)lezen") ~ "pure_panel",
       .default = "serially_alternating"
@@ -470,7 +485,8 @@ field_activity_pattern <-
     limit_n_subpanels_per_panel = case_when(
       str_detect(field_activity_name, "bemonsteren.*peilbuizen") ~ 2L
     )
-  )
+  ) %>% 
+  select(-field_activity_name)
 field_activity_pattern
 ```
 
