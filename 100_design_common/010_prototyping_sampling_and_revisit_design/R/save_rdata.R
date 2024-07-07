@@ -44,7 +44,9 @@ rdata_set <- c(
   "scheme_domain_fag_panels",
   "scheme_domain_fag_panel_calendar",
   "scheme_domain_fag_panel_stratum_spsamples",
-  "scheme_domain_fag_stratum_spsamples_calendar"
+  "scheme_domain_fag_stratum_spsamples_calendar",
+  "fag_grts_calendar",
+  "fag_stratum_grts_calendar"
 )
 module_suffix <- if (length(params$active_modules) > 1) "" else {
   str_c("_", params$active_modules)
