@@ -38,6 +38,7 @@ rdata_set <- c(
   "module_domain_scheme_stratum_sample_size",
   "scheme_domain_stratum_spsamples",
   "scheme_domain_stratum_spsamples_sf",
+  "samplinglocations_sf",
   "scheme_fag_fa",
   "scheme_domain_fag_panel_count",
   "scheme_domain_fag_panels",
