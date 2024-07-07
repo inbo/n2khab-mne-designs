@@ -550,6 +550,39 @@ scheme_domain_fag_stratum_spsamples_calendar <-
   )
 ```
 
+### Field activities in space and time
+
+Some field activity groups may overlap between schemes, i.e. when the same sampling unit is present in more than one scheme _and_ the same field activity group happens in these schemes at the same time for this sampling unit.
+
+Further, the uncertainties in the sampling frame cause duplication of GRTS addresses in the (generated) sample because multiple strata can be connected to the same GRTS address.
+
+While in below object `fag_grts_calendar` both sources of duplication have been collapsed, we also create an object `fag_stratum_grts_calendar` that better reflects the expected _number_ of field activities in space and time: the reduction by GRTS address will not happen in reality since the sample sizes must be maintained!
+This means that new sampling units will be added from a list of spare sampling units, when a stratum on terrain is not the expected stratum, in order to maintain the sample size.
+This specifically applies to the (many) types where the cell center in the field must be the type, so that only one 'cell_center' type can correspond to a GRTS address, contrary to the theoretical information from the sampling frame.
+
+```{r}
+fag_grts_calendar <- 
+  scheme_domain_fag_stratum_spsamples_calendar %>% 
+  distinct(
+    field_activity_group,
+    pick(starts_with("date")),
+    grts_address
+  ) %>% 
+  arrange(pick(everything()))
+```
+
+```{r}
+fag_stratum_grts_calendar <- 
+  scheme_domain_fag_stratum_spsamples_calendar %>% 
+  distinct(
+    field_activity_group,
+    pick(starts_with("date")),
+    grts_address,
+    stratum
+  ) %>% 
+  arrange(pick(everything()))
+```
+
 ## Deriving datasets and layers for use and visualization
 
 ```{r}
