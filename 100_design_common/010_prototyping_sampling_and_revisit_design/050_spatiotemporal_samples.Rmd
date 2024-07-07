@@ -321,7 +321,7 @@ Defining the relation between panels of different generic panel sets, for compar
 This relation is about which panels of one set together constitute a panel of a different set.
 
 ```{r}
-generic_panel_relations <- 
+generic_panel_relations <-
   compartment_generic_panels %>% 
   select(-panel_count) %>% 
   nest(panels = generic_panel) %>% 
@@ -329,8 +329,20 @@ generic_panel_relations <-
   pivot_wider(names_from = generic_panel_set, values_from = panels) %>% 
   # XXXX generalize this code!!
   mutate(
-    GW_2PANELS = map(GW_2PANELS, ~uncount(., 12) %>% rename(generic_panel_2 = generic_panel)),
-    GW_12PANELS = map(GW_12PANELS, ~uncount(., 2) %>% rename(generic_panel_12 = generic_panel)),
+    GW_2PANELS = map(GW_2PANELS, function(df) {
+      tibble(generic_panel_2 = rep(df$generic_panel, 12))
+    }),
+    GW_12PANELS = map(GW_12PANELS, function(df) {
+      # this code duplicates panels taking into account the serially alternating
+      # pattern within a year, in order to properly match chronology of
+      # GW_24PANELS
+      df %>% 
+        mutate(yr = rep(seq_len(n() / 2), each = 2)) %>% 
+        bind_rows(., .) %>% 
+        arrange(yr) %>% 
+        select(-yr) %>% 
+        rename(generic_panel_12 = generic_panel)
+    }),
     GW_24PANELS = map(GW_24PANELS, ~rename(., generic_panel_24 = generic_panel))
   ) %>% 
   unnest(starts_with("GW"))
