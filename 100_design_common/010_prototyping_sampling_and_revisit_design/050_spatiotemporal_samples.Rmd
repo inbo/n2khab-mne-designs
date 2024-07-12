@@ -106,6 +106,7 @@ scheme_domain_fa_panel_count <-
       ) *
       case_when(
         is.na(revisit_subpattern) ~ 1L,
+        revisit_subpattern == "pure_panel" ~ 1L,
         !is.na(limit_n_subpanels_per_panel) ~ limit_n_subpanels_per_panel,
         .default = as.integer(panel_period_main / panel_subperiod)
       ),
@@ -118,10 +119,14 @@ scheme_domain_fa_panel_count <-
       limit_n_subpanels_per_panel,
       1L
     ),
-    panel_group_repetitions = ifelse(
-      !is.na(limit_n_subpanels_per_panel),
-      as.integer(panel_period_main / panel_subperiod) / limit_n_subpanels_per_panel,
-      1L
+    panel_group_repetitions = case_when(
+      !is.na(limit_n_subpanels_per_panel) ~ as.integer(
+        panel_period_main / panel_subperiod
+      ) / limit_n_subpanels_per_panel,
+      revisit_subpattern == "pure_panel" ~ as.integer(
+        panel_period_main / panel_subperiod
+      ),
+      .default = 1L
     )
   ) %>% 
   select(
