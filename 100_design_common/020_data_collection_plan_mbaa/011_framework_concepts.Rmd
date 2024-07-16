@@ -60,7 +60,6 @@ n2khab::read_env_pressures(lang = "nl") %>%
     longtable = TRUE
   ) %>%
   column_spec(column = 1:2, width = str_c(c(5, 9), "cm")) %>%
-  collapse_rows(columns = 1, valign = "top", latex_hline = "major") %>% 
   longtable_styling()
 ```
 
@@ -182,16 +181,25 @@ De meetnetten dienen samen één coherent geheel te vormen, zodat hun afzonderli
 
 ```{r meetnetten, message=FALSE, warning=FALSE, results='asis', echo=FALSE}
 mne_schemes %>%
+  mutate(
+    scheme_name = scheme_name %>% 
+      str_replace(
+        "(\\d+\\.?\\d*)(\\s)(.+zeespiegelstijging|.+(?=:)|.+)",
+        "\\3 \\(\\1\\)"
+      ),
+    is_main_scheme = ifelse(tag_1_name == "Hoofdmeetnet", "X", "")
+  ) %>% 
   select(
     Code = scheme,
     Naam = scheme_name,
-    Meetnettype = tag_1_name
+    `Hoofdmeetnet?` = is_main_scheme
   ) %>%
   kbl_bt(
     caption = "Lijst van de meetnetten in de MNM: de code en de naam van een meetnet verwijzen naar het milieucompartiment waarin het van toepassing is, de milieudruk die het meetnet opvolgt en, indien van toepassing, het deelmeetnet.",
-    longtable = TRUE
+    longtable = TRUE,
+    align = "llc"
   ) %>%
-  column_spec(column = 2, width = "11cm") %>%
+  column_spec(column = 2, width = "9cm") %>%
   kable_styling(full_width = FALSE) %>%
   longtable_styling()
 ```
@@ -217,11 +225,12 @@ We moeten daarom bekomen dat de onzekerheid op uitspraken (foutmarge en betrouwb
 Er mogen dus geen aannames zijn waaronder de onzekerheidsbepaling gebeurt, of zo weinig mogelijk aannames.
 Dit impliceert volgende belangrijke basisprincipes:
 
-- Elk meetnet volgt een **aselecte** steekproefstrategie.
+- Elk meetnet volgt een **aselecte** steekproefstrategie (trekking gebeurt via een randomisatieprocedure).
 - Elk meetnet hanteert een afdoende ruimtelijke en temporele **dekking**.
 - Inferenties voor de bepaling van de toestand (spatiale en temporele aggregatie) en de trend (spatiale aggregatie) gebeuren **design-based**.
-Het betekent dat ruimtelijk geaggregeerde toestand- of trenduitspraken betrekking hebben op de gerealiseerde doelpopulatie in Vlaanderen en niet over een modelgebaseerde (model-based) abstractie ervan.
-Stochasticiteit wordt in design-based inferenties namelijk enkel geïntroduceerd door de steekproefrandomisatie en niet via modelassumpties over de doelvariabelen.
+Het betekent dat ruimtelijk geaggregeerde toestand- of trenduitspraken betrekking hebben op de gerealiseerde (werkelijk aanwezige) doelpopulatie in Vlaanderen en niet over een modelgebaseerde (model-based) abstractie ervan.
+Stochasticiteit wordt in design-based inferenties namelijk enkel geïntroduceerd door de steekproeftrekking en niet via modelassumpties over de doelvariabelen.
+In de doelpopulatie worden de waarden van doelvariabelen op een bepaald tijdstip dus beschouwd als een vast gegeven.
 Deze aanpak garandeert robuuste schattingen.
 
 Daarnaast gelden de volgende basisprincipes om ervoor te zorgen dat de steekproefopzet voor lange tijd kan meegaan:
