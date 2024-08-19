@@ -5,9 +5,9 @@
 source("renv/activate.R") # this is 'activating renv on demand'
 renv::upgrade() # makes sure latest renv version is in use
 if (file.exists(".Rprofile")) unlink(".Rprofile")
-renv::hydrate(update = "all") # populates or updates renv project library with
-                              # the package versions used when renv is
-                              # not active
+# populate or update renv project library with the package versions used when
+# renv is not active:
+renv::hydrate(update = "all")
 renv::snapshot() # records packages with their versions in renv.lock
 # renv::install("yaml") # links a missing package in the renv project library
 # renv::record("yaml") # records a renv project library package in renv.lock
