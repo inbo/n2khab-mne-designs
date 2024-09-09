@@ -1,0 +1,135 @@
+---
+title: "Sensibility of a shallow top of a piezometer filter"
+author: "Floris Vanderhaeghe"
+date: "`r lubridate::today()`"
+output:
+  html_document:
+    keep_md: TRUE
+    number_sections: yes
+    code_folding: show
+    code_download: yes
+    fig_width: 10
+    fig_height: 5
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../../header.html
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(watina)
+library(dplyr)
+library(dbplot)
+library(n2khab)
+library(stringr)
+```
+
+# Exploring distribution of the filter top
+
+## Fetching observation well properties
+
+In order to explore distribution of filter tops, we look at observation wells with filter no deeper than 5 m.
+
+```{r}
+watina <- connect_watina()
+obswells <- get_locs(
+  watina, 
+  filterdepth_range = c(0, 5),
+  filterdepth_guess = FALSE,
+  loc_type = "P", 
+  loc_validity = c("VLD", "ENT"),
+  obswells = TRUE
+)
+```
+
+Structure of the data:
+
+```{r}
+glimpse(obswells)
+```
+
+How many observation wells?
+
+```{r}
+count(obswells) |> print()
+```
+
+What is the distribution of `filterlength`?
+
+```{r}
+obswells |> pull(filterlength) |> quantile(seq(0, 1, 0.05))
+```
+
+## Exploring the availability of shallow filtertops
+
+Derive `filtertop` from `filterdepth` and `filterlength`:
+
+```{r}
+obswells <- obswells |> 
+  mutate(filtertop = filterdepth + filterlength/2)
+```
+
+Explore `filtertop` values:
+
+```{r}
+filtertop_vals <- obswells |> pull(filtertop)
+length(filtertop_vals)
+quantile(filtertop_vals, seq(0, 1, 0.05))
+quantile(filtertop_vals, 0.01)
+```
+
+How many shallow filtertops?
+
+```{r}
+filtertop_vals[filtertop_vals <= 0.3] |> table()
+```
+
+# Sensibility of shallow filtertops: what about HG3 values?
+
+Let's have a look at how frequently HG3 values are above soil surface in piezometers with filterdepth <= 3 m (the usual limit), and how this might be related to soil texture and to the filtertop value.
+
+General distribution is like this:
+
+```{r}
+get_locs(
+  watina, 
+  filterdepth_range = c(0, 3),
+  filterdepth_guess = FALSE,
+  loc_type = "P", 
+  loc_validity = c("VLD", "ENT"),
+  obswells = FALSE
+) |> 
+  get_xg3(
+    watina,
+    startyear = 1900,
+    truncated = FALSE
+  ) |> 
+  dbplot_histogram(hg3_lcl)
+```
+
+Simplified texture classes from the soilmap:
+
+```{r}
+soilmap <- 
+  read_soilmap() |> 
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      TRUE ~ "unknown") |> 
+      factor()
+    )
+```
+
+
+```{r}
+dbDisconnect(watina)
+```
+
