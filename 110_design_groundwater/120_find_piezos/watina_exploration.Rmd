@@ -1,0 +1,100 @@
+---
+title: "Exploring Watina"
+author: "Falk Mielke"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(watina)
+library(dplyr)
+library(ggplot2)
+library(dbplot)
+library(n2khab)
+library(stringr)
+library(DBI)
+```
+
+# connect 
+```{r}
+watina_conn <- connect_watina()
+query <- function(query_string) {
+  rs <- dbGetQuery(watina_conn, query_string)
+  return(rs) 
+}
+```
+
+# query categories
+```{r}
+query_categories <- function(table_name, vars) {
+  var_string <- paste(vars, collapse = ", ")
+  query_string <- paste0("SELECT DISTINCT ", var_string, " FROM ", table_name,
+  " GROUP BY ", var_string, "; ")
+  query(query_string)
+}
+knitr::kable( query_categories("DimGebiedGroep", c("GebiedGroepCode", "GebiedGroepNaam")) )
+```
+
+# query table
+```{r}
+query_top <- function(table_name, top_n = 100) {
+  query_string <- paste0("SELECT TOP ", top_n, " * FROM ", table_name, ";")
+  data <- query(query_string)
+  return(data)
+}
+```
+
+
+```{r}
+# FactPeilMeting
+data <- query_top("FactPeilMeting")
+str(data)
+```
+# FactPeilMeting
+```{r}
+query_string <- "
+SELECT DISTINCT Jaar, count(PeilMetingWID) as n_metingen 
+FROM FactPeilMeting as PM
+LEFT JOIN (SELECT DatumWID as TijdWID, Jaar FROM DimTIjd) as YR 
+    ON YR.TijdWID = PM.TijdWID 
+GROUP BY Jaar
+;"
+data <- query(query_string)
+plot(data$Jaar, data$n_metingen)
+```
+    
+# Peilmeting Categorien
+    
+```{r}
+query_string <- "
+SELECT DISTINCT PeilmetingCategorieCode, PeilmetingCategorie, count(PeilMetingWID) as cnt
+FROM FactPeilMeting
+GROUP BY PeilmetingCategorieCode , PeilmetingCategorie
+"
+categories <- query(query_string)
+knitr::kable(categories )
+
+```
+    
+# MetingType
+```{r}
+knitr::kable( query_categories("DimMetingType", c("MetingTypeCode, MetingTypeNaam")) )
+```
+Zum Kuckuk nochmal...    
+
+# Meetpunt 
+```{r}
+knitr::kable( query_categories("DimMeetpunt", c("MeetpuntTypeCode", "MeetpuntType")) )
+```
+
+the "P" type is an unfortunate combination...
+
+# archive 
+```{r}
+```
+
+```{r}
+dbDisconnect(watina_conn)
+```
+
