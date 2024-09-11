@@ -442,12 +442,12 @@ scheme_field_activity <-
   arrange(scheme, field_activity)
 ```
 
-- `field_activity_pattern` is the revisit design of field activities.
+- `field_activity_paneldesign` is the revisit design of field activities.
 This will matter most for data collection plans.
 Note that currently we don't handle this scheme specific, but that might change in future.
 
 ```{r}
-field_activity_pattern <-
+field_activity_paneldesign <-
   field_activities %>% 
   mutate(
     revisit_pattern = case_when(
@@ -487,19 +487,19 @@ field_activity_pattern <-
     )
   ) %>% 
   select(-field_activity_name)
-field_activity_pattern
+field_activity_paneldesign
 ```
 
-- `scheme_variableset_design` is the revisit design of measurements.
-It is created below to distinguish with `field_activity_pattern` above, but yet unclear whether we'll need it to create data collection plans.
+- `scheme_variableset_paneldesign` is the revisit design of measurements.
+It is created below to distinguish with `field_activity_paneldesign` above, but yet unclear whether we'll need it to create data collection plans.
 Its primary relevance is statistical (spatiotemporal pattern of available data), hence it underpins choices made above.
-Notable differences with `field_activity_pattern` are that:
+Notable differences with `field_activity_paneldesign` are that:
   - automated frequent measurements are reflected as 'frequent revisit' while fieldwork is much less frequent;
   - no installation or maintenance is involved;
   - the (assumed) temporal resolution of the target variable is added, which is an attempt to answer the question: which period does one value of the variable represent?
 
 ```{r}
-scheme_variableset_design <-
+scheme_variableset_paneldesign <-
   scheme_variableset_fieldmethod %>% 
   distinct(scheme, variable_set) %>% 
   mutate(
@@ -508,7 +508,7 @@ scheme_variableset_design <-
       str_detect(scheme, "^SURF_") ~ months(1),
       .default = months(3)
     ),
-    revisit_design = case_when(
+    revisit_pattern = case_when(
       str_detect(variable_set, "peil") ~ "pure_panel",
       .default = "serially_alternating"
     ) %>% 
@@ -518,21 +518,21 @@ scheme_variableset_design <-
       str_detect(scheme, "^HQ|^SURF_|^GW_(03|04|07)") ~ years(1),
       .default = months(3)
     ),
-    revisit_subdesign = case_when(
+    revisit_subpattern = case_when(
       str_detect(scheme, "^SURF_") ~ "pure_panel",
       str_detect(scheme, "^GW_(03|04|07)") & 
-        revisit_design != "pure_panel" ~ "serially_alternating"
+        revisit_pattern != "pure_panel" ~ "serially_alternating"
     ) %>% 
-      factor(levels = levels(revisit_design)),
+      factor(levels = levels(revisit_pattern)),
     panel_subperiod = case_when(
-      !is.na(revisit_subdesign) ~ targetvar_temporal_resolution
+      !is.na(revisit_subpattern) ~ targetvar_temporal_resolution
     ),
     limit_n_subpanels_per_panel = case_when(
       str_detect(scheme, "^GW_(03|04|07)") & 
-        revisit_design != "pure_panel" ~ 2L
+        revisit_pattern != "pure_panel" ~ 2L
     )
   )
-scheme_variableset_design
+scheme_variableset_paneldesign
 ```
 
 We set the variable `cycle_duration_y` per module x scheme, which indeed depends on the combination of module x scheme already.
@@ -583,8 +583,8 @@ for (name in c(
   "module_domains",
   "scheme_variableset_fieldmethod",
   "scheme_field_activity",
-  "field_activity_pattern",
-  "scheme_variableset_design",
+  "field_activity_paneldesign",
+  "scheme_variableset_paneldesign",
   "module_scheme_cycle_duration"
 )) {
   cat(name, "\n")
