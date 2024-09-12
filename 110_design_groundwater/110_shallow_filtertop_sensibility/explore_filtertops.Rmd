@@ -27,51 +27,184 @@ library(dplyr)
 library(dbplot)
 library(n2khab)
 library(stringr)
+library(ggplot2)
+
+
+watina_conn <- connect_watina()
 ```
 
-# Exploring distribution of the filter top
+# Key Observations (or maybe not...)
+
+- the majority of measurement locations are equipped with piezometers ([see here](#datajoin))
+- there are non-piezo wells with short filters ([see here](#filterlengths))
+- a cluster of the shallowest filter tops are actually non-piezo; some are above ground ([see here](#filtertops))
+- apparrently, HG3 can be positive ([see here](#hg3_dist)): this would be the case with floods, to which `Hg3` is extra sensitive; it affects both types of measurement setups ([see here](#hg3_shallow))
+
+
+# Data Collection
 
 ## Fetching observation well properties
 
 In order to explore distribution of filter tops, we look at observation wells with filter no deeper than 5 m.
 
 ```{r}
-watina <- connect_watina()
-obswells <- get_locs(
-  watina, 
+obswells_db <- get_locs(
+  watina_conn, 
   filterdepth_range = c(0, 5),
   filterdepth_guess = FALSE,
   loc_type = "P", 
   loc_validity = c("VLD", "ENT"),
   obswells = TRUE
-)
+) %>% mutate(line_nr = row_number())
 ```
 
 Structure of the data:
 
 ```{r}
+glimpse(obswells_db)
+count(obswells_db) |> print()
+obswells_db %>% group_by(loc_wid) %>% count %>% filter(n>4) %>% arrange(desc(n)) %>% print()
+```
+(duplicates are replaced sites, as read from `PeilpuntStatusCode, PeilpuntStatusNaam, PeilpuntToestandCode`)
+
+
+## Extra: Query Measurement Technique
+To find out what technique was used to get the water levels, we query extra info: `PeilpuntType*`.
+```{r}
+# pptype <- tbl(watina_conn, "vwDimPeilpunt") %>% collect
+# write.csv2(pptype, "pptype.csv")
+pptype <- tbl(watina_conn, "vwDimPeilpunt") %>%
+          filter(PeilpuntStatusCode %in% c("VLD", "ENT", "CLD"),
+                 PeilpuntOpenbaarheidTypeCode == "PLME",
+                 PeilpuntOpenbaarheidCode == "UNKWN") %>%
+          select(loc_wid = MeetpuntWID,
+                 pp_typecode = PeilpuntTypeCode,
+                 pp_type = PeilpuntTypeNaam,
+                 obswell_installdate = PeilpuntPlaatsing
+                 # fd2 = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte / 2)
+          ) 
+    # collect %>%
+    # mutate_if(is.character, as.factor)
+# glimpse(pptype)
+```
+
+Are there any duplicates in the pptype? -> yes, but they should disappear on filtering
+```{r}
+pptype %>% group_by(loc_wid, obswell_installdate) %>% count %>% filter(n>4) %>% arrange(desc(n)) %>% print()
+# pptype %>% filter(loc_wid == -1) %>% print()
+# pptype %>% filter(loc_wid == 10385) %>% print()
+pptype <- pptype %>% distinct()
+glimpse(pptype)
+count(pptype) %>% print()
+pptype %>% group_by(loc_wid) %>% count %>% filter(n>1) %>% arrange(desc(n)) %>% print()
+```
+
+
+## Joining Data {#datajoin}
+Then join this to the obswells data:
+```{r}
+count(obswells_db) %>% print()
+obswells <- obswells_db %>% left_join(pptype, by = c("loc_wid", "obswell_installdate"))
+glimpse(obswells)
+count(obswells) %>% print()
+# write.csv2(obswells, "obswells.csv")
+```
+
+Finally, it is time to collect the lazy SQL table.
+Collaction is necessary to use stringr/tidyr manipulations which do not translate to SQL.
+
+```{r}
+obswells <- obswells %>% collect
+obswells <- obswells %>% mutate(pp_type_grp = word(pp_type, 1))
+obswells <- obswells %>% mutate_at(vars(pp_type_grp), ~tidyr::replace_na(., "onbekend"))
 glimpse(obswells)
 ```
 
-How many observation wells?
+And a quick check what we have in the pipe:
+```{r}
+ggplot(obswells, aes(x="", y=pp_type_grp, fill=pp_type_grp)) + 
+  geom_bar(width = 1, stat = "identity") + 
+  coord_polar("y", start=0)
+
+type_counts <- obswells %>% group_by(pp_type_grp) %>% summarize(n=n()) %>% mutate(freq = 100.0 * n / sum(n))
+get_frq <- function (typ) sprintf("%.1f %%", type_counts[type_counts$pp_type_grp == typ, "freq"][[1]])
+```
+
+Indeed, most measuring stations seem to be piezometers (`r get_frq("piëzometer")`).
+About `r get_frq("peilbuis")` of measurements are wells, and `r get_frq("onbekend")` are unknown.
+
+
+## Technical Documentation
+some locations have been replaced over time; there can have been a switch from piezo to well or the other way round.
+- example: `MeetpuntWID == 9930`
+- the install date is relevant for joins, otherwise successors are cross-mixed
+
+Some have `MeetpuntWID == -1`, this seems nonsense (but should be removed by the `left_join`).
+
+
+# Data Inspection
+## General
+How many observation wells are there?
 
 ```{r}
+obswells %>% group_by(pp_type_grp, pp_type) %>% count %>% print()
 count(obswells) |> print()
 ```
 
-What is the distribution of `filterlength`?
+## Filter Lengths {#filterlengths}
+What is the **absolute** distribution of `filterlength`?
 
 ```{r}
-obswells |> pull(filterlength) |> quantile(seq(0, 1, 0.05))
+# Histogram of Densities
+ggplot(obswells,
+       aes(x=filterlength, fill = pp_type_grp, colour = pp_type_grp)) + 
+    geom_histogram(aes(y=after_stat(count)),      # histogram with density instead of count on y-axis
+                   binwidth = 0.05,
+                   colour="black",
+                   ) +
+    xlim(-0.2, 2.2)
+
+
+filterlengths <- obswells |> pull(filterlength)
+filterlengths |> quantile(seq(0, 1, 0.05))
 ```
 
-## Exploring the availability of shallow filtertops
+There are some preferred lengths: 0.3, 0.5, 1.0 and 2.0 meters.
 
-Derive `filtertop` from `filterdepth` and `filterlength`:
+
+What is the **relative** distribution of `filterlength` within groups?
+
+```{r}
+# Densities; normalized per group
+ggplot(obswells,
+       aes(x=filterlength, fill = pp_type_grp, colour = pp_type_grp)) + 
+    geom_density(alpha = 0.8, color = "black") +
+    xlim(-0.2, 2.2) +
+    ggtitle("group-normalized densities")
+```
+
+
+A considerable number of non-piezo wells has short filters.
+
+
+Did the types (e.g. "unknown") change over time?
+```{r}
+obswells %>% mutate(year = lubridate::year(obswell_installdate)) %>%
+    ggplot(aes(x=year, fill=pp_type_grp, colour=pp_type_grp)) +
+    geom_histogram(binwidth = 1, color = "black")
+```
+
+2001 was a busy year...
+
+
+## Shallow Filtertops {#filtertops}
+
+To explore the availability of shallow filtertops, we need to derive `filtertop` from `filterdepth` and `filterlength`.
+(See `watina/R/get.R#get_locs()` for the original calculation.)
 
 ```{r}
 obswells <- obswells |> 
-  mutate(filtertop = filterdepth + filterlength/2)
+  mutate(filtertop = filterdepth - filterlength/2) # filterdepth is positive downwards; thus filtertop must be smaller
 ```
 
 Explore `filtertop` values:
@@ -80,37 +213,112 @@ Explore `filtertop` values:
 filtertop_vals <- obswells |> pull(filtertop)
 length(filtertop_vals)
 quantile(filtertop_vals, seq(0, 1, 0.05))
-quantile(filtertop_vals, 0.01)
+
+ggplot(obswells, aes(x=filtertop, fill = pp_type_grp)) + 
+    geom_histogram(aes(y=after_stat(count)),
+                   binwidth = 0.05, 
+                   colour="black") +
+    geom_vline(xintercept = c(0, 0.5))
 ```
+
+- Conventionally, 0.3m is the criterium for "shallow".
+- From a distribution standpoint, I guess 49cm is still shallow; yet I prefer to exclude the bunch of 50cm's.
+- I cannot make sense of above-ground filtertops, and will remove them.
 
 How many shallow filtertops?
 
 ```{r}
-filtertop_vals[filtertop_vals <= 0.3] |> table()
+sum(filtertop_vals[(filtertop_vals < 0.5) & (filtertop_vals > 0.0)] |> table())
 ```
 
-# Sensibility of shallow filtertops: what about HG3 values?
+Noted: We have quite a number of shallow filtertop locations.
+- Some are unplausible (<=0), and should be excluded.
+- A cluster of the shallowest ones are actually non-piezo.
 
+
+# Sensibility of shallow filtertops: what about HG3 values?
+## Append Data
+
+We first need to load the `xg3` data corresponding to the selected locations.
+```{r}
+xg3s_db <- obswells %>%
+    # filter( (filtertop > 0) & (filtertop < 0.5) )  %>% 
+  get_xg3(
+    watina_conn,
+    startyear = 1900,
+    truncated = FALSE
+  )
+glimpse(xg3s_db %>% arrange(desc(hydroyear), loc_code))
+
+xg3s <- xg3s_db %>% collect
+```
+
+*side note:* the `Precalc` table only seems to contain the latest data for our example (`MeetpuntWID == 9930`, `loc_code == "OPHP004"`).
+```{r}
+xg3s %>% arrange(desc(hydroyear), loc_code) %>%
+    filter(loc_code == "OPHP004")
+```
+
+The tricky thing is to get the "pp_type" right; it can change during the year.
+```{r}
+latest_pp <- obswells %>% arrange(desc(obswell_installdate)) %>%
+    group_by(loc_wid, loc_code) %>%
+    summarize(latest_installment = dplyr::first(obswell_installdate),
+              filterdepth = dplyr::first(filterdepth),
+              filtertop = dplyr::first(filtertop),
+              pp_type = dplyr::first(pp_type),
+              pp_type_grp = dplyr::first(pp_type_grp)
+              ) %>% ungroup %>%
+    mutate(shallow = (filtertop > 0) & (filtertop < 0.5)) %>%
+    select(-latest_installment)
+
+glimpse(latest_pp %>% filter(loc_code == "OPHP004"))
+latest_pp %>% count
+```
+
+## HG3 distribution {#hg3_dist}
 Let's have a look at how frequently HG3 values are above soil surface in piezometers with filterdepth <= 3 m (the usual limit), and how this might be related to soil texture and to the `filterdepth` or `filtertop` value.
 
 General distribution is like this:
+```{r}
+xg3s %>% 
+    ggplot(aes(x = hg3_lcl)) +
+    geom_histogram(binwidth = 0.1, color = "black", fill = "white") +
+    geom_vline(xintercept = 0)
+```
+
+*reference frame:**
+- hg3 is defined from soil surface, pointing up!
+- filtertop is defined from surface, pointing down
+
 
 ```{r}
-get_locs(
-  watina, 
-  filterdepth_range = c(0, 3),
-  filterdepth_guess = FALSE,
-  loc_type = "P", 
-  loc_validity = c("VLD", "ENT"),
-  obswells = FALSE
-) |> 
-  get_xg3(
-    watina,
-    startyear = 1900,
-    truncated = FALSE
-  ) |> 
-  dbplot_histogram(hg3_lcl)
+xg3_obswells %>%
+    ggplot(aes(x = hg3_lcl, fill = shallow)) +
+    geom_histogram(binwidth = 0.1, color = "black") +
+    geom_vline(xintercept = 0) +
+    facet_grid(pp_type_grp ~ .) +
+    ggtitle("hg3 (local) directly")
+
 ```
+
+## shallow piezos {#hg3_shallow}
+```{r}
+xg3_shallowpiez <- xg3_obswells %>%
+    filter(pp_type_grp == "piëzometer", shallow == TRUE)#, filtertop > 0) 
+glimpse(xg3_shallowpiez)
+
+xg3_shallowpiez %>%
+    ggplot(aes(x = hg3_lcl)) +
+    geom_histogram(binwidth = 0.1, color = "black", fill = "white") +
+    geom_vline(xintercept = 0)
+```
+
+Apparrently, HG3 can be positive: 
+- would be the case with floods, to which `Hg3` is extra sensitive
+- affects both types of measurement setups
+
+# TODO: soil
 
 Simplified texture classes from the soilmap:
 
@@ -130,6 +338,6 @@ soilmap <-
 
 
 ```{r}
-dbDisconnect(watina)
+dbDisconnect(watina_conn)
 ```
 

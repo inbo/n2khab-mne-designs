@@ -16,7 +16,8 @@ library(stringr)
 library(DBI)
 ```
 
-# connect 
+# connect
+
 ```{r}
 watina_conn <- connect_watina()
 query <- function(query_string) {
@@ -26,6 +27,7 @@ query <- function(query_string) {
 ```
 
 # query categories
+
 ```{r}
 query_categories <- function(table_name, vars) {
   var_string <- paste(vars, collapse = ", ")
@@ -37,6 +39,7 @@ knitr::kable( query_categories("DimGebiedGroep", c("GebiedGroepCode", "GebiedGro
 ```
 
 # query table
+
 ```{r}
 query_top <- function(table_name, top_n = 100) {
   query_string <- paste0("SELECT TOP ", top_n, " * FROM ", table_name, ";")
@@ -45,13 +48,14 @@ query_top <- function(table_name, top_n = 100) {
 }
 ```
 
-
 ```{r}
 # FactPeilMeting
 data <- query_top("FactPeilMeting")
 str(data)
 ```
+
 # FactPeilMeting
+
 ```{r}
 query_string <- "
 SELECT DISTINCT Jaar, count(PeilMetingWID) as n_metingen 
@@ -63,9 +67,9 @@ GROUP BY Jaar
 data <- query(query_string)
 plot(data$Jaar, data$n_metingen)
 ```
-    
+
 # Peilmeting Categorien
-    
+
 ```{r}
 query_string <- "
 SELECT DISTINCT PeilmetingCategorieCode, PeilmetingCategorie, count(PeilMetingWID) as cnt
@@ -76,25 +80,65 @@ categories <- query(query_string)
 knitr::kable(categories )
 
 ```
-    
+
 # MetingType
+
 ```{r}
 knitr::kable( query_categories("DimMetingType", c("MetingTypeCode, MetingTypeNaam")) )
 ```
-Zum Kuckuk nochmal...    
 
-# Meetpunt 
+Zum Kuckuk nochmal...
+
+# Meetpunt
+
 ```{r}
 knitr::kable( query_categories("DimMeetpunt", c("MeetpuntTypeCode", "MeetpuntType")) )
 ```
 
 the "P" type is an unfortunate combination...
 
-# archive 
+# DimPeilpunt?!
+```{r}
+data <- query("SELECT * FROM DimPeilpunt")
+```
+Bingo!
+
+# Getting It All
+```{r}
+table_names <- query("SELECT DISTINCT OBJECT_NAME(object_id) FROM sys.columns GROUP BY object_id")
+knitr::kable(table_names)
+```
+https://stackoverflow.com/a/2418665
+
+# columns
+```{r}
+table_names <- query("SELECT DISTINCT OBJECT_NAME(object_id) FROM sys.columns GROUP BY object_id")
+knitr::kable(table_names)
+```
+
+# missing documentation
+
+```{r}
+all_columns <- query("SELECT * FROM sys.columns;")
+my_columns <- query("SELECT OBJECT_NAME(object_id), name, column_id, TYPE_NAME(system_type_id) FROM sys.columns 
+WHERE (object_id = OBJECT_ID('DimPeilpunt'))
+OR (object_id = OBJECT_ID('DimDrukMetingType'))
+OR (object_id = OBJECT_ID('DimDrukOptimalisatie'))
+OR (object_id = OBJECT_ID('DimDruksonde'))
+OR (object_id = OBJECT_ID('DimHabitat'))
+                    ;")
+write.csv2(my_columns, file = "missingtables.csv", sep = ";")
+```
+
+
+```{r}
+```
+
+# archive
+
 ```{r}
 ```
 
 ```{r}
 dbDisconnect(watina_conn)
 ```
-
