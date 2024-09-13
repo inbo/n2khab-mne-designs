@@ -348,7 +348,7 @@ Apparrently, HG3 can be positive:
 
 Select a suitable example case for the geospatial experience below:
 ```{r}
-obswells[grep("hobo", obswells$area_name, ignore.case = TRUE),] %>% saveRDS("geospatial_example_subset.rds")
+obswells[grep("zwin", obswells$area_name, ignore.case = TRUE),] %>% saveRDS("geospatial_example_subset.rds")
 ```
 
 
@@ -362,7 +362,7 @@ dbDisconnect(watina_conn)
 
 The code chunks below should mostly be de-serialized from the above.
 
-```{r setup, include=FALSE}
+```{r setup2, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library("dplyr")
 library("dbplot")
@@ -370,20 +370,27 @@ library("n2khab")
 library("sf")
 library("stringr")
 library("ggplot2")
+library("mapview")
+
+# options(browser = "librewolf")
 ```
 
 # Soil
 
+## data loading
 ```{r}
 obswells_sample <- readRDS("geospatial_example_subset.rds")
+print(obswells_sample)
 ```
 
 
 Simplified texture classes from the soilmap:
 
-```{r}
-soilmap <- 
-  read_soilmap() |> 
+```{r} 
+soilmap_raw <- 
+  read_soilmap()
+soilmap <- soilmap_raw[grep("zwin", soilmap_raw$bsm_region, ignore.case = TRUE),] 
+soilmap <- soilmap %>%
   transmute(
     soilclass = case_when(
       str_detect(bsm_mo_tex, "V") ~ "peat",
@@ -393,8 +400,99 @@ soilmap <-
       TRUE ~ "unknown") |> 
       factor()
     )
+
+glimpse(soilmap)
+```
+
+- https://r-spatial.github.io/mapview/articles/mapview_02-advanced.html
+This does not work:
+```{r}
+soilmap %>% 
+    mapview(
+        zcol = "soilclass",
+        alpha.region = 0.6,
+        map.types = c("OpenStreetMap", "OpenTopoMap"),
+        alpha = 0.4
+    )
+```
+
+## inspection
+Let's take a closer look at what we have.
+Multipolygons:
+```{r}
+soilmap_light <- soilmap  %>%
+    filter(soilclass == 'heavy')
+glimpse(soilmap_light)
 ```
 
 
+... and points:
+```{r}
+obswells_sample[, c('x','y')]
+```
+
+converting points (https://stackoverflow.com/a/45484314)
+```{r}
+sf_points <- st_as_sf(x = obswells_sample, 
+                        coords = c("x", "y"), 
+                      crs = st_crs(soilmap_light)
+                      )
+```
+
+This makes them plottable:
+```{r}
+soilmap %>% 
+    mapview(
+        zcol = "soilclass",
+        alpha.region = 0.6,
+        map.types = c("OpenStreetMap", "OpenTopoMap"),
+        alpha = 0.4
+    ) +
+    mapview(sf_points) 
+
+```
 
 
+We can get intersects:
+- https://gis.stackexchange.com/a/282769
+```{r}
+intersects <- st_intersects(soilmap, sf_points, sparse = FALSE)
+print(paste(nrow(soilmap), nrow(sf_points), nrow(intersects), ncol(intersects)))
+heatmap(1*intersects, Colv = NA, Rowv = NA)
+
+which(intersects, arr.ind = TRUE)
+
+```
+noted: I intersect a soilmap with points; the rows are the soilmap, the cols are the points.
+
+
+... yet to transfer attributes, I might want to join:
+- https://gis.stackexchange.com/a/466059
+```{r}
+joined_spatial <- st_join(sf_points, soilmap)
+glimpse(joined_spatial %>% filter(!if_any(soilclass, is.na)))
+```
+... here we go.
+
+
+Let's check whether there's more soil info for Zwin in the full dataset.
+```{r}
+joined_spatial <- st_join(sf_points, soilmap_raw %>%
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      TRUE ~ "unknown") |> 
+      factor()
+    )
+)
+glimpse(joined_spatial %>% filter(!if_any(soilclass, is.na)))
+
+mapview(joined_spatial, zcol = "soilclass",
+        map.types = c("OpenStreetMap", "OpenTopoMap"),
+        alpha = 0.6
+        )
+```
+Good. I can work with this.
