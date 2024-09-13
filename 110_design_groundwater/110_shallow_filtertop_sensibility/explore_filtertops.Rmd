@@ -1,6 +1,6 @@
 ---
 title: "Sensibility of a shallow top of a piezometer filter"
-author: "Floris Vanderhaeghe"
+author: "Floris Vanderhaeghe, Falk Mielke"
 date: "`r lubridate::today()`"
 output:
   html_document:
@@ -315,11 +315,14 @@ xg3_obswells %>%
     scale_fill_manual(values=c("#356196", "#f0d70f")) +
     coord_flip() +
     xlab("local HG3 (m)") + ylab("observation count") +
-    theme(legend.position = c(0.95, 0.1), legend.background = element_rect(fill="white", size=0.5, linetype="solid", colour ="lightgray")) +
+    theme(legend.position = "inside", legend.position.inside = c(0.95, 0.1),
+          legend.background = element_rect(fill="white", linewidth=0.5, linetype="solid", colour ="lightgray")
+          ) +
     ggtitle("HG3 (local), direct measurement")
 
-ggsave("hg3_local_details.pdf", dpi = 300, width = 16, height = 8, units = "in")
+# ggsave("hg3_local_details.pdf", dpi = 300, width = 16, height = 8, units = "in")
 ```
+
 
 ## shallow piezos {#hg3_shallow}
 ```{r}
@@ -340,7 +343,41 @@ Apparrently, HG3 can be positive:
 - affects both types of measurement setups (piezometers and wells)
 - could be the case with floods, maybe even just intense rain and tube filling, to which `HG3` is extra sensitive
 
-# TODO: soil
+
+## case study extract
+
+Select a suitable example case for the geospatial experience below:
+```{r}
+obswells[grep("hobo", obswells$area_name, ignore.case = TRUE),] %>% saveRDS("geospatial_example_subset.rds")
+```
+
+
+```{r}
+dbDisconnect(watina_conn)
+```
+
+
+# code break!
+*Grab a coffee, restart your R session, and continue on the code below...*
+
+The code chunks below should mostly be de-serialized from the above.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("dplyr")
+library("dbplot")
+library("n2khab")
+library("sf")
+library("stringr")
+library("ggplot2")
+```
+
+# Soil
+
+```{r}
+obswells_sample <- readRDS("geospatial_example_subset.rds")
+```
+
 
 Simplified texture classes from the soilmap:
 
@@ -359,7 +396,5 @@ soilmap <-
 ```
 
 
-```{r}
-dbDisconnect(watina_conn)
-```
+
 
