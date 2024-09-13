@@ -162,7 +162,8 @@ ggplot(obswells,
                    binwidth = 0.05,
                    colour="black",
                    ) +
-    xlim(-0.2, 2.2)
+    xlim(-0.2, 2.2) +
+    ggtitle("filterlength usage count per installation type")
 
 
 filterlengths <- obswells |> pull(filterlength)
@@ -180,7 +181,7 @@ ggplot(obswells,
        aes(x=filterlength, fill = pp_type_grp, colour = pp_type_grp)) + 
     geom_density(alpha = 0.8, color = "black") +
     xlim(-0.2, 2.2) +
-    ggtitle("group-normalized densities")
+    ggtitle("group-normalized densities of filter length")
 ```
 
 
@@ -191,7 +192,8 @@ Did the types (e.g. "unknown") change over time?
 ```{r}
 obswells %>% mutate(year = lubridate::year(obswell_installdate)) %>%
     ggplot(aes(x=year, fill=pp_type_grp, colour=pp_type_grp)) +
-    geom_histogram(binwidth = 1, color = "black")
+    geom_histogram(binwidth = 1, color = "black") +
+    ggtitle("new installation type per year")
 ```
 
 2001 was a busy year...
@@ -218,7 +220,10 @@ ggplot(obswells, aes(x=filtertop, fill = pp_type_grp)) +
     geom_histogram(aes(y=after_stat(count)),
                    binwidth = 0.05, 
                    colour="black") +
-    geom_vline(xintercept = c(0, 0.5))
+    geom_vline(xintercept = c(0, 0.5)) +
+    scale_x_reverse() +
+    coord_flip() +
+    ggtitle("distribution of filter top depth (positive: down) per installation type")
 ```
 
 - Conventionally, 0.3m is the criterium for "shallow".
@@ -284,21 +289,30 @@ General distribution is like this:
 xg3s %>% 
     ggplot(aes(x = hg3_lcl)) +
     geom_histogram(binwidth = 0.1, color = "black", fill = "white") +
-    geom_vline(xintercept = 0)
+    geom_vline(xintercept = 0) +
+    coord_flip() +
+    ggtitle("bulk HG3 distribution (water level height: positive up)")
 ```
 
 *reference frame:**
 - hg3 is defined from soil surface, pointing up!
 - filtertop is defined from surface, pointing down
 
+```{r}
+xg3_obswells <- xg3s %>%
+    left_join(latest_pp, by = c(loc_code = "loc_code"))
+```
+
 
 ```{r}
 xg3_obswells %>%
+    filter(!(pp_type_grp == "onbekend"), !if_any(hg3_lcl, is.na)) %>% 
     ggplot(aes(x = hg3_lcl, fill = shallow)) +
     geom_histogram(binwidth = 0.1, color = "black") +
     geom_vline(xintercept = 0) +
-    facet_grid(pp_type_grp ~ .) +
-    ggtitle("hg3 (local) directly")
+    facet_grid(. ~ pp_type_grp, scales = "free_x") +
+    coord_flip() +
+    ggtitle("HG3 (local), direct measurement")
 
 ```
 
@@ -309,14 +323,17 @@ xg3_shallowpiez <- xg3_obswells %>%
 glimpse(xg3_shallowpiez)
 
 xg3_shallowpiez %>%
+    filter(!if_any(hg3_lcl, is.na)) %>% 
     ggplot(aes(x = hg3_lcl)) +
     geom_histogram(binwidth = 0.1, color = "black", fill = "white") +
-    geom_vline(xintercept = 0)
+    geom_vline(xintercept = 0) +
+    coord_flip() +
+    ggtitle("HG3 (local), only shallow piezometers")
 ```
 
 Apparrently, HG3 can be positive: 
-- would be the case with floods, to which `Hg3` is extra sensitive
-- affects both types of measurement setups
+- affects both types of measurement setups (piezometers and wells)
+- could be the case with floods, maybe even just intense rain and tube filling, to which `HG3` is extra sensitive
 
 # TODO: soil
 
