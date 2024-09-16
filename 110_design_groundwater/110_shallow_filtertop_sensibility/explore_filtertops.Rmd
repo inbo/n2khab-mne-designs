@@ -38,7 +38,8 @@ watina_conn <- connect_watina()
 - the majority of measurement locations are equipped with piezometers ([see here](#datajoin))
 - there are non-piezo wells with short filters ([see here](#filterlengths))
 - a cluster of the shallowest filter tops are actually non-piezo; some are above ground ([see here](#filtertops))
-- apparrently, HG3 can be positive ([see here](#hg3_dist)): this would be the case with floods, to which `Hg3` is extra sensitive; it affects both types of measurement setups ([see here](#hg3_shallow))
+- apparrently, HG3 can be positive ([see here](#hg3_dist)): this would be the case with normal rain or floods, to which `Hg3` is extra sensitive; it affects both types of measurement setups ([see here](#hg3_shallow))
+- the HG3 distribution and obove-surface HG3 does not depend much on soilclass ([see here](#soilclass))
 
 
 # Data Collection
@@ -374,6 +375,8 @@ column_infos %>% filter((name %in% c("PeilpuntXCoordinaat", "PeilpuntYCoordinaat
 Select a suitable example case for the geospatial experience below:
 ```{r}
 obswells[grep("zwin", obswells$area_name, ignore.case = TRUE),] %>% saveRDS("geospatial_example_subset.rds")
+obswells %>% saveRDS("geospatial_all_data.rds")
+xg3s %>% saveRDS("ecohydrological_xg3s.rds")
 ```
 
 
@@ -396,6 +399,7 @@ library("n2khab")
 library("sf")
 library("stringr")
 library("ggplot2")
+library("ggridges")
 library("mapview")
 
 # options(browser = "librewolf")
@@ -533,3 +537,131 @@ mapview(joined_spatial, zcol = "soilclass",
 Good. I can work with this.
 
 
+# All Soil and Dirt {#soilclass}
+With this data example in place, I will get the soil type info to all the `obswells`.
+
+## prepare data
+This requires `obswells` and `xg3s`, as used above.
+```{r}
+if (!exists("obswells")) {
+    obswells <- readRDS("geospatial_all_data.rds")
+}
+if (!exists("xg3s")) {
+    xg3s <- readRDS("ecohydrological_xg3s.rds")
+}
+
+obswells_placed <- obswells %>% 
+    filter(!if_any(c('x', 'y'), is.na))
+glimpse(obswells_placed)
+print(paste("Loss of locations: ", nrow(obswells), nrow(obswells_placed)))
+```
+
+Additionally, the complete soilmap will be required, with soil class.
+```{r}
+soilmap <- soilmap_raw %>%
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      TRUE ~ "unknown") |> 
+      factor()
+    )
+glimpse(soilmap)
+```
+
+Obswells can be converted to an `sf` object (based on `x, y` location of the wells).
+```{r}
+obswells_points <- st_as_sf(x = obswells_placed, 
+                        coords = c("x", "y"), 
+                      crs = st_crs(soilmap)
+                      )
+```
+
+
+Then, the spatial join of well and soil data will append the soil class information.
+```{r}
+soiled_obswells <- st_join(obswells_points, soilmap) %>%
+    filter(!if_any(soilclass, is.na))
+glimpse(soiled_obswells)
+```
+
+
+As seen above, the xg3 seems to cover the latest installations, which are to be extracted here:
+```{r}
+latest_soiled <- soiled_obswells %>% arrange(desc(obswell_installdate)) %>%
+    group_by(loc_wid, loc_code) %>%
+    summarize(latest_installment = dplyr::first(obswell_installdate),
+              filterdepth = dplyr::first(filterdepth),
+              filtertop = dplyr::first(filtertop),
+              soilclass = dplyr::first(soilclass),
+              ) %>% ungroup %>%
+    mutate(shallow = (filtertop > 0) & (filtertop < 0.5)) %>%
+    select(-latest_installment)
+```
+
+Finally, `xg3s` can be joined.
+```{r}
+soilclass_obswell_xg3s <- xg3s %>%
+    left_join(latest_soiled, by = c(loc_code = "loc_code")) %>% 
+    filter(!if_any(hg3_lcl, is.na)) %>% 
+    mutate(soilclass = tidyr::replace_na(soilclass, "unknown"))
+
+# sample size, for display in the plots below
+soilclass_counts <- soilclass_obswell_xg3s %>% group_by(soilclass) %>% count %>% ungroup %>% mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+```
+
+
+## Visualize
+
+The question is whether the occurrence of unexpectedly high `HG3` is associated with a soil type. 
+
+Visually, this seems not to be the case:
+```{r}
+
+soilclass_obswell_xg3s %>%
+    ggplot(aes(x = hg3_lcl, y = soilclass, fill = soilclass)) +
+    theme_bw() +
+    # geom_density(alpha = 0.6, color = "black") +
+    geom_density_ridges(stat = "binline", binwidth = 0.05, scale = 2.4, alpha = 0.6, color = "black") +
+    # geom_histogram(binwidth = 0.1, color = "black") +
+    geom_vline(xintercept = 0) +
+    scale_fill_manual(values=c("#284971", "#8eafd7", "#f0d70f", "#b2b2b2")) +
+    xlim(-2,1) +
+    scale_y_discrete(labels=soilclass_counts) +
+    coord_flip() +
+    xlab("local HG3 (m)") + ylab("observation count") +
+    theme(legend.position = "inside", legend.position.inside = c(0.95, 0.1),
+          legend.background = element_rect(fill="white", linewidth=0.5, linetype="solid", colour ="lightgray")
+          ) +
+    ggtitle("HG3 (local), direct measurement")
+
+# ggsave("hg3_soilclass_details.pdf", dpi = 300, width = 16, height = 8, units = "in")
+```
+
+
+## Statistical Tests
+... do not make sense because
+- data is not normally distributed
+- sample size is unequal
+- sample size is large (i.e. conventional tests will trigger upon miniscule differences).
+```{r}
+get_group <- function (grp) {
+    x <- soilclass_obswell_xg3s %>% filter(soilclass == grp) %>% select("hg3_lcl")
+    x[[1]]
+}
+ks.test(get_group("light"), get_group("heavy"))
+ks.test(get_group("light"), get_group("peat"))
+
+wilcox.test(get_group("light"), get_group("heavy"))
+wilcox.test(get_group("light"), get_group("peat"))
+
+```
+↑ **ignore the p-values!**
+
+What I would rather like to do is a model with an adequate distribution for HG3 which incorporates (and quantifies) an effect of `soilclass`.
+
+My skill in R is (yet) insufficient to tackle this.
+But I will learn.
