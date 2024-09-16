@@ -344,6 +344,31 @@ Apparrently, HG3 can be positive:
 - could be the case with floods, maybe even just intense rain and tube filling, to which `HG3` is extra sensitive
 
 
+## check coordinate reference systems
+
+The CRS of the watina data seems to match `soilmap` coordinates (see below *Belgian Lambert 72*).
+According to documentation,
+
+> DimBodem	PeilpuntXCoordinaat	Description	X Coördinaat van het peilpunt in Lambert 72
+> DimBodem	PeilpuntYCoordinaat	Description	Y Coördinaat van het peilpunt in Lambert 72
+
+
+Unfortunately, I fail to reproduce the documentation query.
+```{r}
+query_table_names <- "SELECT name FROM sys.tables ORDER BY name ASC;"
+table_names <- DBI::dbGetQuery(watina_conn, query_table_names)
+
+query_columns <- "SELECT *, OBJECT_NAME(object_id) as table_name FROM sys.columns;"
+column_infos <- DBI::dbGetQuery(watina_conn, query_columns) %>% filter(table_name == "DimPeilpunt")
+column_infos %>% filter((name %in% c("PeilpuntXCoordinaat", "PeilpuntYCoordinaat")))
+
+# query_documentation <- "SELECT * FROM sys.documentation;"
+# documentation <- DBI::dbGetQuery(watina_conn, query_documentation)
+
+# documentation <- DBI::dbGetQuery(watina_conn, "SELECT * FROM vwDocumentatie;")
+```
+
+
 ## case study extract
 
 Select a suitable example case for the geospatial experience below:
@@ -352,12 +377,13 @@ obswells[grep("zwin", obswells$area_name, ignore.case = TRUE),] %>% saveRDS("geo
 ```
 
 
+
+# code break!
 ```{r}
 dbDisconnect(watina_conn)
 ```
 
 
-# code break!
 *Grab a coffee, restart your R session, and continue on the code below...*
 
 The code chunks below should mostly be de-serialized from the above.
@@ -415,6 +441,14 @@ soilmap %>%
         alpha = 0.4
     )
 ```
+
+
+## CRS check
+The CRS of the soilmap is **BD72 / Belgian Lambert 72** (ID: EPSG 31370)
+```{r}
+st_crs(soilmap)
+```
+
 
 ## inspection
 Let's take a closer look at what we have.
@@ -495,4 +529,7 @@ mapview(joined_spatial, zcol = "soilclass",
         alpha = 0.6
         )
 ```
+
 Good. I can work with this.
+
+
