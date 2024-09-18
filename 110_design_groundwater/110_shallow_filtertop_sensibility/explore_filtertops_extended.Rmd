@@ -1,0 +1,500 @@
+---
+title: "Sensibility of a shallow top of a piezometer filter"
+author: "Falk Mielke"
+date: "`r lubridate::today()`"
+output:
+  html_document:
+    keep_md: TRUE
+    number_sections: yes
+    code_folding: show
+    code_download: yes
+    fig_width: 10
+    fig_height: 5
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../../header.html
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("dplyr")
+library("dbplot")
+library("watina")
+library("n2khab")
+library("sf")
+library("stringr")
+library("ggplot2")
+library("ggside")
+library("ggridges")
+library("mapview")
+
+watina_conn <- connect_watina()
+```
+
+
+# Purpose
+In this workbook, I will attempt to redo and extend some of the previous analyses (`110_shallow_filtertop_sensibility/explore_filtertops.Rmd`).
+My goal is to stick with the `watina` capabilities this time.
+
+Tasks:
+
+- Get `obswells` data and `xg3` values for 
+  - a scatter of filter (top) depth *versus* HG3 
+  - bonus: proportion of HG3 above ground per filter depth 
+  - bonus: per soil class
+
+- measurement clusters with `watina::cluster_locs()`: compare proximal wells of different depth
+
+# Load Data
+## concept
+We have to distinguish several levels of spatiotemporal organization of observation well.
+
+One level is **location**, or site. 
+Imagine, per analogy a water well in grandma's garden. 
+Someone drilled a hole in the ground 100 years ago for groundwater retrieval.
+This well is one location.
+
+Yet over time, the actual well installation (**observation well**) was altered. 
+In the beginning, there were stone walls and a bucket.
+At some point, someone installed a mechanical pump to facilitate water retrieval - yet they used exactly the same spot (/location) in granny's garden.
+The latest observation well at that location is an electric pump which is programmed to water granny's potatoes at regular intervals.
+
+
+Transporting this analogy to actual groundwater measurement with `watina`:
+
+- We can query either on *location* level, which might be agnostic to temporary technical exchange of the well hardware; this usually links to installation parameters for the latest installment (requires *aggregation*).
+- Alternatively, we can query the *observation well* level. Consecutive installations will produce multiple lines in the output, which all share the location.
+
+
+In the `watina::get_locs()` function, the `obswells` argument provides choice of level, and `obswell_aggr` provides control of the aggregation strategy.
+
+
+## well locations
+First, I will load the well data. 
+By setting `obswells = FALSE`, they will be on location level (which is different from the strategy in the previous overview).
+
+```{r}
+obswells_db <- get_locs(
+    watina_conn, 
+    filterdepth_range = c(0, 5),
+    filterdepth_guess = FALSE,
+    loc_type = "P", 
+    loc_validity = c("VLD", "ENT"),
+    obswells = FALSE
+    ) %>% mutate(filtertop_depth = filterdepth - filterlength/2) 
+# (remember: filterdepth is positive downwards; thus filtertop_depth must be smaller)
+
+obswells_db %>% count
+```
+
+
+Always worth comparing with previous excerpts:
+
+```{r}
+obswells_reference <- readRDS("geospatial_example_subset.rds") %>%
+    mutate(filtertop_depth = filterdepth - filterlength/2) 
+
+obswells_reference %>% group_by(loc_code) %>% count %>% arrange(desc(n))
+location_selection <- "ZWIP017"
+```
+
+(I have tried `ZWIP034` and `ZWIP006`, yet their data availability is less instructive than `ZWIP017`.)
+
+
+```{r}
+glimpse(obswells_reference %>% filter(loc_code == location_selection))
+
+obswells_location <- obswells_db %>% collect %>%
+    filter(grepl("zwin", area_name, ignore.case = TRUE)) 
+glimpse(obswells_location %>% filter(loc_code == location_selection))
+
+```
+
+Note that the well on that location was replaced in May 2010 (and again recently).
+This implies a discontinuity: filter top depth changed by about 2m towards the surface.
+
+
+This is brief confirming evidence that we work "per location" now, aggregation picks the latest values.
+(Will check back below whether `HG3` also restricts to the latest installment.)
+
+
+## xg3 values
+Then, we require the xg3 data for all locations:
+
+```{r}
+xg3s_db <- obswells_db %>%
+    get_xg3(
+        watina_conn,
+        startyear = 1960,
+        truncated = FALSE,
+        with_estimated = FALSE,
+        vert_crs = "local",
+        collect = FALSE
+    )
+glimpse(xg3s_db %>% arrange(desc(hydroyear), loc_code))
+xg3s_db %>% count
+```
+
+Obviously, XG3 values are collected per location, per year, so we expect *location ⨉ year* table entries with sparse yearly coverage.
+
+How is it with our sample location?
+
+```{r}
+xg3_samplelocation <- xg3s_db %>%
+    filter(loc_code == location_selection) %>%
+    arrange(hydroyear) %>%
+    collect
+xg3_samplelocation %>% 
+    ggplot(aes(x=hydroyear, y=vg3_lcl)) +
+    geom_line() +
+    geom_line(aes(y=hg3_lcl), color = "darkred", linetype = "dashed") +
+    geom_line(aes(y=lg3_lcl), color = "blue", linetype = "dashed") +
+    geom_vline(xintercept = c(2010.5)) +
+    geom_hline(yintercept = c(0)) +
+    ggtitle(paste0("measured water levels of ", location_selection, " location"))
+    
+```
+
+There seems to have been a change in 2010 which affects VG3, yet that might be co-incidence.
+
+## soilmap
+We might categorize by soil class, and the relevant geospatial data are loaded here.
+
+```{r}
+soilmap_raw <- 
+  read_soilmap()
+
+soilmap <- soilmap_raw %>%
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      TRUE ~ "unknown") |> 
+      factor()
+    )
+
+glimpse(soilmap)
+```
+
+
+## actual water levels
+Now, wouldn't it be fun if we could query actual water levels for this location in 2010?
+
+Sit back, and behold.
+
+```{r}
+water_query <- tbl(watina_conn, "FactPeilMeting") %>%
+    filter(.data$MeetpuntWID %in% 6017) %>%
+    select(PeilmetingCategorie, TijdWID, Niveau) %>%
+    mutate(hydroyear = floor(TijdWID/10000)) %>% 
+    arrange(TijdWID)
+tijd <- tbl(watina_conn, "DimTijd") %>%
+    rename(TijdWID = DatumWID) %>%
+    select(TijdWID, HydroJaar)
+water_query <- water_query %>%
+    left_join(tijd, by="TijdWID") %>%
+    collect %>% 
+    mutate(date = lubridate::ymd(TijdWID))
+glimpse(water_query)
+```
+
+```{r}
+
+legend_colors <- c("niveau" = "black",
+                   "lg3" = "darkblue",
+                   "hg3" = "darkred",
+                   "vg3" = "darkgray"
+                   )
+
+water_query %>%
+    left_join(xg3_samplelocation, by = "hydroyear") %>%
+    ggplot(aes(x=date)) +
+    geom_line(aes(y=Niveau, color = "niveau")) +
+    geom_line(aes(y=vg3_lcl, color = "vg3"), linetype = "dashed") +
+    geom_line(aes(y=hg3_lcl, color = "hg3"), linetype = "dashed") +
+    geom_line(aes(y=lg3_lcl, color = "lg3"), linetype = "dashed") +
+    geom_vline(xintercept = as.Date("2010-05-21")) +
+    geom_hline(yintercept = c(0)) +
+    labs(colour = "quantity") +
+    xlim(as.Date("2004-01-01"), as.Date("2022-12-31")) +
+    scale_color_manual(values=legend_colors) +
+    ggtitle(paste0("measured water levels of ", location_selection, " location (depth change in 2010)"))
+ 
+```
+
+Interesting. To be followed up.
+
+# Population Plots
+
+## hg3 ~ filtertop
+
+I am interested in the distribution of HG3 values as a function of filter top depth.
+This requires a many-to-one join of `xg3` onto `obswells`.
+
+(At this point, data needs to be collected for spatial join.)
+
+```{r}
+
+# obswells_db %>% pull("filtertop_depth")
+# xg3s_db %>% pull("hg3_lcl")
+
+# first, join spatial information
+joined_spatial <- st_join(watina::as_points(obswells_db %>% collect), soilmap) %>%
+    mutate(soilclass = tidyr::replace_na(soilclass, "unknown"))
+
+# next, append water levels
+xg3_obs <- joined_spatial %>%
+    select(loc_code, filtertop_depth, filterdepth, soilclass) %>% 
+    left_join(xg3s_db %>% collect, by = "loc_code")
+glimpse(xg3_obs)
+
+
+soilclass_counts <- xg3_obs %>% group_by(soilclass) %>% count %>% ungroup %>% mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+soilclass_colors <- c("#284971", "#8eafd7", "#f0d70f", "#cccccc")
+names(soilclass_colors) <- names(soilclass_counts)
+```
+
+
+The filtertop depth 
+
+```{r}
+p1 <- xg3_obs %>%
+    filter(!is.na(hg3_lcl)) %>% 
+    # filter(hydroyear > 2018) %>% 
+    ggplot(aes(x = filtertop_depth, y = hg3_lcl, color = soilclass)) +
+    geom_point(alpha = 0.2 ) +
+    geom_smooth() +
+    theme_bw()
+
+p1 +
+    geom_vline(xintercept = c(0, 0.3)) +
+    geom_hline(yintercept = c(0)) +
+    scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+    scale_x_reverse() +
+    coord_cartesian(xlim = c(4, 0), expand = FALSE) +
+    ggtitle("hg3 depends on soilclass, but hardly on filtertop depth ") +
+    xlab("filtertop depth (m)") + ylab("local HG3 (m)") +
+    theme(legend.position = "inside", legend.position.inside = c(0.8, 0.1),
+          legend.background = element_rect(fill="white",
+                                           linewidth=0.5,
+                                           linetype="solid",
+                                           colour ="lightgray"
+                                           )
+          ) 
+
+# ggsave("figures/hg3_filtertopdepth.pdf", dpi = 300, width = 16, height = 8, units = "in")
+```
+
+
+## stats
+### conceptual
+This cries for a Bayesian model of the form:
+
+<center>
+$$hg3 \sim (1 | soilclass) + (filtertop_depth | soilclass) + \varepsilon\cdot a$$
+</center>
+
+```{r}
+library("brms")
+resample <- FALSE
+```
+
+### simple
+The simplest I can think of (almost):
+```{r}
+model_file <- "models/simple.rds"
+if (!exists(model_file) && resample) {
+    simple_model <- brm(
+        formula = hg3_lcl ~ 1 + filtertop_depth,  
+        data = xg3_obs, 
+        family = student,
+        warmup = 2^10, 
+        iter = 2^11, 
+        chains = 4, 
+        cores = 4,
+        seed = 123
+        )
+    saveRDS(simple_model, model_file)
+} else {
+    simple_model <- readRDS(model_file)
+}
+
+```
+
+```{r}
+# mcmc_plot(simple_model) # forest plot
+# plot(simple_model) # traceplot
+summary(simple_model)
+```
+
+### "random intercept" 
+*(Oh Lord Bayes, forgive the term...)*
+
+Hierarchical as can be (actually, brms does not allow that):
+```{r}
+model_file <- "models/soilintercept.rds"
+if (!exists(model_file) && resample) {
+    soilclass_model <- brm(
+        formula = hg3_lcl ~ (1 | soilclass) + filtertop_depth ,  
+        data = xg3_obs, 
+        family = student,
+        warmup = 2^10, 
+        iter = 2^11, 
+        chains = 4, 
+        cores = 4,
+        seed = 123
+        )
+    saveRDS(soilclass_model, model_file)
+} else {
+    soilclass_model <- readRDS(model_file)
+}
+
+```
+
+```{r}
+# mcmc_plot(soilclass_model) # forest plot
+# plot(soilclass_model) # traceplot
+summary(soilclass_model)
+```
+
+### random everything
+... because everything *is* random.
+
+```{r}
+model_file <- "models/soilslope.rds"
+if (!exists(model_file) && resample) {
+    soilslope_model <- brm(
+        formula = hg3_lcl ~ (1 | soilclass) + (0 + filtertop_depth | soilclass) ,  
+        data = xg3_obs, 
+        family = student,
+        warmup = 2^10, 
+        iter = 2^11, 
+        chains = 4, 
+        cores = 4,
+        seed = 123
+        )
+    saveRDS(soilslope_model, model_file)
+} else {
+    soilslope_model <- readRDS(model_file)
+}
+
+```
+
+```{r}
+# mcmc_plot(soilslope_model) # forest plot
+# plot(soilslope_model) # traceplot
+summary(soilslope_model)
+```
+
+### "fixed" slope everything
+... although everything *is* random.
+
+*Thanks to input by Hans!*
+
+```{r}
+if (FALSE) {
+model_file <- "models/fixedslope.rds"
+    fixedslope_model <- brm(
+        formula = hg3_lcl ~ 1 + filtertop_depth + (filtertop_depth : soilclass),  
+        data = xg3_obs, 
+        family = student,
+        warmup = 2^10, 
+        iter = 2^11, 
+        chains = 4, 
+        cores = 4,
+        #backend = "cmdstanr",
+        file = model_file,
+        file.refit = "on_change",
+        seed = 123
+        )
+}
+```
+
+```{r}
+# mcmc_plot(fixedslope_model) # forest plot
+# plot(fixedslope_model) # traceplot
+# summary(fixedslope_model)
+```
+
+### results summary | summary results
+
+The simple model ran in "moderate" computation time.
+
+- filtertop_depth: `-0.12`
+- intercept: `0.07`
+- residual variance: `0.23`
+- nu: `2.17` (reasonably un-Gaussian)
+
+
+The "random intercept" model took too long, given its simplicity.
+Effects:
+
+- filtertop_depth: `-0.12`
+- intercept: `0.07`, sd: `0.13`
+- residual variance: `0.23`
+
+
+The "random everything" ("random intercept" + "random slope") model is NOT the right model, and too slow to compute.
+
+- intercept 0.06
+- sigma 0.22
+- sd(filtertop_depth): 0.19
+
+
+### technical notes
+
+- `brms` is disappointingly slow (yet I did not give it specific priors)
+- ... and limited (e.g. could not use double-hierarchical).
+- but it *looks* and *feels* nice!
+
+*(mental note: learn STAN)*
+
+
+# Location, Location, Location
+## concept
+The next idea is to compare location clusters.
+
+We search for locations where there are **clusters** ( := groups of wells, some shallow top, some deep), in order to 
+
+- (ia) visualize/compare the local HG3 value difference 
+- (ib) quantify the local HG3 value correlation
+- (ii) comparatively explore the actual water level measurement time series
+
+
+An extended analysis might go to temporal differences: find exchanged wells which change more or less drastically in filter (top) depth, again comparing
+
+- (i) HG3
+- (ii) level time series
+
+
+# NOTES
++ IDEA: see `ZWIP017`, query exchanges with significant change in depth; plot before/after; HG3 discrepancy water level | pressure level
++ Why do some HG3 lie below VG3?
++ Why are HG3&LG3 only calculated intermittently, whereas VG3 is mostly there?
++ What is the difference between `soilsurf_ost` and `measuringref_ost`? Can it explain the HG3 discrepancy?
++ mathjax does not work out of the box (self-contained? js to server?)
+
+
+TODO: contact Frederic, Jo Loos for feedback on the discrepancy in HG3 values (*versus* `FactPeilMeting.Niveau`).
+
+
+# TODO
+
++ [✓] check `watina::as_points()`
++ [✓] ik stel voor om ook een scatterplot (evt met smoother: + geom_smooth() ) te maken voor HG3-waarden in functie van filtertopdiepte en/of filterdiepte. Of specifieker: de proportie, per buis, van HG3-waarden boven maaiveld, in functie van filtertopdiepte en/of filterdiepte van de buis.
++ [⨉] ook de distributie van HG3 ifv bodemklasse zou je dan nader kunnen differentiëren volgens filtertopklasse (ipv pp_type_grp). *less relevant: we have scatters+models*
++ [✓] Deze plots kunnen ook opgesplitst volgens bodemklasse.
++ [ ] voorts kun je kijken naar het voorkomen van piëzometers in de directe nabijheid van peilbuizen (zie watina::cluster_locs() <https://inbo.github.io/watina/reference/cluster_locs.html>), om die sterker gekoppeld met elkaar te kunnen vergelijken qua HG3. Dat is makkelijker te interpreteren, want de HG3 varieert natuuriljk sowieso ruimtelijk, los van het feit of je die met peilbuizen of piëzometers bemeet.
+
+
++ [✓] loc_wid is not recommended for local use, i.e. outside SQL queries, since its value can get updated in the database. It's not regarded as a stable ID, and it's the reason it is dropped by watina::get_xxx(collect = TRUE). At least, not using it is the advice of the DBA (I think there's a note in the get_locs() documentation). *-> all use watina functions now, which actually join on WID's*
++ the database table with XG3 values is set up for location codes, not the obswell level. It may be more straightforward to use get_locs(obswells = FALSE) directly, as input for get_xg3(), so that you don't have to locally decide how to get from obswells to locations (i.e. in creating the latest_pp / latest_soiled objects). You could still join with obswells after that, in order to expand. Anyway get_xg3() prepares unique values from the loc_code column no matter the scope of the inputted object. Feel free to ignore this suggestion after double-checking. *-> double checked, understood connection, seems fine now*
+
