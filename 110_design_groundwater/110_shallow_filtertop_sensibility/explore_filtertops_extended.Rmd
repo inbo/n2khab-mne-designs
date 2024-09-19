@@ -537,6 +537,7 @@ obswell_clusters <- obswell_clusters  %>%
     filter(!is.na(n_clustermembers)) %>%
     mutate_at("cluster_id", as.factor)
 
+obswell_clusters %>% count
 ```
 
 Quick notes: 
@@ -754,6 +755,142 @@ As with the derived XG3 values above,
 it might be instructive to check variability within clusters 
 for actual water level measurements.
 
+Ingredients, from above:
+
+- `obswell_clusters`
+- `FactPeilMeting.Niveau`
+
+And just because I was R-programming-lazy before, I will use some functions and loops now.
+
+```{r}
+
+tijd <- tbl(watina_conn, "DimTijd") %>%
+    rename(TijdWID = DatumWID) %>%
+    select(TijdWID, HydroJaar)
+query_location <- function (loc_wid, query_year = NA, con = watina_conn) {
+    water_levels <- tbl(con, "FactPeilMeting") %>%
+        filter(.data$MeetpuntWID %in% loc_wid) %>%
+        select(MeetpuntWID, TijdWID, Niveau) %>%
+        mutate(hydroyear = floor(TijdWID/10000)) %>%
+        left_join(tijd, by="TijdWID") 
+
+    if (!missing(query_year)) {
+        water_levels <- water_levels %>%
+            filter(hydroyear %in% query_year)
+    }
+
+    return(invisible(
+        water_levels %>%
+            collect %>% 
+            mutate(date = lubridate::ymd(TijdWID)) %>%
+            select(-one_of("TijdWID", "HydroJaar")) %>% 
+            rename(loc_wid = MeetpuntWID, level = Niveau) %>% 
+            mutate_at("loc_wid", as.factor) %>% 
+            arrange(loc_wid, date)
+    ))
+}
+
+# testing
+# test_level <- query_location(loc_wid = c(6016, 6017))#, query_year = c(2010, 2011, 2012))
+# test_level %>% ggplot(aes(x = date, y = Niveau, color = loc_wid)) + geom_line()
+```
+
+
+And, here we go, another function!
+
+```{r}
+cluster_metadata <- obswell_clusters %>%
+    st_drop_geometry
+    
+# glimpse(cluster_metadata)
+
+query_levels <- function(cluster_id, aggregate = TRUE) {
+    single_cluster <- cluster_metadata %>%
+        filter(cluster_id == cluster_id) %>%
+        mutate(is_deepest = loc_wid == deep_ref) %>%
+        mutate_at("loc_wid", as.factor) %>% 
+        select(loc_wid, filtertop_depth, is_deepest)
+    # print(single_cluster)
+
+    
+    cluster_levels <- query_location(loc_wid = single_cluster$loc_wid) %>%
+        left_join(single_cluster, by = "loc_wid")
+
+    # glimpse(cluster_levels)
+
+    deep_levels <- cluster_levels %>%
+        filter(is_deepest) %>%
+        select(date, filtertop_depth, level) %>%
+        rename(deep_level = level, deep_ftd = filtertop_depth)
+
+    diff_levels <- cluster_levels %>%
+        filter(!is_deepest) %>%
+        left_join(deep_levels, by = "date") %>%
+        mutate(diff_level = level - deep_level,
+               diff_ftd = filtertop_depth - deep_ftd
+               ) %>%
+        filter(!is.na(diff_level)) %>%
+        select(loc_wid, date, diff_ftd, diff_level)
+
+    if (aggregate) {
+        diff_levels <- diff_levels %>%
+            group_by(loc_wid, diff_ftd)  %>%
+            summarize(mean_diff = mean(diff_level))
+    }
+
+    return(diff_levels)
+}
+```
+
+
+
+<center>
+**ATTENTION**
+</center>
+
+And here we attempt to `apply` the functions.
+
+- takes a long time
+- may kill the RAM
+
+
+```{r}
+
+cluster_ids <- unique(cluster_metadata$cluster_id)
+
+diff_file <- "all_diff_levels.rds"
+if (FALSE || !exists(diff_file)) {
+    all_diff_levels <- lapply(cluster_ids, query_levels) 
+    all_diff_levels <- purrr::list_rbind(all_diff_levels)
+    saveRDS(all_diff_levels, diff_file)
+} else {
+    all_diff_levels <- readRDS(diff_file)
+}
+```
+
+
+overview plot:
+```{r}
+all_diff_levels %>%
+    ggplot(aes(x = diff_level)) +
+    geom_histogram()
+```
+
+
+detail plot:
+```{r}
+
+mean_diffs <- all_diff_levels %>%
+    group_by(loc_wid, diff_ftd) %>%
+    summarize(dl = mean(diff_level))
+
+mean_diffs %>%
+    ggplot(aes(x = diff_ftd, y = dl)) +
+    geom_point()
+
+
+```
+
 
 
 
@@ -765,7 +902,8 @@ for actual water level measurements.
 + mathjax does not work out of the box (self-contained? js to server?)
 + [☇] there is a `vg3_lcl` > 50m at `STRP048` in hydroyear 2023
 + [TODO] if you use `watina::cluster_locs()` with obswells_db (non-sf), there is a "bad error message" (indeed, it is.)
-
++ [TODO] there is "PeilmetingCategorie == 'twijfelachtig'" in 6016... :/
++ [TODO] there are measurements from outside Flanders: check `area_code = VBS`
 
 TODO: contact Frederic, Jo Loos for feedback on 
 
