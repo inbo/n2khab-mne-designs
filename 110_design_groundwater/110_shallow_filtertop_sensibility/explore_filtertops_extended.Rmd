@@ -814,7 +814,8 @@ query_levels <- function(cluster_id, aggregate = TRUE) {
 
     
     cluster_levels <- query_location(loc_wid = single_cluster$loc_wid) %>%
-        left_join(single_cluster, by = "loc_wid")
+        left_join(single_cluster, by = "loc_wid",
+                  relationship = "many-to-many")
 
     # glimpse(cluster_levels)
 
@@ -825,7 +826,8 @@ query_levels <- function(cluster_id, aggregate = TRUE) {
 
     diff_levels <- cluster_levels %>%
         filter(!is_deepest) %>%
-        left_join(deep_levels, by = "date") %>%
+        left_join(deep_levels, by = "date", 
+                  relationship = "many-to-many") %>%
         mutate(diff_level = level - deep_level,
                diff_ftd = filtertop_depth - deep_ftd
                ) %>%
@@ -835,7 +837,7 @@ query_levels <- function(cluster_id, aggregate = TRUE) {
     if (aggregate) {
         diff_levels <- diff_levels %>%
             group_by(loc_wid, diff_ftd)  %>%
-            summarize(mean_diff = mean(diff_level))
+            summarize(mean_diff = mean(diff_level), .groups = 'drop')
     }
 
     return(diff_levels)
