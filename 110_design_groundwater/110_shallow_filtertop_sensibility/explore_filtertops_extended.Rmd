@@ -32,6 +32,10 @@ library("ggplot2")
 library("ggside")
 library("ggridges")
 library("mapview")
+# installation of the cmdstanr package is optional:
+# remotes::install_github("stan-dev/cmdstanr")
+# cmdstanr::check_cmdstan_toolchain(fix = TRUE)
+# cmdstanr::install_cmdstan()
 
 watina_conn <- connect_watina()
 ```
@@ -394,14 +398,27 @@ readr::write_delim(xg3_obs %>% select(-geometry), "xg3obs_data.csv", delim = ";"
 ```
 
 Results match those in R.
-```{r, out.width = "80%"}
+```{r, out.width = "80%", eval=FALSE}
 knitr::include_graphics("figures/python_model_fit_hg3_lcl.png")
+```
+
+If you would like to try the python code below, start with:
+```{r eval=FALSE}
+reticulate::install_python(version = "3.12.6") # note that "latest" will not work
+reticulate::py_install(c("scipy",
+                         "numpy",
+                         "pandas",
+                         "seaborn",
+                         "pymc",
+                         "matplotlib"
+                         ))
 ```
 
 Code reference:
 ```{python eval=FALSE}
-import numpy as NP
+# import numpy as NP
 import scipy.stats as STATS
+import numpy as NP
 import pandas as PD
 import matplotlib as MP
 import matplotlib.pyplot as PLT
@@ -760,88 +777,68 @@ Ingredients, from above:
 - `obswell_clusters`
 - `FactPeilMeting.Niveau`
 
-And just because I was R-programming-lazy before, I will use some functions and loops now.
+
+This turned out to be inefficient in `R/dbplyr`: the table is huge, and even lazy queries collects it multiple times before joining. 
+SQL is far more efficient than that.
 
 ```{r}
-
-tijd <- tbl(watina_conn, "DimTijd") %>%
-    rename(TijdWID = DatumWID) %>%
-    select(TijdWID, HydroJaar)
-query_location <- function (loc_wid, query_year = NA, con = watina_conn) {
-    water_levels <- tbl(con, "FactPeilMeting") %>%
-        filter(.data$MeetpuntWID %in% loc_wid) %>%
-        select(MeetpuntWID, TijdWID, Niveau) %>%
-        mutate(hydroyear = floor(TijdWID/10000)) %>%
-        left_join(tijd, by="TijdWID") 
-
-    if (!missing(query_year)) {
-        water_levels <- water_levels %>%
-            filter(hydroyear %in% query_year)
-    }
-
-    return(invisible(
-        water_levels %>%
-            collect %>% 
-            mutate(date = lubridate::ymd(TijdWID)) %>%
-            select(-one_of("TijdWID", "HydroJaar")) %>% 
-            rename(loc_wid = MeetpuntWID, level = Niveau) %>% 
-            mutate_at("loc_wid", as.factor) %>% 
-            arrange(loc_wid, date)
-    ))
+# R - SQL helper functions
+query <- function(query_string) {
+    rs <- dbGetQuery(watina_conn, query_string)
+    return(rs)
 }
 
-# testing
-# test_level <- query_location(loc_wid = c(6016, 6017))#, query_year = c(2010, 2011, 2012))
-# test_level %>% ggplot(aes(x = date, y = Niveau, color = loc_wid)) + geom_line()
+query_difflevels <- function(focal_loc, reference_loc) {
+    query_string <- paste0(
+        " SELECT obs1.t, ",
+        "        i1, ",
+        "        i2, ",
+        "        l1, ",
+        "        l2 ",
+        " FROM (",
+        "     SELECT MeetpuntWID as i1, TijdWID AS t, Niveau AS l1 ",
+        "     FROM FactPeilMeting ",
+        "     WHERE MeetpuntWID = ", focal_loc,
+        " ) obs1 ",
+        " INNER JOIN (",
+        "     SELECT MeetpuntWID as i2, TijdWID AS t, Niveau AS l2 ",
+        "     FROM FactPeilMeting",
+        "     WHERE MeetpuntWID = ", reference_loc,
+        " ) obs2 ",
+        "  ON (obs1.t = obs2.t) ",
+        " ;"
+    )
+    query(query_string)
+}
+
+
 ```
 
 
-And, here we go, another function!
-
+This can be used to query all items (in `lapply`).
 ```{r}
 cluster_metadata <- obswell_clusters %>%
     st_drop_geometry
-    
+# saveRDS(cluster_metadata, file = "cluster_metadata.RDS")
 # glimpse(cluster_metadata)
+cluster_pairs <- cluster_metadata %>%
+    filter(!(loc_wid == deep_ref)) %>%
+    select(loc_wid, deep_ref)
 
-query_levels <- function(cluster_id, aggregate = TRUE) {
-    single_cluster <- cluster_metadata %>%
-        filter(cluster_id == cluster_id) %>%
-        mutate(is_deepest = loc_wid == deep_ref) %>%
-        mutate_at("loc_wid", as.factor) %>% 
-        select(loc_wid, filtertop_depth, is_deepest)
-    # print(single_cluster)
+progress <- utils::txtProgressBar(min = 0, max = nrow(cluster_pairs), style = 3)
 
+get_diff_level_per_pair <- function(cluster_id) {
+    utils::setTxtProgressBar(progress, cluster_id)
+    loc <- cluster_pairs[cluster_id, 1]
+    ref <- cluster_pairs[cluster_id, 2]
     
-    cluster_levels <- query_location(loc_wid = single_cluster$loc_wid) %>%
-        left_join(single_cluster, by = "loc_wid",
-                  relationship = "many-to-many")
-
-    # glimpse(cluster_levels)
-
-    deep_levels <- cluster_levels %>%
-        filter(is_deepest) %>%
-        select(date, filtertop_depth, level) %>%
-        rename(deep_level = level, deep_ftd = filtertop_depth)
-
-    diff_levels <- cluster_levels %>%
-        filter(!is_deepest) %>%
-        left_join(deep_levels, by = "date", 
-                  relationship = "many-to-many") %>%
-        mutate(diff_level = level - deep_level,
-               diff_ftd = filtertop_depth - deep_ftd
-               ) %>%
-        filter(!is.na(diff_level)) %>%
-        select(loc_wid, date, diff_ftd, diff_level)
-
-    if (aggregate) {
-        diff_levels <- diff_levels %>%
-            group_by(loc_wid, diff_ftd)  %>%
-            summarize(mean_diff = mean(diff_level), .groups = 'drop')
-    }
-
+    diff_levels <- query_difflevels(loc, ref)
     return(diff_levels)
 }
+
+# test_diff_levels <- lapply(seq(1,5), get_diff_level_per_pair) %>% bind_rows
+
+
 ```
 
 
@@ -854,26 +851,24 @@ And here we attempt to `apply` the functions.
 
 - takes a long time
 - may kill the RAM
+- but works on SQL, so brace yourself and go.
 
 
 ```{r}
+difflevel_file <- "all_diff_levels.rds"
+all_diff_levels <- lapply(seq(1,nrow(cluster_pairs)), 
+                          get_diff_level_per_pair)  %>%
+  bind_rows
 
-cluster_ids <- unique(cluster_metadata$cluster_id)
+saveRDS(all_diff_levels, file = difflevel_file)
 
-diff_file <- "all_diff_levels.rds"
-if (FALSE || !exists(diff_file)) {
-    all_diff_levels <- lapply(cluster_ids, query_levels) 
-    all_diff_levels <- purrr::list_rbind(all_diff_levels)
-    saveRDS(all_diff_levels, diff_file)
-} else {
-    all_diff_levels <- readRDS(diff_file)
-}
 ```
 
 
 overview plot:
 ```{r}
 all_diff_levels %>%
+    mutate(diff_level = l2 - l1) %>%
     ggplot(aes(x = diff_level)) +
     geom_histogram()
 ```
