@@ -66,7 +66,7 @@ with model:
 # data- and regression plot
 dpi = 300
 cm = 1/2.54
-PLT.rcParams.update({"text.usetex": True})
+PLT.rcParams.update({"text.usetex": False})
 fig = PLT.figure(figsize = (16*cm, 8*cm), dpi = dpi)
 fig.subplots_adjust(top = 0.98 , right = 0.98, bottom = 0.16, left = 0.10 )
 

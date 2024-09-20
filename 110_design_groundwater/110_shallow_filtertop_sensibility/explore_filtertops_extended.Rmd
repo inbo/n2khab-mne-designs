@@ -197,7 +197,7 @@ Sit back, and behold.
 water_query <- tbl(watina_conn, "FactPeilMeting") %>%
     filter(.data$MeetpuntWID %in% 6017) %>%
     select(PeilmetingCategorie, TijdWID, Niveau) %>%
-    mutate(hydroyear = floor(TijdWID/10000)) %>% 
+    mutate(hydroyear = floor((TijdWID-400)/10000)) %>% 
     arrange(TijdWID)
 tijd <- tbl(watina_conn, "DimTijd") %>%
     rename(TijdWID = DatumWID) %>%
@@ -399,7 +399,10 @@ readr::write_delim(xg3_obs %>% select(-geometry), "xg3obs_data.csv", delim = ";"
 
 Results match those in R.
 ```{r, out.width = "80%", eval=FALSE}
-knitr::include_graphics("figures/python_model_fit_hg3_lcl.png")
+py_figure <- "figures/python_model_fit_hg3_lcl.png"
+if (exists(py_figure)) {
+    knitr::include_graphics(py_figure)
+}
 ```
 
 If you would like to try the python code below, start with:
@@ -784,7 +787,7 @@ SQL is far more efficient than that.
 ```{r}
 # R - SQL helper functions
 query <- function(query_string) {
-    rs <- dbGetQuery(watina_conn, query_string)
+    rs <- DBI::dbGetQuery(watina_conn, query_string)
     return(rs)
 }
 
@@ -856,11 +859,17 @@ And here we attempt to `apply` the functions.
 
 ```{r}
 difflevel_file <- "all_diff_levels.rds"
-all_diff_levels <- lapply(seq(1,nrow(cluster_pairs)), 
-                          get_diff_level_per_pair)  %>%
-  bind_rows
-
-saveRDS(all_diff_levels, file = difflevel_file)
+if (FALSE || exists(difflevel_file)) {
+    all_diff_levels <- lapply( 
+            seq(1,nrow(cluster_pairs)), 
+            get_diff_level_per_pair
+            )  %>%
+        bind_rows
+    
+    saveRDS(all_diff_levels, file = difflevel_file)
+} else {
+    all_diff_levels <- readRDS(difflevel_file)
+}
 
 ```
 
@@ -870,28 +879,147 @@ overview plot:
 all_diff_levels %>%
     mutate(diff_level = l2 - l1) %>%
     ggplot(aes(x = diff_level)) +
-    geom_histogram()
+    geom_density() +
+    xlim(-1, 1) +
+    geom_vline(xintercept = 0)
 ```
 
 
 detail plot:
 ```{r}
+try_correlation <- function (l1, l2) {
+    if (length(l1) < 10) {
+        return(invisible(NA))
+    }
+    return(cor.test(l1, l2)$estimate)
+}
 
 mean_diffs <- all_diff_levels %>%
-    group_by(loc_wid, diff_ftd) %>%
-    summarize(dl = mean(diff_level))
+    mutate(hydroyear = floor((t-400)/10000), 
+           diff_level = l2 - l1) %>%
+    group_by(i1, i2) %>% # , hydroyear
+    summarize(dl = mean(diff_level), 
+              corr = try_correlation(l1, l2) 
+              )
 
 mean_diffs %>%
-    ggplot(aes(x = diff_ftd, y = dl)) +
-    geom_point()
+    ggplot(aes(x = dl)) +
+    geom_density() +
+    xlim(-1, 1) +
+    geom_vline(xintercept = 0)
 
 
 ```
 
+Finally, join the `mean_diffs` to location info:
+
+```{r}
+refs <- mean_diffs %>% 
+    pull(i2) %>%
+    unique
+ref_info <- cluster_metadata %>% 
+    filter(loc_wid %in% refs) %>%
+    select(loc_wid, x, y, filterdepth, filtertop_depth, soilclass)
+names(ref_info) <- paste0("ref.", names(ref_info) )
+    
+euclid <- function(x1, y1, x2, y2) {
+    sqrt((x2-x1)^2 + (y2-y1)^2)
+}
+
+informed_diffs <- mean_diffs %>%
+    left_join(cluster_metadata, by = c("i1" = "loc_wid", "i2" = "deep_ref")) %>%
+    left_join(ref_info, by = c("i2" = "ref.loc_wid")) %>%
+    mutate(
+        d_ftd = ref.filtertop_depth - filtertop_depth,
+        d_fd = ref.filterdepth - filterdepth,
+        d_dist = euclid(x, y, ref.x, ref.y)
+    )
+
+```
+
+Analogous to the above: check how difference depends on depth difference
+
+```{r}
+
+soilclass_counts <- informed_diffs %>% group_by(soilclass) %>% count %>% ungroup %>% mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+soilclass_colors <- c("#284971", "#8eafd7", "#f0d70f", "#cccccc")
+names(soilclass_colors) <- names(soilclass_counts)
+
+p <- informed_diffs %>% 
+    ggplot(aes(x = d_ftd, y = dl)) + 
+    geom_point(aes(color = soilclass)) +
+    geom_smooth(color = "black") +
+    theme_bw() +
+    geom_hline(yintercept = c(0)) +
+    scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+    ggtitle("obswell clusters: filtertop depth has limited influence on water level") +
+    xlab("difference in filtertop depth (m)") +
+    ylab("cluster-averaged difference water level (m)") +
+    theme(legend.position = "inside", legend.position.inside = c(0.9, 0.2),
+          legend.background = element_rect(fill="white",
+                                           linewidth=0.5,
+                                           linetype="solid",
+                                           colour ="lightgray"
+                                           )
+          ) 
+
+
+p2 <- ggExtra::ggMarginal(p, type = "histogram", binwidth = 0.05)
+p2
+
+# ggsave("figures/diff_level_soilclass.pdf", p2, dpi = 300, width = 16, height = 8, units = "in")
+```
+
+Besides, we can check (bluntly) how much correlation there is with clusters that
+have >10 shared observation days:
+
+```{r}
+informed_diffs %>%
+    ggplot(aes(x = corr)) +
+    geom_density() 
+
+```
+
+
+```{r}
+soilclass_counts <- informed_diffs %>% 
+    filter(!is.na(corr)) %>% 
+    group_by(soilclass) %>% 
+    count %>% ungroup %>% 
+    mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+soilclass_colors <- c("#284971", "#8eafd7", "#f0d70f", "#cccccc")
+names(soilclass_colors) <- names(soilclass_counts)
+
+p <- informed_diffs %>% 
+    filter(!is.na(corr)) %>% 
+    ggplot(aes(x = d_ftd, y = corr)) + 
+    geom_point(aes(color = soilclass)) +
+    geom_smooth(color = "black") +
+    theme_bw() +
+    geom_hline(yintercept = c(0)) +
+    scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+    ggtitle("obswell clusters: clusters are highly correlated") +
+    xlab("difference in filtertop depth (m)") +
+    ylab("cluster-averaged correlation coefficient (arb. units)") +
+    ylim(-1, 1)
+
+
+p2 <- ggExtra::ggMarginal(p, type = "histogram", binwidth = 0.05)
+p2
+
+```
+
+Observations:
+
+- bias might be *a tiny bit positive*, i.e. deeper filters over-estimate the water level
+- yet the effect is O(5cm)
 
 
 
 # NOTES
+
 + [☇] IDEA: see `ZWIP017`, query exchanges with significant change in depth; plot before/after; HG3 discrepancy water level | pressure level
 + Why do some HG3 lie below VG3?
 + Why are HG3&LG3 only calculated intermittently, whereas VG3 is mostly there?
@@ -905,7 +1033,10 @@ mean_diffs %>%
 TODO: contact Frederic, Jo Loos for feedback on 
 
  - the discrepancy in HG3 values (*versus* `FactPeilMeting.Niveau`).
- - the skyscraper-high vg3
+ - the skyscraper-high vg3 single observation
+
+
+- TODO: Gaussian fit of diff_level, possibly multilevel (involving distance, soilclass)
 
 
 
