@@ -1,0 +1,165 @@
+---
+title: 'Report: Difference of Piezometers and Observation Wells'
+author: "Falk Mielke"
+date: "`r lubridate::today()`"
+output:
+  html_document:
+    keep_md: TRUE
+    number_sections: yes
+    code_folding: show
+    code_download: yes
+    fig_width: 10
+    fig_height: 5
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../../header.html
+---
+
+# Summary (TL;DR)
+
+- Database markers to distinguish observation wells and piezometers are not reliable. In consequence, they are distinguished by filter top depth, with piezometers distinguished by a depth larger than 0.3m.
+- Due to technical doubts, HG3 values from `watina` cannot be used to compare piezometers and observation wells.
+- Site clusters do not indicate any systematic difference between shallow and deep filters, providing no evidence for inaccuracies in deep piezometer measurements.
+
+
+Technical details can be found in the `explore_*.Rmd` documents within this folder.
+Questions and feedback are welcome at any time!
+
+
+# Question
+For implementing a monitoring network for ground water, we are evaluating the use of different measurement instruments.
+The two options are piezometers and observation wells.
+
+A description of the differences can be [found here](https://www.h2o-watermatters.com/includes/partials/printArticle.php?ed=201904&art=06_Artikel). 
+
+```{r}
+knitr::include_graphics("https://www.h2o-watermatters.com/201904/images/art_06/960/afbeelding1.jpg")
+```
+
+The main difference between the two device types lies in the length and depth of the filter.
+Both measure the water level via a pressure sensor.
+The conventional well is an "open" tube (i.e. filter openings along a wider depth range), whereas the piezometer just has connection to the surrounding soil at a narrow, distal band.
+
+Because of its widely closed walls, piezometers are potentially sensitive to over- and underpressure in the surrounding soil layers.
+Their level measurement might differ from the surrounding, actual water level, especially in infiltration- and seepage- or spring areas. 
+The tube is in dynamic equilibrium with the layer surrounding the filter tip, and with the atmosphere.
+
+As a special case, piezometer tubes with a shallow filter are in exchange and equilibrium with the superficial soil layers; they effectively work as conventional wells.
+
+
+In the report below, I summarize the exploration results of the `watina` data with regard to differentiation of piezometers and observation wells.
+The aim is to quantify whether piezometers are flawed due to dynamic pressure differences.
+
+
+# `PeilmetingType` is Not Reliable
+
+An initial attempt to distinguish piezometer and observation well data led to confusing results.
+In the `watina` database, there are several fields which could distinguish the two installation types.
+For example, there is `MeetpuntType` in the `DimMeetpunt` table.
+Most of these hold one compound category for `peilbuis/piezometer`, therefore unable to distinguish the installations of interest.
+
+The exception is the column `PeilmetingType` in the `FactPeilMeting` table.
+It indicates that the majority of all sites are piezometers (91.6 %), complemented by wells (7.3 %) and "unknown" (1.1 %, which still must be one of the two).
+
+```{r , fig.cap = "<i>Distribution of filter top depths per installation type. An overproportional subset of observation wells (peilbuis) are installed at shallow depth (d<0.3m, indicated by black lines), as expected; yet there are also wells with deeper filters. Shallow piezometer installations are questionable: they are functionally indistinguishable from wells. Finally, there are a number of installations with filters above surface, which is implausible, but usually capped for analyses.</i>"}
+knitr::include_graphics("figures/filtertop_depth_distribution.svg")
+```
+
+It turns out that the database field to distinguish the two installation types is not reliable.
+
+A rather *empirical* method (aka. "best guess") to distinguish piezometers is to assign all sites with a filter top depth of more than 0.3 m to that category; shallower sites are effectively wells.
+
+
+# HG3 values are not reliable
+
+## Rationale and Definitions
+
+If (according to our initial question) piezometer installations are affected by dynamic water pressure in the soil, then we would expect that effect to manifest in exaggerated HG3 levels.
+
+The HG3 is a derived measure available in `watina`. 
+Together with other `XG3` parameters is calculated by automated database maintenance processes and read from the `ssrs_Precalc` table.
+The `HG3` value is related to a kind of upper boundary of water levels, somehow based on local maxima of the water level timeline, yet the exact definition is not clear.
+
+## Supersurface HG3
+The drainage of water depends on soil class, and we would anticipate higher HG3 on denser soil.
+Therefore, the following overview classifies sites by soil types, based on the `soilmap`, ([available here](https://zenodo.org/doi/10.5281/zenodo.3387007) and via the [n2khab package/data](https://inbo.github.io/n2khab)).
+
+
+
+```{r , fig.cap = "<i>HG3 depends on filter top depth. Deeper filters tend to have a lower HG3, and the slope depends on soil class. Independent of those effects, there are an unexpectedly high number of HG3 measurements above surface (indicated by the black horizontal line).</i>"}
+knitr::include_graphics("figures/hg3_filtertopdepth.png")
+```
+
+Ground water, per definition, is usually situated below the soil surface.
+Otherwise, it would be surface water.
+The measurements for HG3 is biased, since that indicator is calculated (in an intransparent manner) from the highest observations during a given period.
+
+However, observing so many HG3 observations above surface is unexpected.
+Investigation is ongoing, we will request knowledge exchange with the database experts.
+
+
+## Interesting Case: `ZWIP017`
+To confirm data correctness, a random site was investigated, with surprising result.
+
+```{r , fig.cap = "<i>Water level and XG3 values for a particular site: `ZWIP017`, the seventeen'th installment at Zwin Polders. That site was replaced with a much shallower filter in May 2010. Water levels are overall constant, yet the historic measurements of XG3 seem to be off by the difference of the filter depth.</i>"}
+knitr::include_graphics("figures/hg3_zwip017.svg")
+```
+
+The installation at that particular site was exchanged in 2010 for a shallower filter: the depth difference is approximately 2 m. 
+Co-incidentally, the XG3 values also drop around that time.
+This is implausible.
+
+
+Some attempts of explanation:
+
+Due to `watina` database design, information about sites is not time constant: a single site has multiple entries in the respective "Meetpunt" table, and to get its attributes correctly, the date has to be taken into account.
+
+The magnitude and timing of the error above, taken together with database design choices, are suggestive of a calculation error. 
+In the particular case, such error leads to a strong over-estimation of HG3.
+
+If the general trend was to replace sites with shallower piezometers, then this could explain the unexpectedly high occurrence of above-surface HG3, above.
+
+
+A limitation that needs to be considered is that the `watina` package is not linked to the latest deployment version of the database server.
+Also, the finding above is one co-incidentally selected site, and investigation is due to see whether the pattern is general, and whether this sufficiently explains the HG3 discrepancy.
+Finally, a mis-interpretation of the involved database fields cannot be excluded yet; knowledge transfer between the author and the database maintainers is due.
+On the other hand, there is at least one VG3 value at site `STRP048` in hydroyear 2023, which is above 50 m and most likely incorrect, which justifies general caution with the XG3 in `watina`.
+
+
+
+At any rate, the conclusion is that HG3 values are to be taken with caution.
+It seems more meaningful to turn to raw water levels.
+
+
+# Well Clusters
+## Rationale
+Luckily, the amount of data in `watina` is considerable, and we have a number of sites which are co-located, and installed with different filter top depths.
+
+Since the dynamic pressure difference that could flaw piezometer measurements is expected to increase with increasing filter depth, the question is whether *deep* wells in the proximity of *shallow* wells (of any kind) will indicate systematically higher water levels. 
+
+
+We hereby define a cluster of observation wells as those sites which are within 2 m distance of each other.
+There are 1332 sites in clusters.
+Per default, the deeper site was used as reference, and differences are calculated as "deep - shallow". 
+
+
+An analysis on XG3 was performed despite the limitations indicated above, yet did not yield any results deviating from the water levels presented below.
+
+
+## Water Levels
+Looking at differences in water levels as reported by different wells within a cluster, no systematic effect of filter depth is apparent.
+
+```{r , fig.cap = "<i>Well clusters: difference in filter top depth do not imply a bias in water level. Marginal distribution (bar plot) is symmetric around zero, indicating no bias in water level estimate. Smoothed average of the measurements are slightly below zero (i.e. deep filters tend to give higher levels), yet zero hardly leaves the uncertainty margin: if there is an effect, it is in the order of five to ten centimeters. The effect does depend on the magnitude of filter depth difference.</i>"}
+knitr::include_graphics("figures/diff_level_soilclass.png")
+```
+
+Though there are some clusters with considerable average differences in water levels, those can probably be explained by local soil structure and circumstances (water tableaus, aquifer separation, connection to surface water).
+
+
+This part of the analysis was agnostic of absolute filter top level. 
+However, the shallow filters ("observation wells") are included, and should have sufficient number to tip the balance of the marginal distribution if there was any effect.

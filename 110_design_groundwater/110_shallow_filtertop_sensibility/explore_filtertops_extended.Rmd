@@ -34,14 +34,16 @@ library("ggridges")
 library("mapview")
 
 watina_conn <- connect_watina()
-save_figures <- FALSE # whether/not to save plots in utils::mkdir("./figures")
+save_figures <- TRUE # whether/not to save plots in utils::mkdir("./figures")
 ```
 
-installation of the cmdstanr package is optional:
-
-- `remotes::install_github("stan-dev/cmdstanr")`
-- `cmdstanr::check_cmdstan_toolchain(fix = TRUE)`
-- `cmdstanr::install_cmdstan()`
+---
+# installation of the cmdstanr package is optional:
+# 
+# - `remotes::install_github("stan-dev/cmdstanr")`
+# - `cmdstanr::check_cmdstan_toolchain(fix = TRUE)`
+# - `cmdstanr::install_cmdstan()`
+---
 
 
 
@@ -236,14 +238,21 @@ water_query %>%
   geom_hline(yintercept = c(0)) +
   labs(colour = "quantity") +
   xlim(as.Date("2004-01-01"), as.Date("2022-12-31")) +
-  scale_color_manual(values = legend_colors) +
-  ggtitle(
-    paste0(
-      "measured water levels of ",
-      location_selection,
-      " location (depth change in 2010)"
-    )
+  scale_color_manual(values = legend_colors) 
+  # ggtitle(
+  #   paste0(
+  #     "measured water levels of ",
+  #     location_selection,
+  #     " location (depth change in 2010)"
+  #   )
+  # )
+
+
+if (save_figures) {
+  ggsave("figures/hg3_zwip017.svg", dpi = 300,
+    width = 16, height = 8, units = "in"
   )
+}
 ```
 
 Interesting. To be followed up.
@@ -302,10 +311,10 @@ p1 +
   scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
   scale_x_reverse() +
   coord_cartesian(xlim = c(4, 0), expand = FALSE) +
-  ggtitle("hg3 depends on soilclass, but hardly on filtertop depth ") +
+  # ggtitle("soil class determines how much HG3 drops with filtertop depth ") +
   xlab("filtertop depth (m)") + ylab("local HG3 (m)") +
   theme(
-    legend.position = "inside", legend.position.inside = c(0.8, 0.1),
+    legend.position = "inside", legend.position.inside = c(0.8, 0.15),
     legend.background = element_rect(
       fill = "white",
       linewidth = 0.5,
@@ -315,7 +324,7 @@ p1 +
   )
 
 if (save_figures) {
-  ggsave("figures/hg3_filtertopdepth.pdf", dpi = 300,
+  ggsave("figures/hg3_filtertopdepth.png", dpi = 300,
     width = 16, height = 8, units = "in"
   )
 }
@@ -990,13 +999,14 @@ p <- informed_diffs %>%
   theme_bw() +
   geom_hline(yintercept = c(0)) +
   scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
-  ggtitle(
-    "obswell clusters: filtertop depth has limited influence on water level"
-  ) +
+  # ggtitle(
+  #   "obswell clusters: filtertop depth has limited influence on water level"
+  # ) +
+  ylim(-2, 1) +
   xlab("difference in filtertop depth (m)") +
   ylab("cluster-averaged difference water level (m)") +
   theme(
-    legend.position = "inside", legend.position.inside = c(0.9, 0.2),
+    legend.position = "inside", legend.position.inside = c(0.85, 0.2),
     legend.background = element_rect(
       fill = "white",
       linewidth = 0.5,
@@ -1006,11 +1016,11 @@ p <- informed_diffs %>%
   )
 
 
-p2 <- ggExtra::ggMarginal(p, type = "histogram", binwidth = 0.05)
+p2 <- ggExtra::ggMarginal(p, type = "histogram", binwidth = 0.05, margins = "y")
 p2
 
 if (save_figures) {
-  ggsave("figures/diff_level_soilclass.pdf", p2,
+  ggsave("figures/diff_level_soilclass.png", p2,
     dpi = 300, width = 16, height = 8, units = "in"
   )
 }

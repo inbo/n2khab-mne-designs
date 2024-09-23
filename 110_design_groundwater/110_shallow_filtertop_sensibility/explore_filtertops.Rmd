@@ -29,7 +29,7 @@ library(n2khab)
 library(stringr)
 library(ggplot2)
 
-save_figures <- FALSE # whether/not to save plots in utils::mkdir("./figures")
+save_figures <- TRUE # whether/not to save plots in utils::mkdir("./figures")
 
 watina_conn <- connect_watina()
 ```
@@ -64,18 +64,28 @@ Structure of the data:
 
 ```{r}
 glimpse(obswells_db)
-count(obswells_db) |> print()
+count(obswells_db) 
+```
+
+Duplicates are replaced sites (as read from `PeilpuntStatusCode, PeilpuntStatusNaam, PeilpuntToestandCode`):
+```{r}
 obswells_db %>%
   group_by(loc_wid) %>%
   count() %>%
   filter(n > 4) %>%
-  arrange(desc(n)) %>%
-  print()
+  arrange(desc(n)) 
 ```
-(duplicates are replaced sites, as read from `PeilpuntStatusCode, PeilpuntStatusNaam, PeilpuntToestandCode`)
 
 
-## Extra: Query Measurement Technique
+## OBSOLETE: Query Measurement Technique
+<center>
+**WARNING**
+</center>
+The database columns `PeilpuntTypeNaam` and `PeilpuntTypeCode` used below are not reliable. 
+Their content is flawed due to the similarity of the installation type names in Dutch, and the general similarity of observation wells and piezometer installations.
+It is advised to instead use the filter top depth (less than 0.3m) as a distinguishing characteristic, or analyze with filter top depth as a continuous variable.
+
+
 To find out what technique was used to get the water levels, we query extra info: `PeilpuntType*`.
 ```{r}
 pptype <- tbl(watina_conn, "vwDimPeilpunt") %>%
@@ -93,25 +103,29 @@ pptype <- tbl(watina_conn, "vwDimPeilpunt") %>%
 ```
 
 
-Are there any duplicates in the pptype? -> yes, but they should disappear on joining
+Are there any duplicates in the `pptype`? -> yes, but they should disappear on joining
 
 ```{r}
 pptype %>%
   group_by(loc_wid, obswell_installdate) %>%
   count() %>%
   filter(n > 4) %>%
-  arrange(desc(n)) %>%
-  print()
+  arrange(desc(n)) 
+```
 
+```{r}
 pptype <- pptype %>% distinct()
 glimpse(pptype)
-count(pptype) %>% print()
+count(pptype)
+```
+
+
+```{r}
 pptype %>%
   group_by(loc_wid) %>%
   count() %>%
   filter(n > 1) %>%
-  arrange(desc(n)) %>%
-  print()
+  arrange(desc(n))
 ```
 
 
@@ -124,6 +138,7 @@ obswells <- obswells_db %>%
 glimpse(obswells)
 count(obswells) %>% print()
 ```
+
 
 Finally, it is time to collect the lazy SQL table.
 Collaction is necessary to use stringr/tidyr manipulations which do not translate to SQL.
@@ -254,12 +269,18 @@ ggplot(obswells, aes(x = filtertop_depth, fill = pp_type_grp)) +
     binwidth = 0.05,
     colour = "black"
   ) +
-  geom_vline(xintercept = c(0, 0.5)) +
+  geom_vline(xintercept = c(0, 0.3)) +
   scale_x_reverse() +
   coord_flip() +
-  ggtitle(
-    "distribution of filter top depth (positive: down) per installation type"
+  xlab("filter top depth (m; positive: down)") 
+  #ggtitle(
+    #"distribution of filter top depths per installation type"
+  #)
+if (save_figures) {
+  ggsave("figures/filtertop_depth_distribution.svg",
+    dpi = 300, width = 16, height = 8, units = "in"
   )
+}
 ```
 
 - Conventionally, 0.3m is the criterium for "shallow".
