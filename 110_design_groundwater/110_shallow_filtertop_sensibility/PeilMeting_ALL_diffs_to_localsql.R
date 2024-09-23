@@ -4,7 +4,7 @@ library("watina")
 library("sf")
 
 # remotes::install_github("r-dbi/RPostgres")
-DROP_EXISTING <- FALSE
+DROP_EXISTING <- TRUE
 
 
 ######### Connections #########
@@ -132,7 +132,7 @@ get_distance <- function (i, j) {
 
 n = nrow(obswells)
 N_totaal = as.integer(n^2 /2 -n)
-print(paste0("Computing ", n, " rows -> ", N_totaal, " calculations." ))
+print(paste0("Computing ", n, " rows -> ", N_totaal, " iterations." ))
 
 progress <- utils::txtProgressBar(min = 0, max = N_totaal, style = 3)
 
@@ -158,8 +158,8 @@ if (DROP_EXISTING && dbExistsTable(watinatje_conn, "well_pairs")) {
     dbRemoveTable(watinatje_conn, "well_pairs")
 }
 well_pairs <- tibble(
-    l1 = integer(),
-    l2 = integer(),
+    i1 = integer(),
+    i2 = integer(),
     distance_m = numeric(),
     d_fd = numeric(),
     d_ftd = numeric(),
@@ -187,20 +187,20 @@ for (i in 1:n) {
         }
 
 
-        l1 <- loc_wids[i,][[1]]
-        l2 <- loc_wids[j,][[1]]
+        i1 <- loc_wids[i,][[1]]
+        i2 <- loc_wids[j,][[1]]
 
         # transfer level measurements
-        diff_data <- transfer_waterlevels(l1, l2)
+        diff_data <- transfer_waterlevels(i1, i2)
 
-        if (nrow(diff_data) != 0) {
+        if (nrow(diff_data) == 0) {
             next
         }
 
         # store computed info
         well_pairs <- tibble(
-            l1 = l1,
-            l2 = l2,
+            i1 = i1,
+            i2 = i2,
             distance_m = distance_m,
             d_fd = obswells[j,"filterdepth"][[1]] -
                    obswells[i,"filterdepth"][[1]],
@@ -216,12 +216,70 @@ for (i in 1:n) {
   }
 
 
+# on-the-fly inspection
+if (FALSE) {
+    # test <- count_existing()
+    well_pairs <- dbReadTable(watinatje_conn, "well_pairs")
+    well_pairs %>%
+        ggplot(aes(x=distance_m)) +
+        geom_histogram(bins = 128)
+    well_pairs %>%
+        ggplot(aes(x=corr)) +
+        geom_histogram(bins = 128)
+    # unique(well_pairs$l1)
+    # difflevels <- dbReadTable(watinatje_conn, "difflevels")
+    # difflevels %>%
+    #     group_by(t) %>%
+    #     count() %>%
+    #     arrange(desc(n))
+    # difflevels %>%
+    #     mutate(dl = abs(l2-l1)) %>%
+    #     ggplot(aes(x=dl)) +
+    #     geom_histogram(bins = 128)
 
-test <- count_existing()
-well_pairs <- dbReadTable(watinatje_conn, "well_pairs")
+    # started 20240920 ~21:00
+}
 
 # disconnect databases
 dbDisconnect(watinatje_conn)
 dbDisconnect(watina_conn)
 
-
+# [1] "Computing 7566 rows -> 28614612 calculations."
+# |                                                                      |   0%
+# |================                                                      |  23%Error in `.rs.sourceWithProgress()`:
+#   ! ODBC failed with error IMC01 from [Microsoft][ODBC Driver 13 for SQL
+#                                                   Server].
+# ✖ Communication link failure
+# • The connection is broken and recovery is not possible. The client driver
+# attempted to recover the connection one or more times and all attempts
+# failed. Increase the value of ConnectRetryCount to increase the number of
+# recovery attempts.
+# • <SQL> ' SELECT obs1.t, i1, i2, l1, l2 FROM ( SELECT MeetpuntWID as i1,
+#   TijdWID AS t, Niveau AS l1 FROM FactPeilMeting WHERE MeetpuntWID = 1499 )
+#   obs1 INNER JOIN ( SELECT MeetpuntWID as i2, TijdWID AS t, Niveau AS l2 FROM
+#   FactPeilMeting WHERE MeetpuntWID = 8121 ) obs2 ON (obs1.t = obs2.t) ;'
+# ℹ From nanodbc/nanodbc.cpp:1722.
+# Backtrace:
+#   ▆
+# 1. ├─.rs.sourceWithProgress(...)
+# 2. │ └─base::eval(statements[[idx]], envir = globalenv()) at R/modules/SourceWithProgress.R:82:7
+# 3. │   └─base::eval(statements[[idx]], envir = globalenv())
+# 4. ├─global transfer_waterlevels(l1, l2)
+# 5. │ └─global query_cluster(loc, ref) at 110_design_groundwater/110_shallow_filtertop_sensibility/PeilMeting_ALL_diffs_to_localsql.R:76:9
+# 6. │   └─global query(query_string) at 110_design_groundwater/110_shallow_filtertop_sensibility/PeilMeting_ALL_diffs_to_localsql.R:70:5
+# 7. │     ├─DBI::dbGetQuery(watina_conn, query_string) at 110_design_groundwater/110_shallow_filtertop_sensibility/PeilMeting_ALL_diffs_to_localsql.R:28:5
+# 8. │     └─odbc::dbGetQuery(watina_conn, query_string)
+# 9. │       └─odbc (local) .local(conn, statement, ...)
+# 10. │         ├─DBI::dbSendQuery(...)
+# 11. │         └─odbc::dbSendQuery(...)
+# 12. │           └─odbc (local) .local(conn, statement, ...)
+# 13. │             └─odbc:::OdbcResult(...)
+# 14. │               └─odbc:::new_result(p = connection@ptr, sql = statement, immediate = immediate)
+# 15. └─odbc (local) `<fn>`("nanodbc/nanodbc.cpp:1722: IMC01\n[Microsoft][ODBC Driver 13 for SQL Server]Communication link failure \n[Microsoft][ODBC Driver 13 for SQL Server]The connection is broken and recovery is not possible. The client driver attempted to recover the connection one or more times and all attempts failed. Increase the value of ConnectRetryCount to increase the number of recovery attempts. \n<SQL> ' SELECT obs1.t,         i1,         i2,         l1,         l2  FROM (     SELECT MeetpuntWID as i1, TijdWID AS t, Niveau AS l1      FROM FactPeilMeting      WHERE MeetpuntWID = 1499 ) obs1  INNER JOIN (     SELECT MeetpuntWID as i2, TijdWID AS t, Niveau AS l2      FROM FactPeilMeting     WHERE MeetpuntWID = 8121 ) obs2   ON (obs1.t = obs2.t)  ;'")
+# 16.   └─cli::cli_abort(...)
+# 17.     └─rlang::abort(...)
+# Warning message:
+#   In warn_xy_duplicates(get(xvar, .), get(yvar, .)) :
+#   344 different coordinate pairs occur more than once.
+#
+# Execution halted
