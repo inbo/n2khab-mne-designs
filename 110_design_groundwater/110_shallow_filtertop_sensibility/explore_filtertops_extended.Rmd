@@ -46,7 +46,6 @@ save_figures <- TRUE # whether/not to save plots in utils::mkdir("./figures")
 ---
 
 
-
 # Purpose
 In this workbook, I will attempt to redo and extend some of the previous analyses (`110_shallow_filtertop_sensibility/explore_filtertops.Rmd`).
 My goal is to stick with the `watina` capabilities this time.
@@ -189,8 +188,8 @@ soilmap <- soilmap_raw %>%
       str_detect(bsm_mo_tex, "^U") ~ "heavy",
       str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
       str_detect(bsm_mo_tex, ".+") ~ "heavy",
-      TRUE ~ "unknown"
-    ) |>
+      .default = "unknown"
+    ) %>%
       factor()
   )
 
@@ -213,7 +212,7 @@ tijd <- tbl(watina_conn, "DimTijd") %>%
   rename(TijdWID = DatumWID) %>%
   select(TijdWID, HydroJaar)
 water_query <- water_query %>%
-  left_join(tijd, by = "TijdWID") %>%
+  left_join(tijd, join_by(TijdWID)) %>%
   collect() %>%
   mutate(date = lubridate::ymd(TijdWID))
 glimpse(water_query)
@@ -228,7 +227,7 @@ legend_colors <- c(
 )
 
 water_query %>%
-  left_join(xg3_samplelocation, by = "hydroyear") %>%
+  left_join(xg3_samplelocation, join_by(hydroyear)) %>%
   ggplot(aes(x = date)) +
   geom_line(aes(y = Niveau, color = "niveau")) +
   geom_line(aes(y = vg3_lcl, color = "vg3"), linetype = "dashed") +
@@ -268,6 +267,28 @@ This requires a many-to-one join of `xg3` onto `obswells`.
 
 (At this point, data needs to be collected for spatial join.)
 
+
+TODO: there are hidden duplicates in the database.
+```{r, eval=FALSE}
+rs <- DBI::dbGetQuery(watina_conn,
+  "
+   SELECT mp1.*, cnt
+   FROM vwDimMeetpunt AS mp1
+   LEFT JOIN (
+   SELECT DISTINCT
+      MeetpuntXCoordinaat, MeetpuntYCoordinaat, COUNT(*) AS cnt
+   FROM vwDimMeetpunt
+   GROUP BY MeetpuntXCoordinaat, MeetpuntYCoordinaat
+   HAVING COUNT(*) > 1
+   ) AS mp2 ON mp1.MeetpuntXCoordinaat = mp2.MeetpuntXCoordinaat AND mp1.MeetpuntYCoordinaat = mp2.MeetpuntYCoordinaat
+   WHERE cnt IS NOT NULL
+   ORDER BY mp1.MeetpuntXCoordinaat ASC
+     ;
+  "
+  )
+rs  %>% head()
+```
+
 ```{r}
 # first, join spatial information
 joined_spatial <- st_join(
@@ -281,7 +302,7 @@ joined_spatial <- st_join(
 # next, append water levels
 xg3_obs <- joined_spatial %>%
   select(loc_code, filtertop_depth, filterdepth, soilclass) %>%
-  left_join(xg3s_db %>% collect(), by = "loc_code")
+  left_join(xg3s_db %>% collect(), join_by(loc_code))
 glimpse(xg3_obs)
 
 
@@ -296,7 +317,7 @@ names(soilclass_colors) <- names(soilclass_counts)
 ```
 
 
-The filtertop depth 
+The filtertop depth has a soilclass-dependent effect on HG3:
 
 ```{r}
 p1 <- xg3_obs %>%
@@ -560,13 +581,12 @@ obswell_clusters <- cluster_locs(
 )
 count_clusters <- obswell_clusters %>%
   group_by(cluster_id) %>%
-  count() %>%
-  filter(n > 1) %>%
-  st_drop_geometry() %>%
-  rename(n_clustermembers = n)
+  count(name = "n_clustermembers") %>%
+  filter(n_clustermembers > 1) %>%
+  st_drop_geometry() 
 
 obswell_clusters <- obswell_clusters %>%
-  left_join(count_clusters, by = "cluster_id") %>%
+  left_join(count_clusters, join_by(cluster_id)) %>%
   filter(!is.na(n_clustermembers)) %>%
   mutate_at("cluster_id", as.factor)
 
@@ -616,7 +636,7 @@ Then, identify the ones within the clusters which have the largest filterdepth:
 ```{r}
 deep_members <- obswell_clusters %>%
   st_drop_geometry() %>%
-  left_join(cluster_spans, by = "cluster_id") %>%
+  left_join(cluster_spans, join_by(cluster_id)) %>%
   filter(!is.na(max_depth), filterdepth == max_depth) %>%
   select(cluster_id, loc_wid) %>%
   group_by(cluster_id) %>%
@@ -627,7 +647,7 @@ deep_members <- obswell_clusters %>%
 
 obswell_clusters <-
   obswell_clusters %>%
-  left_join(deep_members, by = "cluster_id")
+  left_join(deep_members, join_by(cluster_id))
 ```
 
 
@@ -637,7 +657,7 @@ Now, xg3's join in.
 ```{r}
 xg3_clustered <- obswell_clusters %>%
   collect() %>%
-  left_join(xg3s_db %>% collect(), by = "loc_code")
+  left_join(xg3s_db %>% collect(), join_by(loc_code))
 glimpse(xg3_clustered)
 ``` 
 
@@ -733,6 +753,42 @@ if (save_figures) {
   )
 }
 ```
+
+
+```{r}
+p <- hg3_diffs %>%
+  filter(soilclass != "unknown") %>%
+  ggplot(aes(x = diff_filtertop_depth, y = diff_hg3)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  geom_hline(yintercept = c(0)) +
+  facet_wrap(~soilclass, ncol = 2) +
+  theme_bw() +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  ggtitle(
+    "obswell clusters: on heavy soil, filtertop depth influences HG3"
+  ) +
+  xlab("difference in filtertop depth (m)") +
+  ylab("site-averaged difference in local HG3 (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.9, 0.2),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+if (save_figures) {
+  ggsave("figures/diff_hg3_soilclass_plus.pdf", p,
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+TODO continue
 
 
 
@@ -1102,5 +1158,5 @@ TODO: contact Frederic, Jo Loos for feedback on
 
 
 ```{r}
-DBI::dbDisconnect(watina_conn)
+# DBI::dbDisconnect(watina_conn)
 ```

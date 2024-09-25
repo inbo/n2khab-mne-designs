@@ -134,7 +134,7 @@ Then join this to the obswells data:
 ```{r}
 count(obswells_db) %>% print()
 obswells <- obswells_db %>%
-  left_join(pptype, by = c("loc_wid", "obswell_installdate"))
+  left_join(pptype, join_by(loc_wid, obswell_installdate))
 glimpse(obswells)
 count(obswells) %>% print()
 ```
@@ -207,13 +207,14 @@ ggplot(
     binwidth = 0.05,
     colour = "black",
   ) +
-  xlim(-0.2, 2.2) +
+  xlim(-0.01, 2.01) +
   ggtitle("filterlength usage count per installation type")
 
 
 filterlengths <- obswells |> pull(filterlength)
 filterlengths |> quantile(seq(0, 1, 0.05))
 ```
+
 
 There are some preferred lengths: 0.3, 0.5, 1.0 and 2.0 meters.
 
@@ -230,6 +231,23 @@ ggplot(
   xlim(-0.2, 2.2) +
   ggtitle("group-normalized densities of filter length")
 ```
+
+
+And in a different view: 
+
+```{r}
+obswells %>%
+  mutate(age = lubridate::year(obswell_installdate) - 1979) %>%
+  filter(age > 0) %>%
+  ggplot(aes(y = filterlength, x = filterdepth,
+             fill = pp_type_grp, color = pp_type_grp)) +
+  geom_point(alpha = 0.67, aes(size = age^2)) +
+  ylim(-0.01, 2.01)
+
+ggsave("figures/filterlengths.pdf")
+```
+
+
 
 
 A considerable number of non-piezo wells has short filters.
@@ -299,9 +317,7 @@ depth_classes <- obswells %>%
     below_30cm = filtertop_depth < 0.3,
     below_50cm = filtertop_depth < 0.5
   ) %>%
-  group_by(pp_type_grp, above_ground, below_30cm, below_50cm) %>%
-  count() %>%
-  ungroup() %>%
+  count(pp_type_grp, above_ground, below_30cm, below_50cm) %>%
   tidyr::pivot_wider(values_from = n, names_from = pp_type_grp)
 
 knitr::kable(depth_classes)
@@ -364,15 +380,14 @@ The tricky thing is to get the "pp_type" right; it can change during the year.
 ```{r}
 latest_pp <- obswells %>%
   arrange(desc(obswell_installdate)) %>%
-  group_by(loc_wid, loc_code) %>%
   summarize(
     latest_installment = dplyr::first(obswell_installdate),
     filterdepth = dplyr::first(filterdepth),
     filtertop_depth = dplyr::first(filtertop_depth),
     pp_type = dplyr::first(pp_type),
-    pp_type_grp = dplyr::first(pp_type_grp)
+    pp_type_grp = dplyr::first(pp_type_grp),
+    .by = c(loc_wid, loc_code)
   ) %>%
-  ungroup() %>%
   mutate(shallow = (filtertop_depth > 0) & (filtertop_depth < 0.5)) %>%
   select(-latest_installment)
 
@@ -400,7 +415,7 @@ xg3s %>%
 
 ```{r}
 xg3_obswells <- xg3s %>%
-  left_join(latest_pp, by = c(loc_code = "loc_code"))
+  left_join(latest_pp, join_by(loc_code))
 ```
 
 
@@ -469,10 +484,10 @@ Unfortunately, I fail to reproduce the documentation query.
 query_table_names <- "SELECT name FROM sys.tables ORDER BY name ASC;"
 table_names <- DBI::dbGetQuery(watina_conn, query_table_names)
 
-query_columns <- paste0(
-  "SELECT *, OBJECT_NAME(object_id) as table_name ",
-  " FROM sys.columns;"
-)
+query_columns <- "
+  SELECT *,
+       OBJECT_NAME(object_id) as table_name 
+  FROM sys.columns;"
 
 column_infos <- DBI::dbGetQuery(watina_conn, query_columns) %>%
   filter(table_name == "DimPeilpunt")
@@ -553,8 +568,8 @@ soilmap <- soilmap %>%
       str_detect(bsm_mo_tex, "^U") ~ "heavy",
       str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
       str_detect(bsm_mo_tex, ".+") ~ "heavy",
-      TRUE ~ "unknown"
-    ) |>
+      .default = "unknown"
+    ) %>%
       factor()
   )
 
@@ -651,8 +666,8 @@ joined_spatial <- st_join(sf_points, soilmap_raw %>%
       str_detect(bsm_mo_tex, "^U") ~ "heavy",
       str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
       str_detect(bsm_mo_tex, ".+") ~ "heavy",
-      TRUE ~ "unknown"
-    ) |>
+      .default = "unknown"
+    ) %>%
       factor()
   ))
 glimpse(joined_spatial %>% filter(!if_any(soilclass, is.na)))
@@ -695,8 +710,8 @@ soilmap <- soilmap_raw %>%
       str_detect(bsm_mo_tex, "^U") ~ "heavy",
       str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
       str_detect(bsm_mo_tex, ".+") ~ "heavy",
-      TRUE ~ "unknown"
-    ) |>
+      .default = "unknown"
+    ) %>%
       factor()
   )
 glimpse(soilmap)
@@ -739,7 +754,7 @@ latest_soiled <- soiled_obswells %>%
 Finally, `xg3s` can be joined.
 ```{r}
 soilclass_obswell_xg3s <- xg3s %>%
-  left_join(latest_soiled, by = c(loc_code = "loc_code")) %>%
+  left_join(latest_soiled, join_by(loc_code)) %>%
   filter(!if_any(hg3_lcl, is.na)) %>%
   mutate(soilclass = tidyr::replace_na(soilclass, "unknown"))
 
