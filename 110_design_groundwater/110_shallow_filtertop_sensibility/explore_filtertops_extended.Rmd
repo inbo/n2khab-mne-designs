@@ -647,7 +647,8 @@ deep_members <- obswell_clusters %>%
 
 obswell_clusters <-
   obswell_clusters %>%
-  left_join(deep_members, join_by(cluster_id))
+  left_join(deep_members, join_by(cluster_id),
+            relationship = "many-to-one")
 ```
 
 
@@ -656,7 +657,6 @@ obswell_clusters <-
 Now, xg3's join in.
 ```{r}
 xg3_clustered <- obswell_clusters %>%
-  collect() %>%
   left_join(xg3s_db %>% collect(), join_by(loc_code))
 glimpse(xg3_clustered)
 ``` 
@@ -672,6 +672,16 @@ undeep <- xg3_clustered %>%
 ```
 
 YOLO!
+
+
+Quick check: are there sites with multiple undeep per `loc_wid`?
+yes!
+```{r}
+undeep %>%
+  st_drop_geometry() %>%
+  count(loc_wid) %>%
+  arrange(desc(n))
+```
 
 ## within-cluster variance
 
@@ -696,7 +706,7 @@ ud <- undeep %>%
 
 hg3_diffs <- ud %>%
   left_join(dp,
-    by = c("deep_ref" = "deep.loc_wid", "hydroyear" = "deep.hydroyear"),
+    by = join_by(deep_ref == deep.loc_wid, hydroyear == deep.hydroyear),
     relationship = "many-to-many"
   ) %>%
   filter(!is.na(deep.hg3_lcl)) %>%
@@ -755,6 +765,7 @@ if (save_figures) {
 ```
 
 
+At close inspection, there seems to be a trend in heavy soils. 
 ```{r}
 p <- hg3_diffs %>%
   filter(soilclass != "unknown") %>%
@@ -782,13 +793,11 @@ p <- hg3_diffs %>%
   )
 
 if (save_figures) {
-  ggsave("figures/diff_hg3_soilclass_plus.pdf", p,
+  ggsave("figures/diff_hg3_soilclass_specific.pdf", p,
     dpi = 300, width = 16, height = 8, units = "in"
   )
 }
 ```
-
-TODO continue
 
 
 
@@ -813,7 +822,7 @@ ud <- undeep %>%
 
 vg3_diffs <- ud %>%
   left_join(dp,
-    by = c("deep_ref" = "deep.loc_wid", "hydroyear" = "deep.hydroyear"),
+    by = join_by(deep_ref == deep.loc_wid, hydroyear == deep.hydroyear),
     relationship = "many-to-many"
   ) %>%
   filter(!is.na(deep.vg3_lcl)) %>%
@@ -871,8 +880,50 @@ if (save_figures) {
 }
 ```
 
+
+```{r}
+p <- vg3_diffs %>%
+  filter(soilclass != "unknown") %>%
+  ggplot(aes(x = diff_filtertop_depth, y = diff_vg3)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  geom_hline(yintercept = c(0)) +
+  facet_wrap(~soilclass, ncol = 2) +
+  theme_bw() +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  ggtitle(
+    "obswell clusters: on heavy soil, filtertop depth influences VG3"
+  ) +
+  xlab("difference in filtertop depth (m)") +
+  ylab("site-averaged difference in local VG3 (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.9, 0.2),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+if (save_figures) {
+  ggsave("figures/diff_vg3_soilclass_specific.pdf", p,
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+
+
+
 ## conclusion
-Except for very big differences in filtertop_depth, 
+Sites with heavy soil show a systematic difference between deep and shallow wells, with deep wells over-reporting the water levels. 
+The effect increases with filtertop depth, and is most apparent for HG3/VG3 with a filtertop difference of more than 2m.
+As expected, this effect is not universal, but site-specific: many clusters aggregate around the zero line, but some deviate from it, linked most likely to infiltration and spring areas.
+
+
+In the other soil classes, except for very big differences in filtertop_depth, 
 there is little difference in HG3 (or VG3) values.
 
 
@@ -1033,8 +1084,9 @@ euclid <- function(x1, y1, x2, y2) {
 }
 
 informed_diffs <- mean_diffs %>%
-  left_join(cluster_metadata, by = c("i1" = "loc_wid", "i2" = "deep_ref")) %>%
-  left_join(ref_info, by = c("i2" = "ref.loc_wid")) %>%
+  left_join(cluster_metadata,
+            by = join_by(i1 == loc_wid, i2 == deep_ref)) %>%
+  left_join(ref_info, by = join_by(i2 == ref.loc_wid)) %>%
   mutate(
     d_ftd = ref.filtertop_depth - filtertop_depth,
     d_fd = ref.filterdepth - filterdepth,
@@ -1066,7 +1118,7 @@ p <- informed_diffs %>%
   # ) +
   ylim(-2, 1) +
   xlab("difference in filtertop depth (m)") +
-  ylab("cluster-averaged difference water level (m)") +
+  ylab("cluster-averaged difference of water level (m)") +
   theme(
     legend.position = "inside", legend.position.inside = c(0.85, 0.2),
     legend.background = element_rect(
@@ -1084,6 +1136,45 @@ p2
 
 if (save_figures) {
   ggsave("figures/diff_level_soilclass.png", p2,
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+
+Again, a soilclass-specific analysis is justified.
+However, in contrast to HG3, deeper wells do not seem to over-estimate actual levels.
+
+```{r}
+
+p <- informed_diffs %>%
+  filter(soilclass != "unknown") %>%
+  ggplot(aes(x = d_ftd, y = dl)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  geom_hline(yintercept = c(0)) +
+  facet_wrap(~soilclass, ncol = 2) +
+  theme_bw() +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  # ggtitle(
+  #   "obswell clusters: filtertop depth has limited influence on water level"
+  # ) +
+  ylim(-2, 1) +
+  xlab("difference in filtertop depth (m)") +
+  ylab("cluster-averaged difference of water level (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.85, 0.2),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+if (save_figures) {
+  ggsave("figures/diff_level_soilclass_specific.png", p,
     dpi = 300, width = 16, height = 8, units = "in"
   )
 }
