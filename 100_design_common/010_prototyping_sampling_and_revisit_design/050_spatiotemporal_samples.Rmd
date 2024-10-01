@@ -31,7 +31,7 @@ module_domain_scheme_stratum_sample_size_2 <-
 For now still without:
 
 - non-core schemes (except for its types that are not covered by core schemes)
-- GRTS address offset in the common area between different but overlapping domains (including MHQ at Flemish level = undefined module)
+- GRTS address offset for MHQ at Flemish level = undefined module
 <!-- - module labelling of sampling units: does this make sense? -->
 - adding (and labelling) spare sampling units
 - collapsing nearby units for groundwater schemes
@@ -39,6 +39,25 @@ For now still without:
 So it's currently assumed that all observation wells are in place already.
 
 ### Spatial samples
+
+Determining the applicable domain relations.
+
+```{r}
+domain_relations <- 
+  domain_overlaps %>% 
+  semi_join(
+    module_domain_scheme_stratum_sample_size_2 %>% 
+      distinct(module, domain),
+    join_by(domain)
+  ) %>% 
+  semi_join(
+    module_domain_scheme_stratum_sample_size_2 %>% 
+      distinct(module, domain),
+    join_by(included_by == domain)
+  )
+```
+
+Drawing spatial samples.
 
 ```{r}
 scheme_domain_stratum_spsamples <-
@@ -66,14 +85,94 @@ scheme_domain_stratum_spsamples <-
             map2(sp_sample_size_all_panels_stratum, grts_addresses, function(sss, grts) {
               grts %>% slice_min(grts_address, n = sss)
             })
-        ) %>%
-        select(domain, stratum, sample) %>%
-        unnest(sample)
+        ) %>% 
+        nest(domain_spsample = c(
+          domain, 
+          sp_sample_size_all_panels_stratum, 
+          grts_addresses,
+          sample
+        ))
     })
   ) %>%
   select(scheme, spsample) %>%
-  unnest(spsample)
+  unnest(spsample) %>% 
+  # handling the overlap between domains: above, the samples have been drawn
+  # independently so now this has to be corrected!
+  mutate(
+    domain_spsample = map(domain_spsample, function(ds) {
+      ds <- left_join(
+        ds,
+        domain_relations,
+        join_by(domain),
+        relationship = "one-to-one",
+        unmatched = "drop"
+      )
+      # vector of including domains:
+      including_domains <- unique(ds$included_by)
+      # drop NAs:
+      including_domains <- including_domains[!is.na(including_domains)]
+      # only keep an including domain if it is effectively present as domain:
+      including_domains <- including_domains[including_domains %in% ds$domain]
+      if (length(including_domains) > 1) {
+        stop("Multiple including domains in one stratum are not supported.")
+      }
+      ds %>% 
+        mutate(
+          including = domain %in% including_domains | length(including_domains) == 0,
+          # unsampled units of the including domain:
+          grts_available = ifelse(
+            !including,
+            tibble(),
+            map2(grts_addresses, sample, function(ga, spl) {
+              anti_join(ga, spl, join_by(grts_address))
+            })
+          ),
+          # put the unsampled units next to the included domains:
+          grts_restriction = ifelse(
+            including, 
+            tibble(),
+            grts_available[including]
+          ),
+          # determine the available unsampled units per domain:
+          grts_addresses_2 = map2(grts_addresses, grts_restriction, function(ga, gr) {
+            if (is.null(gr)) {
+              return(NULL)
+            }
+            semi_join(ga, gr, join_by(grts_address))
+          }),
+          # redraw samples for included domains:
+          sample_2 = pmap(
+            list(including, sample, grts_addresses_2, sp_sample_size_all_panels_stratum),
+            function(inc, sam, grts, sss){
+              if (inc) {
+                sam
+              } else {
+                grts %>% slice_min(grts_address, n = sss)
+              }
+            }
+          ),
+          # flag sampling units of included domains, as they should never be
+          # considered apart from the including domain:
+          extends_on_larger_domain = !including & length(including_domains) == 1
+        ) %>% 
+        select(domain, sample = sample_2, extends_on_larger_domain) %>% 
+        # next step will also drop domains where no sampling units were
+        # available (i.e. the whole population was sampled by the larger domain):
+        unnest(sample)
+    })
+  ) %>% 
+  unnest(domain_spsample)
 ```
+
+Check that no sampling units overlap between domains within the combination of scheme and stratum:
+
+```{r}
+scheme_domain_stratum_spsamples %>% 
+  count(scheme, stratum, grts_address) %>% 
+  filter(n > 1) %>% 
+  nrow() == 0
+```
+
 
 ### Panel design
 
