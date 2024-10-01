@@ -111,10 +111,26 @@ Reading and filtering spatial data of terrestrial types.
 
 ```{r}
 hmt <- read_habitatmap_terr(keep_aq_types = FALSE, drop_7220 = TRUE)
+typelev <- levels(hmt$habitatmap_terr_types$type)
 hmt_occ <-
   hmt$habitatmap_terr_types %>%
   semi_join(n2khab_types_expanded,
     by = "type"
+  ) %>% 
+  # manually fixing the type of two polygons in habitatmap_terr_2023_v1:
+  mutate(
+    source = case_when(
+      polygon_id == "184091_v2023" & type == "2190_overig" ~ "habitatmap_stdized + manual fix",
+      polygon_id == "533826_v2023" & type == "2310" ~ "habitatmap_stdized + manual fix",
+      .default = source
+    ) %>% 
+      factor(),
+    type = case_when(
+      polygon_id == "184091_v2023" & type == "2190_overig" ~ "9120",
+      polygon_id == "533826_v2023" & type == "2310" ~ "2130",
+      .default = type
+    ) %>% 
+      factor(levels = typelev)
   )
 hmt_pol <-
   hmt$habitatmap_terr_polygons %>%
