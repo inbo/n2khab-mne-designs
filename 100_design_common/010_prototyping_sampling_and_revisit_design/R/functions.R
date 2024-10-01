@@ -6,7 +6,6 @@ collapse_strata <- function(df) {
         "5130_hei" ~ "5130",
         "5130_kalk" ~ "5130",
         "rbbkam+" ~ "rbbkam",
-        "rbbvos+" ~ "rbbvos",
         "rbbzil+" ~ "rbbzil",
         "9120_qb" ~ "9120",
         .default = stratum
