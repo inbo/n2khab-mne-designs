@@ -38,7 +38,7 @@ schemes_plot <-
   ggplot(aes(x = scheme, fill = typeclass_name)) +
   geom_bar() +
   scale_fill_discrete_c4a_cat("carto.safe") +
-  facet_wrap(~ domain) +
+  facet_wrap(~domain) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
   labs(
     x = "Meetnet",
@@ -134,9 +134,9 @@ grts_addresses <- scheme_domain_stratum_spsamples %>%
 tictoc::tic()
 grts_cells <-
   cells(grts_mh_n2khab, grts_addresses, pairs = TRUE)[[1]] %>%
-    as_tibble() %>%
-    arrange(value) %>%
-    pull(cell)
+  as_tibble() %>%
+  arrange(value) %>%
+  pull(cell)
 tictoc::toc()
 
 tictoc::tic()
@@ -219,7 +219,7 @@ for (scheme_i in sort(unique(spsamples$scheme))) {
       colour = "#843860"
     ) +
     coord_sf(datum = 31370) +
-    facet_wrap(~ typegroup_name2) +
+    facet_wrap(~typegroup_name2) +
     ggtitle(scheme_i)
   ggsave(
     file.path(plotpath, str_c("sample_map_provinces_", scheme_i, ".png")),
@@ -273,4 +273,3 @@ spsamples_points %>%
       )
     })
   }
-

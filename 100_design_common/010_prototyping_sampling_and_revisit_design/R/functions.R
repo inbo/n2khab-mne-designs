@@ -29,7 +29,7 @@ collapse_strata <- function(df) {
     ) %>%
     mutate(
       stratum = ifelse(is.na(subtype), stratum, subtype) %>%
-        as.character %>%
+        as.character() %>%
         factor(levels = levels(n2khab_strata_expanded$stratum))
     ) %>%
     select(-subtype)
@@ -37,7 +37,7 @@ collapse_strata <- function(df) {
 
 
 aggregate_sample_size <- function(df, sample_size_all_panels_var, mhq_scheme_category) {
-    df %>%
+  df %>%
     mutate(yearly_sample_size = .data[[sample_size_all_panels_var]] / cycle_duration_y) %>%
     summarize(
       yearly_sample_size = sum(yearly_sample_size, na.rm = TRUE),
@@ -105,7 +105,6 @@ add_point_coords_grts <- function(
     spatrast = grts_mh_n2khab,
     spatrast_index = grts_mh_n2khab_index,
     spatial = TRUE) {
-
   addresses <- df %>%
     distinct(.data[[grts_var]]) %>%
     pull(.data[[grts_var]]) %>%
@@ -120,12 +119,16 @@ add_point_coords_grts <- function(
 
   df %>%
     left_join(
-      tibble(grts_address = addresses, x = coords[,"x"], y = coords[,"y"]),
+      tibble(grts_address = addresses, x = coords[, "x"], y = coords[, "y"]),
       join_by(grts_address)
     ) %>%
-    {if (isFALSE(spatial)) . else {
-      st_as_sf(., coords = c("x", "y"), crs = crs(spatrast))
-    }}
+    {
+      if (isFALSE(spatial)) {
+        .
+      } else {
+        st_as_sf(., coords = c("x", "y"), crs = crs(spatrast))
+      }
+    }
 }
 
 

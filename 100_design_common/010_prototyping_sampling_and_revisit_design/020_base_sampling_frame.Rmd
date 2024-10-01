@@ -41,47 +41,48 @@ In the ideal situation, the base sampling frame is 'resolved' by terrain visits 
 ```{r eval=FALSE, include=FALSE}
 # various main type codes are not added because habitatmap_terr doesn't have
 # them OR they're not involved in MNE/MHQ anyway
-read_types(lang = lang) %>% 
+read_types(lang = lang) %>%
   anti_join(n2khab_types_expanded, by = "type")
 # following types were added by expansion:
 n2khab_types_expanded %>%
-    anti_join(n2khab_types, by = "type") %>% 
-    inner_join(read_types() %>% select(type, typelevel),
-               by = "type")
+  anti_join(n2khab_types, by = "type") %>%
+  inner_join(read_types() %>% select(type, typelevel),
+    by = "type"
+  )
 ```
 
 Gathering minimal needed properties of all types.
 
 ```{r}
 n2khab_types_expanded_properties <-
-  read_types() %>% 
-  semi_join(n2khab_types_expanded, by = "type") %>% 
-  select(type, typelevel, main_type, typeclass, hydr_class, groundw_dep, flood_dep) %>% 
+  read_types() %>%
+  semi_join(n2khab_types_expanded, by = "type") %>%
+  select(type, typelevel, main_type, typeclass, hydr_class, groundw_dep, flood_dep) %>%
   left_join(
     read_vc(
       "030_preparations/010_explore_targetpop/type_approaches",
       root = find_root(is_git_root)
     ) %>%
-      as_tibble() %>% 
+      as_tibble() %>%
       mutate(
         grts_join_method = ifelse(approach_cellbased, "cell", "cell_center")
-      ) %>% 
+      ) %>%
       select(type, grts_join_method),
     by = "type"
-  ) %>% 
+  ) %>%
   mutate(
     grts_join_method = case_when(
-        !is.na(grts_join_method) ~ grts_join_method,
-        type == "7220" ~ "original_point",
-        type == "3260" ~ "endpoint_of_segment",
-        type == "8310" | hydr_class == "HC3" ~ "point_on_surface",
-        .default = "cell_center"
-    ) %>% 
+      !is.na(grts_join_method) ~ grts_join_method,
+      type == "7220" ~ "original_point",
+      type == "3260" ~ "endpoint_of_segment",
+      type == "8310" | hydr_class == "HC3" ~ "point_on_surface",
+      .default = "cell_center"
+    ) %>%
       factor(levels = c(
-        "cell_center", 
-        "cell", 
-        "point_on_surface", 
-        "endpoint_of_segment", 
+        "cell_center",
+        "cell",
+        "point_on_surface",
+        "endpoint_of_segment",
         "original_point"
       )),
     sample_support = case_when(
@@ -91,7 +92,7 @@ n2khab_types_expanded_properties <-
       type == "7220" ~ "population unit inferred from read_habitatsprings(units_7220 = TRUE)",
       type == "8310" ~ "population unit as defined by read_habitatquarries(filter_hab = TRUE)",
       .default = "watersurface"
-    ) %>% 
+    ) %>%
       factor(),
     sample_support_code = fct_recode(
       sample_support,
@@ -111,28 +112,30 @@ Reading and filtering spatial data of terrestrial types.
 ```{r}
 hmt <- read_habitatmap_terr(keep_aq_types = FALSE, drop_7220 = TRUE)
 hmt_occ <-
-    hmt$habitatmap_terr_types %>%
-    semi_join(n2khab_types_expanded,
-              by = "type")
+  hmt$habitatmap_terr_types %>%
+  semi_join(n2khab_types_expanded,
+    by = "type"
+  )
 hmt_pol <-
-    hmt$habitatmap_terr_polygons %>%
-    semi_join(hmt_occ, by = "polygon_id") %>% 
-    select(polygon_id) %>% 
-    st_make_valid
+  hmt$habitatmap_terr_polygons %>%
+  semi_join(hmt_occ, by = "polygon_id") %>%
+  select(polygon_id) %>%
+  st_make_valid()
 ```
 
 Reading and filtering spatial data of lentic aquatic types.
 
 ```{r}
 wsh <- read_watersurfaces_hab(interpreted = TRUE)
-wsh_occ <- 
-    wsh$watersurfaces_types %>% 
-    semi_join(n2khab_types_expanded,
-              by = "type")
+wsh_occ <-
+  wsh$watersurfaces_types %>%
+  semi_join(n2khab_types_expanded,
+    by = "type"
+  )
 wsh_pol <-
-    wsh$watersurfaces_polygons %>%
-    semi_join(wsh_occ, by = "polygon_id") %>% 
-    select(polygon_id)
+  wsh$watersurfaces_polygons %>%
+  semi_join(wsh_occ, by = "polygon_id") %>%
+  select(polygon_id)
 ```
 
 Reading spatial data of type 3260.
@@ -147,11 +150,11 @@ Reading spatial data of type 7220.
 Each row (point) already represents a population unit in this case.
 
 ```{r}
-flanders_buffer <- 
-    read_admin_areas(dsn = "flanders") %>% 
-    st_buffer(40)
-habspring_units <- 
-  read_habitatsprings(units_7220 = TRUE) %>% 
+flanders_buffer <-
+  read_admin_areas(dsn = "flanders") %>%
+  st_buffer(40)
+habspring_units <-
+  read_habitatsprings(units_7220 = TRUE) %>%
   .[flanders_buffer, ]
 ```
 
@@ -160,7 +163,7 @@ Each row (polygon) does not necessarily represent a population unit, but the lat
 However in this case the filtering by 8310 already results in just one polygon per unit.
 
 ```{r}
-habquarries <- 
+habquarries <-
   read_habitatquarries(filter_hab = TRUE)
 ```
 
@@ -173,45 +176,49 @@ The base sampling frame layers will consist of the strata, not just the types.
 extract_interval_limits <- function(df) {
   mutate(
     df,
-    lower = str_match(stratum, "^\\((\\d+),\\d+\\]$")[,2] %>% as.integer(),
-    upper = str_match(stratum, "^\\(\\d+,(\\d+)\\]$")[,2] %>% as.integer()
+    lower = str_match(stratum, "^\\((\\d+),\\d+\\]$")[, 2] %>% as.integer(),
+    upper = str_match(stratum, "^\\(\\d+,(\\d+)\\]$")[, 2] %>% as.integer()
   )
 }
-wsh_pol_area_class <- 
-  wsh_pol %>% 
-  mutate(area = st_area(.) %>% set_units("ha")) %>% 
-  st_drop_geometry %>% 
-  select(polygon_id, area) %>% 
-  mutate(stratum = 
-           area %>% 
-           cut(c(0, 1, 5, 50, 150)) %>% 
-           as.character()) %>% 
+wsh_pol_area_class <-
+  wsh_pol %>%
+  mutate(area = st_area(.) %>% set_units("ha")) %>%
+  st_drop_geometry() %>%
+  select(polygon_id, area) %>%
+  mutate(
+    stratum =
+      area %>%
+        cut(c(0, 1, 5, 50, 150)) %>%
+        as.character()
+  ) %>%
   inner_join(
-    wsh_occ %>% 
-      select(polygon_id, type), 
-    ., 
+    wsh_occ %>%
+      select(polygon_id, type),
+    .,
     by = "polygon_id"
-  ) %>% 
+  ) %>%
   rename(unit_id = polygon_id)
-wsh_strata <- 
-  wsh_pol_area_class %>% 
-  extract_interval_limits() %>% 
-  distinct(type, lower, upper) %>% 
+wsh_strata <-
+  wsh_pol_area_class %>%
+  extract_interval_limits() %>%
+  distinct(type, lower, upper) %>%
   arrange(type, lower, upper)
 habquarries_area_class <-
   habquarries %>%
-  mutate(area = st_area(.) %>% set_units("ha")) %>% 
-  st_drop_geometry %>% 
-  select(unit_id, type, area) %>% 
-  mutate(stratum = 
-           area %>% 
-           cut(c(0, 2, 6, 40)) %>% 
-           as.character()) %>% 
+  mutate(area = st_area(.) %>% set_units("ha")) %>%
+  st_drop_geometry() %>%
+  select(unit_id, type, area) %>%
+  mutate(
+    stratum =
+      area %>%
+        cut(c(0, 2, 6, 40)) %>%
+        as.character()
+  ) %>%
   mutate(unit_id = as.character(unit_id))
-habquarries_strata <- 
-  habquarries_area_class %>% 
-  extract_interval_limits() %>% 
-  distinct(type, lower, upper) %>% 
+habquarries_strata <-
+  habquarries_area_class %>%
+  extract_interval_limits() %>%
+  distinct(type, lower, upper) %>%
   arrange(type, lower, upper)
 ```
 
@@ -219,24 +226,24 @@ habquarries_strata <-
 ```{r result-strata}
 # n2khab_strata_expanded: defines the strata of the base sampling frame
 n2khab_strata_expanded <-
-  n2khab_types_expanded %>% 
+  n2khab_types_expanded %>%
   left_join(
     bind_rows(wsh_strata, habquarries_strata),
     by = "type"
-  ) %>% 
-  unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>% 
-  select(type, stratum) %>% 
+  ) %>%
+  unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>%
+  select(type, stratum) %>%
   mutate(stratum = factor(stratum))
 # n2khab_strata: for sampling and inference from the spatial sampling frames,
 # which it defines (except for further needed spatial restrictions)
 n2khab_strata <-
-  n2khab_types %>% 
+  n2khab_types %>%
   left_join(
     bind_rows(wsh_strata, habquarries_strata),
     by = "type"
-  ) %>% 
-  unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>% 
-  select(type, stratum) %>% 
+  ) %>%
+  unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>%
+  select(type, stratum) %>%
   mutate(
     stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
   )
@@ -279,20 +286,20 @@ with_drive_quiet({
   path2 <- file.path(tempdir(), "watersurfaces_refpoints.yml")
   drive_download(as_id("1Bb07utgZOyMK65TdR64-4VjGP7T6GqMa"), path = path2)
 })
-points_watsurf <- read_vc("watersurfaces_refpoints", tempdir()) %>% 
-  as_tibble() %>% 
-  select(polygon_id, x, y) %>% 
+points_watsurf <- read_vc("watersurfaces_refpoints", tempdir()) %>%
+  as_tibble() %>%
+  select(polygon_id, x, y) %>%
   st_as_sf(coords = c("x", "y"), crs = 31370)
 invisible(file.remove(path, path2))
 # adding all other watersurfaces
-points_watsurf <- 
+points_watsurf <-
   bind_rows(
     points_watsurf,
-    read_watersurfaces() %>% 
-      filter(!(polygon_id %in% points_watsurf$polygon_id)) %>% 
-      select(polygon_id) %>% 
-      st_sf(agr = "identity") %>% 
-      st_point_on_surface() %>% 
+    read_watersurfaces() %>%
+      filter(!(polygon_id %in% points_watsurf$polygon_id)) %>%
+      select(polygon_id) %>%
+      st_sf(agr = "identity") %>%
+      st_point_on_surface() %>%
       rename(geometry = geom)
   )
 ```
@@ -309,8 +316,8 @@ Defining points that represent the type 8310 units (object `points_8310`).
 
 ```{r}
 points_8310 <-
-  habquarries %>% 
-  select(unit_id) %>% 
+  habquarries %>%
+  select(unit_id) %>%
   st_sf(agr = "identity") %>%
   st_point_on_surface()
 ```
@@ -322,31 +329,31 @@ points_non_cell <-
   bind_cols(
     tibble(sample_support_code = "watersurface"),
     points_watsurf %>% rename(unit_id = polygon_id)
-  ) %>% 
+  ) %>%
   bind_rows(
     bind_cols(
-      tibble(sample_support_code = "watercourse_segment"), 
-      points_watcourse %>% 
-        unite(unit_id, vhag_code, rank) %>% 
+      tibble(sample_support_code = "watercourse_segment"),
+      points_watcourse %>%
+        unite(unit_id, vhag_code, rank) %>%
         rename(geometry = geom)
     )
-  ) %>% 
+  ) %>%
   bind_rows(
     bind_cols(
-      tibble(sample_support_code = "spring"), 
-      habspring_units %>% 
-      transmute(unit_id = as.character(unit_id))
+      tibble(sample_support_code = "spring"),
+      habspring_units %>%
+        transmute(unit_id = as.character(unit_id))
     )
-  ) %>% 
+  ) %>%
   bind_rows(
-    bind_cols(tibble(sample_support_code = "quarry"), points_8310) %>% 
-      mutate(unit_id = as.character(unit_id)) %>% 
+    bind_cols(tibble(sample_support_code = "quarry"), points_8310) %>%
+      mutate(unit_id = as.character(unit_id)) %>%
       rename(geometry = geom)
-  ) %>% 
+  ) %>%
   mutate(sample_support_code = factor(
     sample_support_code,
     levels = levels(n2khab_types_expanded_properties$sample_support_code)
-  )) %>% 
+  )) %>%
   st_sf(sf_column_name = "geometry")
 ```
 
@@ -369,15 +376,15 @@ We determine the watercourse segments that have type 3260.
 ```{r}
 # Quick-and-dirty approach to define the 3260 segments (i.e. it will miss a
 # part and some may be false positives)
-segm_3260 <- read_watercourse_100mseg(element = "lines")[habstream, ] %>% 
+segm_3260 <- read_watercourse_100mseg(element = "lines")[habstream, ] %>%
   unite(unit_id, vhag_code, rank)
 ```
 
 The watersurfaces with types are defined by `wsh_pol`; the segments with 3260 are defined by `segm_3260`.
 
 ```{r}
-points_non_cell_n2khab <- 
-  points_non_cell %>% 
+points_non_cell_n2khab <-
+  points_non_cell %>%
   filter(
     sample_support_code %in% c("spring", "quarry") |
       (sample_support_code == "watersurface" & unit_id %in% wsh_pol$polygon_id) |
@@ -388,12 +395,12 @@ points_non_cell_n2khab <-
 Determining the GRTS address of the units represented by `points_non_cell_n2khab`.
 
 ```{r}
-units_non_cell_n2khab_grts <- 
-  points_non_cell_n2khab %>% 
+units_non_cell_n2khab_grts <-
+  points_non_cell_n2khab %>%
   mutate(
-    grts_address = extract(grts_mh, st_coordinates(points_non_cell_n2khab)) %>% 
+    grts_address = extract(grts_mh, st_coordinates(points_non_cell_n2khab)) %>%
       pull(GRTSmaster_habitats)
-  ) %>% 
+  ) %>%
   st_drop_geometry()
 ```
 
@@ -415,31 +422,31 @@ units_non_cell_n2khab_grts <-
 Listing the non-cell units per stratum (within the target populations of MNE and MHQ), needed in order to connect the GRTS addresses with strata.
 
 ```{r}
-stratum_units_non_cell_n2khab <- 
+stratum_units_non_cell_n2khab <-
   bind_cols(
     tibble(sample_support_code = "watersurface"),
-    wsh_pol_area_class %>% 
-      distinct() %>% 
-      extract_interval_limits() %>% 
-      unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>% 
+    wsh_pol_area_class %>%
+      distinct() %>%
+      extract_interval_limits() %>%
+      unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>%
       select(stratum, unit_id)
-  ) %>% 
+  ) %>%
   bind_rows(
     bind_cols(
       tibble(sample_support_code = "watercourse_segment"),
       segm_3260 %>%
-        st_drop_geometry() %>% 
+        st_drop_geometry() %>%
         mutate(stratum = "3260", .before = everything())
     )
   ) %>%
   bind_rows(
     bind_cols(
       tibble(sample_support_code = "spring"),
-      habspring_units %>% 
-        st_drop_geometry() %>% 
+      habspring_units %>%
+        st_drop_geometry() %>%
         mutate(
           stratum = "7220",
-          unit_id = as.character(unit_id), 
+          unit_id = as.character(unit_id),
           .keep = "none",
           .before = everything()
         )
@@ -447,20 +454,20 @@ stratum_units_non_cell_n2khab <-
   ) %>%
   bind_rows(
     bind_cols(
-      tibble(sample_support_code = "quarry"), 
-      habquarries_area_class %>% 
-        extract_interval_limits() %>% 
-        unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>% 
+      tibble(sample_support_code = "quarry"),
+      habquarries_area_class %>%
+        extract_interval_limits() %>%
+        unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>%
         select(stratum, unit_id)
-      )
-  ) %>% 
+    )
+  ) %>%
   mutate(
     sample_support_code = factor(
       sample_support_code,
       levels = levels(n2khab_types_expanded_properties$sample_support_code)
     ),
     stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
-  ) %>% 
+  ) %>%
   relocate(stratum)
 ```
 
@@ -470,13 +477,13 @@ This is because some watersurface units are attached to more than 1 stratum (i.e
 Assigning the GRTS addresses of the units to the corresponding strata in `n2khab_strata_expanded`.
 
 ```{r}
-stratum_grts_non_cell_n2khab <- 
-  stratum_units_non_cell_n2khab %>% 
+stratum_grts_non_cell_n2khab <-
+  stratum_units_non_cell_n2khab %>%
   inner_join(
     units_non_cell_n2khab_grts,
     by = c("sample_support_code", "unit_id")
-  ) %>% 
-  select(-sample_support_code, -unit_id) %>% 
+  ) %>%
+  select(-sample_support_code, -unit_id) %>%
   # distinct() leads to less rows because of units with same GRTS address.
   distinct()
 ```
@@ -498,20 +505,20 @@ Check that no empty GRTS addresses occur:
 Filtering units of `GRTSmaster_habitats` that are part of the target populations of MNE and MHQ with sample support `cell_conditioned_on_center`, and storing their polygon ID and GRTS address.
 
 ```{r}
-hmt_pol_cellcenter <- 
-  n2khab_types_expanded_properties %>% 
-  filter(sample_support_code == "cell_conditioned_on_center") %>% 
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
-  semi_join(hmt_pol, ., by = "polygon_id") %>% 
+hmt_pol_cellcenter <-
+  n2khab_types_expanded_properties %>%
+  filter(sample_support_code == "cell_conditioned_on_center") %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
+  semi_join(hmt_pol, ., by = "polygon_id") %>%
   vect()
 ```
 
 
 ```{r eval = params$regenerate_binary_files}
 # takes < 1 minute:
-hmt_pol_grts_cellcenter <- 
-  extract(grts_mh, hmt_pol_cellcenter, small = FALSE) %>% 
-  as_tibble() %>% 
+hmt_pol_grts_cellcenter <-
+  extract(grts_mh, hmt_pol_cellcenter, small = FALSE) %>%
+  as_tibble() %>%
   inner_join(
     tibble(
       ID = seq_len(nrow(hmt_pol_cellcenter)),
@@ -519,12 +526,12 @@ hmt_pol_grts_cellcenter <-
     ),
     .,
     by = "ID"
-  ) %>% 
-  select(-ID, grts_address = GRTSmaster_habitats) %>% 
+  ) %>%
+  select(-ID, grts_address = GRTSmaster_habitats) %>%
   # filtering is needed since all polygons are listed by extract():
   filter(!is.na(grts_address))
 saveRDS(
-  hmt_pol_grts_cellcenter, 
+  hmt_pol_grts_cellcenter,
   file.path(datapath, "binary/intermediate/hmt_pol_grts_cellcenter.rds")
 )
 ```
@@ -532,7 +539,7 @@ saveRDS(
 ```{r}
 hmt_pol_grts_cellcenter <-
   readRDS(file.path(
-    datapath, 
+    datapath,
     "binary/intermediate/hmt_pol_grts_cellcenter.rds"
   ))
 ```
@@ -540,17 +547,17 @@ hmt_pol_grts_cellcenter <-
 Filtering units of GRTSmaster_habitats that are part of the target populations of MNE and MHQ with sample support `cell`, and storing their polygon ID and GRTS address.
 
 ```{r}
-hmt_pol_cell <- 
-  n2khab_types_expanded_properties %>% 
-  filter(sample_support_code == "cell") %>% 
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
-  semi_join(hmt_pol, ., by = "polygon_id") %>% 
+hmt_pol_cell <-
+  n2khab_types_expanded_properties %>%
+  filter(sample_support_code == "cell") %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
+  semi_join(hmt_pol, ., by = "polygon_id") %>%
   vect()
 
-hmt_pol_grts_cell <- 
+hmt_pol_grts_cell <-
   # touches = TRUE allows about 2.5 times the number of cells
-  extract(grts_mh, hmt_pol_cell, touches = TRUE) %>% 
-  as_tibble() %>% 
+  extract(grts_mh, hmt_pol_cell, touches = TRUE) %>%
+  as_tibble() %>%
   inner_join(
     tibble(
       ID = seq_len(nrow(hmt_pol_cell)),
@@ -558,17 +565,17 @@ hmt_pol_grts_cell <-
     ),
     .,
     by = "ID"
-  ) %>% 
+  ) %>%
   select(-ID, grts_address = GRTSmaster_habitats)
 ```
 
 Note that `hmt_pol_grts_cellcenter` and `hmt_pol_grts_cell` share a number of polygons so this should be used with care, i.e. not mixing the link of `polygon_id` with `grts_address` between cell-center vs. cell types.
 
 ```{r}
-stratum_polygons_cell_all_n2khab <- 
-  n2khab_types_expanded_properties %>% 
-  filter(str_detect(sample_support_code, "^cell")) %>% 
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
+stratum_polygons_cell_all_n2khab <-
+  n2khab_types_expanded_properties %>%
+  filter(str_detect(sample_support_code, "^cell")) %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
   select(stratum = type, polygon_id)
 ```
 
@@ -580,35 +587,35 @@ Assigning the GRTS addresses of the units to the corresponding strata in `n2khab
 We can use `n2khab_types_expanded` since for terrestrial types the strata are the types without subdivision.
 
 ```{r}
-hmt_pol_stratum_grts_cellcenter <- 
-  n2khab_types_expanded_properties %>% 
-  filter(sample_support_code == "cell_conditioned_on_center") %>% 
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
-  select(polygon_id, stratum = type) %>% 
+hmt_pol_stratum_grts_cellcenter <-
+  n2khab_types_expanded_properties %>%
+  filter(sample_support_code == "cell_conditioned_on_center") %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
+  select(polygon_id, stratum = type) %>%
   inner_join(
-    hmt_pol_grts_cellcenter, 
-    by = "polygon_id", 
+    hmt_pol_grts_cellcenter,
+    by = "polygon_id",
     relationship = "many-to-many"
   )
-stratum_grts_cellcenter_n2khab <- 
-  hmt_pol_stratum_grts_cellcenter %>% 
+stratum_grts_cellcenter_n2khab <-
+  hmt_pol_stratum_grts_cellcenter %>%
   select(-polygon_id)
-hmt_pol_stratum_grts_cell <- 
-  n2khab_types_expanded_properties %>% 
-  filter(sample_support_code == "cell") %>% 
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>% 
-  select(polygon_id, stratum = type) %>% 
+hmt_pol_stratum_grts_cell <-
+  n2khab_types_expanded_properties %>%
+  filter(sample_support_code == "cell") %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
+  select(polygon_id, stratum = type) %>%
   inner_join(
-    hmt_pol_grts_cell, 
-    by = "polygon_id", 
+    hmt_pol_grts_cell,
+    by = "polygon_id",
     relationship = "many-to-many"
   )
-stratum_grts_cell_n2khab <- 
-  hmt_pol_stratum_grts_cell %>% 
-  select(-polygon_id) %>% 
+stratum_grts_cell_n2khab <-
+  hmt_pol_stratum_grts_cell %>%
+  select(-polygon_id) %>%
   # adjacent polygons can share the same type AND grts_address here, so:
   distinct()
-stratum_grts_cell_all_n2khab <- 
+stratum_grts_cell_all_n2khab <-
   bind_rows(stratum_grts_cellcenter_n2khab, stratum_grts_cell_n2khab)
 ```
 
@@ -627,8 +634,8 @@ Check that no empty GRTS addresses occur:
 ### Integrate the GRTS addresses for cell and non-cell units
 
 ```{r}
-stratum_grts_n2khab <- 
-  stratum_grts_non_cell_n2khab %>% 
+stratum_grts_n2khab <-
+  stratum_grts_non_cell_n2khab %>%
   bind_rows(stratum_grts_cell_all_n2khab)
 ```
 
@@ -653,8 +660,8 @@ stratum_grts_n2khab %>% filter(is.na(grts_address))
 Temporary fix:
 
 ```{r}
-stratum_grts_n2khab <- 
-  stratum_grts_n2khab %>% 
+stratum_grts_n2khab <-
+  stratum_grts_n2khab %>%
   filter(!is.na(grts_address))
 ```
 

@@ -272,4 +272,3 @@ scheme_domain_fag_stratum_spsamples_calendar %>%
     ss = gs_id,
     sheet = "dom_spsunitgroup_calendar_PAN_PHASE_1_FLANDERS"
   )
-

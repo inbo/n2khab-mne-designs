@@ -132,5 +132,4 @@ targetpops_mhq <-
 targetpops_mhq %>%
   distinct(type) %>%
   anti_join(targetpops_focal %>% distinct(type), by = "type") %>%
-  nrow == 0
-
+  nrow() == 0

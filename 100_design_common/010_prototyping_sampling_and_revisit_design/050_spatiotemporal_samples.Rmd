@@ -15,14 +15,14 @@ For this proof of concept, we restrict the allowed modules.
 ```{r}
 module_selection <- if (all(
   c("pan_phase_1_sac_subset_5", "pan_phase_1_flanders") %in%
-  params$active_modules
+    params$active_modules
 )) {
   c("pan_phase_1_sac_subset_5", "pan_phase_1_flanders")
 } else {
   params$active_modules
 }
-module_domain_scheme_stratum_sample_size_2 <- 
-  module_domain_scheme_stratum_sample_size %>% 
+module_domain_scheme_stratum_sample_size_2 <-
+  module_domain_scheme_stratum_sample_size %>%
   filter(module %in% module_selection)
 ```
 
@@ -41,33 +41,34 @@ So it's currently assumed that all observation wells are in place already.
 ### Spatial samples
 
 ```{r}
-scheme_domain_stratum_spsamples <- 
-  module_domain_scheme_stratum_sample_size_2 %>% 
-  select(module, domain, scheme, sampling_frame_id, stratum, sp_sample_size_all_panels_stratum) %>% 
+scheme_domain_stratum_spsamples <-
+  module_domain_scheme_stratum_sample_size_2 %>%
+  select(module, domain, scheme, sampling_frame_id, stratum, sp_sample_size_all_panels_stratum) %>%
   # for MNE, non-core schemes (dropped below) have yet to be taken back (but I
   # think this step also drops things we always need to drop):
-  filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
   summarize(
     sp_sample_size_all_panels_stratum = sum(sp_sample_size_all_panels_stratum),
     .by = c(domain, scheme, sampling_frame_id, stratum)
-  ) %>% 
-  nest(domain_stratum_spsamplesize = c(domain, stratum, sp_sample_size_all_panels_stratum)) %>% 
-  inner_join(sp_samplingframe_domain, by = join_by(sampling_frame_id)) %>% 
+  ) %>%
+  nest(domain_stratum_spsamplesize = c(domain, stratum, sp_sample_size_all_panels_stratum)) %>%
+  inner_join(sp_samplingframe_domain, by = join_by(sampling_frame_id)) %>%
   mutate(
     spsample = map2(domain_stratum_spsamplesize, sampling_frame_domain, function(dss, sfd) {
-      sfd %>% 
-        nest(grts_addresses = grts_address) %>% 
-        inner_join(dss, ., by = join_by(domain, stratum)) %>% 
-        mutate(sample = 
-                 map2(sp_sample_size_all_panels_stratum, grts_addresses, function(sss, grts) {
-                   grts %>% slice_min(grts_address, n = sss)
-                 })
-        ) %>% 
-        select(domain, stratum, sample) %>% 
+      sfd %>%
+        nest(grts_addresses = grts_address) %>%
+        inner_join(dss, ., by = join_by(domain, stratum)) %>%
+        mutate(
+          sample =
+            map2(sp_sample_size_all_panels_stratum, grts_addresses, function(sss, grts) {
+              grts %>% slice_min(grts_address, n = sss)
+            })
+        ) %>%
+        select(domain, stratum, sample) %>%
         unnest(sample)
     })
-  ) %>% 
-  select(scheme, spsample) %>% 
+  ) %>%
+  select(scheme, spsample) %>%
   unnest(spsample)
 ```
 
@@ -83,27 +84,27 @@ A 'field activity group' is a set of field activities with the same panel count,
 
 ```{r}
 scheme_domain_fa_panel_count <-
-  module_domain_scheme_stratum_sample_size_2 %>% 
+  module_domain_scheme_stratum_sample_size_2 %>%
   # to be revisited filter step (see above); this is especially important since
   # field activities are done e.g. for GW_05.1_aq (SURFLEVINST, SURFLEVREAD)
   # that will also be dropped later on, as a consequence of this.
   # So even though for a specific module the non-core schemes don't have their
   # own sample size, they may have their own field activities that must be
   # taken into account
-  filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
-  distinct(scheme, domain, cycle_duration_y, year_first, year_last) %>% 
-  inner_join(scheme_field_activity, join_by(scheme)) %>% 
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
+  distinct(scheme, domain, cycle_duration_y, year_first, year_last) %>%
+  inner_join(scheme_field_activity, join_by(scheme)) %>%
   inner_join(field_activity_paneldesign, join_by(field_activity)) %>%
   mutate(
     cycle_duration_y = ifelse(
-      !is.na(enforce_cycle_duration_y), 
+      !is.na(enforce_cycle_duration_y),
       enforce_cycle_duration_y,
       cycle_duration_y
     ),
     panel_count = case_when(
       revisit_pattern == "pure_panel" ~ 1L,
       .default = as.integer(cycle_duration_y * years(1) / panel_period_main)
-      ) *
+    ) *
       case_when(
         is.na(revisit_subpattern) ~ 1L,
         revisit_subpattern == "pure_panel" ~ 1L,
@@ -128,13 +129,13 @@ scheme_domain_fa_panel_count <-
       ),
       .default = 1L
     )
-  ) %>% 
+  ) %>%
   select(
-    scheme, 
-    domain, 
-    field_activity, 
-    starts_with("year"), 
-    panel_period, 
+    scheme,
+    domain,
+    field_activity,
+    starts_with("year"),
+    panel_period,
     panel_count,
     panel_group_size,
     panel_group_repetitions
@@ -143,18 +144,18 @@ scheme_domain_fa_panel_count <-
 # relation between FA (field activity) and FAG (FA group); done scheme-specific
 # so that joins still work one-to-one (because SURFSECC appears in two FAGs):
 scheme_fag_fa <-
-  scheme_domain_fa_panel_count %>% 
-  mutate(field_activity_prefix = str_extract(field_activity, "^(GW|SURF|SOIL)")) %>% 
+  scheme_domain_fa_panel_count %>%
+  mutate(field_activity_prefix = str_extract(field_activity, "^(GW|SURF|SOIL)")) %>%
   mutate(
-    field_activity_group = str_remove(field_activity, "^(GW|SURF|SOIL)") %>% 
-      str_flatten(collapse = "&") %>% 
+    field_activity_group = str_remove(field_activity, "^(GW|SURF|SOIL)") %>%
+      str_flatten(collapse = "&") %>%
       str_c(first(field_activity_prefix), .),
     .by = -field_activity
-  ) %>% 
-  select(-field_activity_prefix) %>% 
-  arrange(field_activity) %>% 
-  mutate(field_activity_group = fct(field_activity_group)) %>% 
-  arrange(scheme, field_activity) %>% 
+  ) %>%
+  select(-field_activity_prefix) %>%
+  arrange(field_activity) %>%
+  mutate(field_activity_group = fct(field_activity_group)) %>%
+  arrange(scheme, field_activity) %>%
   distinct(scheme, field_activity_group, field_activity)
 
 scheme_domain_fag_panel_count <-
@@ -164,66 +165,67 @@ scheme_domain_fag_panel_count <-
     join_by(scheme, field_activity),
     unmatched = "error",
     relationship = "one-to-one"
-  ) %>% 
-  distinct(pick(-field_activity)) %>% 
+  ) %>%
+  distinct(pick(-field_activity)) %>%
   relocate(field_activity_group, .after = domain)
 
-scheme_domain_fag_panel_count %>% 
+scheme_domain_fag_panel_count %>%
   kable()
 ```
 
 Different occurring patterns at the compartment level, for information and thought:
 
 ```{r}
-scheme_domain_fag_panel_count %>% 
-  mutate(compartment = str_extract(scheme, "^(GW|SURF|SOIL)")) %>% 
+scheme_domain_fag_panel_count %>%
+  mutate(compartment = str_extract(scheme, "^(GW|SURF|SOIL)")) %>%
   summarize(
     field_activity_groups = str_c(unique(field_activity_group), collapse = ", "),
     .by = c(compartment, starts_with("panel"))
-  ) %>% 
+  ) %>%
   kable()
 ```
 
 Defining panels.
 
 ```{r}
-scheme_domain_fag_panels <- 
-  scheme_domain_fag_panel_count %>% 
-  uncount(panel_count) %>% 
+scheme_domain_fag_panels <-
+  scheme_domain_fag_panel_count %>%
+  uncount(panel_count) %>%
   mutate(
     panel = str_c(
-      scheme, 
-      field_activity_group, 
+      scheme,
+      field_activity_group,
       str_c("PAN", str_pad(seq_len(n()), 2, pad = "0")),
       sep = "_"
     ),
     .by = c(scheme, field_activity_group)
-  ) %>% 
+  ) %>%
   mutate(panel = factor(panel))
 ```
 
 Defining date intervals and assigning panels to these intervals.
 
 ```{r}
-scheme_domain_fag_panel_calendar <- 
-  scheme_domain_fag_panels %>% 
+scheme_domain_fag_panel_calendar <-
+  scheme_domain_fag_panels %>%
   nest(
-    revisit = c(starts_with("year"), starts_with("panel"), -panel), 
+    revisit = c(starts_with("year"), starts_with("panel"), -panel),
     panels = panel
-  ) %>% 
+  ) %>%
   mutate(
     revisit = map(revisit, function(df) {
-      df %>% 
-        distinct() %>% 
+      df %>%
+        distinct() %>%
         mutate(
           # taking into account month_first_default:
-          nr_periods = 
-            (years(year_last - year_first + 1) - 
-               months(13 - month_first_default)) / panel_period) %>% 
-        uncount(nr_periods) %>% 
+          nr_periods =
+            (years(year_last - year_first + 1) -
+              months(13 - month_first_default)) / panel_period
+        ) %>%
+        uncount(nr_periods) %>%
         mutate(
-          panel_periodmonths = as.period(panel_period, "months") %>% 
-            month() %>% 
+          panel_periodmonths = as.period(panel_period, "months") %>%
+            month() %>%
             as.integer(),
           panel_cum_months = cumsum(panel_periodmonths),
           panel_cum_months_lag = lag(panel_cum_months, default = 0L),
@@ -231,7 +233,7 @@ scheme_domain_fag_panel_calendar <-
           date_start = make_date(year_first, month_first_default, 1) + months(panel_cum_months_lag),
           date_end = make_date(year_first, month_first_default, 1) + months(panel_cum_months) - days(1),
           date_interval = interval(date_start, date_end)
-        ) %>% 
+        ) %>%
         select(-c(panel_periodmonths, starts_with("panel_cum_months")))
     }),
     panel_date_assignment = map2(revisit, panels, function(revis, pan) {
@@ -242,22 +244,22 @@ scheme_domain_fag_panel_calendar <-
       } else {
         indexes_pan <- seq_len(nrow(pan))
         indexgrouping_pan <- rep(seq_len(nrow(pan) / group_size), each = group_size)
-        indexes_grouped <- split(indexes_pan, indexgrouping_pan) %>% 
-          rep(each = group_repetitions) %>% 
-          unlist() %>% 
+        indexes_grouped <- split(indexes_pan, indexgrouping_pan) %>%
+          rep(each = group_repetitions) %>%
+          unlist() %>%
           unname()
         pan2 <- pan[indexes_grouped, ]
       }
-      indexes <- rep(seq_len(nrow(pan2)), nrow(revis) %/% nrow(pan2) + 1) %>% 
+      indexes <- rep(seq_len(nrow(pan2)), nrow(revis) %/% nrow(pan2) + 1) %>%
         head(nrow(revis))
       bind_cols(
-        revis %>% select(date_start, date_end, date_interval), 
+        revis %>% select(date_start, date_end, date_interval),
         pan2[indexes, ]
       )
     })
-  ) %>% 
-  select(-panels, -revisit) %>% 
-  unnest(panel_date_assignment) %>% 
+  ) %>%
+  select(-panels, -revisit) %>%
+  unnest(panel_date_assignment) %>%
   relocate(panel, .after = field_activity_group)
 ```
 
@@ -302,16 +304,16 @@ This will be the basis to make different panel memberships.
 The object `compartment_generic_panels` contains the generic panel set codes and defines the associated generic panels.
 
 ```{r paged.print = FALSE}
-compartment_generic_panels <- 
-  scheme_domain_fag_panel_count %>% 
-  mutate(compartment = str_extract(scheme, "^(GW|SURF|SOIL)")) %>% 
-  distinct(compartment, panel_count) %>% 
-  arrange(compartment, panel_count) %>% 
-  uncount(panel_count, .remove = FALSE) %>% 
+compartment_generic_panels <-
+  scheme_domain_fag_panel_count %>%
+  mutate(compartment = str_extract(scheme, "^(GW|SURF|SOIL)")) %>%
+  distinct(compartment, panel_count) %>%
+  arrange(compartment, panel_count) %>%
+  uncount(panel_count, .remove = FALSE) %>%
   mutate(
     generic_panel_set = str_c(
-      compartment, 
-      "_", 
+      compartment,
+      "_",
       panel_count[1],
       "PANELS"
     ),
@@ -321,10 +323,10 @@ compartment_generic_panels <-
       str_pad(seq_len(panel_count[1]), 2, pad = "0")
     ),
     .by = c(compartment, panel_count)
-  ) %>% 
+  ) %>%
   mutate(across(where(is.character), fct))
 
-compartment_generic_panels %>% 
+compartment_generic_panels %>%
   distinct(generic_panel_set)
 ```
 
@@ -333,11 +335,11 @@ This relation is about which panels of one set together constitute a panel of a 
 
 ```{r}
 generic_panel_relations <-
-  compartment_generic_panels %>% 
-  select(-panel_count) %>% 
-  nest(panels = generic_panel) %>% 
-  filter(n() > 1, .by = compartment) %>% 
-  pivot_wider(names_from = generic_panel_set, values_from = panels) %>% 
+  compartment_generic_panels %>%
+  select(-panel_count) %>%
+  nest(panels = generic_panel) %>%
+  filter(n() > 1, .by = compartment) %>%
+  pivot_wider(names_from = generic_panel_set, values_from = panels) %>%
   # XXXX generalize this code!!
   mutate(
     GW_2PANELS = map(GW_2PANELS, function(df) {
@@ -347,26 +349,26 @@ generic_panel_relations <-
       # this code duplicates panels taking into account the serially alternating
       # pattern within a year, in order to properly match chronology of
       # GW_24PANELS. Hence each next line represents the next 3 months.
-      df %>% 
-        mutate(yr = rep(seq_len(n() / 2), each = 2)) %>% 
-        bind_rows(., .) %>% 
-        arrange(yr) %>% 
-        select(-yr) %>% 
+      df %>%
+        mutate(yr = rep(seq_len(n() / 2), each = 2)) %>%
+        bind_rows(., .) %>%
+        arrange(yr) %>%
+        select(-yr) %>%
         rename(generic_panel_12 = generic_panel)
     }),
-    GW_24PANELS = map(GW_24PANELS, ~rename(., generic_panel_24 = generic_panel))
-  ) %>% 
+    GW_24PANELS = map(GW_24PANELS, ~ rename(., generic_panel_24 = generic_panel))
+  ) %>%
   unnest(starts_with("GW"))
 ```
 
 Simplifying `scheme_domain_stratum_spsamples` by collapsing schemes per compartment, i.e. integrating their spatial samples.
 
 ```{r}
-compartment_domain_stratum_spsamples <- 
-  scheme_domain_stratum_spsamples %>% 
-  mutate(compartment = str_extract(scheme, "^(GW|SURF|SOIL)") %>% factor) %>% 
-  distinct(compartment, domain, stratum, grts_address) %>% 
-  arrange(compartment, domain, stratum, grts_address) %>% 
+compartment_domain_stratum_spsamples <-
+  scheme_domain_stratum_spsamples %>%
+  mutate(compartment = str_extract(scheme, "^(GW|SURF|SOIL)") %>% factor()) %>%
+  distinct(compartment, domain, stratum, grts_address) %>%
+  arrange(compartment, domain, stratum, grts_address) %>%
   nest(spsample = grts_address)
 ```
 
@@ -375,87 +377,87 @@ Assigning spatial sampling units to generic panels, in several steps depending o
 ```{r}
 set.seed(20240703)
 
-simplest_panelsplit <- 
-  compartment_generic_panels %>% 
-  select(-panel_count) %>% 
-  nest(panels = generic_panel) %>% 
+simplest_panelsplit <-
+  compartment_generic_panels %>%
+  select(-panel_count) %>%
+  nest(panels = generic_panel) %>%
   slice(1, .by = compartment)
 
-simplest_spsample_membership <- 
-  compartment_domain_stratum_spsamples %>% 
-  inner_join(simplest_panelsplit, join_by(compartment)) %>% 
+simplest_spsample_membership <-
+  compartment_domain_stratum_spsamples %>%
+  inner_join(simplest_panelsplit, join_by(compartment)) %>%
   mutate(
     spsample_panels = map2(spsample, panels, distribute_sample_over_panels)
   )
 
-additional_spsample_membership_1 <- 
-  simplest_spsample_membership %>% 
-  filter(compartment == "GW") %>% 
-  select(-panels, -spsample) %>% 
+additional_spsample_membership_1 <-
+  simplest_spsample_membership %>%
+  filter(compartment == "GW") %>%
+  select(-panels, -spsample) %>%
   mutate(
-    generic_panel_set = "GW_12PANELS" %>% 
+    generic_panel_set = "GW_12PANELS" %>%
       factor(levels = levels(compartment_generic_panels$generic_panel_set))
-  ) %>% 
-  unnest(spsample_panels) %>% 
-  nest(spsample = grts_address) %>% 
-  rename(generic_panel_2 = panel) %>% 
+  ) %>%
+  unnest(spsample_panels) %>%
+  nest(spsample = grts_address) %>%
+  rename(generic_panel_2 = panel) %>%
   inner_join(
-    generic_panel_relations %>% 
-      distinct(compartment, generic_panel_2, generic_panel = generic_panel_12) %>% 
+    generic_panel_relations %>%
+      distinct(compartment, generic_panel_2, generic_panel = generic_panel_12) %>%
       nest(panels = generic_panel),
     join_by(compartment, generic_panel_2)
-  ) %>% 
-  select(-generic_panel_2) %>% 
-  relocate(spsample, .after = stratum) %>% 
+  ) %>%
+  select(-generic_panel_2) %>%
+  relocate(spsample, .after = stratum) %>%
   mutate(
     spsample_panels = map2(spsample, panels, distribute_sample_over_panels)
   )
 
-additional_spsample_membership_2 <- 
-  additional_spsample_membership_1 %>% 
-  select(-panels, -spsample) %>% 
+additional_spsample_membership_2 <-
+  additional_spsample_membership_1 %>%
+  select(-panels, -spsample) %>%
   mutate(
-    generic_panel_set = "GW_24PANELS" %>% 
+    generic_panel_set = "GW_24PANELS" %>%
       factor(levels = levels(compartment_generic_panels$generic_panel_set))
-  ) %>% 
-  unnest(spsample_panels) %>% 
-  nest(spsample = grts_address) %>% 
-  rename(generic_panel_12 = panel) %>% 
+  ) %>%
+  unnest(spsample_panels) %>%
+  nest(spsample = grts_address) %>%
+  rename(generic_panel_12 = panel) %>%
   inner_join(
-    generic_panel_relations %>% 
-      distinct(compartment, generic_panel_12, generic_panel = generic_panel_24) %>% 
+    generic_panel_relations %>%
+      distinct(compartment, generic_panel_12, generic_panel = generic_panel_24) %>%
       nest(panels = generic_panel),
     join_by(compartment, generic_panel_12)
-  ) %>% 
-  select(-generic_panel_12) %>% 
-  relocate(spsample, .after = stratum) %>% 
+  ) %>%
+  select(-generic_panel_12) %>%
+  relocate(spsample, .after = stratum) %>%
   mutate(
     spsample_panels = map2(spsample, panels, distribute_sample_over_panels)
   )
 
-generic_spsample_membership <- 
+generic_spsample_membership <-
   bind_rows(
     simplest_spsample_membership,
     additional_spsample_membership_1,
     additional_spsample_membership_2
-  ) %>% 
-  select(-spsample, -panels) %>% 
-  unnest(spsample_panels) %>% 
+  ) %>%
+  select(-spsample, -panels) %>%
+  unnest(spsample_panels) %>%
   rename(generic_panel = panel)
 ```
 
 Defining spatial sampling unit groups based on `generic_panel_relations`, i.e. where different periodicities arise, to further pinpoint spatial relations between generic panels of different generic panel sets.
 
 ```{r}
-generic_panel_spsunit_groups <- 
-  generic_panel_relations %>% 
+generic_panel_spsunit_groups <-
+  generic_panel_relations %>%
   pivot_longer(
     cols = c(generic_panel_2, generic_panel_12),
     names_to = "generic_panel_set",
     values_to = "generic_panel"
-  ) %>% 
-  select(-generic_panel_set) %>% 
-  relocate(spsunit_group = generic_panel_24, .after = last_col()) %>% 
+  ) %>%
+  select(-generic_panel_set) %>%
+  relocate(spsunit_group = generic_panel_24, .after = last_col()) %>%
   summarize(
     spsunit_groups = str_c(spsunit_group, collapse = ", "),
     .by = c(compartment, generic_panel)
@@ -465,20 +467,20 @@ generic_panel_spsunit_groups <-
 Adding the spatial sampling unit groups to `generic_spsample_membership` and extending them.
 
 ```{r}
-generic_spsample_membership <- 
-  generic_spsample_membership %>% 
+generic_spsample_membership <-
+  generic_spsample_membership %>%
   left_join(
     generic_panel_spsunit_groups,
     join_by(compartment, generic_panel),
     unmatched = "error",
     relationship = "many-to-one"
-  ) %>% 
+  ) %>%
   mutate(
     spsunit_groups = ifelse(
-      is.na(spsunit_groups), 
-      as.character(generic_panel), 
+      is.na(spsunit_groups),
+      as.character(generic_panel),
       spsunit_groups
-    ) %>% 
+    ) %>%
       factor()
   )
 ```
@@ -486,7 +488,7 @@ generic_spsample_membership <-
 Inspecting number of spatial sampling units per generic panel.
 
 ```{r}
-generic_spsample_membership %>% 
+generic_spsample_membership %>%
   count(compartment, domain, generic_panel, spsunit_groups)
 ```
 
@@ -496,46 +498,46 @@ Deriving panel membership from generic panel membership.
 A panel is defined for a scheme x field activity group (see `scheme_domain_fag_panels`).
 
 ```{r}
-scheme_domain_fag_panel_stratum_spsamples <- 
-  scheme_domain_fag_panel_count %>% 
-  mutate(compartment = str_extract(scheme, "^(GW|SURF|SOIL)") %>% factor()) %>% 
-  select(compartment, scheme, domain, field_activity_group, panel_count) %>% 
+scheme_domain_fag_panel_stratum_spsamples <-
+  scheme_domain_fag_panel_count %>%
+  mutate(compartment = str_extract(scheme, "^(GW|SURF|SOIL)") %>% factor()) %>%
+  select(compartment, scheme, domain, field_activity_group, panel_count) %>%
   inner_join(
-    scheme_domain_fag_panels %>% 
-      select(-c(year_first:panel_group_repetitions)) %>% 
+    scheme_domain_fag_panels %>%
+      select(-c(year_first:panel_group_repetitions)) %>%
       nest(panels = panel),
     join_by(scheme, domain, field_activity_group)
-  ) %>% 
+  ) %>%
   mutate(
     generic_panel_set = str_c(
-      compartment, 
-      "_", 
+      compartment,
+      "_",
       panel_count,
       "PANELS"
     )
-  ) %>% 
+  ) %>%
   inner_join(
-    compartment_generic_panels %>% 
-      select(-panel_count) %>% 
+    compartment_generic_panels %>%
+      select(-panel_count) %>%
       nest(generic_panels = generic_panel),
     join_by(compartment, generic_panel_set)
-  ) %>% 
+  ) %>%
   mutate(
-    panels = map2(panels, generic_panels, ~bind_cols(.x, .y))
-  ) %>% 
-  select(-generic_panels) %>% 
-  unnest(panels) %>% 
+    panels = map2(panels, generic_panels, ~ bind_cols(.x, .y))
+  ) %>%
+  select(-generic_panels) %>%
+  unnest(panels) %>%
   # this step is scheme-agnostic:
   inner_join(
     generic_spsample_membership,
-    join_by(compartment, domain, generic_panel_set, generic_panel), 
+    join_by(compartment, domain, generic_panel_set, generic_panel),
     relationship = "many-to-many"
-  ) %>% 
+  ) %>%
   # aligning with scheme samples:
   semi_join(
     scheme_domain_stratum_spsamples,
     join_by(scheme, domain, stratum, grts_address)
-  ) %>% 
+  ) %>%
   select(
     scheme,
     domain,
@@ -552,8 +554,8 @@ scheme_domain_fag_panel_stratum_spsamples <-
 Joining the date intervals per panel with panel memberships to generate the spatiotemporal samples.
 
 ```{r}
-scheme_domain_fag_stratum_spsamples_calendar <- 
-  scheme_domain_fag_panel_stratum_spsamples %>% 
+scheme_domain_fag_stratum_spsamples_calendar <-
+  scheme_domain_fag_panel_stratum_spsamples %>%
   inner_join(
     scheme_domain_fag_panel_calendar,
     join_by(scheme, domain, field_activity_group, panel),
@@ -572,40 +574,40 @@ This means that new sampling units will be added from a list of spare sampling u
 This specifically applies to the (many) types where the cell center in the field must be the type, so that only one 'cell_center' type can correspond to a GRTS address, contrary to the theoretical information from the sampling frame.
 
 ```{r}
-fag_grts_calendar <- 
-  scheme_domain_fag_stratum_spsamples_calendar %>% 
+fag_grts_calendar <-
+  scheme_domain_fag_stratum_spsamples_calendar %>%
   distinct(
     field_activity_group,
     pick(starts_with("date")),
     grts_address
-  ) %>% 
+  ) %>%
   arrange(pick(everything()))
 ```
 
 ```{r}
-fag_stratum_grts_calendar <- 
-  scheme_domain_fag_stratum_spsamples_calendar %>% 
+fag_stratum_grts_calendar <-
+  scheme_domain_fag_stratum_spsamples_calendar %>%
   distinct(
     field_activity_group,
     pick(starts_with("date")),
     grts_address,
     stratum
-  ) %>% 
+  ) %>%
   arrange(pick(everything()))
 ```
 
 ## Deriving datasets and layers for use and visualization
 
 ```{r}
-scheme_domain_stratum_spsamples_sf <- 
-  scheme_domain_stratum_spsamples %>% 
+scheme_domain_stratum_spsamples_sf <-
+  scheme_domain_stratum_spsamples %>%
   add_point_coords_grts()
 ```
 
 ```{r}
-samplinglocations_sf <- 
-  scheme_domain_stratum_spsamples %>% 
-  distinct(grts_address) %>% 
+samplinglocations_sf <-
+  scheme_domain_stratum_spsamples %>%
+  distinct(grts_address) %>%
   add_point_coords_grts()
 ```
 

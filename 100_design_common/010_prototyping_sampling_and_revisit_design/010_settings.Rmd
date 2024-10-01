@@ -17,7 +17,7 @@ pan_phase_1_core_schemes_vec <- c(
   "SOIL_03.2",
   "SURF_03.4_lentic",
   "SURF_03.4_lotic"
-) %>% 
+) %>%
   factor(levels = levels(n2khab_schemes$scheme))
 pan_phase_1_schemes_vec <- c(
   as.character(pan_phase_1_core_schemes_vec),
@@ -29,10 +29,10 @@ pan_phase_1_schemes_vec <- c(
   "SURF_064_lentic", # this one's existence is still to be confirmed XXXXXXXXX
   "SURF_07.2"
 )
-pan_phase_1_schemes <- 
-  n2khab_schemes %>% 
-  filter(scheme %in% pan_phase_1_schemes_vec | programme == "MHQ") %>% 
-  mutate(is_core_scheme = scheme %in% pan_phase_1_core_schemes_vec) %>% 
+pan_phase_1_schemes <-
+  n2khab_schemes %>%
+  filter(scheme %in% pan_phase_1_schemes_vec | programme == "MHQ") %>%
+  mutate(is_core_scheme = scheme %in% pan_phase_1_core_schemes_vec) %>%
   select(
     scheme,
     is_core_scheme,
@@ -43,10 +43,10 @@ pan_phase_1_schemes <-
     tag_1,
     spatial_restriction
   )
-mbaa_mne_phase_1_schemes <- 
-  n2khab_schemes %>% 
-  filter(attribute_1 %in% c("GW", "SURF", "SOIL"), tag_1 == "focal") %>% 
-  mutate(is_core_scheme = TRUE) %>% 
+mbaa_mne_phase_1_schemes <-
+  n2khab_schemes %>%
+  filter(attribute_1 %in% c("GW", "SURF", "SOIL"), tag_1 == "focal") %>%
+  mutate(is_core_scheme = TRUE) %>%
   select(
     scheme,
     is_core_scheme,
@@ -62,20 +62,20 @@ mbaa_mne_phase_1_schemes <-
 Defining a variant of `pan_phase_1_schemes` without the MHQ schemes.
 
 ```{r}
-pan_phase_1_schemes_mne <- 
-  pan_phase_1_schemes %>% 
+pan_phase_1_schemes_mne <-
+  pan_phase_1_schemes %>%
   filter(programme == "MNE")
 ```
 
 Preparing restriction of target populations for pan_phase_1 to that of schemes SOIL_03.2, GW_03.3 & SURF_03.4_*, including the addition of 6430_mr for GW_05.1_terr (typegroup 3 completion) & for GW_05.2 (to complete its target population).
 
 ```{r}
-targetpops_exclude_from_pan_phase_1 <- 
-  read_scheme_types(lang = lang) %>% 
+targetpops_exclude_from_pan_phase_1 <-
+  read_scheme_types(lang = lang) %>%
   filter(
     scheme == "GW_05.1_terr",
     str_detect(typegroup, "GW_05.1_terr_group(1|4|5)")
-  ) %>% 
+  ) %>%
   select(scheme, type)
 ```
 
@@ -89,24 +89,28 @@ stset_name_vec <- c(
   "pan_phase_1_schemes_mne",
   "mbaa_mne_phase_1_schemes"
 )
-scheme_targetpop_sets <- 
+scheme_targetpop_sets <-
   tibble(
     stset_id = seq_along(stset_name_vec),
     stset_name = fct(stset_name_vec),
-    scheme_set = map(stset_name_vec, ~eval(as.name(.)))
-  ) %>% 
+    scheme_set = map(stset_name_vec, ~ eval(as.name(.)))
+  ) %>%
   mutate(
     targetpops = map2(scheme_set, stset_name, function(sts, stsn) {
-      read_scheme_types(lang = lang) %>% 
-        select(scheme, type) %>% 
-        semi_join(sts, by = "scheme") %>% 
-        {if (!str_detect(stsn, "pan_phase_1")) . else {
-          anti_join(
-            ., 
-            targetpops_exclude_from_pan_phase_1, 
-            by = c("scheme", "type")
-          )
-        }}
+      read_scheme_types(lang = lang) %>%
+        select(scheme, type) %>%
+        semi_join(sts, by = "scheme") %>%
+        {
+          if (!str_detect(stsn, "pan_phase_1")) {
+            .
+          } else {
+            anti_join(
+              .,
+              targetpops_exclude_from_pan_phase_1,
+              by = c("scheme", "type")
+            )
+          }
+        }
     })
   )
 scheme_targetpop_sets
@@ -115,27 +119,27 @@ scheme_targetpop_sets
 View of scheme_sets (for inspection):
 
 ```{r}
-scheme_targetpop_sets %>% 
-  select(-targetpops) %>% 
+scheme_targetpop_sets %>%
+  select(-targetpops) %>%
   unnest(cols = scheme_set)
 ```
 
 Unioned set of schemes.
 
 ```{r}
-schemes <- 
-  scheme_targetpop_sets$scheme_set %>% 
-  map(~select(., -is_core_scheme)) %>% 
-  reduce(dplyr::union) %>% 
+schemes <-
+  scheme_targetpop_sets$scheme_set %>%
+  map(~ select(., -is_core_scheme)) %>%
+  reduce(dplyr::union) %>%
   arrange(scheme)
 ```
 
 Unioned set of target populations.
 
 ```{r}
-targetpops <- 
-  scheme_targetpop_sets$targetpops %>% 
-  reduce(dplyr::union) %>% 
+targetpops <-
+  scheme_targetpop_sets$targetpops %>%
+  reduce(dplyr::union) %>%
   arrange(scheme, type)
 targetpops
 ```
@@ -161,7 +165,7 @@ modules <- tribble(
   "pan_phase_1_sac_subset_5", 2037, 1,
   "pan_phase_1_be2100024", 2030, 1,
   "mbaa_mne_phase_1", 2031, 3
-) %>% 
+) %>%
   mutate(
     module = fct(module),
     across(where(is.numeric), as.integer)
@@ -178,23 +182,23 @@ params$active_modules
 Applying the restriction by active modules.
 
 ```{r}
-modules <- 
-  modules %>% 
+modules <-
+  modules %>%
   filter(module %in% params$active_modules)
 ```
 
 Flattening the target populations per module.
 
 ```{r paged.print=FALSE}
-module_targetpops <- 
+module_targetpops <-
   modules %>%
   select(module, stset_id) %>%
   inner_join(
     scheme_targetpop_sets %>%
       select(stset_id, targetpops),
     by = "stset_id"
-  ) %>% 
-  select(-stset_id) %>% 
+  ) %>%
+  select(-stset_id) %>%
   unnest(targetpops)
 ```
 
@@ -204,8 +208,8 @@ module_targetpops <-
 Defining domains, including their geometry.
 
 ```{r}
-sfg_flanders <- 
-  read_admin_areas(dsn = "flanders") %>% 
+sfg_flanders <-
+  read_admin_areas(dsn = "flanders") %>%
   st_geometry() %>%
   .[[1]]
 sac <- read_admin_areas(dsn = "sac")
@@ -215,14 +219,14 @@ sac_subset_5 <- c(
   "BE2100024", # Vennen, heiden en moerassen rond Turnhout
   "BE2200028", # De Maten
   "BE2200035", # Mechelse heide en vallei van de Ziepbeek
-  "BE2200039"  # Voerstreek
+  "BE2200039" # Voerstreek
 )
 for (sac_i in sac_subset_5) {
-  sac %>% 
-  filter(sac_code == sac_i) %>% 
-  st_combine() %>%
-  .[[1]] %>% 
-  assign(str_c("sfg_", tolower(sac_i)), ., envir = .GlobalEnv)
+  sac %>%
+    filter(sac_code == sac_i) %>%
+    st_combine() %>%
+    .[[1]] %>%
+    assign(str_c("sfg_", tolower(sac_i)), ., envir = .GlobalEnv)
 }
 domains <- tribble(
   ~domain, ~domain_name_nl, ~domain_name_en, ~geometry,
@@ -233,8 +237,8 @@ domains <- tribble(
   "BE2200028", "SBZ-H BE2200028", "SAC BE2200028", sfg_be2200028,
   "BE2200035", "SBZ-H BE2200035", "SAC BE2200035", sfg_be2200035,
   "BE2200039", "SBZ-H BE2200039", "SAC BE2200039", sfg_be2200039
-) %>% 
-  mutate(domain = fct(domain)) %>% 
+) %>%
+  mutate(domain = fct(domain)) %>%
   st_as_sf(crs = 31370)
 domains
 ```
@@ -257,7 +261,7 @@ module_domains <- tribble(
   "pan_phase_1_sac_subset_5", "BE2200039", TRUE,
   "pan_phase_1_be2100024", "BE2100024", TRUE,
   "mbaa_mne_phase_1", "Flanders", TRUE,
-) %>% 
+) %>%
   mutate(
     module = factor(module, levels = levels(modules$module)),
     domain = factor(domain, levels = levels(domains$domain))
@@ -268,8 +272,8 @@ module_domains
 Applying the restriction by active modules.
 
 ```{r}
-module_domains <- 
-  module_domains %>% 
+module_domains <-
+  module_domains %>%
   filter(module %in% params$active_modules)
 ```
 
@@ -293,12 +297,12 @@ Using what we have already:
 <!-- currently the 'vars_phase_1_mbag' file is copied from the dcp_karen branch: -->
 
 ```{r}
-envvars_mbaa <- 
+envvars_mbaa <-
   read_vc(
     file = "vars_phase_1_mbag",
     root = file.path(datapath, "text/raw")
   ) %>%
-  as_tibble() %>% 
+  as_tibble() %>%
   select(
     scheme = meetnet,
     site_factor = standplaatsfactor,
@@ -310,12 +314,12 @@ envvars_mbaa <-
     quality_control = kwaliteitscontrole,
     variable_set,
     field_method
-  ) %>% 
+  ) %>%
   mutate(
-     scheme = scheme %>% factor(levels = levels(n2khab_schemes$scheme)),
-     main = !is.na(main),
-     explanatory = !is.na(explanatory),
-     quality_control = !is.na(quality_control)
+    scheme = scheme %>% factor(levels = levels(n2khab_schemes$scheme)),
+    main = !is.na(main),
+    explanatory = !is.na(explanatory),
+    quality_control = !is.na(quality_control)
   )
 ```
 
@@ -325,13 +329,13 @@ This is module-agnostic.
 ```{r}
 scheme_variableset_fieldmethod <-
   # MNE schemes phase 1
-  envvars_mbaa %>% 
-  distinct(scheme, variable_set, field_method) %>% 
+  envvars_mbaa %>%
+  distinct(scheme, variable_set, field_method) %>%
   filter(
-    !is.na(field_method), 
-    field_method != "te bepalen", 
+    !is.na(field_method),
+    field_method != "te bepalen",
     variable_set != "te bepalen"
-    ) %>% 
+  ) %>%
   bind_rows(
     tribble(
       ~scheme, ~variable_set, ~field_method,
@@ -340,21 +344,21 @@ scheme_variableset_fieldmethod <-
       "GW_07.1", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
       "SURF_07.2", "standaardpakket labo water anorganisch", "bemonsteren waterkolom stilstaande wateren"
     )
-  ) %>% 
-  mutate(scheme = factor(scheme, levels = levels(n2khab_schemes$scheme))) %>% 
+  ) %>%
+  mutate(scheme = factor(scheme, levels = levels(n2khab_schemes$scheme))) %>%
   # MHQ schemes
   bind_rows(
-    schemes %>% 
-      filter(programme == "MHQ") %>% 
-      select(scheme) %>% 
+    schemes %>%
+      filter(programme == "MHQ") %>%
+      select(scheme) %>%
       mutate(
-        variable_set = "LSVI", 
+        variable_set = "LSVI",
         field_method = "LSVI-beoordeling"
       )
-  ) %>% 
+  ) %>%
   mutate(across(
-    c(variable_set, field_method), 
-    ~factor(.) %>% fct_relevel(~.[!str_detect(., "LSVI")])
+    c(variable_set, field_method),
+    ~ factor(.) %>% fct_relevel(~ .[!str_detect(., "LSVI")])
   ))
 scheme_variableset_fieldmethod
 ```
@@ -364,15 +368,15 @@ For MHQ the variables are summarized as one variable 'LSVI', and the hierarchy o
 Checking that all schemes are covered by `scheme_variableset_fieldmethod`.
 
 ```{r}
-schemes %>% 
-  anti_join(scheme_variableset_fieldmethod, by = "scheme") %>% 
+schemes %>%
+  anti_join(scheme_variableset_fieldmethod, by = "scheme") %>%
   nrow() == 0
 ```
 
 'Field activity' can cover measurement, where it corresponds to 'field method' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
 
 ```{r}
-field_activities <- 
+field_activities <-
   tribble(
     ~field_activity, ~field_activity_name,
     "GWLEVINST", "installatie of onderhoud peilbuizen",
@@ -387,7 +391,7 @@ field_activities <-
     "SURFLENTFIELD", "veldmeting stilstaande wateren",
     "SURFLOTFIELD", "veldmeting waterlopen",
     "LSVI", "LSVI-beoordeling"
-  ) %>% 
+  ) %>%
   mutate(
     field_activity = fct(field_activity),
     field_activity_name = fct(field_activity_name)
@@ -406,10 +410,10 @@ Setting other _**so-far**_ module-agnostic scheme design attributes.
   The revisit design of these field activities will not be scheme specific, but given the dependency on the target population, different schemes will have different location evaluation field activities.
 
 ```{r}
-scheme_field_activity <- 
-  scheme_variableset_fieldmethod %>% 
-  distinct(scheme, field_method) %>% 
-  rename(field_activity_name = field_method) %>% 
+scheme_field_activity <-
+  scheme_variableset_fieldmethod %>%
+  distinct(scheme, field_method) %>%
+  rename(field_activity_name = field_method) %>%
   bind_rows(
     tibble(
       scheme = c(
@@ -423,26 +427,26 @@ scheme_field_activity <-
       ),
       field_activity_name = "installatie of onderhoud peilbuizen"
     )
-  ) %>% 
+  ) %>%
   bind_rows(
     tibble(
       scheme = "GW_05.1_aq",
       field_activity_name = "installatie of onderhoud peillatten"
     )
-  ) %>% 
+  ) %>%
   mutate(
     scheme = factor(scheme, levels = levels(schemes$scheme)),
     field_activity_name = factor(
       field_activity_name,
       levels = levels(field_activities$field_activity_name)
     )
-  ) %>% 
+  ) %>%
   inner_join(
     field_activities,
     join_by(field_activity_name),
     unmatched = "error"
-  ) %>% 
-  select(-field_activity_name) %>% 
+  ) %>%
+  select(-field_activity_name) %>%
   arrange(scheme, field_activity)
 ```
 
@@ -454,18 +458,18 @@ Note that currently we don't handle this scheme specific, but that might change 
 
 ```{r}
 field_activity_paneldesign <-
-  field_activities %>% 
+  field_activities %>%
   mutate(
     revisit_pattern = case_when(
       str_detect(field_activity_name, "(af|uit)lezen") ~ "pure_panel",
       .default = "serially_alternating"
-    ) %>% 
+    ) %>%
       factor(),
     panel_period_main = case_when(
       str_detect(field_activity_name, "^LSVI|water|Secchi") ~ years(1),
       str_detect(field_activity_name, "bemonsteren.*peilbuizen") ~ years(1),
       str_detect(
-        field_activity_name, 
+        field_activity_name,
         "(af|uit)lezen"
       ) ~ months(6),
       .default = months(3)
@@ -476,22 +480,22 @@ field_activity_paneldesign <-
     revisit_subpattern = case_when(
       str_detect(field_activity_name, "water|Secchi") ~ "pure_panel",
       str_detect(
-        field_activity_name, 
+        field_activity_name,
         "bemonsteren.*peilbuizen|(af|uit)lezen"
       ) ~ "serially_alternating"
-    ) %>% 
+    ) %>%
       factor(levels = levels(revisit_pattern)),
     panel_subperiod = case_when(
       str_detect(field_activity_name, "water|Secchi") ~ months(1),
       str_detect(
-        field_activity_name, 
+        field_activity_name,
         "bemonsteren.*peilbuizen|(af|uit)lezen"
       ) ~ months(3)
     ),
     limit_n_subpanels_per_panel = case_when(
       str_detect(field_activity_name, "bemonsteren.*peilbuizen") ~ 2L
     )
-  ) %>% 
+  ) %>%
   select(-field_activity_name)
 field_activity_paneldesign
 ```
@@ -506,8 +510,8 @@ Notable differences with `field_activity_paneldesign` are that:
 
 ```{r}
 scheme_variableset_paneldesign <-
-  scheme_variableset_fieldmethod %>% 
-  distinct(scheme, variable_set) %>% 
+  scheme_variableset_fieldmethod %>%
+  distinct(scheme, variable_set) %>%
   mutate(
     targetvar_temporal_resolution = case_when(
       str_detect(scheme, "^HQ") | str_detect(variable_set, "peil") ~ years(1),
@@ -517,7 +521,7 @@ scheme_variableset_paneldesign <-
     revisit_pattern = case_when(
       str_detect(variable_set, "peil") ~ "pure_panel",
       .default = "serially_alternating"
-    ) %>% 
+    ) %>%
       factor(),
     panel_period_main = case_when(
       str_detect(variable_set, "peil") ~ days(1),
@@ -526,15 +530,15 @@ scheme_variableset_paneldesign <-
     ),
     revisit_subpattern = case_when(
       str_detect(scheme, "^SURF_") ~ "pure_panel",
-      str_detect(scheme, "^GW_(03|04|07)") & 
+      str_detect(scheme, "^GW_(03|04|07)") &
         revisit_pattern != "pure_panel" ~ "serially_alternating"
-    ) %>% 
+    ) %>%
       factor(levels = levels(revisit_pattern)),
     panel_subperiod = case_when(
       !is.na(revisit_subpattern) ~ targetvar_temporal_resolution
     ),
     limit_n_subpanels_per_panel = case_when(
-      str_detect(scheme, "^GW_(03|04|07)") & 
+      str_detect(scheme, "^GW_(03|04|07)") &
         revisit_pattern != "pure_panel" ~ 2L
     )
   )
@@ -548,8 +552,8 @@ So the below `module_scheme_cycle_duration` object will be filtered and rewritte
 
 ```{r}
 module_scheme_cycle_duration <-
-  module_targetpops %>% 
-  distinct(module, scheme) %>% 
+  module_targetpops %>%
+  distinct(module, scheme) %>%
   mutate(cycle_duration_y = case_when(
     module == "pan_phase_1_be2100024" ~ 3L,
     str_detect(scheme, "^SURF") ~ 3L,
@@ -582,7 +586,7 @@ for (name in c(
   "scheme_targetpop_sets",
   "scheme_targetpop_sets$scheme_set[[1]]",
   "scheme_targetpop_sets$targetpops[[1]]",
-  "schemes", 
+  "schemes",
   "targetpops",
   "modules",
   "domains",

@@ -15,35 +15,48 @@ pop_size_terr <-
       "030_preparations/010_explore_targetpop/type_approaches",
       root = find_root(is_git_root)
     ),
-    by = "type") %>%
+    by = "type"
+  ) %>%
   filter(count_method == "cellbased" & approach_cellbased |
-           count_method == "centroidbased" & !approach_cellbased) %>%
+    count_method == "centroidbased" & !approach_cellbased) %>%
   select(-c(count_method, approach_cellbased)) %>%
-  mutate(stratum = NA_character_,
-         population_size = round(population_size) %>% as.integer) %>%
+  mutate(
+    stratum = NA_character_,
+    population_size = round(population_size) %>% as.integer()
+  ) %>%
   select(type, stratum, population_size) %>%
   arrange(type, stratum)
 pop_size_7220 <-
   habspring_units %>%
-  st_drop_geometry %>%
+  st_drop_geometry() %>%
   count(system_type) %>%
-  pivot_wider(names_from = system_type,
-              values_from = n) %>%
-  transmute(all = mire + rivulet + unknown,
-            terrestrial = mire + unknown,
-            aquatic = rivulet + unknown) %>%
+  pivot_wider(
+    names_from = system_type,
+    values_from = n
+  ) %>%
+  transmute(
+    all = mire + rivulet + unknown,
+    terrestrial = mire + unknown,
+    aquatic = rivulet + unknown
+  ) %>%
   mutate(type = "7220" %>% factor(levels = levels(pop_size_terr$type))) %>%
-  pivot_longer(cols = c("all", "terrestrial", "aquatic"),
-               names_to = "stratum",
-               values_to = "population_size")
+  pivot_longer(
+    cols = c("all", "terrestrial", "aquatic"),
+    names_to = "stratum",
+    values_to = "population_size"
+  )
 pop_size_3260 <-
   habstream %>%
-  mutate(length = st_length(.) %>% drop_units(),
-         population_size = ceiling(length / 100) %>% as.integer) %>%
+  mutate(
+    length = st_length(.) %>% drop_units(),
+    population_size = ceiling(length / 100) %>% as.integer()
+  ) %>%
   st_drop_geometry() %>%
-  summarise(type = first(type),
-            stratum = first(NA_character_),
-            population_size = sum(population_size))
+  summarise(
+    type = first(type),
+    stratum = first(NA_character_),
+    population_size = sum(population_size)
+  )
 pop_size_lentic <-
   wsh_pol_area_class %>%
   semi_join(targetpops, by = "type") %>%
@@ -52,27 +65,32 @@ pop_size_8310 <-
   habquarries_area_class %>%
   count(type, stratum, name = "population_size")
 join_targetpops <- function(df) {
-  df  %>%
-    inner_join(targetpops %>%
-                 select(scheme,
-                        type,
-                        contains("typegroup")),
-               .,
-               by = "type",
-               relationship = "many-to-many") %>%
+  df %>%
+    inner_join(
+      targetpops %>%
+        select(
+          scheme,
+          type,
+          contains("typegroup")
+        ),
+      .,
+      by = "type",
+      relationship = "many-to-many"
+    ) %>%
     filter(type != "7220" |
-             (type == "7220" & stratum == "all" & !str_detect(scheme, "aq|terr|SURF")) |
-             (type == "7220" & stratum == "aquatic" & str_detect(scheme, "aq|SURF")) |
-             (type == "7220" & stratum == "terrestrial" & str_detect(scheme, "terr"))
-    )
+      (type == "7220" & stratum == "all" & !str_detect(scheme, "aq|terr|SURF")) |
+      (type == "7220" & stratum == "aquatic" & str_detect(scheme, "aq|SURF")) |
+      (type == "7220" & stratum == "terrestrial" & str_detect(scheme, "terr")))
 }
 targetpops_stratumsize <-
-  bind_rows(pop_size_terr,
-            pop_size_7220,
-            pop_size_3260,
-            pop_size_lentic,
-            pop_size_8310) %>%
-  join_targetpops
+  bind_rows(
+    pop_size_terr,
+    pop_size_7220,
+    pop_size_3260,
+    pop_size_lentic,
+    pop_size_8310
+  ) %>%
+  join_targetpops()
 
 
 # targetpops_stratumsize comprises the whole targetpops!

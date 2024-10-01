@@ -17,11 +17,11 @@ grts_mh_non_cell <- mask(grts_mh, points_non_cell_n2khab)
 grts_mh_cellcenter <- mask(grts_mh, hmt_pol_cellcenter, touches = FALSE)
 grts_mh_cell <- mask(grts_mh, hmt_pol_cell)
 grts_mh_n2khab <- max(
-   grts_mh_non_cell, 
-   grts_mh_cellcenter, 
-   grts_mh_cell,
-   na.rm = TRUE
- ) %>% 
+  grts_mh_non_cell,
+  grts_mh_cellcenter,
+  grts_mh_cell,
+  na.rm = TRUE
+) %>%
   as.int()
 writeRaster(
   grts_mh_n2khab,
@@ -66,8 +66,8 @@ Since this does not distinguish between strata, stratum collapsing (see further)
 ```{r eval = params$regenerate_binary_files}
 domain_grts_n2khab <-
   extract(grts_mh_n2khab, vect(domains)) %>%
-  as_tibble() %>% 
-  filter(!is.na(GRTSmaster_habitats)) %>% 
+  as_tibble() %>%
+  filter(!is.na(GRTSmaster_habitats)) %>%
   inner_join(
     tibble(
       ID = seq_len(nrow(domains)),
@@ -75,13 +75,13 @@ domain_grts_n2khab <-
     ),
     .,
     by = "ID"
-  ) %>% 
+  ) %>%
   select(
     -ID,
     grts_address = GRTSmaster_habitats
   )
 saveRDS(
-  domain_grts_n2khab, 
+  domain_grts_n2khab,
   file.path(datapath, "binary/intermediate/domain_grts_n2khab.rds")
 )
 ```
@@ -89,7 +89,7 @@ saveRDS(
 ```{r}
 domain_grts_n2khab <-
   readRDS(file.path(
-    datapath, 
+    datapath,
     "binary/intermediate/domain_grts_n2khab.rds"
   ))
 ```
@@ -99,7 +99,9 @@ This needs further thought.
 
 ```{r paged.print=FALSE}
 global(grts_mh_n2khab, "notNA")
-domain_grts_n2khab %>% filter(domain == "Flanders") %>% nrow()
+domain_grts_n2khab %>%
+  filter(domain == "Flanders") %>%
+  nrow()
 ```
 
 <!-- XXXXX ofwel voor Flanders touches=TRUE gebruiken, ofwel voor alle domeinen touches=TRUE gebruiken (maar dit geeft oververtegenwoordiging door eenheden), ofwel houden as-is. -->
@@ -127,9 +129,9 @@ Note that collapsing only affects cell-based units.
 <!-- However it is clear that no other expansions occur in MNE + MHQ when comparing `n2khab_types` with `n2khab_types_expanded`. -->
 
 ```{r}
-stratum_grts_n2khab_collapsed <- 
-  stratum_grts_n2khab %>% 
-  collapse_strata() %>% 
+stratum_grts_n2khab_collapsed <-
+  stratum_grts_n2khab %>%
+  collapse_strata() %>%
   # subtypes and main types that are attached to the same GRTS address, i.e.
   # were attached to the same habitatmap polygon, have induced duplicates. We
   # need to solve that:
@@ -151,10 +153,10 @@ Check that no empty GRTS addresses occur:
 Check that no strata exist that don't occur in `n2khab_strata`:
 
 ```{r}
-stratum_grts_n2khab_collapsed %>% 
-  distinct(stratum) %>% 
-  anti_join(n2khab_strata, by = "stratum") %>% 
-  nrow == 0
+stratum_grts_n2khab_collapsed %>%
+  distinct(stratum) %>%
+  anti_join(n2khab_strata, by = "stratum") %>%
+  nrow() == 0
 ```
 
 
@@ -175,11 +177,11 @@ glimpse(stratum_grts_n2khab_collapsed)
 <!-- * See object `hmt_pol_stratum_cellcenter_nunits` -->
 
 ```{r}
-hmt_pol_phab_cellcenter_n2khab <- 
-  hmt_occ %>% 
-  summarize(phab = sum(phab), .by = c(polygon_id, type)) %>% 
+hmt_pol_phab_cellcenter_n2khab <-
+  hmt_occ %>%
+  summarize(phab = sum(phab), .by = c(polygon_id, type)) %>%
   semi_join(
-    n2khab_types_expanded_properties %>% 
+    n2khab_types_expanded_properties %>%
       filter(sample_support_code == "cell_conditioned_on_center"),
     by = "type"
   )
@@ -210,13 +212,13 @@ Hence it will need scheme-specific recalculation anyway (chapter \@ref(scheme-ob
 Determining the population size per domain for strata with non-cell-based units.
 
 ```{r}
-domain_stratum_non_cell_nunits <- 
-  stratum_units_non_cell_n2khab %>% 
+domain_stratum_non_cell_nunits <-
+  stratum_units_non_cell_n2khab %>%
   inner_join(
     units_non_cell_n2khab_grts,
     by = c("sample_support_code", "unit_id")
-  ) %>% 
-  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>% 
+  ) %>%
+  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>%
   count(domain, stratum, name = "nunits")
 ```
 
@@ -225,16 +227,16 @@ Determining the population size per domain for strata with cell-center-based uni
 <!-- Below simplification (representing domains and polygons + their intersection as cells and then using phab) can be slightly improved by actually intersecting polygons by domains, then calculating phab-corrected areas (see git history for such an approach but still lacking st_intersection()). -->
 
 ```{r}
-domain_stratum_cellcenter_nunits <- 
-  domain_grts_n2khab %>% 
-  inner_join(hmt_pol_grts_cellcenter, by = "grts_address") %>% 
+domain_stratum_cellcenter_nunits <-
+  domain_grts_n2khab %>%
+  inner_join(hmt_pol_grts_cellcenter, by = "grts_address") %>%
   inner_join(
-    hmt_pol_phab_cellcenter_n2khab, 
+    hmt_pol_phab_cellcenter_n2khab,
     by = "polygon_id",
     relationship = "many-to-many"
-  ) %>% 
-  rename(stratum = type) %>% 
-  collapse_strata() %>% 
+  ) %>%
+  rename(stratum = type) %>%
+  collapse_strata() %>%
   summarize(
     nunits = sum(phab) / 100,
     .by = c(domain, stratum)
@@ -244,30 +246,30 @@ domain_stratum_cellcenter_nunits <-
 Determining the population size per domain for strata with cell-based units.
 
 ```{r}
-domain_stratum_cell_nunits <- 
-  stratum_grts_cell_n2khab %>% 
-  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>% 
+domain_stratum_cell_nunits <-
+  stratum_grts_cell_n2khab %>%
+  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>%
   count(domain, stratum, name = "nunits")
 ```
 
 Integrating these 3 different types of strata.
 
 ```{r}
-domain_stratum_nunits <- 
+domain_stratum_nunits <-
   bind_rows(
     domain_stratum_non_cell_nunits,
     domain_stratum_cellcenter_nunits,
     domain_stratum_cell_nunits
-  ) %>% 
-  arrange(across(-nunits)) %>% 
+  ) %>%
+  arrange(across(-nunits)) %>%
   mutate(nunits = round(nunits) %>% as.integer())
 ```
 
 Also deriving the population size at type level.
 
 ```{r}
-domain_type_nunits <- 
-  domain_stratum_nunits %>% 
+domain_type_nunits <-
+  domain_stratum_nunits %>%
   inner_join(n2khab_strata, by = "stratum") %>%
   summarize(nunits = sum(nunits), .by = c(domain, type))
 ```
