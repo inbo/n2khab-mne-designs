@@ -47,12 +47,15 @@ scheme_domain_stratum_spsamples <-
   # for MNE, non-core schemes (dropped below) have yet to be taken back (but I
   # think this step also drops things we always need to drop):
   filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
+  # domains that are the same between different modules are integrated by
+  # summing the sample sizes; the module is dropped:
   summarize(
     sp_sample_size_all_panels_stratum = sum(sp_sample_size_all_panels_stratum),
     .by = c(domain, scheme, sampling_frame_id, stratum)
   ) %>%
   nest(domain_stratum_spsamplesize = c(domain, stratum, sp_sample_size_all_panels_stratum)) %>%
   inner_join(sp_samplingframe_domain, by = join_by(sampling_frame_id)) %>%
+  # drawing an independent sample per scheme, domain and stratum:
   mutate(
     spsample = map2(domain_stratum_spsamplesize, sampling_frame_domain, function(dss, sfd) {
       sfd %>%
