@@ -123,26 +123,18 @@ scheme_domain_stratum_spsamples <-
       ds %>% 
         mutate(
           including = domain %in% including_domains | length(including_domains) == 0,
-          # unsampled units of the including domain:
-          grts_available = ifelse(
-            !including,
-            tibble(),
-            map2(grts_addresses, sample, function(ga, spl) {
-              anti_join(ga, spl, join_by(grts_address))
-            })
-          ),
-          # put the unsampled units next to the included domains:
-          grts_restriction = ifelse(
+          # put the sample of the including domain next to the included domains:
+          grts_sampled = ifelse(
             including, 
             tibble(),
-            grts_available[including]
+            sample[including]
           ),
           # determine the available unsampled units per domain:
-          grts_addresses_2 = map2(grts_addresses, grts_restriction, function(ga, gr) {
-            if (is.null(gr)) {
+          grts_addresses_2 = map2(grts_addresses, grts_sampled, function(ga, gs) {
+            if (is.null(gs)) {
               return(NULL)
             }
-            semi_join(ga, gr, join_by(grts_address))
+            anti_join(ga, gs, join_by(grts_address))
           }),
           # redraw samples for included domains:
           sample_2 = pmap(
