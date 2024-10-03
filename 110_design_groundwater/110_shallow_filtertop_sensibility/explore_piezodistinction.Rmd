@@ -1,0 +1,394 @@
+---
+title: "What are piezometers, actually?"
+author: "Falk Mielke"
+date: "`r lubridate::today()`"
+output:
+  html_document:
+    keep_md: TRUE
+    number_sections: yes
+    code_folding: show
+    code_download: yes
+    fig_width: 10
+    fig_height: 5
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../../header.html
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("dplyr")
+library("watina")
+library("stringr")
+library("ggplot2")
+
+# Exceptional: connect to the *new* data warehouse
+watina_dwh <- inbodb::connect_inbo_dbase("W0002_10_Watina",
+                       autoconvert_utf8 = TRUE)
+
+```
+
+## Introduction
+
+Returning to the fundamental question of installation type, some recent discussions have provided new perspectives on the distinction of piëzometers.
+As an extra challenge, I will connect to the new data warehouse, and see what happens / how long I can stand it.
+
+
+Piezometer refers to pressure measurement, whereas water level might also be measured by divers?
+Yet, in contrast, at least some sources (among which my ~~favorite~~ [ex-favorite reference](https://www.h2o-watermatters.com/includes/partials/printArticle.php?ed=201904&art=06_Artikel)) distinguish the two installation types by filter length (hold this thought).
+The well might be open ("filter") only at the tip, or over a longer stretch of the tube.
+We distinguish
+
+> groundwater observation well (fully perforated) and a deep piezometer (short perforated filter)
+
+
+But this interpretation bears a paradox:
+```{r, echo=FALSE, out.width = "100%", fig.cap = "<i>Distribution of filter lengths of all sites registered in the watina database.</i>"}
+knitr::include_graphics("figures/filterlength_distribution.svg")
+```
+
+We only place filters of certain, distinct lengths (0.3 m, 0.5 m, or 1.0 m).
+
+
+In a technical discussion about the database (02/10/2024, FM with Frederic Piesschaert and Jo Loos), it became apparent that the distinguishing feature might be the position of the filter top with respect to water table.
+(This is consistent with the figure in the reference above, despite the misleading caption).
+
+## Water Table
+**Water table** is defined as the zero iso-pressure surface, i.e. the layer in the soil where capillary pressure (or, generally, attractive interactions of water-water-soil) exactly compensate the hydrostatic pressure ([see this illustrative video](https://www.elementaryengineeringlibrary.com/civil-engineering/soil-mechanics/capillary-rise-in-soils)).
+
+```{r, echo=FALSE, out.width = "100%", fig.cap = "<i>Definition of the water table.</i>"}
+knitr::include_graphics("https://www.elementaryengineeringlibrary.com/images/chapters-images/0056-10-stress-in-water.png")
+```
+
+## Watina Documentation
+The water table will rise and fall, it is unclear _a priori_ whether we find consistent information in `watina db`.
+
+Good to start with the documentation.
+```{r}
+table_list <- tbl(watina_dwh, "sysobjects") %>%
+  filter(xtype == "U") %>%
+  pull(name)
+table_list
+```
+
+```{r}
+query <- function(query_string) {
+  rs <- DBI::dbGetQuery(watina_dwh, query_string)
+  return(rs)
+}
+
+get_tablecolumns <- function(tbl_name) {
+my_columns <- query(paste0(
+  "SELECT OBJECT_NAME(object_id), name, column_id, TYPE_NAME(system_type_id)
+   FROM sys.columns 
+   WHERE (object_id = OBJECT_ID('",
+  tbl_name, "')) ;")    
+)
+}
+
+print(get_tablecolumns("FactPeilMeting"))
+
+# all_columns <- query("SELECT * FROM sys.columns;")
+# 
+# docs <- tbl(watina_dwh, "vwDocumentation")
+
+```
+
+```
+Reporting Services Error
+
+The permissions granted to user 'INBO\falk_mielke' are insufficient for performing this operation. (rsAccessDenied)
+
+```
+... or, you know what? I will postpone reading.
+
+
+# Query Filter Depth
+
+As previously, I will start with locations.
+... yet the process is slightly modified in the new DWH.
+
+```{r}
+# obswells_db <- get_locs(
+#   watina_dwh,
+#   filterdepth_range = c(0, 5),
+#   filterdepth_guess = FALSE,
+#   loc_type = "P",
+#   loc_validity = c("VLD", "ENT"),
+#   obswells = FALSE
+# ) %>% mutate(filtertop_depth = filterdepth - filterlength / 2)
+loc_type <- "P"
+loc_validity <- c("VLD", "ENT")
+
+locs <-
+    tbl(watina_dwh, "DimMeetpunt") %>%
+    filter(MeetpuntTypeCode %in% loc_type,
+           MeetpuntStatusCode %in% loc_validity
+           ) %>%
+    left_join(tbl(watina_dwh, "DimGebied") %>%
+                  select(GebiedWID,
+                         GebiedCode,
+                         GebiedNaam),
+              by = "GebiedWID")  
+peilpunt <- tbl(watina_dwh, "DimPeilpunt") %>%
+              filter(PeilpuntStatusCode %in% c("VLD",
+                                               "ENT",
+                                               "CLD"),
+                     OpenbaarheidWID == 4) %>%
+              mutate(PeilpuntPlaatsing =
+                         sql("CAST(PeilpuntPlaatsing AS date)"),
+                     PeilpuntStopzetting =
+                         sql("CAST(PeilpuntStopzetting AS date)")
+                     )
+# TODO compare old Openbaarheid ("PLME" // "UNKWN") to new table 
+
+locs %<>%
+    left_join(peilpunt,
+              by = "MeetpuntWID",
+              relationship = "many-to-many") %>%
+    mutate(tubelength = ifelse(PeilbuisLengte <= 0,
+                               NA,
+                               PeilbuisLengte),
+           filterlength = ifelse(is.na(FilterLengte),
+                                 0.3,
+                                 FilterLengte),
+           filterdepth = tubelength -
+                            ReferentieNiveauMaaiveld -
+                            filterlength / 2,
+           filtertop_depth = tubelength -
+                            ReferentieNiveauMaaiveld,
+           soilsurf_ost =
+               ReferentieNiveauTAW -
+               ReferentieNiveauMaaiveld) %>%
+    select(id = PeilpuntWID,
+           loc_wid = MeetpuntWID,
+           loc_code = MeetpuntCode,
+           area_code = GebiedCode,
+           area_name = GebiedNaam,
+           x = MeetpuntXCoordinaat,
+           y = MeetpuntYCoordinaat,
+           loc_validitycode = MeetpuntStatusCode,
+           loc_validity = MeetpuntStatus,
+           loc_typecode = MeetpuntTypeCode,
+           loc_typename = MeetpuntType,
+           obswell_code = PeilpuntCode,
+           obswell_rank = PeilpuntVersie,
+           obswell_statecode = PeilpuntToestandCode,
+           obswell_state = PeilpuntToestandNaam,
+           obswell_installdate = PeilpuntPlaatsing,
+           obswell_stopdate = PeilpuntStopzetting,
+           obswell_type = PeilpuntTypeCode,
+           soilsurf_ost,
+           measuringref_ost = ReferentieNiveauTAW,
+           tubelength,
+           filterlength,
+           filterdepth,
+           filtertop_depth)
+
+obswells_db <- locs
+
+```
+_Note:_ I added `obswell_type` and `filtertop_depth` for convenience. Also took along the `PeilpuntID`.
+
+
+```{r}
+obswells_db %>% 
+  ggplot(aes(x = filterdepth, fill = obswell_type)) +
+  geom_histogram(bins = 256) +
+  xlim(0, 5)
+```
+
+So far, so good.
+How about my favorite zwin-polder location?
+
+```{r}
+zwin <- obswells_db %>% 
+  filter(loc_code == 'ZWIP017')
+loc_selection <- unique(zwin %>% pull(loc_wid))
+zwin
+
+```
+
+Here we go.
+
+# Water Level
+As before, slightly modified:
+```{r}
+query_peilmeting <- function() {
+  water_query <- tbl(watina_dwh, "FactPeilMeting") %>%
+    select(PeilpuntWID, MeetpuntWID, 
+      PeilmetingCategorieCode, PeilMetingTypeCode, 
+      DatumWID, 
+      Niveau, mTAW, mMaaiveld,
+      PeilmetingStatus
+      ) %>%
+    arrange(DatumWID)
+  
+  tijd <- tbl(watina_dwh, "DimDatum") %>%
+    select(DatumWID, HydroJaar)
+  
+  water_query %<>%
+    left_join(tijd, join_by(DatumWID)) %>%
+    rename(
+      id = PeilpuntWID,
+      loc_id = MeetpuntWID,
+      hydroyear = HydroJaar
+      )
+  return (water_query)
+}
+
+water_zwin <- query_peilmeting() %>%
+  filter(loc_id == loc_selection) %>%
+  collect() %>%
+  mutate_at(vars(
+    PeilMetingTypeCode,
+    PeilmetingCategorieCode,
+    PeilmetingStatus,
+    hydroyear
+  ), as.factor) %>%
+  mutate(
+    date = lubridate::ymd(DatumWID),
+  )
+glimpse(water_zwin)
+```
+
+
+```{r}
+water_zwin %>%
+  mutate_at(vars(id), as.factor) %>%
+  ggplot(aes(x = date, color = id)) +
+  geom_line(aes(x = date, y = Niveau), linetype = "solid") +
+  # geom_line(aes(x = date, y = mTAW), linetype = "dotted") +
+  geom_line(aes(x = date, y = mMaaiveld), linetype = "dashed") +
+  geom_vline(xintercept = as.Date("2010-05-21")) +
+  xlim(as.Date("2008-01-01"), as.Date("2012-07-01")) 
+
+```
+
+**INSIGHT:** `Niveau` seems to be the better water level than `mMaaiveld`...
+
+
+Here is a function to get a level ratio for a given location.
+
+```{r}
+submerge_fraction <- 0.666
+level_threshold <- function (water_levels, reference_levels) {
+  # calculate what fraction of level measurements at a given location
+  # is above a chosen reference (for use with e.g. filterdepth).
+
+  ref_count <- water_levels %>% 
+    filter(!is.na(Niveau)) %>% 
+    inner_join(reference_levels, by = join_by(id)) %>%
+    group_by(id) %>%
+    summarize(
+      above_reference = sum(Niveau > -reference) / n()
+      ) %>%
+    mutate(is_piezometer = as.factor(above_reference > submerge_fraction))
+  return(ref_count)
+
+}
+
+ref_zwin <- zwin %>% 
+  select(id, filtertop_depth) %>% 
+  rename(reference = filtertop_depth) %>% 
+  collect
+# reference_levels <- ref %>% collect 
+# water_levels <- water_zwin %>% collect
+
+zwin_submerged <- level_threshold(water_zwin, ref_zwin)  
+
+```
+
+Try with the rest:
+```{r}
+
+water_levels <- query_peilmeting() %>%
+  collect() %>%
+  mutate_at(vars(
+    PeilMetingTypeCode,
+    PeilmetingCategorieCode,
+    PeilmetingStatus,
+    hydroyear
+  ), as.factor) %>%
+  mutate(
+    date = lubridate::ymd(DatumWID),
+  )
+
+ref <- obswells_db %>% 
+  select(id, filtertop_depth) %>% 
+  rename(reference = filtertop_depth) %>% 
+  collect
+
+
+obswell_submerged <- obswells_db %>%
+  collect %>%
+  left_join(level_threshold(water_levels, ref), by = join_by(id))
+
+```
+
+
+```{r}
+obswell_submerged %>% 
+    rename(fraction_levels_above_filtertop = above_reference) %>% 
+    ggplot(aes(x = fraction_levels_above_filtertop, fill = is_piezometer)) +
+    geom_histogram(bins = 256) +
+    scale_y_continuous(trans = "log10")
+```
+
+```{r}
+obswell_submerged %>%
+  filter(!is.na(is_piezometer)) %>% 
+  group_by(obswell_type, is_piezometer) %>%
+  tally() %>% 
+  tidyr::spread(is_piezometer, n)
+
+```
+
+
+Just to check, repeat the filtertop depth distribution:
+
+```{r}
+obswell_submerged %>% 
+  filter(between(filterdepth, 0, 5)) %>% 
+  ggplot(aes(x = filtertop_depth, fill = is_piezometer)) +
+    geom_histogram(aes(y = after_stat(count)),
+      binwidth = 0.05,
+      colour = "black"
+    ) +
+    geom_vline(xintercept = c(0, 0.3)) +
+    scale_x_reverse() +
+    scale_fill_manual(values = c("#f0d70f", "#8eafd7", "#b2b2b2", "#284971")) +
+    coord_flip() +
+    xlab("filter top depth (m; positive: down)") +
+    guides(fill = guide_legend(title = "well is piezometer?")) +
+    theme(text = element_text(size = 20))
+
+ggsave("figures/piezometers_by_submerged_filter.pdf",
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+```
+
+
+# Cleanup
+... leave no trace.
+
+```{r}
+DBI::dbDisconnect(watina_dwh)
+```
+
+# DWH Translation
+_notes for DWH migration_
+
+- `vwDimMeetpunt` -> `DimMeetpunt`
+- `vwDimGebied` -> `DimGebied`
+- `Use of .data in tidyselect expressions was deprecated in tidyselect 1.2.0. Please use "colname" instead of "colname"` in get_locs()
+- is `PeilpuntStatusCode` defined by `loc_validity`?
+- `PeilpuntOpenbaarheidTypeCode` outsourced to `DimOpenbaarheid`
+- include `filtertop_depth`?
+- `DimTijd` -> `DimDatum`
+- `TijdWID` -> `DatumWID`
