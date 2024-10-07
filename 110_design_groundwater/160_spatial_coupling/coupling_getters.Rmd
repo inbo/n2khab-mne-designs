@@ -31,7 +31,7 @@ library("stringr")
 library("ggplot2")
 library("mapview")
 
-source("./watina_mirgation.R")
+source("./watina_migration.R")
 
 watina_dwh <- connect_watina()
 
@@ -49,4 +49,54 @@ Those information are:
 - soil class
 
 As a bonus, this will work on the _new_ watina data warehouse.
+Another bonus is the extraction of unit tests for `watina` usage.
 
+```{r}
+get_db_table_list(watina_dwh)
+```
+
+# Spatial Distance
+A use case to query spatial distance is as follows:
+
+- take a given location (observation well candidate)
+- get existing location from `watina` 
+- find locations in the area
+
+step 1: migrate `watina::get_locs()`
+```{r}
+source("./watina_migration.R")
+
+obswells_db <- get_locs(
+  watina_dwh,
+  filterdepth_range = c(0, 5),
+  filterdepth_guess = FALSE,
+  loc_type = "P",
+  loc_validity = c("VLD", "ENT"),
+  area_codes = c("HOP"),
+  obswells = TRUE
+) %>% mutate(line_nr = row_number())
+
+glimpse(obswells_db)
+# obswells_db %>% count
+```
+
+TODO: unit test - query of a test area will not be empty
+
+
+NEXT: (i) bbox; 
+(ii) circular mask
+```{r}
+# @param bbox Optional geospatial fiter (rectangle).
+# A bounding box (class \code{bbox}), or a vector of four named elements
+# \code{xmin}, \code{xmax}, \code{ymin}, \code{ymax} defining the
+# boundary coordinates of a bounding box.
+# If provided, only locations within this rectangular area will be returned.
+# The CRS must be Belgian Lambert 72 (EPSG-code
+# \href{https://epsg.io/31370}{31370}).
+
+# @param mask An optional geospatial filter of class \code{sf}.
+# If provided, only locations that intersect with \code{mask} will be returned,
+# with the value of \code{buffer} taken into account.
+# The CRS must be Belgian Lambert 72 (EPSG-code
+# \href{https://epsg.io/31370}{31370}).
+```
