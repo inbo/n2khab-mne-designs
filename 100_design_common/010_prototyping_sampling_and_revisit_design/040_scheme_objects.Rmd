@@ -562,6 +562,7 @@ Determining which types in a module x compartment (GW, SURF, SOIL) are covered b
 ```{r}
 non_core_types_per_module_and_compartment <-
   modules %>%
+  select(-contains("module_name")) %>% 
   semi_join(
     module_domains %>% filter(domain == "Flanders"),
     by = "module"
@@ -614,8 +615,8 @@ Together with `scheme_sampling_frame` and `sp_samplingframe_domain`, we will hav
 
 Preparing objects that will distribute sample sizes that have been set at a level higher than module x domain x scheme:
 
-- distribution in module `pan_phase_1_sac_subset_5` is over domains within schemes (MNE), or over domains x schemes within type categories terrestrial, lentic and lotic (MHQ)
-- a specific distribution is done in module `pan_phase_1_be2100024` over aquatic schemes (MHQ).
+- distribution in module `mne2024_pan_effectmon_sac_subset_5` is over domains within schemes (MNE), or over domains x schemes within type categories terrestrial, lentic and lotic (MHQ)
+- a specific distribution is done in module `mne2024_pan_be2100024_restoration` over aquatic schemes (MHQ).
 
 ```{r}
 mhq_proportion_aquatic_per_module <-
@@ -642,7 +643,7 @@ mhq_proportions_sac_subset5 <-
   mhq_sampled_types_per_domain %>%
   semi_join(
     module_domains %>%
-      filter(module == "pan_phase_1_sac_subset_5", sample_size_predetermined),
+      filter(module == "mne2024_pan_effectmon_sac_subset_5", sample_size_predetermined),
     by = "domain"
   ) %>%
   # count the number of types that is sampled in each scheme
@@ -664,7 +665,7 @@ mne_core_proportions_sac_subset5 <-
   mod_dom_scheme_ssf_stratum_nunits %>%
   semi_join(
     module_domain_schemes %>%
-      filter(module == "pan_phase_1_sac_subset_5", is_core_scheme),
+      filter(module == "mne2024_pan_effectmon_sac_subset_5", is_core_scheme),
     by = c("module", "domain", "scheme")
   ) %>%
   # actually superfluous filter; keep it to make sure:
@@ -692,6 +693,7 @@ Note that from here on, we only consider the domains with predetermined sample s
 ```{r}
 module_domain_scheme_designattr <-
   modules %>%
+  select(-contains("module_name")) %>% 
   inner_join(module_domains, by = "module") %>%
   filter(sample_size_predetermined) %>%
   select(-sample_size_predetermined) %>%
@@ -735,36 +737,36 @@ module_domain_scheme_designattr <-
     sp_sample_size_all_panels = cycle_duration_y * case_when(
       # NA in MNE means adopting the locations of the core scheme in the same compartment:
       !is_core_scheme & !str_detect(scheme, "^HQ") ~ NA_real_,
-      module == "pan_phase_1_flanders" & scheme == "GW_03.3" ~ 300,
-      module == "pan_phase_1_flanders" & scheme == "SOIL_03.2" ~ 333,
-      module == "pan_phase_1_flanders" & scheme == "SURF_03.4_lentic" ~ 106,
-      module == "pan_phase_1_flanders" & scheme == "SURF_03.4_lotic" ~ 27,
-      # pan_phase_1_sac_subset_5 partim MNE is taken as 'one sixth' of above
-      module == "pan_phase_1_sac_subset_5" & scheme == "GW_03.3" ~ 50 * prop_domain_per_mne_scheme,
-      module == "pan_phase_1_sac_subset_5" & scheme == "SOIL_03.2" ~ 56 * prop_domain_per_mne_scheme,
-      module == "pan_phase_1_sac_subset_5" & scheme == "SURF_03.4_lentic" ~ 18 * prop_domain_per_mne_scheme,
-      module == "pan_phase_1_sac_subset_5" & scheme == "SURF_03.4_lotic" ~ 4 * prop_domain_per_mne_scheme,
-      # pan_phase_1_sac_subset_5 partim MHQ is set at category level
-      module == "pan_phase_1_sac_subset_5" & str_detect(scheme, "^HQ") & category == "terrestrial" ~ 338 * prop_mhq_domainscheme_per_cat,
-      module == "pan_phase_1_sac_subset_5" & str_detect(scheme, "^HQ") & category == "lentic" ~ 42 * prop_mhq_domainscheme_per_cat,
-      module == "pan_phase_1_sac_subset_5" & str_detect(scheme, "^HQ") & category == "lotic" ~ 17 * prop_mhq_domainscheme_per_cat,
-      # pan_phase_1_be2100024 is set at scheme level
-      module == "pan_phase_1_be2100024" & scheme == "GW_03.3" ~ 70,
-      module == "pan_phase_1_be2100024" & scheme == "SOIL_03.2" ~ 133,
-      module == "pan_phase_1_be2100024" & scheme == "SURF_03.4_lentic" ~ 14,
-      module == "pan_phase_1_be2100024" & scheme == "SURF_03.4_lotic" ~ 4,
-      module == "pan_phase_1_be2100024" & str_detect(scheme, "^HQ3") ~ 18 * prop_aq_in_module,
-      module == "pan_phase_1_be2100024" & str_detect(scheme, "^HQ(23|40|91(20|90))") ~ 28,
-      module == "pan_phase_1_be2100024" & str_detect(scheme, "^HQ6230") ~ 84,
-      module == "pan_phase_1_be2100024" & str_detect(scheme, "^HQ(7140|91E0)") ~ 56,
-      # mbaa_mne_phase_1 is set at scheme level
-      module == "mbaa_mne_phase_1" & scheme == "GW_03.3" ~ 1200 / 6,
-      module == "mbaa_mne_phase_1" & scheme == "GW_05.1_terr" ~ 1200 / 6,
-      module == "mbaa_mne_phase_1" & scheme == "GW_05.1_aq" ~ 400 / 6,
-      module == "mbaa_mne_phase_1" & scheme == "GW_05.1_quarries" ~ 25 / 6,
-      module == "mbaa_mne_phase_1" & attribute_1 == "SOIL" ~ 1400 / 6,
-      module == "mbaa_mne_phase_1" & scheme == "SURF_03.4_lentic" ~ 106,
-      module == "mbaa_mne_phase_1" & scheme == "SURF_03.4_lotic" ~ 27,
+      module == "mne2024_pan_effectmon_flanders" & scheme == "GW_03.3" ~ 300,
+      module == "mne2024_pan_effectmon_flanders" & scheme == "SOIL_03.2" ~ 333,
+      module == "mne2024_pan_effectmon_flanders" & scheme == "SURF_03.4_lentic" ~ 106,
+      module == "mne2024_pan_effectmon_flanders" & scheme == "SURF_03.4_lotic" ~ 27,
+      # mne2024_pan_effectmon_sac_subset_5 partim MNE is taken as 'one sixth' of above
+      module == "mne2024_pan_effectmon_sac_subset_5" & scheme == "GW_03.3" ~ 50 * prop_domain_per_mne_scheme,
+      module == "mne2024_pan_effectmon_sac_subset_5" & scheme == "SOIL_03.2" ~ 56 * prop_domain_per_mne_scheme,
+      module == "mne2024_pan_effectmon_sac_subset_5" & scheme == "SURF_03.4_lentic" ~ 18 * prop_domain_per_mne_scheme,
+      module == "mne2024_pan_effectmon_sac_subset_5" & scheme == "SURF_03.4_lotic" ~ 4 * prop_domain_per_mne_scheme,
+      # mne2024_pan_effectmon_sac_subset_5 partim MHQ is set at category level
+      module == "mne2024_pan_effectmon_sac_subset_5" & str_detect(scheme, "^HQ") & category == "terrestrial" ~ 338 * prop_mhq_domainscheme_per_cat,
+      module == "mne2024_pan_effectmon_sac_subset_5" & str_detect(scheme, "^HQ") & category == "lentic" ~ 42 * prop_mhq_domainscheme_per_cat,
+      module == "mne2024_pan_effectmon_sac_subset_5" & str_detect(scheme, "^HQ") & category == "lotic" ~ 17 * prop_mhq_domainscheme_per_cat,
+      # mne2024_pan_be2100024_restoration is set at scheme level
+      module == "mne2024_pan_be2100024_restoration" & scheme == "GW_03.3" ~ 70,
+      module == "mne2024_pan_be2100024_restoration" & scheme == "SOIL_03.2" ~ 133,
+      module == "mne2024_pan_be2100024_restoration" & scheme == "SURF_03.4_lentic" ~ 14,
+      module == "mne2024_pan_be2100024_restoration" & scheme == "SURF_03.4_lotic" ~ 4,
+      module == "mne2024_pan_be2100024_restoration" & str_detect(scheme, "^HQ3") ~ 18 * prop_aq_in_module,
+      module == "mne2024_pan_be2100024_restoration" & str_detect(scheme, "^HQ(23|40|91(20|90))") ~ 28,
+      module == "mne2024_pan_be2100024_restoration" & str_detect(scheme, "^HQ6230") ~ 84,
+      module == "mne2024_pan_be2100024_restoration" & str_detect(scheme, "^HQ(7140|91E0)") ~ 56,
+      # mne2024_mbaa_mne_phase_1 is set at scheme level
+      module == "mne2024_mbaa_mne_phase_1" & scheme == "GW_03.3" ~ 1200 / 6,
+      module == "mne2024_mbaa_mne_phase_1" & scheme == "GW_05.1_terr" ~ 1200 / 6,
+      module == "mne2024_mbaa_mne_phase_1" & scheme == "GW_05.1_aq" ~ 400 / 6,
+      module == "mne2024_mbaa_mne_phase_1" & scheme == "GW_05.1_quarries" ~ 25 / 6,
+      module == "mne2024_mbaa_mne_phase_1" & attribute_1 == "SOIL" ~ 1400 / 6,
+      module == "mne2024_mbaa_mne_phase_1" & scheme == "SURF_03.4_lentic" ~ 106,
+      module == "mne2024_mbaa_mne_phase_1" & scheme == "SURF_03.4_lotic" ~ 27,
       # NA in MHQ means a census instead of a sample (but it's not present!):
       .default = NA_real_
     )

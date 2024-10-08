@@ -100,9 +100,9 @@ grts_mh_targetpops <- mask(grts_mh_n2khab, grts_mh_n2khab, targetpops_grts, inve
 
 # Input MBAA presentation 2024-04-30 --------------------------------------
 
-schemes_plot_mbaa_mne_phase_1 <-
+schemes_plot_mne2024_mbaa_mne_phase_1 <-
   module_targetpops %>%
-  filter(module == "mbaa_mne_phase_1") %>%
+  filter(module == "mne2024_mbaa_mne_phase_1") %>%
   # don't highlight 8310; artificially move it to terr:
   mutate(scheme = fct_recode(scheme, "GW_05.1_terr" = "GW_05.1_quarries")) %>%
   inner_join(read_types(lang = "nl"), by = "type") %>%
@@ -118,8 +118,8 @@ schemes_plot_mbaa_mne_phase_1 <-
     fill = "Typeklasse"
   )
 ggsave(
-  file.path(plotpath, "schemes_plot_mbaa_mne_phase_1_8310_moved.png"),
-  schemes_plot_mbaa_mne_phase_1,
+  file.path(plotpath, "schemes_plot_mne2024_mbaa_mne_phase_1_8310_moved.png"),
+  schemes_plot_mne2024_mbaa_mne_phase_1,
   width = 9,
   height = 5
 )
@@ -158,7 +158,7 @@ tictoc::toc()
 
 type_spsamplesizes <-
   module_domain_scheme_stratum_sample_size_2 %>%
-  filter(module == "mbaa_mne_phase_1", domain == "Flanders") %>%
+  filter(module == "mne2024_mbaa_mne_phase_1", domain == "Flanders") %>%
   distinct(scheme, type, sp_sample_size_all_panels_type)
 
 scheme_types_attr <-
