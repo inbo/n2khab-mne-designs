@@ -206,9 +206,9 @@ get_locs_in_radius <- function(conn, point, radius = 10, ...) {
 
 x_test <- 148593
 y_test <- 208862
-rad_test <- 10 # (+/- m)
+rad_test <- 1000 # (+/- m)
 
-get_locs_in_radius(conn = watina_dwh,
+hopo_points <- get_locs_in_radius(conn = watina_dwh,
     point = c(x_test, y_test),
     radius = rad_test,
     filterdepth_range = c(0, 5),
@@ -217,10 +217,73 @@ get_locs_in_radius(conn = watina_dwh,
     loc_validity = c("VLD", "ENT")
     )
 
+glimpse(hopo_points)
+
 ```
 
 
 # distance to water body / stream
+## data source?
+
+- https://www.vmm.be/water/projecten/grachtenvalidatie
+- https://www.vlaanderen.be/DataCatalogRecord/408b8ef8-b731-4358-a5b0-9e028e074180
+- https://zenodo.org/records/7440931 n2khab data!
+
+```{r}
+watersurf_raw <-
+  read_watersurfaces()
+```
+
+
+Looking at the example region:
+```{r}
+
+x_test <- 148593
+y_test <- 208862
+
+hopo_watersurfaces <- points_within_radius(c(x_test, y_test),
+                                       radius = 1200,
+                                       watersurf_raw)
+
+m1 = mapview(hopo_watersurfaces,
+  map.types = c("OpenStreetMap", "OpenTopoMap"),
+  zcol = "usage"
+  )
+m2 = mapview(hopo_points,
+  map.types = c("OpenStreetMap", "OpenTopoMap"),
+  zcol = "filterdepth"
+  )
+
+m1+m2
+```
+
+## distance
+
+... narrowing the focus region a bit
+
+```{r}
+x_test <- 148593
+y_test <- 208862
+
+hopo_watersurfaces <- points_within_radius(c(x_test, y_test),
+                                       radius = 100,
+                                       watersurf_raw)
+
+
+hopo_points <- get_locs_in_radius(conn = watina_dwh,
+    point = c(x_test, y_test),
+    radius = 60,
+    filterdepth_range = c(0, 5),
+    filterdepth_guess = FALSE,
+    loc_type = "P",
+    loc_validity = c("VLD", "ENT")
+    )
+
+
+cross_distances <- st_distance(hopo_points, hopo_watersurfaces)
+knitr::kable(cross_distances)
+```
+
 
 # height TAW difference
 
