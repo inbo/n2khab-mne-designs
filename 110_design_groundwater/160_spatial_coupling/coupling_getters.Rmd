@@ -56,6 +56,7 @@ get_db_table_list(watina_dwh)
 ```
 
 # Spatial Distance
+## data
 A use case to query spatial distance is as follows:
 
 - take a given location (observation well candidate)
@@ -79,24 +80,150 @@ obswells_db <- get_locs(
 glimpse(obswells_db)
 # obswells_db %>% count
 ```
-
 TODO: unit test - query of a test area will not be empty
 
 
-NEXT: (i) bbox; 
-(ii) circular mask
-```{r}
-# @param bbox Optional geospatial fiter (rectangle).
-# A bounding box (class \code{bbox}), or a vector of four named elements
-# \code{xmin}, \code{xmax}, \code{ymin}, \code{ymax} defining the
-# boundary coordinates of a bounding box.
-# If provided, only locations within this rectangular area will be returned.
-# The CRS must be Belgian Lambert 72 (EPSG-code
-# \href{https://epsg.io/31370}{31370}).
+## orientation
 
-# @param mask An optional geospatial filter of class \code{sf}.
-# If provided, only locations that intersect with \code{mask} will be returned,
-# with the value of \code{buffer} taken into account.
-# The CRS must be Belgian Lambert 72 (EPSG-code
-# \href{https://epsg.io/31370}{31370}).
+```{r}
+
+source("./watina_migration.R")
+soilmap_raw <-
+  read_soilmap()
+
+soilmap <- soilmap_raw %>%
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      .default = "unknown"
+    ) %>%
+      factor()
+  )
+
+joined_spatial <- st_join(
+  watina::as_points(
+    obswells_db %>%
+      collect()
+  ), soilmap
+) %>%
+  mutate(soilclass = tidyr::replace_na(soilclass, "unknown"))
+
+
+joined_spatial %>%
+  mapview(
+    map.types = c("OpenStreetMap", "OpenTopoMap"),
+    zcol = "soilclass"
+  )
+
+
 ```
+
+
+## spatial relation
+NEXT: (i) bbox; 
+      (ii) circular bounding
+
+### bbox
+Query locations within a bounding box 
+
+```{r}
+
+source("./watina_migration.R")
+
+x_test <- 148600
+y_test <- 208900
+radius <- 1000 # (+/- m)
+hopo_boxed <- st_bbox(c(
+  xmin = x_test - radius,
+  xmax = x_test + radius,
+  ymin = y_test - radius,
+  ymax = y_test + radius
+  ),
+  crs = st_crs(31370))
+
+obswells_db <- get_locs(
+  watina_dwh,
+  filterdepth_range = c(0, 5),
+  filterdepth_guess = FALSE,
+  loc_type = "P",
+  loc_validity = c("VLD", "ENT"),
+  # area_codes = c("HOP"),
+  bbox = hopo_boxed,
+  obswells = TRUE
+) %>% mutate(line_nr = row_number())
+
+glimpse(obswells_db)
+
+```
+
+### circular
+
+- [related, on stack overflow](https://stackoverflow.com/questions/48650274/spatial-efficient-way-of-finding-all-points-within-x-meters-of-a-point)
+
+```{r}
+
+center <- c(x_test, y_test)
+hopo_points <- watina::as_points(obswells_db %>% collect())
+
+focus_sites <- points_within_radius(center, 100, hopo_points )
+```
+
+## Usage
+
+```{r}
+source("./watina_migration.R")
+
+get_locs_in_radius <- function(conn, point, radius = 10, ...) {
+
+  # create bounding box from point and radius
+  bbox <- st_bbox(c(
+    xmin = point[[1]] - radius,
+    xmax = point[[1]] + radius,
+    ymin = point[[2]] - radius,
+    ymax = point[[2]] + radius
+    ), crs = st_crs(31370))
+
+  # query with bbox
+  close_sites <- get_locs(
+    conn,
+    bbox = bbox,
+    obswells = FALSE,
+    collect = TRUE,
+    ...
+  )
+
+  # convert to points
+  close_sites <- watina::as_points(close_sites)
+
+  # refine: radius
+  closer_sites <- points_within_radius(point, radius, close_sites )
+
+  return(closer_sites)
+}
+
+x_test <- 148593
+y_test <- 208862
+rad_test <- 10 # (+/- m)
+
+get_locs_in_radius(conn = watina_dwh,
+    point = c(x_test, y_test),
+    radius = rad_test,
+    filterdepth_range = c(0, 5),
+    filterdepth_guess = FALSE,
+    loc_type = "P",
+    loc_validity = c("VLD", "ENT")
+    )
+
+```
+
+
+# distance to water body / stream
+
+# height TAW difference
+
+# watina region, eco-region, n2khab-type
+
+# soil class

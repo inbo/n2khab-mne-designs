@@ -154,9 +154,18 @@ get_locs <- function(conn,
               filterdepth_range[1] <= filterdepth_range[2])
 
   assert_that(is.number(buffer))
-  assert_that(is.null(bbox) | all(sort(names(bbox)) ==
-                                      c("xmax", "xmin", "ymax", "ymin")),
-              msg = "You did not correctly specify bbox.")
+
+  # bbox is either null, or a vector with limits, or an st_bbox without NA.
+  assert_that(
+    is.null(bbox) ||
+    all(sapply(c("xmax", "xmin", "ymax", "ymin"),
+              function (lim) lim %in% names(bbox)
+    )) &
+    all(!sapply(bbox, is.na)),
+    msg = paste("You did not correctly specify bbox.",
+                toString(names(bbox)), ": ", toString(bbox)
+                ))
+
   assert_that(is.null(area_codes) | all(is.character(area_codes)))
   assert_that(is.null(loc_vec) | all(is.character(loc_vec)),
               msg = "loc_vec must be a character vector.")
@@ -248,7 +257,6 @@ get_locs <- function(conn,
              MeetpuntYCoordinaat >= bbox_ymin,
              MeetpuntYCoordinaat <= bbox_ymax)
   }
-
 
   # query "peilpunt": site
   site <- tbl(conn, "DimPeilpunt") %>%
@@ -469,10 +477,75 @@ get_locs <- function(conn,
   }
 
   # check & report position duplicates
-  if (inherits(locs, "data.frame")) {
+  # TODO: re-activate
+  if (FALSE && inherits(locs, "data.frame")) {
     warn_xy_duplicates(locs$x, locs$y)
   }
 
   return(locs)
 
 } #/get_locs
+
+
+
+#----------------
+#--- SPATIAL ----
+#----------------
+
+
+#' Filter points within a radius
+#'
+#' Selects all points from a collection of points which
+#' are within a given radius from a center.
+#'
+#' @param center a point of XY coordinates
+#' in Belgian Lambert 72 (EPSG-code 31370) crs.
+#' If this is given as a simple XY vector, conversion
+#' to an `st_point` is attempted.
+#' @param radius the filter radius, in meters
+#' @param points a collection of `sf` points
+#'
+#' @return a subset of the given points.
+#'
+#' @examples
+#' \dontrun{
+#' points_within_radius(
+#'   c(148600, 208900),
+#'   100,
+#'   watina::as_points(obswells_db %>% collect())
+#' )
+#' }
+#'
+points_within_radius <- function(center, radius, points) {
+
+  # make sure `sf` is loaded
+  stopifnot(sf = require('sf'))
+  stopifnot(watina = require('watina'))
+
+  # ensure center is a point
+  if (!inherits(center, "POINT")) {
+    tryCatch({
+      center <- st_point(x = center, dim = "XY")
+    }, error = function(e) {
+      message("could not convert center to POINT:")
+      stop(e)
+    })
+  }
+
+  # assert data types of the other arguments
+  assert_that(inherits(points, "sf"),
+    msg = "The `points` must be an `sf` object.")
+
+  assert_that(is.numeric(radius) && radius >= 0,
+    msg = "radius must be numeric and greater than zero.")
+
+  # create a buffer around the center point
+  buf <- st_buffer(center, dist = radius)
+
+  # compute the intersect of points and buffer
+  intersect <- st_intersects(buf, points)[[1]]
+
+  # return the matched points
+  return(points[intersect, ])
+
+} # /points_within_radius
