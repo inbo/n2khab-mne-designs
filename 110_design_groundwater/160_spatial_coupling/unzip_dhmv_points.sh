@@ -45,6 +45,9 @@ do
 
 done
 
+# create an index to improve query time
+# this would speed up queries enormously!
+sqlite3 dhmv_points.db "CREATE INDEX idx ON points(x, y);"
 
 ## previous collection attempts
 # sed -i "s/\ /,/g" pointfiles.txt
@@ -59,3 +62,4 @@ done
 # refs:
 # https://unix.stackexchange.com/questions/469818/how-can-i-iterate-over-files-in-a-given-directory-and-check-if-file-exist
 # https://stackoverflow.com/questions/15317929/load-contents-in-text-files-to-sqlite-table
+# https://www.sqlite.org/queryplanner.html
