@@ -288,29 +288,89 @@ knitr::kable(cross_distances)
 
 # height TAW difference
 
-## Digital Elevantion Models
+## general info
 
 - https://r.geocompx.org/raster-vector
 - https://cran.r-project.org/web/packages/rgugik/vignettes/DEM.html
 
+_Edit 09/10/2024:_ Better use web services! (suggestion Thierry)
+https://inbo.github.io/tutorials/tutorials/spatial_wfs_services/
 
 
 ## Digitaal Hoogtemodel Vlaanderen 
-- https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/earth-observation-data-science-eodas/het-digitaal-hoogtemodel
-- raster https://download.vlaanderen.be/product/937-digitaal-hoogtemodel-vlaanderen-ii-dsm-raster-1-m
-- raster https://download.vlaanderen.be/product/939-digitaal-hoogtemodel-vlaanderen-ii-dtm-raster-1-mper
-- punten https://download.vlaanderen.be/product/56/configureer
+
+[source](https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/earth-observation-data-science-eodas/het-digitaal-hoogtemodel)
+
+
+
+
+
+alternatives:
+Download all Flanders elevation point data
+
+- point data https://download.vlaanderen.be/product/56/configureer
+
+- raster data `dsm`:  https://download.vlaanderen.be/product/937-digitaal-hoogtemodel-vlaanderen-ii-dsm-raster-1-m
+- raster data `dtm`: https://download.vlaanderen.be/product/939-digitaal-hoogtemodel-vlaanderen-ii-dtm-raster-1-mper
 - https://assets.vlaanderen.be/image/upload/v1676620086/Infosessie_BVKOpenData_LiDAR_21022017_1_p34z1s_uiihcm.pdf
 
-others:
 
 - Grootschaalig Referentiebestand of Basiskaart (GRB): https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb 
 - https://pydov.readthedocs.io/en/stable/tutorials.html#tutorials
 - topografie  https://nl-be.topographic-map.com/map-lqq9m/Vlaanderen/
 
 
+## OBSOLETE: Data Usage
+There is a linux shell script to collect all data in an sqlite database: `unzip_points.sh` (~24.4GB).
+This sqlite file is stored as `dhmv_points.db` in the current working directory.
+
+```{r, eval=FALSE}
+require("sf")
+require("DBI")
+
+dhmv_conn <- dbConnect(RSQLite::SQLite(), file.path("./dhmv_points.db"))
+
+source("./watina_migration.R")
+
+
+# re-use the bounding box from above:
+x_test <- c(148600)
+y_test <- c(208900)
+radius <- 10 # (+/- m)
+
+hopo_sf <- st_as_sf(data.frame(x_test, y_test), coords = c("x_test", "y_test"), crs = 31370)
+
+elevation <- query_elevation(
+  hopo_sf,
+  conn = dhmv_conn,
+  frame = radius
+)
+
+
+```
+
+```{r, eval=FALSE}
+
+hopo_wells_sf <- st_as_sf(hopo_points, coords = c("x", "y"), crs = 31370)
+# point_sf <- hopo_wells_sf
+well_elevations <- query_elevation(
+  hopo_wells_sf,
+  conn = dhmv_conn,
+  frame = radius
+)
+
+```
+
+Great, we can get elevations!
+
+```{r, eval=FALSE}
+dbDisconnect(dhmv_conn)
+``` 
 
 # watina region, eco-region, n2khab-type
+
+(TODO: via `watina/read_adminareas`)
+
 [reference](https://github.com/inbo/n2khab/blob/main/vignettes/v025_geospatial_hab.Rmd)
 
 - **`habitatmap`** ([Zenodo-link](https://doi.org/10.5281/zenodo.3354381)): geospatial polygons of BWK and Natura 2000 habitat types in the Flemish Region, originally published by the Research Institute for Nature and Forest (INBO) [@de_saeger_biologische_2020] and distributed by 'Informatie Vlaanderen'. 
@@ -326,6 +386,12 @@ For more details see `read_habitatmap_stdized()`.
 # quality of existing well
 
 
+# disconnect databases
+
+```{r}
+# dbDisconnect(watina_dwh)
+# dbDisconnect(dhmv_conn)
+``` 
 # misc
 The `n2khab_data` for `soilmap` is needed.
 ```{r, eval=FALSE}

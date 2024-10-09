@@ -83,10 +83,10 @@ connect_watina <- function(database_name = "W0002_10_Watina") {
 get_db_table_list <- function( conn = NULL ) {
 
   # availability of assertthat and other packages
-  stopifnot(assertthat = require('assertthat'),
-            DBI = require('DBI'),
-            dbplyr = require('dplyr'),
-            magrittr = require('magrittr')
+  stopifnot(assertthat = require("assertthat"),
+            DBI = require("DBI"),
+            dbplyr = require("dplyr"),
+            magrittr = require("magrittr")
             )
 
   # if no connection is given, open one
@@ -140,9 +140,9 @@ get_locs <- function(conn,
                      collect = FALSE) {
 
   # availability of assertthat and other packages
-  stopifnot(assertthat = require('assertthat'),
-            dbplyr = require('dplyr'),
-            magrittr = require('magrittr')
+  stopifnot(assertthat = require("assertthat"),
+            dbplyr = require("dplyr"),
+            magrittr = require("magrittr")
             )
 
 
@@ -519,8 +519,8 @@ get_locs <- function(conn,
 points_within_radius <- function(center, radius, points) {
 
   # make sure `sf` is loaded
-  stopifnot(sf = require('sf'))
-  stopifnot(watina = require('watina'))
+  stopifnot(sf = require("sf"))
+  stopifnot(watina = require("watina"))
 
   # ensure center is a point
   if (!inherits(center, "POINT")) {
@@ -549,3 +549,95 @@ points_within_radius <- function(center, radius, points) {
   return(points[intersect, ])
 
 } # /points_within_radius
+
+
+#-------------
+#--- DHMV ----
+#-------------
+# Digitaal Hoogtemodel Vlaanderen (Elevation Map of Flanders)
+
+#' OBSOLETE query elevation data from a local SQLite database
+#'
+#' DHMV point data must be stored in a local file
+#' See/use `unzip_dhmv_points.sh` file.
+#'
+query_elevation_sqlite <- function(point_sf, conn = NULL, frame = 10) {
+
+  # assert package availability
+  stopifnot(assertthat = require("assertthat"),
+            gstat = require("gstat"),
+            dplyr = require("dplyr"),
+            sf = require("sf"),
+            DBI = require("DBI")
+  )
+
+  # assert data types of the arguments
+  assert_that(inherits(point_sf, "sf"),
+    msg = "The `points` must be an `sf` object.")
+  assert_that(is.numeric(frame) && frame >= 0,
+    msg = "The `frame` must be numeric and greater than zero.")
+
+  # if required, open a temporary connection
+  temp_conn <- FALSE
+  if (is.null(conn)) {
+    conn <- dbConnect(RSQLite::SQLite(), file.path("./dhmv_points.db"))
+    temp_conn <- TRUE
+  } else {
+    assert_that(inherits(conn, "DBIConnection"),
+      msg = "`conn` must be a DBI connection")
+  }
+
+  # target area
+  xy <- st_coordinates(point_sf)
+
+  xmin <- min(xy[,"X"]) - frame
+  xmax <- max(xy[,"X"]) + frame
+  ymin <- min(xy[,"Y"]) - frame
+  ymax <- max(xy[,"Y"]) + frame
+
+  # get raw elevations from sqlite
+  query_string <- paste0(
+  " SELECT x, y, h
+    FROM points
+    WHERE x BETWEEN ", xmin," AND ", xmax,
+  "   AND y BETWEEN ", ymin," AND ", ymax,
+  ";")
+
+  area <- DBI::dbGetQuery(conn, query_string)
+
+  if (FALSE) {
+    elevations_raw <- tbl(conn, "points")
+
+    # extract point coords
+    print(length(point_sf))
+    # query area around point
+    area <- elevations_raw %>%
+      filter(x >= xmin, x <= xmax,
+             y >= ymin, y <= ymax
+      ) %>% collect
+  } # /inefficient method
+
+  # error if no points found
+  if (nrow(area)<1) {
+    stop("Insufficient number of points found in the selected area.
+        Try increasing the `frame` width.")
+  }
+
+  # convert to sf
+  area_sf <- st_as_sf(area, coords = c("x", "y"), crs = 31370)
+
+  # interpolate, inverse distance weighted
+  model <- gstat(formula = h ~ 1, data = area_sf)
+
+  # predict elevation at point
+  elevation <- predict(model, point_sf)
+
+  # close temporary sqlite connection
+  if (temp_conn) {
+    dbDisconnect(conn)
+  }
+
+  # return
+  return(elevation)
+
+} # /query_elevation
