@@ -206,6 +206,25 @@ modules <-
   filter(module %in% params$active_modules)
 ```
 
+Flattening the schemes per module.
+Note that below `module_schemes` object will be filtered and rewritten based on `module_domain_schemes` once the latter has been created (chapter \@ref(scheme-objects)).
+
+```{r}
+module_schemes <- 
+  modules %>% 
+  select(module, stset_id) %>% 
+  inner_join(
+    scheme_targetpop_sets %>% 
+      select(stset_id, scheme_set) %>% 
+      unnest(scheme_set) %>% 
+      select(stset_id, scheme, is_core_scheme),
+    join_by(stset_id),
+    unmatched = "drop",
+    relationship = "many-to-many"
+  ) %>% 
+  select(-stset_id)
+```
+
 Flattening the target populations per module.
 
 ```{r paged.print=FALSE}
