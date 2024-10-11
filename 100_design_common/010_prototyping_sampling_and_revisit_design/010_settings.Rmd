@@ -348,217 +348,514 @@ In order to not complicate terminology, we just denote all these geographical bo
 
 ## Setting scheme properties
 
-**Missing functionality**: getting the primary and explanatory site factors and environmental variables for **remaining** schemes in MNE from existing datasets such as googlesheets.
+Note: explanatory environmental variables might need spatial restrictions that are more stringent than the one at the scheme level.
 
-Explanatory site factors / environmental variables might need spatial restrictions that are more stringent than the one at the scheme level.
-
-Using what we have already:
-
-<!-- currently the 'vars_phase_1_mbag' file is copied from the dcp_karen branch: -->
+```{r read-gsheet-activities, eval = !file.exists(file.path(datapath, "text/raw/activities.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE}
+gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
+read_sheet(ss = gs_id_envvars, sheet = "activities", col_types = "ccllllc") %>%
+  mutate(
+    across(c(activity, activity_name), fct),
+    protocol = factor(protocol)
+  ) %>% 
+  write_vc(
+    file = "activities",
+    root = file.path(datapath, "text/raw"),
+    optimize = FALSE,
+    strict = FALSE
+  )
+```
 
 ```{r}
-envvars_mbaa <-
+activities <- 
   read_vc(
-    file = "vars_phase_1_mbag",
+    file = "activities",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble()
+```
+
+```{r read-gsheet-activity-sequences, eval = !file.exists(file.path(datapath, "text/raw/activity_sequences.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE}
+gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
+read_sheet(ss = gs_id_envvars, sheet = "activity_sequences", col_types = "cicll") %>%
+  mutate(
+    sequence = fct(sequence),
+    activity = factor(activity, levels = activities$activity)
+  ) %>% 
+  write_vc(
+    file = "activity_sequences",
+    root = file.path(datapath, "text/raw"),
+    optimize = FALSE,
+    strict = FALSE
+  )
+```
+
+```{r read-gsheet-fag, eval = !file.exists(file.path(datapath, "text/raw/fa_fag.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE}
+gs_id_envvars <- "1wFbevEcaNbQ1RBIwEdkoloRYmarQ59E2gctbcxVyH_M"
+read_sheet(ss = gs_id_envvars, sheet = "field_activities") %>%
+  select(field_activity, field_activity_group) %>% 
+  mutate(field_activity = factor(field_activity, levels = activities$activity)) %>% 
+  arrange(field_activity) %>% 
+  mutate(field_activity_group = fct(field_activity_group)) %>% 
+  write_vc(
+    file = "fa_fag",
+    root = file.path(datapath, "text/raw"),
+    optimize = FALSE,
+    strict = FALSE
+  )
+```
+
+```{r read-gsheet-envvars, eval = !file.exists(file.path(datapath, "text/raw/vars.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE}
+gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
+read_sheet(ss = gs_id_envvars, sheet = "vars_per_scheme") %>%
+  write_vc(
+    file = "vars",
+    root = file.path(datapath, "text/raw"),
+    optimize = FALSE,
+    strict = FALSE
+  )
+```
+
+```{r}
+activity_sequences <- 
+  read_vc(
+    file = "activity_sequences",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble()
+```
+
+<!-- ```{r read-gsheet-activities, eval = !file.exists(file.path(datapath, "text/raw/activity_relations.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE} -->
+<!-- gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc" -->
+<!-- read_sheet(ss = gs_id_envvars, sheet = "activity_relations") %>% -->
+<!--   mutate( -->
+<!--     across(everything(), ~ factor(., levels = levels(activities$activity))) -->
+<!--   ) %>%  -->
+<!--   write_vc( -->
+<!--     file = "activity_relations", -->
+<!--     root = file.path(datapath, "text/raw"), -->
+<!--     optimize = FALSE, -->
+<!--     strict = FALSE -->
+<!--   ) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- activity_relations <-  -->
+<!--   read_vc( -->
+<!--     file = "activity_relations", -->
+<!--     root = file.path(datapath, "text/raw") -->
+<!--   ) %>% -->
+<!--   as_tibble() -->
+<!-- ``` -->
+
+```{r}
+envvars <- 
+  read_vc(
+    file = "vars",
     root = file.path(datapath, "text/raw")
   ) %>%
   as_tibble() %>%
   select(
     scheme = meetnet,
-    site_factor = standplaatsfactor,
+    target_site_factor = standplaatsfactor,
     environm_var = milieuvar,
     envvar_abbrev = afk_milieuvar,
     measurement_var = meetvar,
-    main = primair,
+    target = primair,
     explanatory = verklarend,
     quality_control = kwaliteitscontrole,
     variable_set,
-    field_method
-  ) %>%
+    data_collection_method = activity,
+    targetvar_temporal_targetpop:last_col()
+  ) %>% 
+  # warn about unknown schemes:
+  {
+    if (all(.$scheme %in% schemes$scheme)) {
+      .
+    } else {
+      unknown <- unique(.$scheme[!(.$scheme %in% schemes$scheme)])
+      warning(
+        "Dropped unknown scheme(s): ", 
+        paste(unknown, collapse = ", "),
+        call. = FALSE
+      )
+      filter(., scheme %in% schemes$scheme)
+    }
+  } %>% 
+  # check that data collection methods are known:
+  {
+    if (
+      all(.$data_collection_method[!is.na(.$data_collection_method)] %in% 
+          activities$activity)
+    ) {
+      .
+    } else {
+      stop("Unknown data collection method(s) detected!", call. = FALSE)
+    }
+  } %>% 
   mutate(
     scheme = scheme %>% factor(levels = levels(n2khab_schemes$scheme)),
-    main = !is.na(main),
-    explanatory = !is.na(explanatory),
-    quality_control = !is.na(quality_control)
+    data_collection_method = factor(
+      data_collection_method, 
+      levels = levels(activities$activity)
+    ),
+    across(c(target:quality_control, starts_with("mne")), ~ !is.na(.)),
+    across(where(is.character), factor),
+    variable_set = factor(
+      variable_set, 
+      levels = c(levels(variable_set), "LSVI")
+    )
+  ) %>% 
+  pivot_longer(
+    cols = starts_with("mne"),
+    names_to = "module",
+    values_to = "keep"
+  ) %>% 
+  filter(keep) %>% 
+  # warn about inactive or unknown modules:
+  {
+    if (all(.$module %in% modules$module)) {
+      .
+    } else {
+      unknown <- unique(.$module[!(.$module %in% modules$module)])
+      warning(
+        "Dropped inactive or unknown module(s): ", 
+        paste(unknown, collapse = ", "),
+        call. = FALSE
+      )
+      filter(., module %in% modules$module)
+    }
+  } %>% 
+  mutate(module = factor(module, levels = levels(modules$module))) %>% 
+  relocate(module) %>% 
+  select(-keep)
+```
+
+Checking which MNE schemes per module are not covered by `envvars` (this may yield cases where the applicable domain has no target population units available, since `module_schemes` will only take this into account in chapter \@ref(scheme-objects)).
+
+```{r}
+module_schemes_mne <- 
+  module_schemes %>% 
+  filter(!str_detect(scheme, "^HQ"))
+module_schemes_mne %>% 
+  anti_join(
+    envvars %>% 
+      distinct(module, scheme),
+    join_by(module, scheme)
   )
 ```
 
-Defining variable sets and field methods per scheme.
-This is module-agnostic.
+<!-- We currently see no unexpected cases. -->
+
+Checking that no unplanned schemes are covered.
 
 ```{r}
-scheme_variableset_fieldmethod <-
-  # MNE schemes phase 1
-  envvars_mbaa %>%
-  distinct(scheme, variable_set, field_method) %>%
-  filter(
-    !is.na(field_method),
-    field_method != "te bepalen",
-    variable_set != "te bepalen"
-  ) %>%
-  bind_rows(
-    tribble(
-      ~scheme, ~variable_set, ~field_method,
-      "GW_04.2", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
-      "GW_05.2", "ondiep grondwaterpeil automatisch", "uitlezen diverloggers",
-      "GW_07.1", "standaardpakket labo water anorganisch", "bemonsteren van ondiepe peilbuizen",
-      "SURF_07.2", "standaardpakket labo water anorganisch", "bemonsteren waterkolom stilstaande wateren"
-    )
-  ) %>%
-  mutate(scheme = factor(scheme, levels = levels(n2khab_schemes$scheme))) %>%
-  # MHQ schemes
-  bind_rows(
-    schemes %>%
-      filter(programme == "MHQ") %>%
-      select(scheme) %>%
-      mutate(
-        variable_set = "LSVI",
-        field_method = "LSVI-beoordeling"
-      )
-  ) %>%
-  mutate(across(
-    c(variable_set, field_method),
-    ~ factor(.) %>% fct_relevel(~ .[!str_detect(., "LSVI")])
-  ))
-scheme_variableset_fieldmethod
-```
-
-For MHQ the variables are summarized as one variable 'LSVI', and the hierarchy of involved measurement variables for each scheme (type) is incorporated in the [LSVI](https://packages.inbo.be/LSVI/) package.
-
-Checking that all schemes are covered by `scheme_variableset_fieldmethod`.
-
-```{r}
-schemes %>%
-  anti_join(scheme_variableset_fieldmethod, by = "scheme") %>%
+envvars %>% 
+  distinct(module, scheme) %>% 
+  anti_join(module_schemes_mne, join_by(module, scheme)) %>% 
   nrow() == 0
 ```
 
-'Field activity' can cover measurement, where it corresponds to 'field method' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
+<!-- Creating a subset of `envvars` that only involves data collection methods that are field activities. -->
+
+<!-- ```{r} -->
+<!-- envvars_field <-  -->
+<!--   envvars %>%  -->
+<!--   filter(data_collection_method %in% activities$activity[activities$is_field_activity]) -->
+<!-- ``` -->
+
+Some scheme x environmental variable combinations are module-specific:
 
 ```{r}
-field_activities <-
-  tribble(
-    ~field_activity, ~field_activity_name,
-    "GWLEVINST", "installatie of onderhoud peilbuizen",
-    "GWLEVREAD", "uitlezen diverloggers",
-    "GWSHALLSAMP", "bemonsteren van ondiepe peilbuizen",
-    "SOILUPPERSAMP", "bemonsteren bodem via oppervlaktemonsters",
-    "SURFLEVINST", "installatie of onderhoud peillatten",
-    "SURFLEVREAD", "aflezen peillat",
-    "SURFLENTSAMP", "bemonsteren waterkolom stilstaande wateren",
-    "SURFLOTSAMP", "bemonsteren waterkolom waterlopen",
-    "SURFSECC", "bepaling Secchi-diepte",
-    "SURFLENTFIELD", "veldmeting stilstaande wateren",
-    "SURFLOTFIELD", "veldmeting waterlopen",
-    "LSVI", "LSVI-beoordeling"
-  ) %>%
-  mutate(
-    field_activity = fct(field_activity),
-    field_activity_name = fct(field_activity_name)
-  )
+envvars %>% 
+  distinct(module, scheme, environm_var, envvar_abbrev, variable_set, data_collection_method) %>% 
+  count(scheme, environm_var, envvar_abbrev, variable_set, data_collection_method, name = "n_modules") %>% 
+  inner_join(
+    envvars %>% 
+      distinct(module, scheme) %>% 
+      count(scheme, name = "n_modules_all"),
+    join_by(scheme)
+  ) %>% 
+  filter(n_modules != n_modules_all)
 ```
 
-Setting other _**so-far**_ module-agnostic scheme design attributes.
-'So far' because these are not guaranteed to apply to every future module.
+Creating an object with _non-field_ data collection methods per module x scheme, which will add to later cost calculations per module.
 
-- Field activities are scheme specific.
+```{r}
+mod_scheme_datacoll_nofield <- 
+  envvars %>% 
+  distinct(module, scheme, environm_var, envvar_abbrev, variable_set, data_collection_method) %>% 
+  filter(
+    !(data_collection_method %in% activities$activity[activities$is_field_activity]),
+    !is.na(data_collection_method)
+  ) %>% 
+  arrange(module, scheme, variable_set, data_collection_method)
+```
 
-  **Missing functionality**: consider making field activities type-specific (i.e. join with the target population), since within a scheme there may be differences by type for explanatory or quality-control variables: scheme sections are only defined for main environmental variables, not additional ones.
+Defining variable sets and 'main data collection methods', restricted to field activities (hence: 'main field method'), per module x scheme (active modules only).
+We also add the variable set and field methods for the MHQ programme for modules where this applies.
+
+```{r}
+mod_scheme_variableset_mainfieldmethod <-
+  # MNE schemes
+  envvars %>%
+  distinct(module, scheme, variable_set, data_collection_method) %>%
+  # warn about missing data collection methods:
+  {
+    if (!any(is.na(.$data_collection_method))) {
+      .
+    } else {
+      warning(
+        "Dropped ",
+        sum(is.na(.$data_collection_method)),
+        " row(s) with missing data collection method.", 
+        call. = FALSE
+      )
+      filter(., !is.na(data_collection_method))
+    }
+  } %>%
+  # limit to field activities:
+  filter(data_collection_method %in% activities$activity[activities$is_field_activity]) %>% 
+  rename(main_field_method = data_collection_method) %>% 
+  mutate(scheme = factor(scheme, levels = levels(n2khab_schemes$scheme))) %>%
+  arrange(module, scheme, variable_set, main_field_method) %>% 
+  # add variable set & field method for MHQ schemes:
+  bind_rows(
+    module_schemes %>% 
+      filter(str_detect(scheme, "^HQ")) %>% 
+      select(-is_core_scheme) %>% 
+      inner_join(
+        schemes %>%
+          select(scheme, tag_1),
+        join_by(scheme),
+        unmatched = "drop",
+        relationship = "many-to-one"
+      ) %>%
+      mutate(
+        variable_set = "LSVI",
+        main_field_method = ifelse(tag_1 == "aq", "LSVIAQ", "LSVITERR")
+      ) %>% 
+      select(-tag_1)
+  ) %>%
+  mutate(
+    variable_set = factor(variable_set, levels = levels(envvars$variable_set)),
+    main_field_method = factor(main_field_method, levels = levels(activities$activity))
+  )
+mod_scheme_variableset_mainfieldmethod
+```
+
+For MHQ the variables are summarized as one variable set 'LSVI', and the hierarchy of involved measurement variables for each scheme (type) is incorporated in the [LSVI](https://packages.inbo.be/LSVI/) package.
+
+Checking that all schemes are covered by `mod_scheme_variableset_mainfieldmethod`.
+
+```{r}
+schemes %>%
+  anti_join(mod_scheme_variableset_mainfieldmethod, by = "scheme") %>%
+  nrow() == 0
+```
+
+'Field activity' can cover data collection, where it corresponds to 'main field method' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
+
+```{r}
+field_activities <- 
+  activities %>% 
+  filter(is_field_activity) %>% 
+  select(starts_with("activity")) %>% 
+  rename_with(~ str_c("field_", .))
+field_activities
+```
+
+Several field activities necessarily belong together, depending on the applicable sequence of activities, as expressed by the 'activity sequence' variable.
+
+```{r}
+field_activity_sequences <- 
+  activity_sequences %>% 
+  semi_join(field_activities, join_by(activity == field_activity)) %>% 
+  rename(field_activity = activity)
+field_activity_sequences
+```
+
+- Field activities are module x scheme specific.
+
+  **Missing functionality**: consider making field activities type-specific (i.e. join with the target population), since within a scheme there may be differences by type for explanatory or quality-control variables: scheme sections are only defined for target environmental variables, not additional ones.
   
   A special type-specific field activity is the evaluation of a location: does it belong to type X of the target population?
   Type specificity in this case will always invoke splitting of the field activity, since the type specificity concerns the panel design properties; especially the timing during the year depends on the type.
   The revisit design of these field activities will not be scheme specific, but given the dependency on the target population, different schemes will have different location evaluation field activities.
 
+  `mod_scheme_field_activity` is like `mod_scheme_variableset_mainfieldmethod`, but expanded with all field activities that are linked to the main field method through the applicable sequence (see intermediate result `mod_scheme_mainfieldmethod_sequence`).
+  Also it abstracts variable sets away.
+  
 ```{r}
-scheme_field_activity <-
-  scheme_variableset_fieldmethod %>%
-  distinct(scheme, field_method) %>%
-  rename(field_activity_name = field_method) %>%
-  bind_rows(
-    tibble(
-      scheme = c(
-        "GW_03.3",
-        "GW_05.1_terr",
-        "GW_05.1_aq",
-        "GW_05.1_quarries",
-        "GW_04.2",
-        "GW_05.2",
-        "GW_07.1"
-      ),
-      field_activity_name = "installatie of onderhoud peilbuizen"
-    )
-  ) %>%
-  bind_rows(
-    tibble(
-      scheme = "GW_05.1_aq",
-      field_activity_name = "installatie of onderhoud peillatten"
-    )
-  ) %>%
-  mutate(
-    scheme = factor(scheme, levels = levels(schemes$scheme)),
-    field_activity_name = factor(
-      field_activity_name,
-      levels = levels(field_activities$field_activity_name)
-    )
-  ) %>%
+mod_scheme_mainfieldmethod_sequence <- 
+  mod_scheme_variableset_mainfieldmethod %>% 
+  distinct(module, scheme, main_field_method) %>%
   inner_join(
-    field_activities,
-    join_by(field_activity_name),
-    unmatched = "error"
+    field_activity_sequences %>% 
+      select(sequence, field_activity),
+    join_by(main_field_method == field_activity),
+    unmatched = "drop",
+    relationship = "many-to-many"
   ) %>%
-  select(-field_activity_name) %>%
-  arrange(scheme, field_activity)
+  filter(
+    # for GW_05.1_aq x GWLEVREAD, only include sequence gwsurf_lev
+    !(scheme == "GW_05.1_aq" & main_field_method == "GWLEVREAD" & sequence == "gw_lev"),
+    # for GW_03.3, 05.1_terr/quarries, 05.2 x GWLEVREAD, only include sequence gw_lev
+    !(
+      scheme %in% c("GW_03.3", "GW_05.1_terr", "GW_05.1_quarries", "GW_05.2") & 
+        main_field_method == "GWLEVREAD" & 
+        sequence == "gwsurf_lev"
+      )
+  )
 ```
 
-- `field_activity_paneldesign` is the revisit design of field activities.
-This will matter most for data collection plans.
-Note that currently we don't handle this scheme specific, but that might change in future.
-
-  **Missing functionality**: make the panel designs module and scheme specific.
+Check that one field method per module and scheme was translated to exactly one sequence:
 
 ```{r}
-field_activity_paneldesign <-
-  field_activities %>%
+nrow(mod_scheme_mainfieldmethod_sequence) == 
+  nrow(
+    mod_scheme_variableset_mainfieldmethod %>% 
+      distinct(module, scheme, main_field_method)
+  )
+```
+
+```{r}
+mod_scheme_field_activity <- 
+  mod_scheme_mainfieldmethod_sequence %>% 
+  rename(field_activity = main_field_method) %>% 
+  # add missing field activities for each sequence
+  nest(data = c(field_activity)) %>% 
+  mutate(data = map2(sequence, data, function(s, df) {
+    levs <- field_activity_sequences %>% 
+      filter(sequence == s) %>% 
+      pull(field_activity) %>% 
+      as.character
+    df %>% 
+      mutate(field_activity = factor(field_activity, levels = levs)) %>% 
+      expand(field_activity)
+  })) %>% 
+  unnest(data) %>% 
+  left_join(
+    field_activity_sequences,
+    join_by(sequence, field_activity),
+    unmatched = "drop",
+    relationship = "many-to-one"
+  ) %>% 
+  distinct(module, scheme, field_activity, choose_one)
+```
+
+We set the variable `cycle_duration_y` per module x scheme, which indeed depends on the combination of module x scheme already.
+
+Note that schemes, hence scheme properties, can only be correctly linked to a module x domain combination (i.e. for domains with predetermined sample size) once the spatial sampling frames are created for each scheme: the sampling frames will also determine which types, hence schemes do apply in specific domains (because schemes with just a few rarer types will not apply to every domain).
+So the below `module_scheme_cycle_duration` object will be filtered and rewritten based on `module_domain_schemes` once the latter has been created (chapter \@ref(scheme-objects)).
+
+```{r}
+module_scheme_cycle_duration <-
+  module_schemes %>%
+  select(module, scheme) %>%
+  mutate(cycle_duration_y = case_when(
+    module == "mne2024_pan_be2100024_restoration" ~ 3L,
+    str_detect(scheme, "^SURF") ~ 3L,
+    .default = 6L
+  ))
+```
+
+Setting year and month of first implementation (this is further used in chapter \@ref(scheme-objects)).
+
+```{r}
+year_first_default <- 2025L
+month_first_default <- 7L
+```
+
+A 'field activity group' (FAG) is a set of field activities (FA) with the same panel count, period, group size and group repetition attributes _and_ which typically take place during the same location visit.
+
+```{r}
+fa_fag <- 
+  read_vc(
+    file = "fa_fag",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble()
+```
+
+- `mod_scheme_fag_paneldesign` is the revisit design of field activity groups per module and scheme.
+This will matter most for data collection plans.
+
+First connect `mod_scheme_field_activity` to field activity groups.
+
+```{r}
+mod_scheme_fa_fag <- 
+  mod_scheme_field_activity %>% 
+  inner_join(
+    fa_fag,
+    join_by(field_activity),
+    unmatched = "drop",
+    relationship = "many-to-many"
+  ) %>% 
+  filter(
+    # for groundwater quality, don't install surface water equipment (including aquatic types)
+    !(str_detect(scheme, "03\\.3|04\\.2|05\\.2|07\\.1") & str_detect(field_activity_group, "^GWSURFLEV")),
+    # for terrestrial groundwater, don't install surface water equipment
+    !(str_detect(scheme, "_terr|_quarries") & str_detect(field_activity_group, "^GWSURFLEV")),
+    # for aquatic groundwater, don't include the terrestrial-only fag
+    !(scheme == "GW_05.1_aq" & str_detect(field_activity_group, "^GWLEV")),
+    # for _lentic, don't include a lotic fag and vice-versa
+    !(str_detect(scheme, "_lentic") & str_detect(field_activity_group, "LOT")),
+    !(str_detect(scheme, "_lotic") & str_detect(field_activity_group, "LENT"))
+  )
+```
+
+Check that the number of rows did not change:
+
+```{r}
+nrow(mod_scheme_fa_fag) == nrow(mod_scheme_field_activity)
+```
+
+Now collapse to field activity groups and define the panel designs.
+
+Note that below `mod_scheme_fag_paneldesign` object will be filtered and rewritten based on `module_domain_schemes` once the latter has been created (chapter \@ref(scheme-objects)).
+
+Note that some field activity groups are type-specific; this is indicated by the `choose_one` variable.
+
+```{r}
+# field_activity_paneldesign <-
+mod_scheme_fag_paneldesign <-
+  mod_scheme_fa_fag %>% 
+  distinct(module, scheme, field_activity_group, choose_one) %>% 
   mutate(
     revisit_pattern = case_when(
-      str_detect(field_activity_name, "(af|uit)lezen") ~ "pure_panel",
+      str_detect(field_activity_group, "LEVREAD") ~ "pure_panel",
       .default = "serially_alternating"
     ) %>%
       factor(),
     panel_period_main = case_when(
-      str_detect(field_activity_name, "^LSVI|water|Secchi") ~ years(1),
-      str_detect(field_activity_name, "bemonsteren.*peilbuizen") ~ years(1),
-      str_detect(
-        field_activity_name,
-        "(af|uit)lezen"
-      ) ~ months(6),
-      .default = months(3)
+      str_detect(field_activity_group, "LEVINST$|SOIL.*SAMP") ~ months(3),
+      str_detect(field_activity_group, "LEVREAD") ~ months(6),
+      .default = years(1)
     ),
     enforce_cycle_duration_y = case_when(
-      str_detect(field_activity_name, "installatie.*onderhoud.*") ~ 6L
+      str_detect(field_activity_group, "LEVINST$") ~ 6L
+    ),
+    limit_n_cycles = case_when(
+      str_detect(field_activity_group, "SAMPLPOINT") ~ 1L,
+      .default = NA_integer_
     ),
     revisit_subpattern = case_when(
-      str_detect(field_activity_name, "water|Secchi") ~ "pure_panel",
-      str_detect(
-        field_activity_name,
-        "bemonsteren.*peilbuizen|(af|uit)lezen"
-      ) ~ "serially_alternating"
+      str_detect(field_activity_group, "SURF.*DATACOLL") ~ "pure_panel",
+      str_detect(field_activity_group, "GWSHALL(CLEAN|SAMP)|LEVREAD") ~ "serially_alternating"
     ) %>%
       factor(levels = levels(revisit_pattern)),
     panel_subperiod = case_when(
-      str_detect(field_activity_name, "water|Secchi") ~ months(1),
-      str_detect(
-        field_activity_name,
-        "bemonsteren.*peilbuizen|(af|uit)lezen"
-      ) ~ months(3)
+      str_detect(field_activity_group, "SURF.*DATACOLL") ~ months(1),
+      str_detect(field_activity_group, "GWSHALL(CLEAN|SAMP)|LEVREAD") ~ months(3)
     ),
     limit_n_subpanels_per_panel = case_when(
-      str_detect(field_activity_name, "bemonsteren.*peilbuizen") ~ 2L
+      str_detect(field_activity_group, "GWSHALL(CLEAN|SAMP)") ~ 2L
     )
-  ) %>%
-  select(-field_activity_name)
-field_activity_paneldesign
+  )
+mod_scheme_fag_paneldesign
+# mod_scheme_fag_paneldesign %>% distinct(pick(field_activity_group, revisit_pattern:last_col()))
 ```
+
 
 - `scheme_variableset_paneldesign` is the revisit design of measurements.
 It is created below to distinguish with `field_activity_paneldesign` above, but yet unclear whether we'll need it to create data collection plans.
@@ -603,29 +900,6 @@ scheme_variableset_paneldesign <-
     )
   )
 scheme_variableset_paneldesign
-```
-
-We set the variable `cycle_duration_y` per module x scheme, which indeed depends on the combination of module x scheme already.
-
-Note that schemes, hence scheme properties, can only be correctly linked to a module x domain combination (i.e. for domains with predetermined sample size) once the spatial sampling frames are created for each scheme: the sampling frames will also determine which types, hence schemes do apply in specific domains (because schemes with just a few rarer types will not apply to every domain).
-So the below `module_scheme_cycle_duration` object will be filtered and rewritten based on `module_domain_schemes` once the latter has been created (chapter \@ref(scheme-objects)).
-
-```{r}
-module_scheme_cycle_duration <-
-  module_targetpops %>%
-  distinct(module, scheme) %>%
-  mutate(cycle_duration_y = case_when(
-    module == "mne2024_pan_be2100024_restoration" ~ 3L,
-    str_detect(scheme, "^SURF") ~ 3L,
-    .default = 6L
-  ))
-```
-
-Setting year and month of first implementation (this is further used in chapter \@ref(scheme-objects)).
-
-```{r}
-year_first_default <- 2025L
-month_first_default <- 7L
 ```
 
 ## Setting data source versions
