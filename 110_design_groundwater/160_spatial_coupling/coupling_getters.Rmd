@@ -225,7 +225,7 @@ glimpse(hopo_points)
 ```
 
 
-# distance to water body / stream
+# TODO distance to water body / stream
 ## data source?
 
 - https://www.vmm.be/water/projecten/grachtenvalidatie
@@ -261,7 +261,7 @@ m2 = mapview(hopo_points,
 
 m1+m2
 
-# TODO: Schelde is not in there! 
+# TODO: Schelde is not in there! -> waterlopen
 ```
 
 
@@ -293,7 +293,7 @@ knitr::kable(cross_distances)
 ```
 
 
-# height TAW difference
+# Height TAW Difference
 
 ## general info
 
@@ -313,16 +313,10 @@ _Edit 09/10/2024:_ Better use web services! (suggestion Thierry)
 
 
 
-alternatives:
-Download all Flanders elevation point data
-
-- point data https://download.vlaanderen.be/product/56/configureer
-
-- raster data `dsm`:  https://download.vlaanderen.be/product/937-digitaal-hoogtemodel-vlaanderen-ii-dsm-raster-1-m
-- raster data `dtm`: https://download.vlaanderen.be/product/939-digitaal-hoogtemodel-vlaanderen-ii-dtm-raster-1-mper
-- https://assets.vlaanderen.be/image/upload/v1676620086/Infosessie_BVKOpenData_LiDAR_21022017_1_p34z1s_uiihcm.pdf
+- documentation:  https://assets.vlaanderen.be/image/upload/v1676620086/Infosessie_BVKOpenData_LiDAR_21022017_1_p34z1s_uiihcm.pdf
 
 
+**alternatives:**
 - Grootschaalig Referentiebestand of Basiskaart (GRB): https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb 
 - https://pydov.readthedocs.io/en/stable/tutorials.html#tutorials
 - topografie  https://nl-be.topographic-map.com/map-lqq9m/Vlaanderen/
@@ -331,11 +325,9 @@ Download all Flanders elevation point data
 ## Elevation from Web Services
 ... using the DHMV WCS for DTM (1m resolution)
 
-```{r, eval=FALSE}
-require("sf")
-require("DBI")
+```{r}
 
-
+# functions are in another dedicated file
 source("./spatial_helpers.R")
 
 
@@ -357,7 +349,7 @@ elevation
 ```
 
 Does this work for a collection of points?
-```{r, eval=FALSE}
+```{r}
 
 hopo_wells_sf <- st_as_sf(hopo_points, coords = c("x", "y"), crs = 31370)
 # point_sf <- hopo_wells_sf
@@ -376,8 +368,15 @@ It does. Good times.
 
 
 ## OBSOLETE: Elevation from Points
-There is a linux shell script to collect all data in an sqlite database: `unzip_points.sh` (~24.4GB).
+An "offline" approach, downloading all Flanders elevation point data (LiDAR raw data, including canopy).
+
+- point data https://download.vlaanderen.be/product/56/configureer
+
+
+There is a linux shell script to collect all data in an sqlite database: `unzip_dhmv_points.sh` (>40GB).
 This sqlite file is stored as `dhmv_points.db` in the current working directory.
+
+
 
 ```{r, eval=FALSE}
 require("sf")
@@ -404,6 +403,7 @@ elevation <- query_elevation_sqlite(
 
 ```
 
+
 ```{r, eval=FALSE}
 
 hopo_wells_sf <- st_as_sf(hopo_points, coords = c("x", "y"), crs = 31370)
@@ -422,9 +422,11 @@ Great, we can get elevations!
 dbDisconnect(dhmv_conn)
 ``` 
 
-# watina region, eco-region, n2khab-type
 
-(TODO: via `watina/read_adminareas`)
+
+# TODO watina region, eco-region, n2khab-type
+
+(via `watina/read_adminareas`)
 
 [reference](https://github.com/inbo/n2khab/blob/main/vignettes/v025_geospatial_hab.Rmd)
 
@@ -436,10 +438,22 @@ All codes conform to the `types` reference list (see `read_types()`).
 The datasource is a GeoPackage with essentially two objects: 1) the geospatial polygons; 2) a long-formatted table with the associated types (multiple records can occur per `polygon_id`).
 For more details see `read_habitatmap_stdized()`. 
 
-# soil class
+
+
+# TODO soil class
 (heavy, light, peat, unknown; as before)
 
-# quality of existing well
+
+# TODO quality of existing well
+
+- matching filter depth
+- validation status
+- amount of data
+- ...
+
+
+# TODO stitch this all into a single object
+`well_candidate <- CandidatePoint$new(xy)`
 
 
 # disconnect databases
@@ -448,6 +462,8 @@ For more details see `read_habitatmap_stdized()`.
 # dbDisconnect(watina_dwh)
 # dbDisconnect(dhmv_conn)
 ``` 
+
+
 # misc
 The `n2khab_data` for `soilmap` is needed.
 ```{r, eval=FALSE}
