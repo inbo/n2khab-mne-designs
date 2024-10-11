@@ -32,9 +32,11 @@ library("ggplot2")
 library("mapview")
 
 source("./watina_migration.R")
+source("./spatial_helpers.R")
 
 watina_dwh <- connect_watina()
 
+# options(browser = "librewolf") # a rather personal thing
 ```
 
 # Summary
@@ -81,7 +83,7 @@ obswells_db <- get_locs(
 glimpse(obswells_db)
 # obswells_db %>% count
 ```
-TODO: unit test - query of a test area will not be empty
+TODO: unit test or vignette - query of a test area will not be empty
 
 
 ## orientation
@@ -230,6 +232,8 @@ glimpse(hopo_points)
 - https://www.vlaanderen.be/DataCatalogRecord/408b8ef8-b731-4358-a5b0-9e028e074180
 - https://zenodo.org/records/7440931 n2khab data!
 
+TODO: also include `read_waterlopen` (n2khab)
+
 ```{r}
 watersurf_raw <-
   read_watersurfaces()
@@ -256,7 +260,10 @@ m2 = mapview(hopo_points,
   )
 
 m1+m2
+
+# TODO: Schelde is not in there! 
 ```
+
 
 ## distance
 
@@ -291,16 +298,18 @@ knitr::kable(cross_distances)
 ## general info
 
 - https://r.geocompx.org/raster-vector
+- https://r.geocompx.org/read-write#geographic-web-services
 - https://cran.r-project.org/web/packages/rgugik/vignettes/DEM.html
 
 _Edit 09/10/2024:_ Better use web services! (suggestion Thierry)
-https://inbo.github.io/tutorials/tutorials/spatial_wfs_services/
+
+- https://inbo.github.io/tutorials/tutorials/spatial_wfs_services
+- https://github.com/inbo/inbospatial/pull/12
 
 
 ## Digitaal Hoogtemodel Vlaanderen 
 
 [source](https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/earth-observation-data-science-eodas/het-digitaal-hoogtemodel)
-
 
 
 
@@ -320,7 +329,51 @@ Download all Flanders elevation point data
 
 
 ## Elevation from Web Services
-To be CONTINUED... I need some practice.
+... using the DHMV WCS for DTM (1m resolution)
+
+```{r, eval=FALSE}
+require("sf")
+require("DBI")
+
+
+source("./spatial_helpers.R")
+
+
+# re-use the bounding box from above:
+x_test <- c(148600)
+y_test <- c(208900)
+radius <- 10 # (+/- m)
+
+hopo_sf <- st_as_sf(data.frame(x_test, y_test), coords = c("x_test", "y_test"), crs = 31370)
+
+elevation <- query_elevation_wcs(
+  hopo_sf,
+  margin = radius
+)
+
+elevation
+
+# debug_once??
+```
+
+Does this work for a collection of points?
+```{r, eval=FALSE}
+
+hopo_wells_sf <- st_as_sf(hopo_points, coords = c("x", "y"), crs = 31370)
+# point_sf <- hopo_wells_sf
+elevation_wells <- query_elevation_wcs(
+  hopo_wells_sf,
+  margin = radius
+) %>%
+  select(-id) %>%
+  st_join(hopo_wells_sf)
+
+elevation_wells
+```
+
+It does. Good times.
+
+
 
 ## OBSOLETE: Elevation from Points
 There is a linux shell script to collect all data in an sqlite database: `unzip_points.sh` (~24.4GB).
@@ -333,7 +386,7 @@ require("DBI")
 dhmv_conn <- dbConnect(RSQLite::SQLite(), file.path("./dhmv_points.db"))
 
 source("./watina_migration.R")
-
+source("./spatial_helpers.R")
 
 # re-use the bounding box from above:
 x_test <- c(148600)
@@ -342,7 +395,7 @@ radius <- 10 # (+/- m)
 
 hopo_sf <- st_as_sf(data.frame(x_test, y_test), coords = c("x_test", "y_test"), crs = 31370)
 
-elevation <- query_elevation(
+elevation <- query_elevation_sqlite(
   hopo_sf,
   conn = dhmv_conn,
   frame = radius
@@ -384,6 +437,7 @@ The datasource is a GeoPackage with essentially two objects: 1) the geospatial p
 For more details see `read_habitatmap_stdized()`. 
 
 # soil class
+(heavy, light, peat, unknown; as before)
 
 # quality of existing well
 
