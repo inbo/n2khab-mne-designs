@@ -376,28 +376,18 @@ activities <-
 
 ```{r read-gsheet-activity-sequences, eval = !file.exists(file.path(datapath, "text/raw/activity_sequences.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE}
 gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
-read_sheet(ss = gs_id_envvars, sheet = "activity_sequences", col_types = "cicll") %>%
+read_sheet(ss = gs_id_envvars, sheet = "activity_sequences", col_types = "ciiclc") %>%
   mutate(
-    sequence = fct(sequence),
-    activity = factor(activity, levels = activities$activity)
-  ) %>% 
+    activity_sequence = fct(activity_sequence),
+    activity = factor(activity, levels = activities$activity),
+    activity_group = fct_reorder(
+      factor(activity_group),
+      as.numeric(activity),
+      first
+    )
+  ) %>%
   write_vc(
     file = "activity_sequences",
-    root = file.path(datapath, "text/raw"),
-    optimize = FALSE,
-    strict = FALSE
-  )
-```
-
-```{r read-gsheet-fag, eval = !file.exists(file.path(datapath, "text/raw/fa_fag.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE}
-gs_id_envvars <- "1wFbevEcaNbQ1RBIwEdkoloRYmarQ59E2gctbcxVyH_M"
-read_sheet(ss = gs_id_envvars, sheet = "field_activities") %>%
-  select(field_activity, field_activity_group) %>% 
-  mutate(field_activity = factor(field_activity, levels = activities$activity)) %>% 
-  arrange(field_activity) %>% 
-  mutate(field_activity_group = fct(field_activity_group)) %>% 
-  write_vc(
-    file = "fa_fag",
     root = file.path(datapath, "text/raw"),
     optimize = FALSE,
     strict = FALSE
@@ -424,29 +414,6 @@ activity_sequences <-
   as_tibble()
 ```
 
-<!-- ```{r read-gsheet-activities, eval = !file.exists(file.path(datapath, "text/raw/activity_relations.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE} -->
-<!-- gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc" -->
-<!-- read_sheet(ss = gs_id_envvars, sheet = "activity_relations") %>% -->
-<!--   mutate( -->
-<!--     across(everything(), ~ factor(., levels = levels(activities$activity))) -->
-<!--   ) %>%  -->
-<!--   write_vc( -->
-<!--     file = "activity_relations", -->
-<!--     root = file.path(datapath, "text/raw"), -->
-<!--     optimize = FALSE, -->
-<!--     strict = FALSE -->
-<!--   ) -->
-<!-- ``` -->
-
-<!-- ```{r} -->
-<!-- activity_relations <-  -->
-<!--   read_vc( -->
-<!--     file = "activity_relations", -->
-<!--     root = file.path(datapath, "text/raw") -->
-<!--   ) %>% -->
-<!--   as_tibble() -->
-<!-- ``` -->
-
 ```{r}
 envvars <- 
   read_vc(
@@ -464,7 +431,7 @@ envvars <-
     explanatory = verklarend,
     quality_control = kwaliteitscontrole,
     variable_set,
-    data_collection_method = activity,
+    main_datacollection_method,
     targetvar_temporal_targetpop:last_col()
   ) %>% 
   # warn about unknown schemes:
@@ -484,7 +451,7 @@ envvars <-
   # check that data collection methods are known:
   {
     if (
-      all(.$data_collection_method[!is.na(.$data_collection_method)] %in% 
+      all(.$main_datacollection_method[!is.na(.$main_datacollection_method)] %in%
           activities$activity)
     ) {
       .
@@ -494,8 +461,8 @@ envvars <-
   } %>% 
   mutate(
     scheme = scheme %>% factor(levels = levels(n2khab_schemes$scheme)),
-    data_collection_method = factor(
-      data_collection_method, 
+    main_datacollection_method = factor(
+      main_datacollection_method, 
       levels = levels(activities$activity)
     ),
     across(c(target:quality_control, starts_with("mne")), ~ !is.na(.)),
@@ -567,8 +534,8 @@ Some scheme x environmental variable combinations are module-specific:
 
 ```{r}
 envvars %>% 
-  distinct(module, scheme, environm_var, envvar_abbrev, variable_set, data_collection_method) %>% 
-  count(scheme, environm_var, envvar_abbrev, variable_set, data_collection_method, name = "n_modules") %>% 
+  distinct(module, scheme, environm_var, envvar_abbrev, variable_set, main_datacollection_method) %>% 
+  count(scheme, environm_var, envvar_abbrev, variable_set, main_datacollection_method, name = "n_modules") %>% 
   inner_join(
     envvars %>% 
       distinct(module, scheme) %>% 
@@ -583,12 +550,12 @@ Creating an object with _non-field_ data collection methods per module x scheme,
 ```{r}
 mod_scheme_datacoll_nofield <- 
   envvars %>% 
-  distinct(module, scheme, environm_var, envvar_abbrev, variable_set, data_collection_method) %>% 
+  distinct(module, scheme, environm_var, envvar_abbrev, variable_set, main_datacollection_method) %>% 
   filter(
-    !(data_collection_method %in% activities$activity[activities$is_field_activity]),
-    !is.na(data_collection_method)
+    !(main_datacollection_method %in% activities$activity[activities$is_field_activity]),
+    !is.na(main_datacollection_method)
   ) %>% 
-  arrange(module, scheme, variable_set, data_collection_method)
+  arrange(module, scheme, variable_set, main_datacollection_method)
 ```
 
 Defining variable sets and 'main data collection methods', restricted to field activities (hence: 'main field method'), per module x scheme (active modules only).
@@ -598,24 +565,24 @@ We also add the variable set and field methods for the MHQ programme for modules
 mod_scheme_variableset_mainfieldmethod <-
   # MNE schemes
   envvars %>%
-  distinct(module, scheme, variable_set, data_collection_method) %>%
+  distinct(module, scheme, variable_set, main_datacollection_method) %>%
   # warn about missing data collection methods:
   {
-    if (!any(is.na(.$data_collection_method))) {
+    if (!any(is.na(.$main_datacollection_method))) {
       .
     } else {
       warning(
         "Dropped ",
-        sum(is.na(.$data_collection_method)),
+        sum(is.na(.$main_datacollection_method)),
         " row(s) with missing data collection method.", 
         call. = FALSE
       )
-      filter(., !is.na(data_collection_method))
+      filter(., !is.na(main_datacollection_method))
     }
   } %>%
   # limit to field activities:
-  filter(data_collection_method %in% activities$activity[activities$is_field_activity]) %>% 
-  rename(main_field_method = data_collection_method) %>% 
+  filter(main_datacollection_method %in% activities$activity[activities$is_field_activity]) %>% 
+  rename(main_field_method = main_datacollection_method) %>% 
   mutate(scheme = factor(scheme, levels = levels(n2khab_schemes$scheme))) %>%
   arrange(module, scheme, variable_set, main_field_method) %>% 
   # add variable set & field method for MHQ schemes:
@@ -691,19 +658,23 @@ mod_scheme_mainfieldmethod_sequence <-
   distinct(module, scheme, main_field_method) %>%
   inner_join(
     field_activity_sequences %>% 
-      select(sequence, field_activity),
+      select(activity_sequence, field_activity),
     join_by(main_field_method == field_activity),
     unmatched = "drop",
     relationship = "many-to-many"
   ) %>%
   filter(
     # for GW_05.1_aq x GWLEVREAD, only include sequence gwsurf_lev
-    !(scheme == "GW_05.1_aq" & main_field_method == "GWLEVREAD" & sequence == "gw_lev"),
+    !(
+      scheme == "GW_05.1_aq" & 
+        main_field_method == "GWLEVREAD" & 
+        activity_sequence == "gw_lev"
+    ),
     # for GW_03.3, 05.1_terr/quarries, 05.2 x GWLEVREAD, only include sequence gw_lev
     !(
       scheme %in% c("GW_03.3", "GW_05.1_terr", "GW_05.1_quarries", "GW_05.2") & 
         main_field_method == "GWLEVREAD" & 
-        sequence == "gwsurf_lev"
+        activity_sequence == "gwsurf_lev"
       )
   )
 ```
@@ -724,9 +695,9 @@ mod_scheme_field_activity <-
   rename(field_activity = main_field_method) %>% 
   # add missing field activities for each sequence
   nest(data = c(field_activity)) %>% 
-  mutate(data = map2(sequence, data, function(s, df) {
+  mutate(data = map2(activity_sequence, data, function(s, df) {
     levs <- field_activity_sequences %>% 
-      filter(sequence == s) %>% 
+      filter(activity_sequence == s) %>% 
       pull(field_activity) %>% 
       as.character
     df %>% 
@@ -736,7 +707,7 @@ mod_scheme_field_activity <-
   unnest(data) %>% 
   left_join(
     field_activity_sequences,
-    join_by(sequence, field_activity),
+    join_by(activity_sequence, field_activity),
     unmatched = "drop",
     relationship = "many-to-one"
   ) %>% 
