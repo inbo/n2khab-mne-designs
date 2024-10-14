@@ -26,6 +26,7 @@ library("dplyr")
 library("dbplot")
 library("watina")
 library("n2khab")
+library("terra")
 library("sf")
 library("stringr")
 library("ggplot2")
@@ -35,6 +36,9 @@ source("./watina_migration.R")
 source("./spatial_helpers.R")
 
 watina_dwh <- connect_watina()
+
+
+n2khab_data_path <- locate_n2khab_data()
 
 # options(browser = "librewolf") # a rather personal thing
 ```
@@ -158,7 +162,7 @@ obswells_db <- get_locs(
   obswells = TRUE
 ) %>% mutate(line_nr = row_number())
 
-glimpse(obswells_db)
+# glimpse(obswells_db)
 
 ```
 
@@ -220,7 +224,7 @@ hopo_points <- get_locs_in_radius(conn = watina_dwh,
     loc_validity = c("VLD", "ENT")
     )
 
-glimpse(hopo_points)
+# glimpse(hopo_points)
 
 ```
 
@@ -228,68 +232,116 @@ glimpse(hopo_points)
 # TODO distance to water body / stream
 ## data source?
 
-- https://www.vmm.be/water/projecten/grachtenvalidatie
+- [nvt.] https://inbo.github.io/n2khab/reference/read_habitatstreams.html
+- [?] vmm grachtenkaart https://www.vmm.be/water/projecten/grachtenvalidatie
 - https://www.vlaanderen.be/DataCatalogRecord/408b8ef8-b731-4358-a5b0-9e028e074180
 - https://zenodo.org/records/7440931 n2khab data!
 
-TODO: also include `read_waterlopen` (n2khab)
+- digitale atlas waterlopen https://vha.waterinfo.be/arcgis/rest/services/digitale_atlas/MapServer
+- GRB https://geo.api.vlaanderen.be/GRB/wms?request=getcapabilities
+  - baangracht, gracht, GRB_WGR
 
+- [!] Vlaamse Hydrografische Atlas - Waterlopen https://zenodo.org/records/5584530
+
+
+
+There are multiple valid sources for close-by water.
 ```{r}
-watersurf_raw <-
-  read_watersurfaces()
+watersurf_raw <- read_watersurfaces()
+waterstreams_raw <- read_habitatstreams()
+watercourses_raw <- read_watercourse_100mseg(element = "lines")
+
 ```
 
 
 Looking at the example region:
 ```{r}
 
+source("./spatial_helpers.R")
+
 x_test <- 148593
 y_test <- 208862
+# x_test <- 149111.968
+# y_test <- 208712.173
 
 hopo_watersurfaces <- points_within_radius(c(x_test, y_test),
                                        radius = 1200,
                                        watersurf_raw)
 
-m1 = mapview(hopo_watersurfaces,
-  map.types = c("OpenStreetMap", "OpenTopoMap"),
-  zcol = "usage"
-  )
-m2 = mapview(hopo_points,
+hopo_morewater <- points_within_radius(c(x_test, y_test),
+                                       radius = 1200,
+                                       watercourses_raw)
+
+# wells
+m1 = mapview(hopo_points,
   map.types = c("OpenStreetMap", "OpenTopoMap"),
   zcol = "filterdepth"
   )
 
-m1+m2
+# water surfaces
+m2 = mapview(hopo_watersurfaces,
+  map.types = c("OpenStreetMap", "OpenTopoMap"),
+  zcol = "usage"
+  )
+# Schelde is not in there! -> waterlopen
 
-# TODO: Schelde is not in there! -> waterlopen
+# water courses
+m3 = mapview(hopo_morewater,
+  map.types = c("OpenStreetMap", "OpenTopoMap"),
+  zcol = "vhag_code"
+  )
+
+# show all on a map
+m1+m2+m3
+ 
 ```
-
 
 ## distance
 
-... narrowing the focus region a bit
 
 ```{r}
+source("./water_sources.R")
 x_test <- 148593
 y_test <- 208862
-
-hopo_watersurfaces <- points_within_radius(c(x_test, y_test),
-                                       radius = 100,
-                                       watersurf_raw)
+# x_test <- 149111.968
+# y_test <- 208712.173
 
 
 hopo_points <- get_locs_in_radius(conn = watina_dwh,
     point = c(x_test, y_test),
-    radius = 60,
+    radius = 100,
     filterdepth_range = c(0, 5),
     filterdepth_guess = FALSE,
     loc_type = "P",
     loc_validity = c("VLD", "ENT")
     )
+```
 
 
-cross_distances <- st_distance(hopo_points, hopo_watersurfaces)
-knitr::kable(cross_distances)
+Loading all water data sources takes some time... to be reviewed when implementing the whole procedure.
+```{r}
+all_wata <- load_all_water_sources()
+```
+
+
+... narrowing the focus region a bit
+```{r}
+hopo_waterdata <- narrow_sources_radius(
+  all_wata,
+  c(x_test, y_test),
+  radius = 1000
+)
+
+```
+
+
+compute cross_distances
+```{r}
+cross_distances <- collect_combined_distances(hopo_points, hopo_waterdata)
+
+closest_distances <- minimum_cross_distance(cross_distances)
+
+knitr::kable(closest_distances)
 ```
 
 
@@ -336,7 +388,13 @@ x_test <- c(148600)
 y_test <- c(208900)
 radius <- 10 # (+/- m)
 
-hopo_sf <- st_as_sf(data.frame(x_test, y_test), coords = c("x_test", "y_test"), crs = 31370)
+hopo_sf <- st_as_sf(
+  data.frame(x_test, y_test),
+  coords = c("x_test", "y_test"),
+  crs = 31370
+)
+# point_sf <- hopo_sf
+# margin <- radius
 
 elevation <- query_elevation_wcs(
   hopo_sf,
@@ -426,10 +484,14 @@ dbDisconnect(dhmv_conn)
 
 # TODO watina region, eco-region, n2khab-type
 
+## evaluate sources
+
 (via `watina/read_adminareas`)
 
-[reference](https://github.com/inbo/n2khab/blob/main/vignettes/v025_geospatial_hab.Rmd)
 
+
+
+NOT:
 - **`habitatmap`** ([Zenodo-link](https://doi.org/10.5281/zenodo.3354381)): geospatial polygons of BWK and Natura 2000 habitat types in the Flemish Region, originally published by the Research Institute for Nature and Forest (INBO) [@de_saeger_biologische_2020] and distributed by 'Informatie Vlaanderen'. 
 - **`habitatmap_stdized`** ([Zenodo-link](https://doi.org/10.5281/zenodo.3355192)):
 derived from `habitatmap`.
@@ -438,6 +500,7 @@ All codes conform to the `types` reference list (see `read_types()`).
 The datasource is a GeoPackage with essentially two objects: 1) the geospatial polygons; 2) a long-formatted table with the associated types (multiple records can occur per `polygon_id`).
 For more details see `read_habitatmap_stdized()`. 
 
+[reference](https://github.com/inbo/n2khab/blob/main/vignettes/v025_geospatial_hab.Rmd)
 
 
 # TODO soil class
@@ -453,7 +516,12 @@ For more details see `read_habitatmap_stdized()`.
 
 
 # TODO stitch this all into a single object
-`well_candidate <- CandidatePoint$new(xy)`
+
+e.g. `well_candidate <- CandidatePoint$new(xy)`
+
+- contains a set of locations
+- `sf.Points`; indifferent: existing watina or novel location
+- can query all the information above
 
 
 # disconnect databases
@@ -465,7 +533,9 @@ For more details see `read_habitatmap_stdized()`.
 
 
 # misc
-The `n2khab_data` for `soilmap` is needed.
+Some `n2khab_data` sources are required:
+
+- `soilmap`:
 ```{r, eval=FALSE}
 n2khab_data_path <- locate_n2khab_data()
 soilmap_path <- file.path(n2khab_data_path, "10_raw/soilmap")
@@ -474,5 +544,16 @@ download_zenodo(
   doi = "10.5281/zenodo.3387008",
   path = soilmap_path,
   parallel = TRUE
+)
+```
+
+ 
+- ... and watercourses:
+```{r, eval=FALSE}
+watercourse_simple_path <- file.path(n2khab_data_path, "20_processed/watercourse_100mseg")
+dir.create(watercourse_simple_path, recursive = TRUE)
+download_zenodo(
+  doi = "10.5281/zenodo.4452577",
+  path = watercourse_simple_path
 )
 ```
