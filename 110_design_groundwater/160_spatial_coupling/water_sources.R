@@ -17,8 +17,9 @@ load_all_water_sources <- function( ) {
 
   # all the water we have
   watersurf_raw <- read_watersurfaces()
-  waterstreams_raw <- read_habitatstreams()
+  waterstreams_raw <- read_habitatstreams() # 3260
   watercourses_raw <- read_watercourse_100mseg(element = "lines")
+  # TODO: read_watercouses raw dataset
 
   # combine water data in a list
   all_wata <- list(
