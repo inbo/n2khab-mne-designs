@@ -352,12 +352,44 @@ This means that overlapping domains give rise to:
 
 In order to not complicate terminology, we just denote all these geographical boundaries as 'domains' but we need to consider the stratification when generating samples and calculating sampling weights.
 
+## Setting cycle duration and implementation start
 
-## Setting scheme properties
+The remaining part of this chapter considers settings by module and scheme (active modules only), even while some may currently not differ between modules.
 
-Note: explanatory environmental variables might need spatial restrictions that are more stringent than the one at the scheme level.
+Note that schemes, hence scheme properties, can only be correctly linked to a module x domain combination (i.e. for domains with predetermined sample size) once the spatial sampling frames are created for each scheme: the sampling frames will also determine which types, hence schemes do apply in specific domains (because schemes with just a few rarer types will not apply to every domain).
 
-```{r read-gsheet-activities, eval = !file.exists(file.path(datapath, "text/raw/activities.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE}
+Therefore settings by module and scheme will be filtered and rewritten based on `module_domain_schemes` after the latter has been created (chapter \@ref(scheme-objects)).
+
+We set the variable `cycle_duration_y` per module x scheme, which indeed depends on the combination of module x scheme already.
+
+```{r}
+module_scheme_cycle_duration <-
+  module_schemes %>%
+  select(module, scheme) %>%
+  mutate(cycle_duration_y = case_when(
+    module == "mne2024_pan_be2100024_restoration" ~ 3L,
+    str_detect(scheme, "^SURF") ~ 3L,
+    .default = 6L
+  ))
+```
+
+Setting year and month of first implementation (this is further used in chapter \@ref(scheme-objects)).
+
+```{r}
+year_first_default <- 2025L
+month_first_default <- 7L
+```
+
+## Defining activities and activity sequences
+
+Activities are specific actions needed to collect data or to support the data collection.
+
+Their definition and their planning, linked to the data collection needs, are essential in data collection plans.
+
+Reading the list of activities and their attributes.
+Note that only part of activities are field activities.
+
+```{r read-gsheet-activities, eval = !file.exists(file.path(datapath, "text/raw/activities.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE, include=FALSE}
 gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
 read_sheet(ss = gs_id_envvars, sheet = "activities", col_types = "ccllllc") %>%
   mutate(
@@ -372,7 +404,7 @@ read_sheet(ss = gs_id_envvars, sheet = "activities", col_types = "ccllllc") %>%
   )
 ```
 
-```{r}
+```{r read-activities}
 activities <- 
   read_vc(
     file = "activities",
@@ -381,7 +413,19 @@ activities <-
   as_tibble()
 ```
 
-```{r read-gsheet-activity-sequences, eval = !file.exists(file.path(datapath, "text/raw/activity_sequences.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE}
+An 'activity sequence' is a set of activities that are tied together at location level for a specific scheme, with a specific chronological order.
+
+A 'activity group' is a set of activities with the same panel design (panel count, period, group size and group repetition attributes) _and_ which take place at the same moment; for field activities this means during the same location visit.
+
+The membership of an activity in an activity group depends on the applicable activity sequence.
+This reflects the fact that different schemes require only partly overlapping activities.
+
+Also, different schemes may apply to the same location, hence different activity sequences may be applicable.
+
+Reading the list of activity sequences and the corresponding activities, chronology and activity groups.
+
+
+```{r read-gsheet-activity-sequences, eval = !file.exists(file.path(datapath, "text/raw/activity_sequences.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE, include=FALSE}
 gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
 read_sheet(ss = gs_id_envvars, sheet = "activity_sequences", col_types = "ciiclc") %>%
   mutate(
@@ -401,7 +445,27 @@ read_sheet(ss = gs_id_envvars, sheet = "activity_sequences", col_types = "ciiclc
   )
 ```
 
-```{r read-gsheet-envvars, eval = !file.exists(file.path(datapath, "text/raw/vars.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE}
+```{r read-activity-sequences}
+activity_sequences <- 
+  read_vc(
+    file = "activity_sequences",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble()
+```
+
+## Setting environmental variables and associated (main) activities
+
+### Environmental variables and main data collection methods
+
+Reading and further amending the dataset that defines the environmental variables and their attributes, for each module and scheme.
+
+Attributes include:
+
+- variable set: a cluster of variables that are measured together (e.g. in the laboratory)
+- main data collection method: it is an activity from above.
+
+```{r read-gsheet-envvars, eval = !file.exists(file.path(datapath, "text/raw/vars.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE, include=FALSE}
 gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
 read_sheet(ss = gs_id_envvars, sheet = "vars_per_scheme") %>%
   write_vc(
@@ -412,16 +476,7 @@ read_sheet(ss = gs_id_envvars, sheet = "vars_per_scheme") %>%
   )
 ```
 
-```{r}
-activity_sequences <- 
-  read_vc(
-    file = "activity_sequences",
-    root = file.path(datapath, "text/raw")
-  ) %>%
-  as_tibble()
-```
-
-```{r}
+```{r construct-envvars}
 envvars <- 
   read_vc(
     file = "vars",
@@ -504,9 +559,11 @@ envvars <-
   select(-keep)
 ```
 
+Note: explanatory environmental variables might need spatial restrictions that are more stringent than the one at the scheme level.
+
 Checking which MNE schemes per module are not covered by `envvars` (this may yield cases where the applicable domain has no target population units available, since `module_schemes` will only take this into account in chapter \@ref(scheme-objects)).
 
-```{r}
+```{r check-envvar-coverage}
 module_schemes_mne <- 
   module_schemes %>% 
   filter(!str_detect(scheme, "^HQ"))
@@ -522,27 +579,33 @@ module_schemes_mne %>%
 
 Checking that no unplanned schemes are covered.
 
-```{r}
+```{r check-envvar-coverage-2}
 envvars %>% 
   distinct(module, scheme) %>% 
   anti_join(module_schemes_mne, join_by(module, scheme)) %>% 
   nrow() == 0
 ```
 
-<!-- Creating a subset of `envvars` that only involves data collection methods that are field activities. -->
-
-<!-- ```{r} -->
-<!-- envvars_field <-  -->
-<!--   envvars %>%  -->
-<!--   filter(data_collection_method %in% activities$activity[activities$is_field_activity]) -->
-<!-- ``` -->
-
 Some scheme x environmental variable combinations are module-specific:
 
-```{r}
+```{r module-specific-envvars}
 envvars %>% 
-  distinct(module, scheme, environm_var, envvar_abbrev, variable_set, main_datacollection_method) %>% 
-  count(scheme, environm_var, envvar_abbrev, variable_set, main_datacollection_method, name = "n_modules") %>% 
+  distinct(
+    module,
+    scheme,
+    environm_var,
+    envvar_abbrev,
+    variable_set,
+    main_datacollection_method
+  ) %>% 
+  count(
+    scheme,
+    environm_var,
+    envvar_abbrev,
+    variable_set,
+    main_datacollection_method,
+    name = "n_modules"
+  ) %>% 
   inner_join(
     envvars %>% 
       distinct(module, scheme) %>% 
@@ -554,7 +617,7 @@ envvars %>%
 
 Creating an object with _non-field_ data collection methods per module x scheme, which will add to later cost calculations per module.
 
-```{r}
+```{r non-field-data-collection-methods}
 mod_scheme_datacoll_nofield <- 
   envvars %>% 
   distinct(module, scheme, environm_var, envvar_abbrev, variable_set, main_datacollection_method) %>% 
@@ -565,7 +628,9 @@ mod_scheme_datacoll_nofield <-
   arrange(module, scheme, variable_set, main_datacollection_method)
 ```
 
-Defining variable sets and 'main data collection methods', restricted to field activities (hence: 'main field method'), per module x scheme (active modules only).
+### Variable sets and associated main field methods
+
+Defining variable sets and main field methods (i.e. main data collection methods restricted to field activities), per module x scheme.
 We also add the variable set and field methods for the MHQ programme for modules where this applies.
 
 ```{r}
@@ -621,15 +686,21 @@ For MHQ the variables are summarized as one variable set 'LSVI', and the hierarc
 
 Checking that all schemes are covered by `mod_scheme_variableset_mainfieldmethod`.
 
-```{r}
+```{r check-mod-scheme-variableset-coverage}
 schemes %>%
   anti_join(mod_scheme_variableset_mainfieldmethod, by = "scheme") %>%
   nrow() == 0
 ```
 
+## Setting the panel design of field activities
+
+### Determining the field activities of (spatial subsets of) schemes per module
+
 'Field activity' can cover data collection, where it corresponds to 'main field method' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
 
-```{r}
+The field activities are a subset of the activities:
+
+```{r construct-field-activities}
 field_activities <- 
   activities %>% 
   filter(is_field_activity) %>% 
@@ -640,7 +711,7 @@ field_activities
 
 Several field activities necessarily belong together, depending on the applicable sequence of activities, as expressed by the `activity_sequence` variable.
 
-```{r}
+```{r construct-field-activity-sequences}
 field_activity_sequences <- 
   activity_sequences %>% 
   semi_join(field_activities, join_by(activity == field_activity)) %>% 
@@ -651,218 +722,322 @@ field_activity_sequences <-
 field_activity_sequences
 ```
 
-- Field activities are module x scheme specific.
+Field activities can be linked to modules x schemes via the main field method by using the applicable activity sequence, and abstracting variable sets away.
 
-  **Missing functionality**: consider making field activities type-specific (i.e. join with the target population), since within a scheme there may be differences by type for explanatory or quality-control variables: scheme sections are only defined for target environmental variables, not additional ones.
-  
-  A special type-specific field activity is the evaluation of a location: does it belong to type X of the target population?
-  Type specificity in this case will always invoke splitting of the field activity, since the type specificity concerns the panel design properties; especially the timing during the year depends on the type.
-  The revisit design of these field activities will not be scheme specific, but given the dependency on the target population, different schemes will have different location evaluation field activities.
-
-  `mod_scheme_field_activity` is like `mod_scheme_variableset_mainfieldmethod`, but expanded with all field activities that are linked to the main field method through the applicable sequence (see intermediate result `mod_scheme_mainfieldmethod_sequence`).
-  Also it abstracts variable sets away.
+Determining the main field methods per module x scheme, where useful split into spatial subsets (based on type properties in the target population) that will be linked to different field activity sequences.
   
 ```{r}
-mod_scheme_mainfieldmethod_sequence <- 
+mod_scheme_mainfieldmethod_subsets <- 
   mod_scheme_variableset_mainfieldmethod %>% 
   distinct(module, scheme, main_field_method) %>%
+  # add the is_core_scheme variable, needed to filter activity_sequences later:
+  inner_join(
+    module_schemes,
+    join_by(module, scheme),
+    unmatched = c("error", "drop"),
+    relationship = "many-to-one"
+  ) %>% 
+  # modify some main field methods for non-core schemes:
+  mutate(
+    main_field_method = case_when(
+      scheme == "GW_05.1_aq" & 
+        !is_core_scheme &  
+        main_field_method == "SURFLEVREADDIVER" ~ "SURFLEVREADGAUGE",
+      .default = main_field_method
+    ) %>% 
+      factor(levels = levels(activities$activity))
+  ) %>% 
+  # Characterize all schemes with needed type features as needed to distinguish
+  # between activity sequences, e.g. the distinction between aquatic and
+  # terrestrial types. This gives rise to spatial subsets of module x scheme
+  # based on type properties (if there's only one such subset, then the scheme
+  # will not be split with regard to field activity sequences).
+  inner_join(
+    module_targetpops %>% 
+      inner_join(
+        read_types() %>% 
+          # duplicating types that have aquatic forms & terrestrial forms:
+          filter(hydr_class == "HC23") %>% 
+          uncount(2) %>% 
+          mutate(in_aquatic_subset = rep(c(TRUE, FALSE), 2)) %>% 
+          bind_rows(
+            read_types() %>% 
+              filter(hydr_class != "HC23") %>% 
+              mutate(in_aquatic_subset = hydr_class == "HC3")
+          ) %>% 
+          select(type, in_aquatic_subset),
+        join_by(type),
+        unmatched = c("error", "drop"),
+        relationship = "many-to-many"
+      ) %>% 
+      distinct(module, scheme, in_aquatic_subset) %>% 
+      filter(
+        !(scheme == "GW_05.1_terr" & in_aquatic_subset),
+        !(scheme == "GW_05.1_aq" & !in_aquatic_subset),
+        !(str_detect(scheme, "^SURF") & !in_aquatic_subset)
+      ),
+    join_by(module, scheme),
+    unmatched = c("error", "drop"),
+    relationship = "many-to-many"
+  )
+```
+
+Expanding with activity sequences using the `field_activity_sequences` dataset and applying scheme, spatial subset, field method and `is_core_scheme` based filter rules.
+  
+```{r}
+mod_scheme_mainfieldmethod_actseq <- 
+  mod_scheme_mainfieldmethod_subsets %>% 
   inner_join(
     field_activity_sequences %>% 
       select(activity_sequence, field_activity),
     join_by(main_field_method == field_activity),
-    unmatched = "drop",
+    unmatched = c("error", "drop"),
     relationship = "many-to-many"
   ) %>%
-  filter(
-    # for GW_05.1_aq x GWLEVREAD, only include sequence gwsurf_lev
-    !(
-      scheme == "GW_05.1_aq" & 
-        main_field_method == "GWLEVREAD" & 
-        activity_sequence == "gw_lev"
-    ),
-    # for GW_03.3, 05.1_terr/quarries, 05.2 x GWLEVREAD, only include sequence gw_lev
-    !(
-      scheme %in% c("GW_03.3", "GW_05.1_terr", "GW_05.1_quarries", "GW_05.2") & 
-        main_field_method == "GWLEVREAD" & 
-        activity_sequence == "gwsurf_lev"
-      )
-  )
+  apply_activity_sequence_filters()
 ```
 
-Check that one field method per module and scheme was translated to exactly one sequence:
+Check that each main field method per module, scheme and type property was translated to exactly one sequence (this checks the `apply_activity_sequence_filters()` function):
 
 ```{r}
-nrow(mod_scheme_mainfieldmethod_sequence) == 
-  nrow(
-    mod_scheme_variableset_mainfieldmethod %>% 
-      distinct(module, scheme, main_field_method)
-  )
+nrow(mod_scheme_mainfieldmethod_actseq) == 
+  nrow(mod_scheme_mainfieldmethod_subsets)
 ```
+
+Expanding the object with all field activities that apply for each combination of module, scheme and spatial subset.
 
 ```{r}
 mod_scheme_field_activity <- 
-  mod_scheme_mainfieldmethod_sequence %>% 
-  rename(field_activity = main_field_method) %>% 
+  mod_scheme_mainfieldmethod_actseq %>% 
   # add missing field activities for each sequence
-  nest(data = c(field_activity)) %>% 
+  nest(data = c(main_field_method)) %>% 
   mutate(data = map2(activity_sequence, data, function(s, df) {
-    levs <- field_activity_sequences %>% 
+    field_activity_sequences %>% 
       filter(activity_sequence == s) %>% 
-      pull(field_activity) %>% 
-      as.character
-    df %>% 
-      mutate(field_activity = factor(field_activity, levels = levs)) %>% 
-      expand(field_activity)
+      select(-activity_sequence)
   })) %>% 
   unnest(data) %>% 
-  left_join(
-    field_activity_sequences,
-    join_by(activity_sequence, field_activity),
-    unmatched = "drop",
-    relationship = "many-to-one"
-  ) %>% 
-  distinct(module, scheme, field_activity, choose_one)
-```
-
-We set the variable `cycle_duration_y` per module x scheme, which indeed depends on the combination of module x scheme already.
-
-Note that schemes, hence scheme properties, can only be correctly linked to a module x domain combination (i.e. for domains with predetermined sample size) once the spatial sampling frames are created for each scheme: the sampling frames will also determine which types, hence schemes do apply in specific domains (because schemes with just a few rarer types will not apply to every domain).
-So the below `module_scheme_cycle_duration` object will be filtered and rewritten based on `module_domain_schemes` once the latter has been created (chapter \@ref(scheme-objects)).
-
-```{r}
-module_scheme_cycle_duration <-
-  module_schemes %>%
-  select(module, scheme) %>%
-  mutate(cycle_duration_y = case_when(
-    module == "mne2024_pan_be2100024_restoration" ~ 3L,
-    str_detect(scheme, "^SURF") ~ 3L,
-    .default = 6L
-  ))
-```
-
-Setting year and month of first implementation (this is further used in chapter \@ref(scheme-objects)).
-
-```{r}
-year_first_default <- 2025L
-month_first_default <- 7L
-```
-
-A 'field activity group' (FAG) is a set of field activities (FA) with the same panel count, period, group size and group repetition attributes _and_ which typically take place during the same location visit.
-
-```{r}
-fa_fag <- 
-  read_vc(
-    file = "fa_fag",
-    root = file.path(datapath, "text/raw")
-  ) %>%
-  as_tibble()
-```
-
-- `mod_scheme_fag_paneldesign` is the revisit design of field activity groups per module and scheme.
-This will matter most for data collection plans.
-
-First connect `mod_scheme_field_activity` to field activity groups.
-
-```{r}
-mod_scheme_fa_fag <- 
-  mod_scheme_field_activity %>% 
-  inner_join(
-    fa_fag,
-    join_by(field_activity),
-    unmatched = "drop",
-    relationship = "many-to-many"
-  ) %>% 
+  # don't keep incompatible combinations of spatial subsets and field
+  # activities:
   filter(
-    # for groundwater quality, don't install surface water equipment (including aquatic types)
-    !(str_detect(scheme, "03\\.3|04\\.2|05\\.2|07\\.1") & str_detect(field_activity_group, "^GWSURFLEV")),
-    # for terrestrial groundwater, don't install surface water equipment
-    !(str_detect(scheme, "_terr|_quarries") & str_detect(field_activity_group, "^GWSURFLEV")),
-    # for aquatic groundwater, don't include the terrestrial-only fag
-    !(scheme == "GW_05.1_aq" & str_detect(field_activity_group, "^GWLEV")),
-    # for _lentic, don't include a lotic fag and vice-versa
-    !(str_detect(scheme, "_lentic") & str_detect(field_activity_group, "LOT")),
-    !(str_detect(scheme, "_lotic") & str_detect(field_activity_group, "LENT"))
+    !(!in_aquatic_subset & field_activity == "LOCEVALAQ"), 
+    !(in_aquatic_subset & field_activity == "LOCEVALTERR")
+  ) %>% 
+  # check that no incompatible situations remain:
+  (
+    function(df) {
+      test <- df %>% 
+        summarize(
+          choice = sum(choose_one),
+          .by = c(module, scheme, in_aquatic_subset, activity_sequence, rank)
+        ) %>% 
+        filter(choice > 1)
+      if (nrow(test) > 0) {
+        stop("Undecided activities detected; please choose one.")
+      }
+      df %>% select(-choose_one)
+    }
   )
 ```
 
-Check that the number of rows did not change:
+**Missing functionality**: some field activities will need more spatial subsets.
+For example, within a scheme there may be differences by type for explanatory or quality-control variables: scheme sections are only defined for target environmental variables, not additional ones.
+Another possible source are protocol variants that are scheme-specific _and_ have different costs.
+
+### Field activity groups of (spatial subsets of) schemes per module
+
+The 'field activity groups' (FAGs) are those activity groups that exist of field activities.
+Hence, a FAG is a set of field activities with the same panel design _and_ which take place during the same location visit.
+
+Constructing FAGs per module, scheme and spatial subset by abstracting away the field activities.
+Also, the spatial subset is only given where relevant.
 
 ```{r}
-nrow(mod_scheme_fa_fag) == nrow(mod_scheme_field_activity)
+mod_scheme_fag <- 
+  mod_scheme_field_activity %>% 
+  distinct(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset) %>% 
+  # only consider spatial subsets where needed to distinguish between activity
+  # groups:
+  inner_join(
+    mod_scheme_mainfieldmethod_subsets %>% 
+      distinct(module, scheme, in_aquatic_subset) %>% 
+      summarize(
+        multiple_subsets = n() > 1,
+        .by = c(module, scheme)
+      ),
+    join_by(module, scheme),
+    unmatched = "error",
+    relationship = "many-to-one"
+  ) %>% 
+  mutate(
+    duplicate = n() > 1,
+    in_aquatic_subset = ifelse(duplicate | !multiple_subsets, NA, in_aquatic_subset),
+    .by = c(module, scheme, field_activity_group)
+  ) %>% 
+  # now type properties are mere attributes of unique combination of
+  # module, scheme & field_activity_group:
+  distinct(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset)
 ```
 
-Now collapse to field activity groups and define the panel designs.
-
-Note that below `mod_scheme_fag_paneldesign` object will be filtered and rewritten based on `module_domain_schemes` once the latter has been created (chapter \@ref(scheme-objects)).
-
-Note that some field activity groups are type-specific; this is indicated by the `choose_one` variable.
+Overview of different existing combinations of `field_activity_group`, `scheme` and `is_core_scheme`:
 
 ```{r}
-# field_activity_paneldesign <-
+mod_scheme_fag %>%
+  distinct(field_activity_group, scheme, is_core_scheme, in_aquatic_subset) %>%
+  arrange(field_activity_group, scheme, is_core_scheme, in_aquatic_subset) 
+```
+
+Note that some field activities occur in multiple schemes.
+Insofar their field activity groups get a different panel design (which may depend on module x scheme), care has to be taken to not unnecessarily duplicate some non-datacollection methods at different times.
+
+Field activities and FAGS that occur more than once (considering all active modules together):
+
+```{r}
+mod_scheme_field_activity %>% 
+  filter(is_core_scheme) %>% 
+  count(field_activity, in_aquatic_subset) %>% 
+  filter(n > 1)
+```
+
+```{r}
+mod_scheme_fag %>% 
+  count(field_activity_group, in_aquatic_subset) %>% 
+  filter(n > 1)
+```
+
+Something similar occurs when the same location gets two different but competing FAGs, one of which is superior to another, e.g. `GWINSTPIEZWELL` is superior to `GWINSTPIEZNODIVER`.
+This will mostly be avoided by generating spatiotemporal samples for non-core schemes only for types (hence, locations) that are not covered by a competing core scheme (which would compete and win otherwise).
+
+### Panel design of FAGs in (spatial subsets of) schemes per module
+
+`mod_scheme_fag_paneldesign` is the panel design of field activity groups per module and scheme.
+This will matter most for data collection plans.
+
+```{r}
 mod_scheme_fag_paneldesign <-
-  mod_scheme_fa_fag %>% 
-  distinct(module, scheme, field_activity_group, choose_one) %>% 
+  mod_scheme_fag %>% 
   mutate(
     revisit_pattern = case_when(
-      str_detect(field_activity_group, "LEVREAD") ~ "pure_panel",
+      str_detect(field_activity_group, "READDIVER|EMERGENCY") ~ "pure_panel",
       .default = "serially_alternating"
     ) %>%
       factor(),
     panel_period_main = case_when(
-      str_detect(field_activity_group, "LEVINST$|SOIL.*SAMP") ~ months(3),
-      str_detect(field_activity_group, "LEVREAD") ~ months(6),
+      # set some explicitly to the default of 1 year to avoid confusion:
+      field_activity_group == "GWINSTPIEZNODIVER" ~ years(1),
+      # SPATPOSITXXX: we will inflate the panel period with 3 months when making
+      # the calendar! Not doing it here since that would disturb generating the
+      # panel design.
+      str_detect(scheme, "^SURF") & 
+        field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ years(1),
+      str_detect(
+        field_activity_group, 
+        "^GWINST|^SURFINST|SOIL.*SAMP|^SPATPOSITGAUGE"
+      ) ~ months(3),
+      str_detect(field_activity_group, "READDIVER") ~ months(6),
+      # EMERGENCY FAGs are tricky: they CAN occur anytime, anywhere, but are 
+      # rather rare!
+      # One approach could be to artificially reduce the number of visits (e.g.
+      # by sampling visits)
+      str_detect(field_activity_group, "EMERGENCY") ~ months(1),
+      field_activity_group == "SPATPOSITPIPE" & str_detect(scheme, "GW_05") ~ months(3),
+      field_activity_group == "SPATPOSITPIPE" & is_core_scheme ~ months(3),
       .default = years(1)
     ),
     enforce_cycle_duration_y = case_when(
-      str_detect(field_activity_group, "LEVINST$") ~ 6L
+      str_detect(field_activity_group, "^GWINST") |
+        field_activity_group %in% c("SURFINSTWELLDIVER", "SPATPOSITPIPE") ~ 6L,
+      field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ 3L,
+      .default = NA_integer_
     ),
     limit_n_cycles = case_when(
       str_detect(field_activity_group, "SAMPLPOINT") ~ 1L,
       .default = NA_integer_
     ),
     revisit_subpattern = case_when(
-      str_detect(field_activity_group, "SURF.*DATACOLL") ~ "pure_panel",
-      str_detect(field_activity_group, "GWSHALL(CLEAN|SAMP)|LEVREAD") ~ "serially_alternating"
+      str_detect(field_activity_group, "SURF.*DATACOLL|SAMPLPOINT") ~ "pure_panel",
+      str_detect(scheme, "^SURF") & 
+        field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ "pure_panel",
+      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)|LEVREAD") ~ "serially_alternating"
     ) %>%
       factor(levels = levels(revisit_pattern)),
     panel_subperiod = case_when(
-      str_detect(field_activity_group, "SURF.*DATACOLL") ~ months(1),
-      str_detect(field_activity_group, "GWSHALL(CLEAN|SAMP)|LEVREAD") ~ months(3)
+      str_detect(field_activity_group, "SURF.*DATACOLL|SAMPLPOINT") ~ months(1),
+      str_detect(scheme, "^SURF") & 
+        field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ months(1),
+      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)|LEVREAD") ~ months(3)
+    ),
+    limit_n_subcycles = case_when(
+      str_detect(scheme, "^SURF") & 
+        field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ 1L,
+      str_detect(field_activity_group, "SAMPLPOINT") ~ 1L,
+      .default = NA_integer_
     ),
     limit_n_subpanels_per_panel = case_when(
-      str_detect(field_activity_group, "GWSHALL(CLEAN|SAMP)") ~ 2L
+      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") ~ 2L,
+      .default = NA_integer_
     )
-  )
-mod_scheme_fag_paneldesign
-# mod_scheme_fag_paneldesign %>% distinct(pick(field_activity_group, revisit_pattern:last_col()))
+  ) %>% 
+  arrange(field_activity_group)
 ```
 
+Overview of different occurring panel designs per FAG:
 
-- `scheme_variableset_paneldesign` is the revisit design of measurements.
-It is created below to distinguish with `field_activity_paneldesign` above, but yet unclear whether we'll need it to create data collection plans.
+```{r}
+mod_scheme_fag_paneldesign %>%
+  arrange(scheme) %>% 
+  summarize(
+    scheme_first = first(scheme),
+    scheme_last = last(scheme),
+    n_schemes = n_distinct(scheme),
+    .by = c(field_activity_group, revisit_pattern:last_col())
+  ) %>%
+  relocate(contains("scheme")) %>% 
+  arrange(field_activity_group)
+```
+
+## Panel design of measurements
+
+`scheme_variableset_paneldesign` is the panel design of measurements.
+It is created below to distinguish with `mod_scheme_fag_paneldesign` above, but yet unclear whether we'll need it to create data collection plans.
 Its primary relevance is statistical (spatiotemporal pattern of available data), hence it underpins choices made above.
-Notable differences with `field_activity_paneldesign` are that:
-  - automated frequent measurements are reflected as 'frequent revisit' while fieldwork is much less frequent;
-  - no installation or maintenance is involved;
-  - the (assumed) temporal resolution of the target variable is added, which is an attempt to answer the question: which period does one value of the variable represent?
+
+Also, it may be useful in cost calculations of data acquisition (next to field activity costs & other non-field datacollection costs – see before), since laboratory work is involved.
+
+Notable differences with `mod_scheme_fag_paneldesign` are that:
+
+- automated frequent measurements are reflected as 'frequent revisit' while fieldwork is much less frequent;
+- currently no distinction between modules is supported;
+- only core schemes are considered;
+- no installation or maintenance is involved;
+- the (assumed) temporal resolution of the target variable is added, which is an attempt to answer the question: which period does one value of the variable represent?
 
 ```{r}
 scheme_variableset_paneldesign <-
-  scheme_variableset_fieldmethod %>%
-  distinct(scheme, variable_set) %>%
+  mod_scheme_variableset_mainfieldmethod %>%
+  inner_join(
+    module_schemes,
+    join_by(module, scheme),
+    unmatched = c("error", "drop"),
+    relationship = "many-to-one"
+  ) %>% 
+  filter(is_core_scheme) %>% 
+  distinct(scheme, variable_set, main_field_method) %>%
   mutate(
     targetvar_temporal_resolution = case_when(
-      str_detect(scheme, "^HQ") | str_detect(variable_set, "peil") ~ years(1),
+      str_detect(scheme, "^HQ") ~ years(1),
+      str_detect(scheme, "^GW_05") & str_detect(variable_set, "peil") ~ years(1),
+      str_detect(variable_set, "peil.*automatisch") ~ days(1),
       str_detect(scheme, "^SURF_") ~ months(1),
       .default = months(3)
     ),
     revisit_pattern = case_when(
-      str_detect(variable_set, "peil") ~ "pure_panel",
+      str_detect(variable_set, "peil.*automatisch") ~ "pure_panel",
       .default = "serially_alternating"
     ) %>%
       factor(),
     panel_period_main = case_when(
-      str_detect(variable_set, "peil") ~ days(1),
+      str_detect(variable_set, "peil.*automatisch") ~ days(1),
       str_detect(scheme, "^HQ|^SURF_|^GW_(03|04|07)") ~ years(1),
       .default = months(3)
     ),
