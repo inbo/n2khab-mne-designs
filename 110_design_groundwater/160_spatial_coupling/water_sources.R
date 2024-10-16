@@ -1,3 +1,86 @@
+#' Return the \code{watercourses} data source as an \code{sf} object
+#'
+#' https://zenodo.org/records/4420905
+#' https://doi.org/10.5281/zenodo.4420905
+#' Returns the raw data source \code{watercourses}, with unique polygon
+#' identifier \code{polygon_id}.
+#' Multiple polygons can have the same \code{region_name}.
+#' The coordinate reference system is 'BD72 / Belgian Lambert 72'
+#' (EPSG-code \href{https://epsg.io/31370}{31370}).
+#'
+#' Original columns of the raw data source were mapped as:
+#' \itemize{
+#' \item \code{OIDN} -> \code{polygon_id}
+#' \item \code{UIDN} -> \code{manifestation_id}
+#' \item \code{VHAG} -> \code{region_id}
+#' \item \code{NAAM} -> \code{name}
+#' \item \code{NAMEN} -> \code{name2}
+#' \item \code{LENGTE} -> \code{length [m]}
+#
+#' }
+#'
+#' Apart from the label, there is no complementary information between
+#' \code{polygon_code} and \code{polygon_id}.
+#'
+#' @inheritParams read_habitatmap_stdized
+#'
+#' @return
+#' A Simple feature collection of geometry type \code{MULTIPOLYGON}.
+#'
+#' @examples
+#' \dontrun{
+#' watercourses <- read_watercourses()
+#' watercourses
+#' }
+#'
+#' @importFrom sf
+#' read_sf
+#' st_drop_geometry
+#' @importFrom dplyr
+#' %>%
+#' select
+#' mutate
+#' arrange
+#' @importFrom rlang .data
+#' @export
+read_watercourses <- function(
+  file = NULL
+  ) {
+  stopifnot(n2khab = require("n2khab"))
+  stopifnot(dplyr = require("dplyr"))
+  stopifnot(sf = require("sf"))
+  stopifnot(units = require("units"))
+
+  if(is.null(file)) {
+    file <- file.path(locate_n2khab_data(), "10_raw/watercourses")
+  }
+
+  suppressWarnings(
+    watercourses <- read_sf(file, crs = st_crs(31370))
+    # WARNING: st_crs <- replacing crs does not reproject data; use `st_transform` for that.
+  )
+
+  # documentation VHA:
+  # https://www.vlaanderen.be/digitaal-vlaanderen/onze-diensten-en-platformen/basiskaart-vlaanderen-grb/objectenhandboek-basiskaart-vlaanderen-grb/vha-waterloopsegment-wlas
+  watercourses <-
+    watercourses %>%
+    select(
+      polygon_id = OIDN,
+      rank = UIDN,
+      vhag_code = VHAG,
+      name = NAAM,
+      name2 = NAMEN,
+      length = LENGTE
+    ) %>%
+    mutate_at(vars(vhag_code, rank, name, name2), as.factor) %>%
+    mutate_at(vars(length), function (col) set_units(col, m)) %>%
+    arrange(vhag_code, rank, polygon_id)
+
+  ## units
+
+  return(watercourses)
+}
+
 
 
 #' Load spatial water info from multiple sources.
@@ -18,8 +101,9 @@ load_all_water_sources <- function( ) {
   # all the water we have
   watersurf_raw <- read_watersurfaces()
   waterstreams_raw <- read_habitatstreams() # 3260
-  watercourses_raw <- read_watercourse_100mseg(element = "lines")
-  # TODO: read_watercouses raw dataset
+  # read_watercouses raw dataset
+  watercourses_raw <- read_watercourses()
+  # watercourses_raw <- read_watercourse_100mseg(element = "lines")
 
   # combine water data in a list
   all_wata <- list(
@@ -62,7 +146,7 @@ narrow_sources_radius <- function(data_sources, reference_point, radius) {
   # select only water bodies within a radius
   narrowed_collection <- lapply(
     data_sources,
-    function (raw_spatial) points_within_radius(
+    function (raw_spatial) geometry_within_radius(
         reference_point,
         radius = radius,
         raw_spatial

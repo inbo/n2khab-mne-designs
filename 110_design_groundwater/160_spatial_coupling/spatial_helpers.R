@@ -3,30 +3,30 @@
 #----------------
 
 
-#' Filter points within a radius
+#' Filter geometry objects within a radius.
 #'
-#' Selects all points from a collection of points which
-#' are within a given radius from a center.
+#' Selects all elements from a geometry collection of which are within a given
+#' radius from a center point.
 #'
 #' @param center a point of XY coordinates
 #' in Belgian Lambert 72 (EPSG-code 31370) crs.
 #' If this is given as a simple XY vector, conversion
 #' to an `st_point` is attempted.
 #' @param radius the filter radius, in meters
-#' @param points a collection of `sf` points
+#' @param collection a collection of `sf` objects
 #'
 #' @return a subset of the given points.
 #'
 #' @examples
 #' \dontrun{
-#' points_within_radius(
+#' geometry_within_radius(
 #'   c(148600, 208900),
 #'   100,
 #'   watina::as_points(obswells_db %>% collect())
 #' )
 #' }
 #'
-points_within_radius <- function(center, radius, points) {
+geometry_within_radius <- function(center, radius, collection) {
 
   # make sure `sf` is loaded
   stopifnot(sf = require("sf"))
@@ -43,8 +43,8 @@ points_within_radius <- function(center, radius, points) {
   }
 
   # assert data types of the other arguments
-  assert_that(inherits(points, "sf"),
-    msg = "The `points` must be an `sf` object.")
+  assert_that(inherits(collection, "sf"),
+    msg = "The `collection` must be an `sf` object.")
 
   assert_that(is.numeric(radius) && radius >= 0,
     msg = "radius must be numeric and greater than zero.")
@@ -52,13 +52,13 @@ points_within_radius <- function(center, radius, points) {
   # create a buffer around the center point
   buf <- st_buffer(center, dist = radius)
 
-  # compute the intersect of points and buffer
-  intersect <- st_intersects(buf, points)[[1]]
+  # compute the intersect of collection and buffer
+  intersect <- st_intersects(buf, collection)[[1]]
 
-  # return the matched points
-  return(points[intersect, ])
+  # return the matched geospatial objects
+  return(collection[intersect, ])
 
-} # /points_within_radius
+} # /geometry_within_radius
 
 
 
@@ -175,6 +175,7 @@ query_elevation_wcs <- function(point_sf, margin = 1) {
     return(data)
   }
 
+  # query data from wcs coverage
   data <- get_coverage_wcs(
     wcs = "DHMV",
     bbox = bbox,
@@ -182,9 +183,11 @@ query_elevation_wcs <- function(point_sf, margin = 1) {
     resolution = 1
     )
 
-  values <- extract(data, point_sf)
+  # extract point values
+  values <- terra::extract(data, point_sf)
   names(values) <- c("id", "elevation")
 
+  # parse elevations to sf data
   elevations <- as.data.frame(cbind(xy, values))
   elevations <- st_as_sf(
     elevations,

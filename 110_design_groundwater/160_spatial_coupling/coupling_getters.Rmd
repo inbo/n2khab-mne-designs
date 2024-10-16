@@ -180,7 +180,7 @@ obswells_db <- get_locs(
 center <- c(x_test, y_test)
 hopo_points <- watina::as_points(obswells_db %>% collect())
 
-focus_sites <- points_within_radius(center, 100, hopo_points )
+focus_sites <- geometry_within_radius(center, 100, hopo_points )
 ```
 
 ## Usage
@@ -211,7 +211,7 @@ get_locs_in_radius <- function(conn, point, radius = 10, ...) {
   close_sites <- watina::as_points(close_sites)
 
   # refine: radius
-  closer_sites <- points_within_radius(point, radius, close_sites )
+  closer_sites <- geometry_within_radius(point, radius, close_sites )
 
   return(closer_sites)
 }
@@ -252,9 +252,11 @@ hopo_points <- get_locs_in_radius(conn = watina_dwh,
 
 There are multiple valid sources for close-by water.
 ```{r}
+source("./water_sources.R")
 watersurf_raw <- read_watersurfaces()
 waterstreams_raw <- read_habitatstreams()
-watercourses_raw <- read_watercourse_100mseg(element = "lines")
+watercourses_raw <- read_watercourses()
+watercourses_100m <- read_watercourse_100mseg(element = "lines")
 
 ```
 
@@ -263,19 +265,23 @@ Looking at the example region:
 ```{r}
 
 source("./spatial_helpers.R")
+source("./water_sources.R")
 
 x_test <- 148593
 y_test <- 208862
 # x_test <- 149111.968
 # y_test <- 208712.173
 
-hopo_watersurfaces <- points_within_radius(c(x_test, y_test),
+hopo_watersurfaces <- geometry_within_radius(c(x_test, y_test),
                                        radius = 1200,
                                        watersurf_raw)
 
-hopo_morewater <- points_within_radius(c(x_test, y_test),
+hopo_morewater <- geometry_within_radius(c(x_test, y_test),
                                        radius = 1200,
                                        watercourses_raw)
+hopo_evenmorecourses <- geometry_within_radius(c(x_test, y_test),
+                                       radius = 1200,
+                                       watercourses_100m)
 
 # wells
 m1 = mapview(hopo_points,
@@ -293,11 +299,15 @@ m2 = mapview(hopo_watersurfaces,
 # water courses
 m3 = mapview(hopo_morewater,
   map.types = c("OpenStreetMap", "OpenTopoMap"),
-  zcol = "vhag_code"
+  zcol = "rank"
+  )
+m4 = mapview(hopo_morewater,
+  map.types = c("OpenStreetMap", "OpenTopoMap"),
+  zcol = "rank"
   )
 
 # show all on a map
-m1+m2+m3
+m1+m2+m3+m4
  
 ```
 
@@ -400,6 +410,9 @@ hopo_sf <- st_as_sf(
 )
 # point_sf <- hopo_sf
 # margin <- radius
+# wcs = "DHMV"
+# resolution = 1
+# layername <- "DHMVII_DTM_1m"
 
 elevation <- query_elevation_wcs(
   hopo_sf,
@@ -567,5 +580,16 @@ dir.create(watercourse_simple_path, recursive = TRUE)
 download_zenodo(
   doi = "10.5281/zenodo.4452577",
   path = watercourse_simple_path
+)
+```
+
+- ... and watercourses:
+```{r, eval=FALSE}
+n2khab_data_path <- locate_n2khab_data()
+watercourse_raw_path <- file.path(n2khab_data_path, "10_raw/watercourses")
+dir.create(watercourse_raw_path, recursive = TRUE)
+download_zenodo(
+  doi = "10.5281/zenodo.4420905",
+  path = watercourse_raw_path
 )
 ```
