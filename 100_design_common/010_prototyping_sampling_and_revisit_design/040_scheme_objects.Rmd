@@ -506,12 +506,23 @@ module_domain_schemes <-
   distinct(module, domain, scheme, is_core_scheme)
 ```
 
-Using this result to shrink `module_scheme_cycle_duration`.
+Using this result to shrink earlier module x scheme objects.
 
 ```{r}
-module_scheme_cycle_duration <-
-  module_scheme_cycle_duration %>%
-  semi_join(module_domain_schemes, by = c("module", "scheme"))
+for (objectname in c(
+  "module_scheme_cycle_duration",
+  "module_schemes_mne",
+  "mod_scheme_datacoll_nofield",
+  "mod_scheme_variableset_mainfieldmethod",
+  "mod_scheme_mainfieldmethod_subsets",
+  "mod_scheme_field_activity",
+  "mod_scheme_fag",
+  "mod_scheme_fag_paneldesign"
+)) {
+  result <- eval(as.name(objectname)) %>% 
+    semi_join(module_domain_schemes, by = c("module", "scheme"))
+  assign(objectname, result, envir = .GlobalEnv)
+}
 ```
 
 Calculating statistics of the population size per **stratum**, per module x domain x scheme.
