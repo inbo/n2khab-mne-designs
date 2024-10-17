@@ -179,7 +179,7 @@ Grouping refers to the subgroup structure in nested serially alternated patterns
 **Missing functionality**: make the code below work for other field activities than those in module `mne2024_pan_effectmon_flanders` (e.g. wrt prefix extraction).
 
 ```{r}
-scheme_domain_fa_panel_count <-
+mod_scheme_dom_fag_panel_count <-
   module_domain_scheme_stratum_sample_size %>%
   # to be revisited filter step (see above); this is especially important since
   # field activities are done e.g. for GW_05.1_aq (SURFLEVINST, SURFLEVREAD)
@@ -187,16 +187,16 @@ scheme_domain_fa_panel_count <-
   # So even though for a specific module the non-core schemes don't have their
   # own sample size, they may have their own field activities that must be
   # taken into account
-  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
-  distinct(scheme, domain, cycle_duration_y, year_first, year_last) %>%
-  inner_join(scheme_field_activity, join_by(scheme)) %>%
-  inner_join(field_activity_paneldesign, join_by(field_activity)) %>%
+
+  # filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
+  distinct(module, scheme, domain, year_first, year_last) %>%
+  inner_join(
+    mod_scheme_fag_paneldesign, 
+    join_by(module, scheme),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
   mutate(
-    cycle_duration_y = ifelse(
-      !is.na(enforce_cycle_duration_y),
-      enforce_cycle_duration_y,
-      cycle_duration_y
-    ),
     panel_count = case_when(
       revisit_pattern == "pure_panel" ~ 1L,
       .default = as.integer(cycle_duration_y * years(1) / panel_period_main)
@@ -220,64 +220,45 @@ scheme_domain_fa_panel_count <-
       !is.na(limit_n_subpanels_per_panel) ~ as.integer(
         panel_period_main / panel_subperiod
       ) / limit_n_subpanels_per_panel,
-      revisit_subpattern == "pure_panel" ~ as.integer(
-        panel_period_main / panel_subperiod
+      revisit_subpattern == "pure_panel" ~ min(
+        as.integer(panel_period_main / panel_subperiod),
+        limit_n_subcycles,
+        na.rm = TRUE
       ),
       .default = 1L
     )
   ) %>%
   select(
+    module,
     scheme,
+    is_core_scheme,
+    in_aquatic_subset,
     domain,
-    field_activity,
+    field_activity_group,
     starts_with("year"),
     panel_period,
     panel_count,
     panel_group_size,
     panel_group_repetitions
   )
-
-# relation between FA (field activity) and FAG (FA group); done scheme-specific
-# so that joins still work one-to-one (because SURFSECC appears in two FAGs):
-scheme_fag_fa <-
-  scheme_domain_fa_panel_count %>%
-  mutate(field_activity_prefix = str_extract(field_activity, "^(GW|SURF|SOIL)")) %>%
-  mutate(
-    field_activity_group = str_remove(field_activity, "^(GW|SURF|SOIL)") %>%
-      str_flatten(collapse = "&") %>%
-      str_c(first(field_activity_prefix), .),
-    .by = -field_activity
-  ) %>%
-  select(-field_activity_prefix) %>%
-  arrange(field_activity) %>%
-  mutate(field_activity_group = fct(field_activity_group)) %>%
-  arrange(scheme, field_activity) %>%
-  distinct(scheme, field_activity_group, field_activity)
-
-scheme_domain_fag_panel_count <-
-  scheme_domain_fa_panel_count %>%
-  inner_join(
-    scheme_fag_fa,
-    join_by(scheme, field_activity),
-    unmatched = "error",
-    relationship = "one-to-one"
-  ) %>%
-  distinct(pick(-field_activity)) %>%
-  relocate(field_activity_group, .after = domain)
-
-scheme_domain_fag_panel_count %>%
-  kable()
+mod_scheme_dom_fag_panel_count %>%
+  glimpse()
 ```
 
-Different occurring patterns at the compartment level, for information and thought:
+Different occurring patterns at the compartment level, with 'HQ' referring to the MHQ 'compartment', for information and thought:
 
 ```{r}
-scheme_domain_fag_panel_count %>%
-  mutate(compartment = str_extract(scheme, "^(GW|SURF|SOIL)")) %>%
+mod_scheme_dom_fag_panel_count %>%
+  mutate(
+    compartment = str_extract(scheme, "^[A-Z]+") %>% 
+      factor() %>% 
+      fct_relevel("HQ", after = Inf)
+  ) %>%
   summarize(
     field_activity_groups = str_c(unique(field_activity_group), collapse = ", "),
     .by = c(compartment, starts_with("panel"))
   ) %>%
+  arrange(compartment, panel_period) %>% 
   kable()
 ```
 
