@@ -918,6 +918,12 @@ This will matter most for data collection plans.
 ```{r}
 mod_scheme_fag_paneldesign <-
   mod_scheme_fag %>% 
+  inner_join(
+    module_scheme_cycle_duration,
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
   mutate(
     revisit_pattern = case_when(
       str_detect(field_activity_group, "READDIVER|EMERGENCY") ~ "pure_panel",
@@ -952,6 +958,12 @@ mod_scheme_fag_paneldesign <-
       field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ 3L,
       .default = NA_integer_
     ),
+    cycle_duration_y = ifelse(
+      !is.na(enforce_cycle_duration_y),
+      enforce_cycle_duration_y,
+      cycle_duration_y
+    ),
+    enforced_cycle_duration = !is.na(enforce_cycle_duration_y),
     limit_n_cycles = case_when(
       str_detect(field_activity_group, "SAMPLPOINT") ~ 1L,
       .default = NA_integer_
@@ -980,6 +992,8 @@ mod_scheme_fag_paneldesign <-
       .default = NA_integer_
     )
   ) %>% 
+  select(-enforce_cycle_duration_y) %>% 
+  relocate(cycle_duration_y, .before = enforced_cycle_duration) %>% 
   arrange(field_activity_group)
 ```
 
