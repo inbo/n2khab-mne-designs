@@ -61,6 +61,74 @@ For now still without:
 Also, the fact that the _installation_ of observation wells must be accelerated in the module's first cycle if the latter is shorter than the enforced cycle duration.
 So it's currently assumed that all observation wells are in place already.
 
+### Module combinations (module combos) per core scheme based on common panel design of target variables
+
+Determining module combos per scheme based on common panel design characteristics _of target variables_ in _core_ schemes (note that the scheme property 'core / non-core' depends on module).
+The target variables limit the main field methods of a module x scheme to a great extent, since the latter also comprise variables for explanation & quality control.
+
+First create an object with the 'target' panel designs per module and scheme (target referring to the target variables restriction).
+
+```{r}
+mod_corescheme_targetfieldmethod <- 
+  mod_scheme_mainfieldmethod %>% 
+  filter(is_core_scheme) %>% 
+  semi_join(
+    envvars %>% 
+      filter(target),
+    join_by(module, scheme, main_field_method == main_datacollection_method)
+  ) %>% 
+  select(-is_core_scheme)
+mod_corescheme_targetfieldmethod_paneldesign <- 
+  mod_corescheme_targetfieldmethod %>% 
+  # expand with FAG (note that some main field methods link to more than one
+  # FAG, which has to do with the spatial subsets, which we can ignore here
+  # since in the case of the MAIN field method these don't cause differences in
+  # panel designs but only in activities.)
+  inner_join(
+    mod_scheme_field_activity %>% 
+      distinct(module, scheme, field_activity, field_activity_group),
+    join_by(module, scheme, main_field_method == field_activity),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # add the FAG panel design
+  inner_join(
+    mod_scheme_fag_paneldesign %>% 
+      distinct(pick(module, scheme, field_activity_group, revisit_pattern:last_col())),
+    join_by(module, scheme, field_activity_group),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  distinct(pick(
+    module,
+    scheme,
+    main_field_method,
+    revisit_pattern:last_col()
+  ))
+if (nrow(mod_corescheme_targetfieldmethod_paneldesign) != nrow(mod_corescheme_targetfieldmethod)) {
+  stop("The number of rows changed unexpectedly.")
+}
+mod_corescheme_target_paneldesign <- 
+  mod_corescheme_targetfieldmethod_paneldesign %>% 
+  distinct(pick(-main_field_method, -enforced_cycle_duration))
+```
+
+Now determining the module combos per core scheme.
+
+```{r}
+corescheme_target_paneldesign <- 
+  mod_corescheme_target_paneldesign %>% 
+  nest(module_combo = module) %>% 
+  relocate(module_combo) %>% 
+  arrange(scheme, panel_period_main, cycle_duration_y)
+corescheme_target_paneldesign
+```
+
+We end up with `r nrow(scheme_target_paneldesign)` different core scheme x target panel design combinations, each of which applies to one or several modules.
+
+Note that _different_ module combos within a scheme are handled as if they were different panel splits, i.e. they need a separate portion of the GRTS series to sample from; the starting address could be set based on sample size proportion but after that the starting address should be held fixed.
+It should also be accepted that for rare types, these samples may by necessity overlap between module combos hence this should be simplified afterwards to avoid unnecessary duplication of fieldwork planning.
+
 ### Spatial samples
 
 Determining the applicable domain relations.
