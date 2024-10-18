@@ -919,6 +919,10 @@ This will matter most for data collection plans.
 ```{r}
 mod_scheme_fag_paneldesign <-
   mod_scheme_fag %>% 
+  # adding preliminary support for split panels; to be set as NA where
+  # applicable. we call different splits of a panel design a 'panel_split' and
+  # they are numbered within module x scheme x FAG x spatial subset
+  mutate(panel_split = 1L) %>% 
   inner_join(
     module_scheme_cycle_duration,
     join_by(module, scheme),
@@ -995,6 +999,7 @@ mod_scheme_fag_paneldesign <-
   ) %>% 
   select(-enforce_cycle_duration_y) %>% 
   relocate(cycle_duration_y, .before = enforced_cycle_duration) %>% 
+  relocate(panel_split, .after = field_activity_group) %>% 
   arrange(field_activity_group)
 ```
 
@@ -1007,7 +1012,7 @@ mod_scheme_fag_paneldesign %>%
     scheme_first = first(scheme),
     scheme_last = last(scheme),
     n_schemes = n_distinct(scheme),
-    .by = c(field_activity_group, revisit_pattern:last_col())
+    .by = c(field_activity_group, panel_split, revisit_pattern:last_col())
   ) %>%
   relocate(contains("scheme")) %>% 
   arrange(field_activity_group)
