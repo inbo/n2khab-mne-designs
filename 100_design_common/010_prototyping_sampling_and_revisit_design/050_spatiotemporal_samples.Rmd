@@ -71,12 +71,19 @@ First create an object with the 'target' panel designs per module and scheme (ta
 ```{r}
 mod_scheme_targetfieldmethod <- 
   mod_scheme_mainfieldmethod %>% 
-  semi_join(
+  left_join(
     envvars %>% 
-      filter(target),
-    join_by(module, scheme, main_field_method == main_datacollection_method)
+      filter(target) %>% 
+      distinct(module, scheme, main_datacollection_method) %>% 
+      mutate(target_envvar = TRUE),
+    join_by(module, scheme, main_field_method == main_datacollection_method),
+    relationship = "one-to-one",
+    unmatched = "drop"
   ) %>% 
-  select(-is_core_scheme)
+  # the main field method of MHQ schemes also corresponds to a target variable;
+  # in MHQ we only defined a 'variable set' LSVI...
+  filter(target_envvar | str_detect(scheme, "^HQ")) %>% 
+  select(-is_core_scheme, -target_envvar)
 mod_scheme_targetfieldmethod_paneldesign <- 
   mod_scheme_targetfieldmethod %>% 
   # expand with FAG (note that some main field methods link to more than one
