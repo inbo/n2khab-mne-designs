@@ -61,25 +61,24 @@ For now still without:
 Also, the fact that the _installation_ of observation wells must be accelerated in the module's first cycle if the latter is shorter than the enforced cycle duration.
 So it's currently assumed that all observation wells are in place already.
 
-### Module combinations (module combos) per core scheme based on common panel design of target variables
+### Module combinations (module combos) per scheme based on common panel design of target variables
 
-Determining module combos per scheme based on common panel design characteristics _of target variables_ in _core_ schemes (note that the scheme property 'core / non-core' depends on module).
+Determining module combos per scheme based on common panel design characteristics _of target variables_.
 The target variables limit the main field methods of a module x scheme to a great extent, since the latter also comprise variables for explanation & quality control.
 
 First create an object with the 'target' panel designs per module and scheme (target referring to the target variables restriction).
 
 ```{r}
-mod_corescheme_targetfieldmethod <- 
+mod_scheme_targetfieldmethod <- 
   mod_scheme_mainfieldmethod %>% 
-  filter(is_core_scheme) %>% 
   semi_join(
     envvars %>% 
       filter(target),
     join_by(module, scheme, main_field_method == main_datacollection_method)
   ) %>% 
   select(-is_core_scheme)
-mod_corescheme_targetfieldmethod_paneldesign <- 
-  mod_corescheme_targetfieldmethod %>% 
+mod_scheme_targetfieldmethod_paneldesign <- 
+  mod_scheme_targetfieldmethod %>% 
   # expand with FAG (note that some main field methods link to more than one
   # FAG, which has to do with the spatial subsets, which we can ignore here
   # since in the case of the MAIN field method these don't cause differences in
@@ -106,26 +105,26 @@ mod_corescheme_targetfieldmethod_paneldesign <-
     panel_split,
     revisit_pattern:last_col()
   ))
-if (nrow(mod_corescheme_targetfieldmethod_paneldesign) != nrow(mod_corescheme_targetfieldmethod)) {
+if (nrow(mod_scheme_targetfieldmethod_paneldesign) != nrow(mod_scheme_targetfieldmethod)) {
   stop("The number of rows changed unexpectedly.")
 }
-mod_corescheme_target_paneldesign <- 
-  mod_corescheme_targetfieldmethod_paneldesign %>% 
+mod_scheme_target_paneldesign <- 
+  mod_scheme_targetfieldmethod_paneldesign %>% 
   distinct(pick(-main_field_method, -enforced_cycle_duration))
 ```
 
-Now determining the module combos per core scheme.
+Now determining the module combos per scheme.
 
 ```{r}
-corescheme_target_paneldesign <- 
-  mod_corescheme_target_paneldesign %>% 
+scheme_target_paneldesign <- 
+  mod_scheme_target_paneldesign %>% 
   nest(module_combo = module) %>% 
   relocate(module_combo) %>% 
   arrange(scheme, panel_period_main, cycle_duration_y)
-corescheme_target_paneldesign
+scheme_target_paneldesign
 ```
 
-We end up with `r nrow(scheme_target_paneldesign)` different core scheme x target panel design combinations, each of which applies to one or several modules.
+We end up with `r nrow(scheme_target_paneldesign)` different scheme x target panel design combinations, each of which applies to one or several modules.
 
 Note that _different_ module combos within a scheme are handled as if they were different panel splits, i.e. they need a separate portion of the GRTS series to sample from; the starting address could be set based on sample size proportion but after that the starting address should be held fixed.
 It should also be accepted that for rare types, these samples may by necessity overlap between module combos hence this should be simplified afterwards to avoid unnecessary duplication of fieldwork planning.
@@ -268,7 +267,7 @@ Adding some ideas:
 
 - organize the membership design for the combination of field activity supergroups, i.e. with the same panel design across FAGs, and sample size. Still within module x scheme since sample sizes may differ, but across schemes where they don't.
 - also make membership design depend between such different supergroups of the same sample size, where these have a compatible number of panels, e.g. if one panel in one supergroup can be the sum of 4 panels of another supergroup.
-- start with the supergroups that coincide with the panel designs of the _main_ field method of _target_ variables in _core_ schemes, as we plan to optimize the spatial samples in order to deal with the representation of those panel designs across modules, schemes and domains.
+- start with the supergroups that coincide with the panel designs of the _main_ field method of _target_ variables, as we plan to optimize the spatial samples in order to deal with the representation of those panel designs across modules, schemes and domains.
 - apply non-core FAG panels only to locations not covered by a corresponding core FAG
 - select a single winning FAG for competition in time (for the same FAG) or between interlinked FAGs (take the superior one and schedule it as the first one). However don't do this for the FAG with the main field method of each scheme: the data collection design must not be harmed!
 - for MNE, the LOCEVAL activity must take place one year beforehand!
