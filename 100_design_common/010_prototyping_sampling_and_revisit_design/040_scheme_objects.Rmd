@@ -321,6 +321,15 @@ ssf_domain_stratum_nunits <-
   mutate(nunits = round(nunits) %>% as.integer())
 ```
 
+Some cases exist with less than 0.5 units, which comes down to 0 units:
+
+```{r paged.print = FALSE}
+ssf_domain_stratum_nunits %>% 
+  filter(nunits == 0) %>% 
+  arrange(stratum, domain)
+```
+
+We still keep them for reference, since future states of these strata may become larger.
 
 ### Applying result at the scheme level
 
@@ -870,16 +879,20 @@ module_domain_scheme_stratum_target_sample_size <-
     by = c("module", "compartment", "scheme", "type")
   ) %>%
   mutate(
-    sp_sample_size_all_panels_type = ifelse(
-      is.na(sp_sample_size_all_panels_type) & add_to_sample,
-      max(sp_sample_size_all_panels_type, na.rm = TRUE),
-      sp_sample_size_all_panels_type
+    sp_sample_size_all_panels_type = case_when(
+      is.na(sp_sample_size_all_panels_type) & add_to_sample ~ 
+        max(sp_sample_size_all_panels_type, na.rm = TRUE),
+      nunits == 0 & !is.na(sp_sample_size_all_panels_type) ~ 0,
+      .default = sp_sample_size_all_panels_type
     ),
     .by = c(module, compartment)
   ) %>%
   mutate(
-    sp_sample_size_all_panels_stratum =
-      sp_sample_size_all_panels_type * nunits^0.25 / sum(nunits^0.25),
+    sp_sample_size_all_panels_stratum = ifelse(
+      nunits == 0 & !is.na(sp_sample_size_all_panels_type),
+      0,
+      sp_sample_size_all_panels_type * nunits^0.25 / sum(nunits^0.25)
+    ),
     .by = c(module, domain, scheme, type)
   ) %>%
   select(-compartment, -add_to_sample) %>%
