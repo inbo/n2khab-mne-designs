@@ -458,48 +458,104 @@ domain_relations_spsamples <-
   )
 ```
 
-Drawing spatial samples.
+Drawing spatial samples per scheme and GRTS partition (hence for module combos x panel splits), for each stratum x domain.
+This includes the step to redraw the sample for domains included by another domain (typically because of module combinations), to ensure that no units are drawn more than once and the GRTS series in the domain is one series.
 
 ```{r}
-scheme_domain_stratum_spsamples <-
+moco_scheme_ps_stratum_dom_spsamples <-
   module_domain_scheme_stratum_sample_size %>%
   select(module, domain, scheme, sampling_frame_id, stratum, sp_sample_size_all_panels_stratum) %>%
   # for MNE, non-core schemes (dropped below) have yet to be taken back (but I
   # think this step also drops things we always need to drop).
   # This is relevant for specifically added types for those non-core-schemes.
-  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
-  # domains that are the same between different modules are integrated by
-  # summing the sample sizes; the module is dropped:
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
+  # joining module combos
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(module_combo_code, module_combo, scheme, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # domains that are the same between different modules are integrated within
+  # module combos by summing the sample sizes; modules are collapsed to their
+  # combinations:
   summarize(
     sp_sample_size_all_panels_stratum = sum(sp_sample_size_all_panels_stratum),
-    .by = c(domain, scheme, sampling_frame_id, stratum)
+    .by = c(module_combo_code, domain, scheme, panel_split, sampling_frame_id, stratum)
   ) %>%
-  nest(domain_stratum_spsamplesize = c(domain, stratum, sp_sample_size_all_panels_stratum)) %>%
-  inner_join(sp_samplingframe_domain, by = join_by(sampling_frame_id)) %>%
-  # drawing an independent sample per scheme, domain and stratum:
+  inner_join(
+    moco_dom_stratum_grtspart_threshold %>% 
+      select(-grts_part),
+    join_by(module_combo_code, panel_split, domain, stratum),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  nest(moco_ps_domain_stratum_spsamplesize = c(
+    module_combo_code, 
+    panel_split,
+    domain, 
+    stratum, 
+    sp_sample_size_all_panels_stratum,
+    grts_address_start,
+    grts_address_gap_end
+  )) %>%
+  inner_join(
+    sp_samplingframe_domain, 
+    join_by(sampling_frame_id),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # drawing an independent sample per scheme, domain, stratum and module combo & panel split:
   mutate(
-    spsample = map2(domain_stratum_spsamplesize, sampling_frame_domain, function(dss, sfd) {
-      sfd %>%
-        nest(grts_addresses = grts_address) %>%
-        inner_join(dss, ., by = join_by(domain, stratum)) %>%
-        mutate(
-          sample =
-            map2(sp_sample_size_all_panels_stratum, grts_addresses, function(sss, grts) {
-              grts %>% slice_min(grts_address, n = sss)
-            })
+    spsample = map2(moco_ps_domain_stratum_spsamplesize, sampling_frame_domain, function(dss, sfd) {
+      # dss %>% 
+      #   summarize(
+      #     total_sample_size_split = sum(sp_sample_size_all_panels_stratum), 
+      #     .by = c(module_combo_code, panel_split)
+      #   ) %>% 
+      #   arrange(total_sample_size_split)
+      dss %>% 
+        inner_join(
+          sfd %>% 
+            nest(grts_addresses = grts_address),
+          join_by(domain, stratum),
+          relationship = "many-to-one",
+          unmatched = c("error", "drop")
         ) %>% 
+        mutate(
+          grts_addresses_subset = map2(
+            grts_address_start, 
+            grts_addresses, 
+            function(grts_start, grts) {
+              grts %>% filter(grts_address >= grts_start)
+            }
+          ),
+          sample =
+            map2(
+              sp_sample_size_all_panels_stratum, 
+              grts_addresses_subset, 
+              function(sss, grts_sub) {
+                grts_sub %>% 
+                  slice_min(grts_address, n = sss)
+              }
+            )
+        ) %>% 
+        select(-c(grts_addresses, grts_address_start, grts_address_gap_end)) %>% 
         nest(domain_spsample = c(
           domain, 
           sp_sample_size_all_panels_stratum, 
-          grts_addresses,
+          grts_addresses_subset,
           sample
         ))
     })
   ) %>%
   select(scheme, spsample) %>%
   unnest(spsample) %>% 
-  # handling the overlap between domains: above, the samples have been drawn
-  # independently so now this has to be corrected!
+  # handling the overlap between domains within module combo x panel split:
+  # above, the samples have been drawn independently so now this has to be
+  # corrected!
   mutate(
     domain_spsample = map(domain_spsample, function(ds) {
       ds <- left_join(
@@ -516,7 +572,10 @@ scheme_domain_stratum_spsamples <-
       # only keep an including domain if it is effectively present as domain:
       including_domains <- including_domains[including_domains %in% ds$domain]
       if (length(including_domains) > 1) {
-        stop("Multiple including domains in one stratum are not supported.")
+        stop(
+          "Multiple including domains in one module combo x panel split",
+          " x stratum are not supported."
+        )
       }
       ds %>% 
         mutate(
@@ -528,12 +587,15 @@ scheme_domain_stratum_spsamples <-
             sample[including]
           ),
           # determine the available unsampled units per domain:
-          grts_addresses_2 = map2(grts_addresses, grts_sampled, function(ga, gs) {
-            if (is.null(gs)) {
-              return(NULL)
-            }
-            anti_join(ga, gs, join_by(grts_address))
-          }),
+          grts_addresses_2 = map2(
+            grts_addresses_subset, 
+            grts_sampled, 
+            function(ga, gs) {
+              if (is.null(gs)) {
+                return(NULL)
+              }
+              anti_join(ga, gs, join_by(grts_address))
+            }),
           # redraw samples for included domains:
           sample_2 = pmap(
             list(including, sample, grts_addresses_2, sp_sample_size_all_panels_stratum),
@@ -555,18 +617,22 @@ scheme_domain_stratum_spsamples <-
         unnest(sample)
     })
   ) %>% 
-  unnest(domain_spsample)
+  unnest(domain_spsample) %>% 
+  relocate(module_combo_code)
 ```
 
-Check that no sampling units overlap between domains within the combination of scheme and stratum:
+Check that no sampling units overlap between domains within the combination of module combo, scheme, panel split and stratum:
 
 ```{r}
-scheme_domain_stratum_spsamples %>% 
-  count(scheme, stratum, grts_address) %>% 
+moco_scheme_ps_stratum_dom_spsamples %>% 
+  count(module_combo_code, scheme, panel_split, stratum, grts_address) %>% 
   filter(n > 1) %>% 
   nrow() == 0
 ```
 
+
+<!-- TODO: also generate the domain-specific sets of spare units, including domain remainders. The domain-remainder labelling will be needed anyway for the construction of panels as well. -->
+<!-- TODO: consider module labelling (wrt unit replacement)? But I think this isn't needed if already looked at domain-wise! -->
 
 ### Implementing the revisit design
 
