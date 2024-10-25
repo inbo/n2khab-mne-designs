@@ -128,14 +128,25 @@ mod_scheme_target_paneldesign <-
 ```
 
 Now determining the module combos per scheme and panel split.
+Do note that the module combo code can only be interpreted as a unique revisit design in combination with scheme and panel split!
+So a module combo has to be seen as an aggregation based on a common revisit design _between_ modules but _within_ scheme and panel split.
 
 ```{r}
 scheme_target_paneldesign <- 
   mod_scheme_target_paneldesign %>% 
-  nest(module_combo = module) %>% 
+  inner_join(
+    modules %>% select(module, code_short),
+    join_by(module),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  summarize(
+    module_combo_code = str_c(code_short, collapse = "_"),
+    module_combo = list(tibble(module = module)),
+    .by = -c(module, code_short)
+  ) %>% 
   arrange(scheme, panel_period_main, cycle_duration_y) %>% 
-  mutate(module_combo_id = row_number(), .by = c(scheme, panel_split)) %>% 
-  relocate(module_combo_id, module_combo)
+  relocate(module_combo_code, module_combo)
 scheme_target_paneldesign
 ```
 
