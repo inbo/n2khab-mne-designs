@@ -199,6 +199,129 @@ add_point_coords_grts <- function(
 }
 
 
+
+
+#' Choose optimal threshold to distribute sample sizes in a GRTS address series
+#'
+#' Given the sampling frame as a series of GRTS addresses and sizes of several
+#' samples + spare units that need to be distributed in the series, choose the
+#' thresholds in the GRTS address series where each consecutive sample should
+#' begin.
+#'
+#' Note that the 'break points' in the function's code, when samples need to be
+#' overlapped, refer to the indices of the second up to the last but one sample.
+#'
+#' @param sample_sizes Integer vector of sample sizes. The order must reflect
+#'   the desired order of samples in the GRTS series.
+#' @param spare_sample_sizes Integer vector of spare sample sizes, that
+#'   accompany the `sample_sizes`.
+#' @param grts_addresses Integer vector of GRTS addresses of the sampling frame.
+pick_grts_thresholds <- function(sample_sizes,
+                                 spare_sample_sizes,
+                                 grts_addresses) {
+  if (max(sample_sizes) > length(grts_addresses)) {
+    stop("A sample size has been provided that is larger than the sampling frame size.")
+  }
+  if (sum(sample_sizes, spare_sample_sizes) <= length(grts_addresses)) {
+    indices <- dplyr::lag(sample_sizes + spare_sample_sizes, default = 0) + 1
+  } else if (sum(sample_sizes) <= length(grts_addresses)) {
+    spare_total <- length(grts_addresses) - sum(sample_sizes)
+    warning(
+      "Reducing (total) spare sample size from ",
+      sum(spare_sample_sizes),
+      " to ",
+      spare_total
+    )
+    new_spare_sample_sizes <- round(sample_sizes / sum(sample_sizes) * spare_total)
+    indices <- dplyr::lag(sample_sizes + new_spare_sample_sizes, default = 0) + 1
+  } else {
+    warning("Will need to overlap samples between revisit designs; ignoring spare samples.")
+    if (length(sample_sizes) == 2) {
+      indices <- c(1, length(grts_addresses) - sample_sizes[2] + 1)
+    } else if (length(sample_sizes) == 3) {
+      # one-dimensional optimization (1 break point), using optimize()
+      break_points <- optimize(
+        calculate_weighted_overlap_uniformity,
+        interval = c(1, sample_sizes[1] + 1),
+        sample_sizes = sample_sizes,
+        total_available = length(grts_addresses)
+      )$minimum
+      indices <- c(
+        1,
+        round(break_points),
+        length(grts_addresses) - tail(sample_sizes, 1) + 1
+      )
+    } else {
+      # multi-dimensional optimization, using optim()
+      nbp <- length(sample_sizes) - 2
+        # lbound & ubounds were originally intended for the lower & upper args
+        # of the L-BFGS-B method, which I didn't get working however
+      lbounds <- pmax(1, 989 - tail(rev(cumsum(rev(sample_sizes))[-1]), nbp) + 1)
+      ubounds <- head(cumsum(sample_sizes) + 1, nbp)
+      break_points <- optim(
+        colMeans(rbind(lbounds, ubounds)),
+        calculate_weighted_overlap_uniformity,
+        sample_sizes = sample_sizes,
+        total_available = length(grts_addresses)
+      )$par
+      indices <- c(
+        1,
+        round(break_points),
+        length(grts_addresses) - tail(sample_sizes, 1) + 1
+      )
+    }
+  }
+  sort(grts_addresses)[indices]
+}
+
+
+
+#' Calculate uniformity statistic of sample-size weighted overlap between
+#' multiple overlapping samples in a GRTS series
+#'
+#' A variant of the calculated chi-square statistic (meant to be minimized
+#' through optimization) is penalized for the occurrence of gaps (i.e. spare
+#' sampling units) in case this function is applied to sample sizes that
+#' together are larger than the sampling frame size, so that gaps should be
+#' avoided when distributing the samples.
+#'
+#' @param break_points Positions in GRTS series (as rank: 1, 2, 3, ...) where
+#'   the next sample begins. Must be an integer vector of `length(sample_sizes)
+#'   - 2`: the last break point must not be given since it is determined as
+#'   `total_available - tail(sample_sizes, 1) + 1`.
+#' @param sample_sizes Integer vector with sizes of the samples.
+#' @param total_available Integer of length 1. Total length of available GRTS
+#'   addresses.
+#' @param penalize Logical. Should the chi-square statistic be penalized for the
+#'   presence (and size) of gaps?
+calculate_weighted_overlap_uniformity <- function(break_points,
+                                                  sample_sizes,
+                                                  total_available,
+                                                  penalize = TRUE) {
+  stopifnot(length(break_points) == length(sample_sizes) - 2)
+  stopifnot(sum(sample_sizes) > total_available)
+  stopifnot(all(break_points <= head(cumsum(sample_sizes) + 1, length(sample_sizes) - 2)))
+  start <- c(1, break_points, total_available - tail(sample_sizes, 1) + 1)
+  end <- c(sample_sizes + start - 1)
+  # calculate gaps, which serve as penalty on top of the statistic
+  gaps <- pmax(0, start - dplyr::lag(end, default = 0) - 1)
+  gap_penalty <- sum(gaps) * 10
+  # calculate overlaps; sum them and express them per sample unit for the uniformity test
+  overlap_right <- max(0, end - dplyr::lead(start - 1, default = total_available))
+  overlap_left <- max(0, dplyr::lag(end + 1, default = 1) - start)
+  chisq_stat <- chisq.test(round(
+    (overlap_left + overlap_right) / sample_sizes * 100
+  ))$statistic
+  if (penalize) {
+    chisq_stat + gap_penalty
+  } else {
+    chisq_stat
+  }
+}
+
+
+
+
 distribute_sample_over_panels <- function(sps, pan) {
   remainder <- nrow(sps) %% nrow(pan)
   if (remainder > 0) {

@@ -218,6 +218,229 @@ Hence, this should be simplified afterwards to avoid unnecessary duplication of 
 
 ### Spatial samples
 
+#### Set GRTS address thresholds per domain and stratum for cross-scheme synergies
+
+Determining fixed GRTS address thresholds per domain and stratum to assign to module combos and panel splits, applicable across schemes, in order to maintain maximum synergy across schemes.
+
+The threshold is the GRTS address start where a series should start.
+For this, also the relationship of module combos between schemes must be investigated and aligned.
+
+Sampling frame 0 is the most common one, we use that one to choose GRTS thresholds.
+
+```{r paged.print=FALSE}
+module_domain_scheme_stratum_sample_size %>% 
+  count(sampling_frame_id, sort = TRUE)
+```
+
+We can see that sampling frame 0 is not used in groundwater schemes though, where restrictions always apply:
+
+```{r}
+scheme_sampling_frame %>% 
+  mutate(
+    compartment = str_extract(scheme, "^[A-Z]+") %>% 
+      factor() %>% 
+      fct_relevel("HQ", after = Inf)
+  ) %>% 
+  count(compartment, sampling_frame_id)
+```
+
+However for synergy with schemes from other compartments, we will still use it in all situations, also taking into account that the sample sizes for schemes in the SOIL compartment are currently the largest, and based on sampling frame 0.
+This choice is also because it's better to generate thresholds further apart than too close together for certain schemes.
+
+Defining the GRTS partition number, based on the module combo rank and panel split, for each domain and stratum, hence across schemes.
+
+```{r}
+moco_dom_stratum_grtspart <- 
+  module_domain_scheme_stratum_sample_size %>%
+  select(module, domain, scheme, sampling_frame_id, stratum, sp_sample_size_all_panels_stratum, nunits) %>%
+  # for MNE, non-core schemes (dropped below) have yet to be taken back (but I
+  # think this step also drops things we always need to drop).
+  # This is relevant for specifically added types for those non-core-schemes.
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
+  # joining module combos
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(module_combo_code, module_combo, scheme, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # sum the module sample sizes for common panel designs, scheme, domain and
+  # stratum, as these sizes are going to be drawn as one GRTS address series;
+  # however limit this result to the maximum module-specific population size:
+  summarize(
+    total_sample_size_all_panels = min(
+      sum(sp_sample_size_all_panels_stratum),
+      max(nunits)
+    ),
+    .by = c(module_combo_code, scheme, panel_split, domain, stratum)
+  ) %>% 
+  # use maximum sample sizes across schemes for common panel designs, domain and
+  # stratum, since these should drive GRTS series partitioning:
+  summarize(
+    max_sample_size_all_panels = max(total_sample_size_all_panels),
+    .by = c(module_combo_code, panel_split, domain, stratum)
+  ) %>% 
+  # add module combo rank:
+  inner_join(
+    moco_order,
+    join_by(module_combo_code),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # determine rank number of the GRTS partition
+  mutate(
+    grts_part = rank(moco_rank * 1000 + panel_split, ties.method = "min"),
+    .by = c(domain, stratum)
+  )
+```
+
+Now setting the GRTS threshold (variable `grts_address_start`) for each GRTS partition in a domain x stratum.
+
+```{r}
+dom_stratum_grtspart_threshold <- 
+  moco_dom_stratum_grtspart %>% 
+  # determine max sample size for each GRTS partition rank per domain x stratum,
+  # which will ultimately drive the GRTS partitioning for the same revisit
+  # design and across module combos with the same rank (note that different
+  # panel splits always trigger another rank)
+  summarize(
+    max_sample_size_all_panels = max(max_sample_size_all_panels),
+    .by = c(domain, stratum, grts_part)
+  ) %>% 
+  # characterize strata with 'is_strictly_aquatic' to determine number of 
+  # spare units
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  inner_join(
+    n2khab_types_expanded_properties %>% 
+      mutate(is_strictly_aquatic = hydr_class == "HC3") %>% 
+      select(type, is_strictly_aquatic),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  select(-type) %>% 
+  arrange(domain, stratum, grts_part) %>% 
+  nest(splits = -c(domain, stratum, is_strictly_aquatic)) %>% 
+  inner_join(
+    sp_samplingframe_domain %>% 
+      filter(sampling_frame_id == 0L) %>% 
+      pluck("sampling_frame_domain", 1),
+    join_by(domain, stratum),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>% 
+  nest(grts_addresses = grts_address) %>% 
+  # now determine threshold for each domain x stratum combination
+  mutate(
+    splits = pmap(
+      list(is_strictly_aquatic, splits, grts_addresses), 
+      function(aq, spl, grts) {
+        spl %>% 
+          mutate(
+            # TEMPORARY HACK to fix two cases of 3260 (domains BE2100024 and
+            # BE2200039) where more than one unit is linked to the same GRTS
+            # address. TO BE SOLVED XXXXXXX
+            # ################################
+            max_sample_size_all_panels = ifelse(
+              max_sample_size_all_panels > length(grts$grts_address),
+              length(grts$grts_address),
+              max_sample_size_all_panels
+            ),
+            ##################################
+            n_spare_units_theoretical = round(max_sample_size_all_panels * 
+              ifelse(aq, spare_coef_aq, spare_coef_default)),
+            grts_address_start = pick_grts_thresholds(
+              max_sample_size_all_panels,
+              n_spare_units_theoretical,
+              grts$grts_address
+            ),
+            grts_index_start = which(
+              sort(grts$grts_address) %in% grts_address_start
+            ),
+            grts_index_end = grts_index_start + max_sample_size_all_panels - 1L,
+            grts_gap_end = dplyr::lead(
+              grts_index_start - 1L, 
+              default = length(grts$grts_address)
+            ),
+            grts_address_gap_end = sort(grts$grts_address)[grts_gap_end],
+            n_spare_units = pmin(
+              n_spare_units_theoretical,
+              grts_gap_end - grts_index_end
+            ) %>% 
+              as.integer()
+          )
+      })
+  ) %>% 
+  select(-grts_addresses, -is_strictly_aquatic) %>% 
+  unnest(splits)
+```
+
+Some characteristics of `dom_stratum_grtspart_threshold`.
+
+```{r}
+nrow(dom_stratum_grtspart_threshold)
+dom_stratum_grtspart_threshold %>% 
+  filter(n_spare_units == 0) %>% 
+  nrow()
+dom_stratum_grtspart_threshold %>% 
+  filter(n_spare_units == 0) %>% 
+  pull(stratum) %>% 
+  n_distinct()
+dom_stratum_grtspart_threshold %>% 
+  filter(n_spare_units < n_spare_units_theoretical) %>% 
+  nrow()
+```
+
+#### Apply the GRTS address threshold to the module combos and panel splits
+
+Expanding the GRTS-partition-level GRTS-threshold to the level of module combos and panel splits (per domain and stratum).
+
+```{r}
+moco_dom_stratum_grtspart_threshold <- 
+  moco_dom_stratum_grtspart %>% 
+  select(-max_sample_size_all_panels, -moco_rank) %>% 
+  inner_join(
+    dom_stratum_grtspart_threshold %>% 
+      select(domain, stratum, grts_part, grts_address_start, grts_address_gap_end),
+    join_by(grts_part, domain, stratum),
+    relationship = "many-to-one",
+    unmatched = "error"
+  )
+```
+
+Joining the GRTS threshold with module, scheme and panel split.
+<!-- This may be superfluous!! XXXXX -->
+
+```{r}
+mod_dom_scheme_ps_stratum_grtspart <- 
+  moco_dom_stratum_grtspart_threshold %>% 
+  # expanding to modules and schemes:
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(module_combo_code, module_combo, scheme, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module_combo_code, panel_split),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # restrict to the target populations of the concerned mod x domain x scheme:
+  semi_join(
+    module_domain_scheme_stratum_sample_size,
+    join_by(module, domain, scheme, stratum)
+  ) %>% 
+  select(-module_combo_code) %>% 
+  relocate(module, domain, scheme, panel_split)
+```
+
+#### Draw spatial samples
+
 Determining the applicable domain relations.
 
 ```{r}
