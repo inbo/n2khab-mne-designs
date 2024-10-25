@@ -152,8 +152,69 @@ scheme_target_paneldesign
 
 We end up with `r nrow(scheme_target_paneldesign)` different scheme x target panel design combinations, each of which applies to one or several modules.
 
-Note that _different_ module combos within a scheme are handled as if they were different panel splits, i.e. they need a separate portion of the GRTS series to sample from; the starting address could be set based on sample size proportion but after that the starting address should be held fixed.
-It should also be accepted that for rare types, these samples may by necessity overlap between module combos hence this should be simplified afterwards to avoid unnecessary duplication of fieldwork planning.
+Several schemes have more than one revisit design, i.e. different module combinations x panel splits:
+
+```{r}
+scheme_target_paneldesign %>% 
+  count(scheme, name = "nr_revisitpatterns_per_scheme") %>% 
+  count(nr_revisitpatterns_per_scheme)
+```
+
+<!-- It can be seen that module 'mne2024_pan_be2100024_restoration' (pan2124) is always present when a scheme has more than one revisit design. -->
+<!-- So it is logical to handle it specially. -->
+
+```{r eval=FALSE, include=FALSE}
+# Not run since this chunk is too specific and depends on which modules are active.
+scheme_target_paneldesign %>% 
+  mutate(nr_revisitpatterns_per_scheme = n(), .by = scheme) %>% 
+  filter(nr_revisitpatterns_per_scheme > 1) %>% 
+  unnest(module_combo) %>% 
+  summarize(
+    has_pan2124 = any(module_combo_code == "pan2124"),
+    .by = scheme
+  ) %>% 
+  pull(has_pan2124) %>% 
+  all()
+```
+
+From inspection of `scheme_target_paneldesign`, we decide to use the following order to prioritize module combos in the GRTS sampling.
+
+```{r}
+moco_order <- tribble(
+  ~module_combo_code, ~moco_rank,
+  "panfl_pan5_pan2124_mbaa", 1L,
+  "panfl_pan5_pan2124", 1L,
+  "panfl_pan5_mbaa", 1L,
+  "panfl_pan5", 1L,
+  "panfl", 1L,
+  "pan5", 1L,
+  "mbaa", 1L,
+  "pan2124", 2L
+)
+```
+
+Note that panel splits are always ranked in ascending order, assuming that panel split 1 represents the _largest_ number of sampling units.
+This should be taken into account when defining the panel splits.
+
+To maximize matching of spatial samples across schemes, the module combo codes with the same rank within a common panel split rank will be forced to use the same subset of a GRTS series (i.e. GRTS address partition) for a particular stratum and domain!
+
+Check that no module combos exist that are missed by above object.
+
+```{r}
+stopifnot(all(
+  scheme_target_paneldesign$module_combo_code %in% moco_order$module_combo_code
+))
+```
+
+Note that _different_ module combos within a scheme are **currently** handled as if they were different panel splits, i.e. they need a separate portion of the GRTS series to sample from; the starting address could be set based on sample size proportion but after that the starting address should be held fixed.
+
+Note that this may not hold in general.
+This is currently invoked by the `mne2024_pan_be2100024_restoration` module, which explicitly intends to apply the higher frequency monitoring to **new** (hence _extra_) monitoring locations, relative to the other modules.
+However it can also happen that future modules increase frequencies at the locations of existing modules.
+Nevertheless, it should be warned that this approach can lead to challenging situations, once an original module stops: the extra module didn't foresee the needed budget to support this and the remaining visits (of the new module) may be pointless.
+
+It should also be accepted that for rare types, these samples may by necessity overlap between module combos.
+Hence, this should be simplified afterwards to avoid unnecessary duplication of fieldwork planning.
 
 ### Spatial samples
 
