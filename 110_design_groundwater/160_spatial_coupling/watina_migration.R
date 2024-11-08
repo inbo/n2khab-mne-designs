@@ -83,10 +83,10 @@ connect_watina <- function(database_name = "W0002_10_Watina") {
 get_db_table_list <- function( conn = NULL ) {
 
   # availability of assertthat and other packages
-  stopifnot(assertthat = require("assertthat"),
-            DBI = require("DBI"),
-            dbplyr = require("dplyr"),
-            magrittr = require("magrittr")
+  stopifnot(assertthat = require('assertthat'),
+            DBI = require('DBI'),
+            dbplyr = require('dplyr'),
+            magrittr = require('magrittr')
             )
 
   # if no connection is given, open one
@@ -140,9 +140,9 @@ get_locs <- function(conn,
                      collect = FALSE) {
 
   # availability of assertthat and other packages
-  stopifnot(assertthat = require("assertthat"),
-            dbplyr = require("dplyr"),
-            magrittr = require("magrittr")
+  stopifnot(assertthat = require('assertthat'),
+            dbplyr = require('dplyr'),
+            magrittr = require('magrittr')
             )
 
 
@@ -488,3 +488,64 @@ get_locs <- function(conn,
 
 
 
+#----------------
+#--- SPATIAL ----
+#----------------
+
+
+#' Filter points within a radius
+#'
+#' Selects all points from a collection of points which
+#' are within a given radius from a center.
+#'
+#' @param center a point of XY coordinates
+#' in Belgian Lambert 72 (EPSG-code 31370) crs.
+#' If this is given as a simple XY vector, conversion
+#' to an `st_point` is attempted.
+#' @param radius the filter radius, in meters
+#' @param points a collection of `sf` points
+#'
+#' @return a subset of the given points.
+#'
+#' @examples
+#' \dontrun{
+#' points_within_radius(
+#'   c(148600, 208900),
+#'   100,
+#'   watina::as_points(obswells_db %>% collect())
+#' )
+#' }
+#'
+points_within_radius <- function(center, radius, points) {
+
+  # make sure `sf` is loaded
+  stopifnot(sf = require('sf'))
+  stopifnot(watina = require('watina'))
+
+  # ensure center is a point
+  if (!inherits(center, "POINT")) {
+    tryCatch({
+      center <- st_point(x = center, dim = "XY")
+    }, error = function(e) {
+      message("could not convert center to POINT:")
+      stop(e)
+    })
+  }
+
+  # assert data types of the other arguments
+  assert_that(inherits(points, "sf"),
+    msg = "The `points` must be an `sf` object.")
+
+  assert_that(is.numeric(radius) && radius >= 0,
+    msg = "radius must be numeric and greater than zero.")
+
+  # create a buffer around the center point
+  buf <- st_buffer(center, dist = radius)
+
+  # compute the intersect of points and buffer
+  intersect <- st_intersects(buf, points)[[1]]
+
+  # return the matched points
+  return(points[intersect, ])
+
+} # /points_within_radius
