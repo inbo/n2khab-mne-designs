@@ -39,6 +39,7 @@ watina_dwh <- connect_watina()
 
 
 n2khab_data_path <- locate_n2khab_data()
+# options(n2khab_data_path = "C:\\R\\n2khab_data")
 
 # options(browser = "librewolf") # a rather personal thing
 ```
@@ -100,8 +101,8 @@ TODO: unit test or vignette - query of a test area will not be empty
 ```{r}
 
 source("./watina_migration.R")
-soilmap_raw <-
-  read_soilmap()
+source("./zenodo_helper.R")
+soilmap_raw <- load_zenodo_data("soilmap")
 
 soilmap <- soilmap_raw %>%
   transmute(
@@ -253,12 +254,14 @@ hopo_points <- get_locs_in_radius(conn = watina_dwh,
 There are multiple valid sources for close-by water.
 ```{r}
 source("./water_sources.R")
-watersurf_raw <- read_watersurfaces()
-waterstreams_raw <- read_habitatstreams()
-watercourses_raw <- read_watercourses()
-watercourses_100m <- read_watercourse_100mseg(element = "lines")
+source("./zenodo_helper.R")
+watersurf_raw <- load_zenodo_data("watersurfaces")
+waterstreams_raw <- load_zenodo_data("habitatstreams")
+watercourses_raw <- load_zenodo_data("watercourses")
+watercourses_100m <- load_zenodo_data("watercourse_100mseg", element = "lines")
 
 ```
+
 
 
 Looking at the example region:
@@ -560,36 +563,15 @@ e.g. `well_candidate <- CandidatePoint$new(xy)`
 # misc
 Some `n2khab_data` sources are required:
 
-- `soilmap`:
-```{r, eval=FALSE}
-n2khab_data_path <- locate_n2khab_data()
-soilmap_path <- file.path(n2khab_data_path, "10_raw/soilmap")
-dir.create(soilmap_path)
-download_zenodo(
-  doi = "10.5281/zenodo.3387008",
-  path = soilmap_path,
-  parallel = TRUE
-)
-```
+- `soilmap`
+- `watercourses`
 
- 
-- ... and watercourses:
-```{r, eval=FALSE}
-watercourse_simple_path <- file.path(n2khab_data_path, "20_processed/watercourse_100mseg")
-dir.create(watercourse_simple_path, recursive = TRUE)
-download_zenodo(
-  doi = "10.5281/zenodo.4452577",
-  path = watercourse_simple_path
-)
-```
 
-- ... and watercourses:
+Use `zenodo_helper.R`.
+
 ```{r, eval=FALSE}
-n2khab_data_path <- locate_n2khab_data()
-watercourse_raw_path <- file.path(n2khab_data_path, "10_raw/watercourses")
-dir.create(watercourse_raw_path, recursive = TRUE)
-download_zenodo(
-  doi = "10.5281/zenodo.4420905",
-  path = watercourse_raw_path
-)
+source("zenodo_helper.R")
+soilmap_simple <- load_zenodo_data("soilmap_simple", 
+                                   lazy = FALSE)
+# same for soilmap, watercourse_100mseg, watercourses, ...
 ```

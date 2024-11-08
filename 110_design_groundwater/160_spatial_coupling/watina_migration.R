@@ -83,10 +83,10 @@ connect_watina <- function(database_name = "W0002_10_Watina") {
 get_db_table_list <- function( conn = NULL ) {
 
   # availability of assertthat and other packages
-  stopifnot(assertthat = require("assertthat"),
-            DBI = require("DBI"),
-            dbplyr = require("dplyr"),
-            magrittr = require("magrittr")
+  stopifnot(assertthat = require('assertthat'),
+            DBI = require('DBI'),
+            dbplyr = require('dplyr'),
+            magrittr = require('magrittr')
             )
 
   # if no connection is given, open one
@@ -485,6 +485,3 @@ get_locs <- function(conn,
   return(locs)
 
 } #/get_locs
-
-
-
