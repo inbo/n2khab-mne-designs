@@ -1,34 +1,4 @@
-read_watercourses_src <- function () {
-    source("water_sources.R")
-    return(read_watercourses())
-}
-
-stopifnot(assertthat = require('assertthat'),
-          n2khab = require('n2khab')
-          )
-
-n2khab_read_functions <- list(
-  "habitatmap" = read_habitatmap,
-  "habitatmap_stdized" = read_habitatmap_stdized,
-  "habitatmap_terr" = read_habitatmap_terr,
-  "habitatsprings " = read_habitatsprings,
-  "habitatstreams " = read_habitatstreams ,
-  "habitatquarries " = read_habitatquarries,
-
-  "watersurfaces " = read_watersurfaces,
-  "watercourses " = read_watercourses_src,
-  "shallowgroundwater " = read_shallowgroundwater,
-
-  "watersurfaces_hab " =
-    function (...) read_watersurfaces_hab(..., interpreted = FALSE),
-  "watercourse_100mseg " = read_watercourse_100mseg,
-
-  "soilmap " = read_soilmap,
-  "soilmap_simple " =
-    function (file, ...) read_soilmap(file, simplify = TRUE, ...)
-)
-
-
+# https://inbo.github.io/n2khab/reference/index.html
 
 
 #' Get a dataframe which stores zenodo sources (n2khab_data).
@@ -93,6 +63,62 @@ get_zenodo_library <- function() {
 
 
 
+#' Provide a list with reader functions in n2khab.
+#'
+#' Assembled list of reader functions in `n2khab`.
+#' Variants and own functions can be added.
+#'
+#' @return list with "key/readfunction" association.
+#'
+get_n2khab_read_functionlist <- function() {
+
+  read_watercourses_src <- function (...) {
+      source("water_sources.R")
+      return(read_watercourses(...))
+  }
+
+  stopifnot(assertthat = require('assertthat'),
+            n2khab = require('n2khab')
+            )
+
+  n2khab_read_functions <- list(
+    "habitatmap" = read_habitatmap,
+    "habitatmap_stdized" = function (file, ...) read_habitatmap_stdized(
+                              file.path(file, "habitatmap_stdized.gpkg"), ...),
+    "habitatmap_terr" = function (file, ...) read_habitatmap_terr(
+                              file.path(file, "habitatmap_terr.gpkg"), ...),
+    "habitatsprings" = function (file, ...) read_habitatsprings(
+                              file.path(file, "habitatsprings.geojson"), ...),
+    "habitatstreams" = read_habitatstreams,
+    "habitatquarries" = function (file, ...) read_habitatquarries(
+                              file.path(file, "habitatquarries.gpkg"), ...),
+
+    "watersurfaces" = function (file, ...) read_watersurfaces(
+                              file.path(file, "watersurfaces.gpkg"), ...),
+    "watercourses" = read_watercourses_src,
+    "shallowgroundwater" = function (file, ...) read_shallowgroundwater(
+                              file.path(file, "shallowgroundwater.gpkg"), ...),
+
+    "watersurfaces_hab" =
+      function (file, ...) read_watersurfaces_hab(
+        file.path(file, "watersurfaces_hab.gpkg"),
+        interpreted = FALSE, ...),
+    "watercourse_100mseg" = function (file, ...) read_watercourse_100mseg(
+                              file.path(file, "watercourse_100mseg.gpkg"), ...),
+
+    "soilmap" =  function (file, ...) read_soilmap(
+           file, use_processed = FALSE, ...),
+    "soilmap_simple" =
+      function (file, ...) read_soilmap(
+               file.path(file, "soilmap_simple.gpkg"), ...)
+  )
+  return(n2khab_read_functions)
+
+}
+
+
+
+
 #' (Down-)load zenodo data.
 #'
 #' Load zenodo data.
@@ -115,7 +141,8 @@ get_zenodo_library <- function() {
 load_zenodo_data <- function(
     key,
     n2khab_data_path = NULL,
-    lazy = FALSE
+    lazy = FALSE,
+    ...
     ) {
 
   # availability of assertthat and other packages
@@ -138,8 +165,18 @@ load_zenodo_data <- function(
   is_processed <- zenodo_library[key,]['is_processed']
   data_branch <- if (is_processed) "20_processed" else "10_raw"
 
+  # user may set the path as an option
   if (is.null(n2khab_data_path)) {
-    # find n2khab data path
+    option_path <- getOption("n2khab_data_path", default = NA)
+
+    if (!is.na(option_path)) {
+      n2khab_data_path <- option_path
+    }
+  }
+
+  # find n2khab data path
+  # (should also check environment variables)
+  if (is.null(n2khab_data_path)) {
     tryCatch({
       n2khab_data_path <- locate_n2khab_data()
     }, error = function(e) {
@@ -181,10 +218,15 @@ load_zenodo_data <- function(
     return(invisible(NULL))
   }
 
+
+  # get the list of data reader functions
+  n2khab_read_functions <- get_n2khab_read_functionlist()
+
   # get the loading function and load the data
   if (key %in% names(n2khab_read_functions)) {
     lfcn <- n2khab_read_functions[[key]]
-    data <- lfcn(file = data_path)
+    data <- lfcn(file = data_path, ...)
+    message("Data `", key, "` loaded.")
     return(data)
   }
 
@@ -212,3 +254,4 @@ fetch_all_zenodo_data <- function(n2khab_data_path = NULL) {
       lazy = TRUE)
   }
 }
+
