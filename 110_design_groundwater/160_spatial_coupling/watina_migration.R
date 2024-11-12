@@ -169,11 +169,11 @@ get_locs <- function(conn,
   assert_that(is.null(area_codes) | all(is.character(area_codes)))
   assert_that(is.null(loc_vec) | all(is.character(loc_vec)),
               msg = "loc_vec must be a character vector.")
-  assert_that(is.flag(join_mask), noNA(join_mask))
-  assert_that(is.flag(collect), noNA(collect))
-  assert_that(is.flag(obswells), noNA(obswells))
-  assert_that(is.flag(filterdepth_guess), noNA(filterdepth_guess))
-  assert_that(is.flag(filterdepth_na), noNA(filterdepth_na))
+  assert_that(is.flag(join_mask), assertthat::noNA(join_mask))
+  assert_that(is.flag(collect), assertthat::noNA(collect))
+  assert_that(is.flag(obswells), assertthat::noNA(obswells))
+  assert_that(is.flag(filterdepth_guess), assertthat::noNA(filterdepth_guess))
+  assert_that(is.flag(filterdepth_na), assertthat::noNA(filterdepth_na))
 
   obswell_aggr <- match.arg(obswell_aggr)
 

@@ -129,6 +129,8 @@ get_n2khab_read_functionlist <- function() {
 #'        is stored.
 #' @param lazy boolean to indicate whether actual loading is skipped
 #'        (i.e. download only).
+#' @param force_download boolean to force re-loading (e.g. on data source
+#'        update)
 #'
 #' @return the data set selected.
 #'
@@ -142,6 +144,7 @@ load_zenodo_data <- function(
     key,
     n2khab_data_path = NULL,
     lazy = FALSE,
+    force_download = FALSE,
     ...
     ) {
 
@@ -203,8 +206,8 @@ load_zenodo_data <- function(
     dir.create(data_path, recursive = TRUE)
   }
 
-  # download zenodo data
-  if (length(list.files(data_path))>0) {
+  # download zenodo data, if opportune
+  if ((!force_download) && length(list.files(data_path))>0) {
     message("Data '", key, "' already exists! (Skipping.)")
   } else {
     download_zenodo(
