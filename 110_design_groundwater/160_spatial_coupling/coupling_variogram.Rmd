@@ -208,13 +208,21 @@ locs <- get_locs(
   watina_dwh,
   obswells = TRUE, 
   collect = TRUE
-)
+) 
 locs %>% count
 ```
 
 
 ```{r}
-locs %>% select(obswell_code, x, y)
+test_locs <- locs %>%
+  filter(area_code == "BUI") %>%
+  select(obswell_code, loc_code, x, y) %>%
+  arrange(obswell_code)
+test_data <- data_raw %>%
+  filter(region == "BUI") %>%
+  arrange(pp1)
+
+
 ```
 
 
@@ -229,8 +237,8 @@ data <- data_raw %>%
     relationship = "many-to-one"
   ) %>% rename(c("x1" = x, "y1" = y)) %>%
   left_join(
-    select(locs, id, x, y),
-    by = join_by(pp2 == id),
+    select(locs, obswell_code, x, y),
+    by = join_by(pp2 == obswell_code),
     relationship = "many-to-one"
   ) %>% rename(c("x2" = x, "y2" = y))
 
