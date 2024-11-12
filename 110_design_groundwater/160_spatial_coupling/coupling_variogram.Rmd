@@ -1,0 +1,245 @@
+---
+title: "Spatial Coupling of Observation Wells: Variograms"
+author: "Falk Mielke"
+date: "`r lubridate::today()`"
+output:
+  html_document:
+    keep_md: TRUE
+    number_sections: yes
+    code_folding: show
+    code_download: yes
+    fig_width: 10
+    fig_height: 5
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../../header.html
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("dplyr")
+# library("dbplot")
+library("watina")
+library("n2khab")
+# library("terra")
+# library("sf")
+library("stringr")
+library("ggplot2")
+# library("mapview")
+library("DBI")
+library("arrow")
+
+source("./watina_migration.R")
+# source("./spatial_helpers.R")
+
+# watina_dwh <- connect_watina()
+watina_dwh <- connect_watina()
+
+
+# n2khab_data_path <- locate_n2khab_data()
+# options(n2khab_data_path = "C:\\R\\n2khab_data")
+
+# options(browser = "librewolf") # a rather personal thing
+```
+
+
+With this notebook, I plan to download chemical data from watina,
+cross compute differences,
+and quantify variogram parameters
+to estimate spatial similarity range.
+
+# Chemical Data
+## rationale/demarcation
+The measurement intervals and data structure of hydrogeographical and chemical data in `watinA` are fundamentally different, and justify separate investigation.
+In particular:
+
+- Temporal sampling: water levels are monitored quasi-continuously (ideally), whereas chemical measurements happen twice a year at best.
+- Chemistry: water levels are one simple measure, whereas chemistry comes as a set of multiple compoud classess.
+- Methodology: there are detection limits on the chemistry side, and known pressure/level interdependencies (e.g. well/seepage areas) on the physical side.
+- Recurrency: both measurement types show recurrent structure, which might be linked, but not directly.
+
+
+Herein, I focus on chemistry, and more specifically on the following compound classes:
+
+- \(NO_2\)
+- \(NO_3\)
+- \(NH_4\)
+- \(PO_4\)
+
+
+I will query pairs of (approximately) simultaneously samples sites and quantify differences of measurement outcome, depending on site distance. 
+And then we'll see.
+
+
+## glimpse at the database
+To create the query below, knowledge of the database structure is beneficial.
+
+The `dimDatum` table:
+```{r}
+glimpse(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT *
+    FROM dimDatum
+      ")
+  ))
+```
+
+I will use `Jaardag_Nummer/365.0 + Jaar` for restricting time difference.
+
+
+
+The `dimPeilpunt` table:
+```{r}
+glimpse(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT *,
+        SUBSTRING(PeilpuntCode, 1, 4) AS region
+    FROM dimPeilpunt
+      ")
+  ))
+```
+
+I will use `SUBSTRING(PeilpuntCode, 1, 3) = GebiedCode` equality for restricting spatial distance.
+
+
+
+The `dimGebied` table:
+```{r}
+glimpse(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT *
+    FROM dimGebied
+      ")
+  ))
+```
+
+-> `GebiedCode` can be used to join locs afterwards.
+
+
+## data query
+There are existing `watina` functions for chemical data.
+However, in my experience, SQL is efficient at cross-joining large tables.
+
+Therefore, I will use a direct query to get the difference-distance data.
+
+
+```{r, eval=FALSE}
+data_raw <- DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT * FROM (
+      SELECT
+        CHM1.ChemMetingWID AS id1,
+        CHM1.pp_code AS pp1,
+        CHM1.MetingStatusCode AS status1,
+        CHM1.DatumWID AS date1,
+        CHM1.time AS t1,
+        CHM1.Meetwaarde AS mw1,
+        CHM2.ChemMetingWID AS id2,
+        CHM2.pp_code AS pp2,
+        CHM2.MetingStatusCode AS status2,
+        CHM2.DatumWID AS date2,
+        CHM2.Meetwaarde AS mw2,
+        CHM1.ChemVarWID AS chemvar_id,
+        CHM1.region AS region
+      FROM (
+        SELECT
+            FactChemischeMeting.*,
+            Jaardag_Nummer/365.0 + Jaar AS time,
+            SUBSTRING(PeilpuntCode, 1, 3) AS region,
+            dimPeilpunt.PeilpuntCode AS pp_code
+        FROM FactChemischeMeting
+        LEFT JOIN dimDatum ON FactChemischeMeting.DatumWID = dimDatum.DatumWID
+        LEFT JOIN dimPeilpunt ON FactChemischeMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+        ) CHM1
+      LEFT JOIN (
+        SELECT
+            FactChemischeMeting.*,
+            Jaardag_Nummer/365.0 + Jaar AS time,
+            SUBSTRING(PeilpuntCode, 1, 3) AS region,
+            dimPeilpunt.PeilpuntCode AS pp_code
+        FROM FactChemischeMeting
+        LEFT JOIN dimDatum ON FactChemischeMeting.DatumWID = dimDatum.DatumWID
+        LEFT JOIN dimPeilpunt ON FactChemischeMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+        ) CHM2
+        ON (CHM1.ChemVarWID = CHM2.ChemVarWID)
+       AND (CHM1.region = CHM2.region)
+      WHERE CHM1.ChemVarWID IN (6, 7, 9)
+        AND CHM2.MetingStatusCode = CHM1.MetingStatusCode
+        AND CHM2.DatumWID >= CHM1.DatumWID
+        AND (CHM2.time - CHM1.time) < (30.0/365)
+        AND (CHM2.ChemMetingWID != CHM1.ChemMetingWID)
+        AND (CHM1.PeilpuntWID < CHM2.PeilpuntWID)
+        AND CHM1.MetingStatusCode IN ('VLD', 'SDV', 'UNK')
+      ) AS ChemRepeated
+    LEFT JOIN (
+      SELECT
+        ChemVarWID,
+        ChemVarCode AS compound,
+        ChemVarEenheid AS unit
+      FROM DimChemVar
+      ) AS DCV
+      ON DCV.ChemVarWID = ChemRepeated.chemvar_id
+      ")
+  )
+write_parquet(data_raw, sink = "chem_couplingdata_arrow.parquet")
+```
+
+
+```{r}
+data_raw <- read_parquet("chem_couplingdata_arrow.parquet")
+glimpse(data_raw)
+```
+
+
+## obswell locations
+On the other hand, for the query of spatial information, `get_locs` will be fine.
+
+```{r}
+area_code_selection <- data_raw %>%
+  pull(region) %>%
+  unique
+
+locs <- get_locs(
+  watina_dwh,
+  obswells = TRUE, 
+  collect = TRUE
+)
+locs %>% count
+```
+
+
+```{r}
+locs %>% select(obswell_code, x, y)
+```
+
+
+## double-joining locs
+Comparing two locations, I will join the locs twice: 
+
+```{r}
+data <- data_raw %>%
+  left_join(
+    select(locs, obswell_code, x, y),
+    by = join_by(pp1 == obswell_code),
+    relationship = "many-to-one"
+  ) %>% rename(c("x1" = x, "y1" = y)) %>%
+  left_join(
+    select(locs, id, x, y),
+    by = join_by(pp2 == id),
+    relationship = "many-to-one"
+  ) %>% rename(c("x2" = x, "y2" = y))
+
+glimpse(data)
+```
+
+
+
+```{r}
+locs %>%
+  filter(obswell_code == 6100)
+```
