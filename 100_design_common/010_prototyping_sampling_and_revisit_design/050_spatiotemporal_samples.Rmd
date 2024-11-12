@@ -356,20 +356,31 @@ dom_stratum_grtspart_threshold <-
             ##################################
             n_spare_units_theoretical = round(max_sample_size_all_panels * 
               ifelse(aq, spare_coef_aq, spare_coef_default)),
+            # first GRTS address of a GRTS partition
             grts_address_start = pick_grts_thresholds(
               max_sample_size_all_panels,
               n_spare_units_theoretical,
               grts$grts_address
             ),
+            # index of the first GRTS address of a GRTS partition
             grts_index_start = which(
               sort(grts$grts_address) %in% grts_address_start
             ),
+            # index of the last GRTS address of the max sample size per GRTS
+            # partition. Note that this may exceed the index_start of the next
+            # GRTS partitions if the partitions overlap.
             grts_index_end = grts_index_start + max_sample_size_all_panels - 1L,
+            # index of the last GRTS address of the GRTS partition if we define
+            # it using the index_start of the next partition minus 1. This
+            # may be smaller than grts_index_end in overlap cases
             grts_gap_end = dplyr::lead(
               grts_index_start - 1L, 
               default = length(grts$grts_address)
             ),
+            # GRTS address corresponding to grts_gap_end
             grts_address_gap_end = sort(grts$grts_address)[grts_gap_end],
+            # maximum number of spare units that we will select in a GRTS
+            # partition
             n_spare_units = pmin(
               n_spare_units_theoretical,
               grts_gap_end - grts_index_end
