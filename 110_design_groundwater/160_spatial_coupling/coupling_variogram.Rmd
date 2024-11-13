@@ -66,11 +66,11 @@ In particular:
 
 Herein, I focus on chemistry, and more specifically on the following compound classes:
 
-- \(NO_2\)
 - \(NO_3\)
 - \(NH_4\)
 - \(PO_4\)
 
+We will not regard \(NO_2\).
 
 I will query pairs of (approximately) simultaneously samples sites and quantify differences of measurement outcome, depending on site distance. 
 And then we'll see.
@@ -121,11 +121,32 @@ glimpse(DBI::dbGetQuery(watina_dwh,
 -> `GebiedCode` can be used to join locs afterwards.
 
 
+
+The `dimChemVar` table:
+```{r}
+head(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT ChemVarWID, ChemVarNaam, ChemVarEenheid, Ion
+    FROM dimChemVar
+      ")
+  ), 32)
+```
+
+-> `GebiedCode` can be used to join locs afterwards.
+
+
 ## data query
 There are existing `watina` functions for chemical data.
 However, in my experience, SQL is efficient at cross-joining large tables.
 
 Therefore, I will use a direct query to get the difference-distance data.
+
+This includes several filters:
+
+- maximal sampling interval: 30d
+- maximal filterdepth difference: 0.5m
+- ChemVar listed above 
+- validation VLD, SDV, UNK
 
 
 ```{r, eval=FALSE}
@@ -133,24 +154,28 @@ data_raw <- DBI::dbGetQuery(watina_dwh,
   paste0("
     SELECT * FROM (
       SELECT
+        CHM1.region AS region,
+        CHM1.ChemVarWID AS chemvar_id,
         CHM1.ChemMetingWID AS id1,
         CHM1.pp_code AS pp1,
+        CHM1.filterdepth AS z1,
         CHM1.MetingStatusCode AS status1,
         CHM1.DatumWID AS date1,
         CHM1.time AS t1,
         CHM1.Meetwaarde AS mw1,
         CHM2.ChemMetingWID AS id2,
         CHM2.pp_code AS pp2,
+        CHM2.filterdepth AS z2,
         CHM2.MetingStatusCode AS status2,
         CHM2.DatumWID AS date2,
-        CHM2.Meetwaarde AS mw2,
-        CHM1.ChemVarWID AS chemvar_id,
-        CHM1.region AS region
+        CHM2.time AS t2,
+        CHM2.Meetwaarde AS mw2
       FROM (
         SELECT
             FactChemischeMeting.*,
             Jaardag_Nummer/365.0 + Jaar AS time,
             SUBSTRING(PeilpuntCode, 1, 3) AS region,
+            (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)) AS filterdepth,
             dimPeilpunt.PeilpuntCode AS pp_code
         FROM FactChemischeMeting
         LEFT JOIN dimDatum ON FactChemischeMeting.DatumWID = dimDatum.DatumWID
@@ -161,6 +186,7 @@ data_raw <- DBI::dbGetQuery(watina_dwh,
             FactChemischeMeting.*,
             Jaardag_Nummer/365.0 + Jaar AS time,
             SUBSTRING(PeilpuntCode, 1, 3) AS region,
+            (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)) AS filterdepth,
             dimPeilpunt.PeilpuntCode AS pp_code
         FROM FactChemischeMeting
         LEFT JOIN dimDatum ON FactChemischeMeting.DatumWID = dimDatum.DatumWID
@@ -168,12 +194,13 @@ data_raw <- DBI::dbGetQuery(watina_dwh,
         ) CHM2
         ON (CHM1.ChemVarWID = CHM2.ChemVarWID)
        AND (CHM1.region = CHM2.region)
-      WHERE CHM1.ChemVarWID IN (6, 7, 9)
+      WHERE CHM1.ChemVarWID IN (6, 7, 8, 9)
         AND CHM2.MetingStatusCode = CHM1.MetingStatusCode
-        AND CHM2.DatumWID >= CHM1.DatumWID
         AND (CHM2.time - CHM1.time) < (30.0/365)
+        AND ABS(CHM2.filterdepth - CHM1.filterdepth) <= 1.0
         AND (CHM2.ChemMetingWID != CHM1.ChemMetingWID)
         AND (CHM1.PeilpuntWID < CHM2.PeilpuntWID)
+        AND CHM2.DatumWID >= CHM1.DatumWID
         AND CHM1.MetingStatusCode IN ('VLD', 'SDV', 'UNK')
       ) AS ChemRepeated
     LEFT JOIN (
@@ -185,7 +212,7 @@ data_raw <- DBI::dbGetQuery(watina_dwh,
       ) AS DCV
       ON DCV.ChemVarWID = ChemRepeated.chemvar_id
       ")
-  )
+  ) %>% select(-ChemVarWID)
 write_parquet(data_raw, sink = "chem_couplingdata_arrow.parquet")
 ```
 
@@ -207,27 +234,88 @@ area_code_selection <- data_raw %>%
 locs <- get_locs(
   watina_dwh,
   obswells = TRUE, 
+  filterdepth_range = c(0, 1000),
   collect = TRUE
 ) 
-locs %>% count
+locs %>% filter(loc_code == "BUIP003") %>% arrange(loc_code)
+```
+
+
+```{r}
+test_data <- data_raw %>%
+  filter(region == "VOT") %>%
+  summarize(
+    count = n(),
+    .by = c(pp1, status1)
+  ) %>%
+  arrange(pp1)
+head(test_data, 10)
 ```
 
 
 ```{r}
 test_locs <- locs %>%
-  filter(area_code == "BUI") %>%
+  filter(area_code == "VOT") %>%
   select(obswell_code, loc_code, x, y) %>%
-  arrange(obswell_code)
-test_data <- data_raw %>%
-  filter(region == "BUI") %>%
-  arrange(pp1)
+  arrange(obswell_code) 
+head(test_locs, 10)
+```
+- ~~`test_locs` does not contain `BUIP003X`~~
 
-
+```{r}
+head(test_data %>%
+  left_join(
+    test_locs,
+    by = join_by(pp1 == obswell_code)
+  ) %>% summarize(
+    count = n(),
+    .by = c(pp1, loc_code)
+  ), 16)
 ```
 
 
+- `pp1` from `data_raw` comes directly from `dimPeilpunt`, joined to `dimChemischeMeting`.
+- `loc_code` in `locs` comes from `vwDimMeetpunt` (`loc_type == P`!), on which we join `vwDimPeilpunt` (`PeilpuntStatusCode IN (VLD, ENT, CLD)`)
+- Other Filters in `get_locs`:
+  - `PeilpuntOpenbaarheidTypeCode` / `OpenbaarheidWID`
+  - `PeilbuisLengte`, `FilterLengte`, `ReferentieNiveauMaaiveld`
+  - `filterdepth_range` was the killer!
+
+```{r}
+head(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT
+        MeetpuntCode,
+        PeilpuntCode,
+        MeetpuntTypeCode,
+        MeetpuntStatusCode,
+        MeetpuntXCoordinaat,
+        MeetpuntYCoordinaat,
+        OpenbaarheidWID,
+        PeilpuntStatusCode,
+        COUNT(PeilpuntWID) AS cnt
+    FROM dimPeilpunt AS PPT
+    LEFT JOIN dimMeetpunt AS MPT
+      ON MPT.MeetpuntWID = PPT.MeetpuntWID
+    WHERE PeilpuntCode LIKE 'VOT%'
+    GROUP BY
+        MeetpuntCode,
+        PeilpuntCode,
+        MeetpuntTypeCode, 
+        MeetpuntStatusCode, 
+        MeetpuntXCoordinaat,
+        MeetpuntYCoordinaat,
+        OpenbaarheidWID,
+        PeilpuntStatusCode
+    ORDER BY PeilpuntCode ASC
+      ")
+  ), 10)
+```
+
 ## double-joining locs
-Comparing two locations, I will join the locs twice: 
+Comparing two locations, I will join the locs twice: once to every location in the pair.
+Then, distances and differences are computed, and relevant entries filtered.
+Finally, factors are generated from categorical variables.
 
 ```{r}
 data <- data_raw %>%
@@ -240,14 +328,55 @@ data <- data_raw %>%
     select(locs, obswell_code, x, y),
     by = join_by(pp2 == obswell_code),
     relationship = "many-to-one"
-  ) %>% rename(c("x2" = x, "y2" = y))
+  ) %>% rename(c("x2" = x, "y2" = y)) %>%
+  filter_at(
+    vars(x1, x2, y1, y2, z1, z2),
+    all_vars(!is.na(.))
+  ) %>%
+  mutate(
+    dx = sqrt((x2-x1)^2 + (y2-y1)^2),
+    dt = sqrt((t2-t1)^2),
+    dz = z2-z1,
+    dmw = mw2 - mw1,
+    dmw_rel = (mw2 - mw1) / (abs(mw1) + abs(mw2))
+  ) %>%
+  filter(
+    !(compound == "N-NO2"),
+    dx > 0,
+    dx <= 100,
+    abs(dmw) <= 10,
+    t1 > 2000
+  ) %>%
+  mutate_at(
+    vars(
+      region,
+      chemvar_id,
+      status1,
+      status2,
+      compound,
+      unit
+    ), as.factor
+  )
 
-glimpse(data)
 ```
 
 
+```{r}
+data %>%
+  summarize(cnt = n(), .by = c(compound))
+```
+
+TODO: soilclass
+
+# Difference-Distance Plot
 
 ```{r}
-locs %>%
-  filter(obswell_code == 6100)
+glimpse(data)
+```
+
+```{r}
+data %>%
+  ggplot(aes(x = dx, y = log(abs(dmw)+1.0), color = compound)) +
+  geom_point() +
+  geom_smooth()
 ```

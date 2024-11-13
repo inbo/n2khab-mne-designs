@@ -231,7 +231,6 @@ get_locs <- function(conn,
                            GebiedNaam),
                 by = "GebiedWID")
 
-
   # location subsets
   # (1) specified loc vector
   if (!is.null(loc_vec)) {
@@ -346,6 +345,7 @@ get_locs <- function(conn,
         ) # piezometers with filter depth within range
       ) # filter
   }
+
 
   # optionally return all observation wells
   # if (obswells == FALSE): distinguish location

@@ -1,4 +1,5 @@
 # https://inbo.github.io/n2khab/reference/index.html
+# TODO see https://docs.google.com/spreadsheets/d/1E8ERlfYwP3OjluL8d7_4rR1W34ka4LRCE35JTxf3WMI/edit?gid=2100595853#gid=2100595853
 
 
 #' Get a dataframe which stores zenodo sources (n2khab_data).
