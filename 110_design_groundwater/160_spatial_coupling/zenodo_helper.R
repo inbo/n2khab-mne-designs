@@ -209,7 +209,7 @@ load_zenodo_data <- function(
 
   # download zenodo data, if opportune
   if ((!force_download) && length(list.files(data_path))>0) {
-    message("Data '", key, "' already exists! (Skipping.)")
+    message("Data '", key, "' already exists! (`force_download` was FALSE -> skipping download.)")
   } else {
     download_zenodo(
       doi = zenodo_library[key,]["doi"],

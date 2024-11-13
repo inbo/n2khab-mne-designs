@@ -27,7 +27,7 @@ library("dplyr")
 library("watina")
 library("n2khab")
 # library("terra")
-# library("sf")
+library("sf")
 library("stringr")
 library("ggplot2")
 # library("mapview")
@@ -35,6 +35,7 @@ library("DBI")
 library("arrow")
 
 source("./watina_migration.R")
+source("./zenodo_helper.R")
 # source("./spatial_helpers.R")
 
 # watina_dwh <- connect_watina()
@@ -52,6 +53,7 @@ With this notebook, I plan to download chemical data from watina,
 cross compute differences,
 and quantify variogram parameters
 to estimate spatial similarity range.
+
 
 # Chemical Data
 ## rationale/demarcation
@@ -237,8 +239,251 @@ locs <- get_locs(
   filterdepth_range = c(0, 1000),
   collect = TRUE
 ) 
-locs %>% filter(loc_code == "BUIP003") %>% arrange(loc_code)
+# locs %>% filter(loc_code == "BUIP003") %>% arrange(loc_code)
 ```
+
+
+## double-joining locs
+Comparing two locations, I will join the locs twice: once to every location in the pair.
+Then, distances and differences are computed, and relevant entries filtered.
+Finally, factors are generated from categorical variables.
+
+```{r}
+data <- data_raw %>%
+  left_join(
+    select(locs, obswell_code, x, y),
+    by = join_by(pp1 == obswell_code),
+    relationship = "many-to-one"
+  ) %>% rename(c("x1" = x, "y1" = y)) %>%
+  left_join(
+    select(locs, obswell_code, x, y),
+    by = join_by(pp2 == obswell_code),
+    relationship = "many-to-one"
+  ) %>% rename(c("x2" = x, "y2" = y)) %>%
+  filter_at(
+    vars(x1, x2, y1, y2, z1, z2),
+    all_vars(!is.na(.))
+  ) %>%
+  mutate(
+    dx = sqrt((x2-x1)^2 + (y2-y1)^2),
+    dt = sqrt((t2-t1)^2),
+    dz = z2-z1,
+    dmw = mw2 - mw1,
+    dmw_rel = (mw2 - mw1) / (abs(mw1) + abs(mw2))
+  ) %>%
+  filter(
+    !(compound == "N-NO2"),
+    dx > 0,
+    dx <= 100,
+    abs(dmw) <= 10
+  ) %>%
+  mutate_at(
+    vars(
+      region,
+      chemvar_id,
+      status1,
+      status2,
+      compound,
+      unit
+    ), as.factor
+  )
+
+```
+
+
+```{r}
+data %>%
+  summarize(cnt = n(), .by = c(compound))
+```
+
+## soilclass
+```{r}
+soilmap_raw <- load_zenodo_data('soilmap')
+
+soilmap <- soilmap_raw %>%
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      .default = "unknown"
+    ) %>%
+      factor()
+  )
+
+```
+
+
+
+```{r}
+loc_p1 <- st_join(
+  data %>%
+    as_points(xvar = "x1", yvar = "y1", warn_dupl = FALSE),
+  soilmap
+  ) %>%
+  mutate(soilclass = tidyr::replace_na(soilclass, "unknown")) %>%
+  st_drop_geometry() %>%
+  select(soilclass) %>%
+  rename(soilclass1 = soilclass)
+
+loc_p2 <- st_join(
+  data %>%
+    as_points(xvar = "x2", yvar = "y2", warn_dupl = FALSE),
+  soilmap
+  ) %>%
+  mutate(soilclass = tidyr::replace_na(soilclass, "unknown")) %>%
+  st_drop_geometry() %>%
+  select(soilclass) %>%
+  rename(soilclass2 = soilclass)
+
+data <- cbind(data, loc_p1, loc_p2)
+```
+
+
+
+# Difference-Distance Plot
+
+## unbinned
+```{r, eval = FALSE}
+glimpse(data)
+```
+
+```{r}
+data %>%
+  ggplot(aes(x = dx, y = log(abs(dmw)+1.0), color = soilclass1)) +
+  geom_point() +
+  geom_smooth() +
+  facet_grid(soilclass1 ~ compound, scales = "free_y") +
+  theme_bw() 
+```
+
+```{r}
+g <- data %>%
+  ggplot(aes(x = dx, y = log(abs(dmw_rel)+1.0), color = soilclass1)) +
+  geom_point() +
+  geom_smooth() +
+  facet_grid(soilclass1 ~ compound, scales = "free_y") +
+  theme_bw() 
+
+
+ggsave("figures/difference_distance_facets.png",
+  dpi = 300,
+  width = 16, height = 8, units = "in"
+)
+```
+
+```{r, echo=FALSE, out.width = "100%", fig.cap = "<i>The difference-distance plot with `geom_smooth()` trendlines shows little influence of Waldo's law.</i>"}
+knitr::include_graphics("figures/difference_distance_facets.png")
+```
+
+... leaves little hope.
+
+- Data is sparse.
+- There is no obvious structure or trend in the close range (< 10m).
+- Some point clusters are probably repeated measurements (better than no observation). 
+- Binning is not evident, might further reduce power.
+- On the other hand, there seems little value in splitting `soilclass`, I might as well aggregate.
+
+
+## binned variogram
+There must be a reason why 9/10 variogram experts apply binning.
+
+```{r}
+data_binned <- data %>%
+  mutate(
+    distance_bin = as.factor(ntile(dx, n = 20))
+    ) %>%
+  group_by(distance_bin, compound) %>%
+  summarize_at(
+    .funs = function (x) mean(x, na.rm = TRUE),
+    .vars = vars(dx, dt, dz, dmw, dmw_rel),
+  )
+glimpse(data_binned)
+```
+
+
+```{r}
+data_binned %>%
+  ggplot(aes(x = dx, y = log(abs(dmw_rel)+1.0))) +
+  geom_point() +
+  geom_smooth() +
+  facet_grid(compound ~ ., scales = "free_y") +
+  theme_bw() 
+
+```
+
+
+Desparate: let's combine compounds:
+```{r}
+data %>%
+  mutate(
+    distance_bin = as.factor(ntile(dx, n = 20))
+    ) %>%
+  group_by(distance_bin) %>%
+  summarize_at(
+    .funs = function (x) mean(x, na.rm = TRUE),
+    .vars = vars(dx, dt, dz, dmw, dmw_rel),
+  ) %>%
+  ggplot(aes(x = dx, y = log(abs(dmw_rel)+1.0))) +
+  geom_point() +
+  geom_smooth() +
+  theme_bw() 
+```
+
+# Modeling in variograms
+
+I guess it is time to squeeze the last out of this data set with a complex model.
+
+Question: What is the concentration difference `dmw` or relative concentration difference `dmw_rel` between two sites, given:
+
+- chemical `compound` (random effect)
+- inter-sampling interval (`dt`)
+- filter depth difference (`dz`)
+- `soilclass` (random effect)
+- distance (`dx`), obviously.
+
+
+```{r}
+library("brms")
+```
+
+```{r}
+data %<>% mutate(
+  theta = (dmw_rel + 1.0)/2.0
+  )
+```
+
+```{r}
+model_file <- "models/exploring.rds"
+diff_model <- brm(
+  formula = theta ~ 0 + dz + dt + (1 + compound), 
+  data = data,
+  family = "beta",
+  warmup = 2^11,
+  iter = 2*2^11,
+  chains = 4,
+  cores = 4,
+  backend = "cmdstanr",
+  file = model_file,
+  file_refit = "on_change",
+  adapt_delta = 0.95,
+  seed = 123
+)
+```
+
+```{r}
+summary(diff_model)
+mcmc_plot(diff_model) # forest plot
+# plot(diff_model) # traceplot
+```
+
+
+# Archive
+## missing locations
+
+There was a bug due to failed joins, producing missing data.
+It turned out to be related to `filterdepth` automatically excluded by the `get_locs()` function.
 
 
 ```{r}
@@ -310,73 +555,4 @@ head(DBI::dbGetQuery(watina_dwh,
     ORDER BY PeilpuntCode ASC
       ")
   ), 10)
-```
-
-## double-joining locs
-Comparing two locations, I will join the locs twice: once to every location in the pair.
-Then, distances and differences are computed, and relevant entries filtered.
-Finally, factors are generated from categorical variables.
-
-```{r}
-data <- data_raw %>%
-  left_join(
-    select(locs, obswell_code, x, y),
-    by = join_by(pp1 == obswell_code),
-    relationship = "many-to-one"
-  ) %>% rename(c("x1" = x, "y1" = y)) %>%
-  left_join(
-    select(locs, obswell_code, x, y),
-    by = join_by(pp2 == obswell_code),
-    relationship = "many-to-one"
-  ) %>% rename(c("x2" = x, "y2" = y)) %>%
-  filter_at(
-    vars(x1, x2, y1, y2, z1, z2),
-    all_vars(!is.na(.))
-  ) %>%
-  mutate(
-    dx = sqrt((x2-x1)^2 + (y2-y1)^2),
-    dt = sqrt((t2-t1)^2),
-    dz = z2-z1,
-    dmw = mw2 - mw1,
-    dmw_rel = (mw2 - mw1) / (abs(mw1) + abs(mw2))
-  ) %>%
-  filter(
-    !(compound == "N-NO2"),
-    dx > 0,
-    dx <= 100,
-    abs(dmw) <= 10,
-    t1 > 2000
-  ) %>%
-  mutate_at(
-    vars(
-      region,
-      chemvar_id,
-      status1,
-      status2,
-      compound,
-      unit
-    ), as.factor
-  )
-
-```
-
-
-```{r}
-data %>%
-  summarize(cnt = n(), .by = c(compound))
-```
-
-TODO: soilclass
-
-# Difference-Distance Plot
-
-```{r}
-glimpse(data)
-```
-
-```{r}
-data %>%
-  ggplot(aes(x = dx, y = log(abs(dmw)+1.0), color = compound)) +
-  geom_point() +
-  geom_smooth()
 ```
