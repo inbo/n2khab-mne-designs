@@ -749,14 +749,14 @@ moco_scheme_ps_stratum_sppost_spsamples_spares <-
         overall_sample
       ),
       function(coef, ds, poststr, grts, sam) {
-        local_domains <- 
+        smaller_domains <- 
           ds %>% 
           # if the general including domain (Flanders) is not present, smaller
           # domains are marked as including
           filter(!including | !(domain %in% including_domain)) %>% 
           pull(domain)
-        poststr_remainder <- poststr[!poststr %in% local_domains]
-        if (length(poststr_remainder) > 1 && length(local_domains) > 0) {
+        poststr_remainder <- poststr[!poststr %in% smaller_domains]
+        if (length(poststr_remainder) > 1 && length(smaller_domains) > 0) {
           stop("Mismatch between spatial poststrata and domains!")
         }
         sp_poststr_all <-
@@ -764,8 +764,8 @@ moco_scheme_ps_stratum_sppost_spsamples_spares <-
           left_join(
             domain_grts_n2khab %>% 
               {
-                if (length(local_domains) > 0) {
-                  filter(., domain %in% local_domains)
+                if (length(smaller_domains) > 0) {
+                  filter(., domain %in% smaller_domains)
                 } else {
                   if (length(including_domain) != 1L) {
                     stop("The left_join approach needs to be revised.")
