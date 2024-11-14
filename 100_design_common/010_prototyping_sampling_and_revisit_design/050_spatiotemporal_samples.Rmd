@@ -141,11 +141,11 @@ scheme_target_paneldesign <-
     unmatched = "error"
   ) %>% 
   summarize(
-    module_combo_code = str_c(code_short, collapse = "_"),
+    module_combo_code = str_c(code_short, collapse = "_") %>% fct(),
     module_combo = list(tibble(module = module)),
     .by = -c(module, code_short)
   ) %>% 
-  arrange(scheme, panel_period_main, cycle_duration_y) %>% 
+  arrange(module_combo_code, scheme, panel_period_main, cycle_duration_y) %>% 
   relocate(module_combo_code, module_combo)
 scheme_target_paneldesign
 ```
@@ -190,7 +190,11 @@ moco_order <- tribble(
   "pan5", 1L,
   "mbaa", 1L,
   "pan2124", 2L
-)
+) %>% 
+  mutate(module_combo_code = factor(
+    module_combo_code,
+    levels = levels(scheme_target_paneldesign$module_combo_code)
+  ))
 ```
 
 Note that panel splits are always ranked in ascending order, assuming that panel split 1 represents the _largest_ number of sampling units.
