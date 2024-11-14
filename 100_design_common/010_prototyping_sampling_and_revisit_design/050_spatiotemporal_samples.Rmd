@@ -495,7 +495,7 @@ Drawing spatial samples per scheme and GRTS partition (hence for module combos x
 This includes the step to redraw the sample for domains included by another domain (typically because of module combinations), to ensure that no units are drawn more than once and the GRTS series in the domain is one series.
 
 ```{r}
-moco_scheme_ps_stratum_dom_spsamples_nested <-
+scheme_moco_ps_stratum_dom_spsamples_nested <-
   module_domain_scheme_stratum_sample_size %>%
   select(module, domain, scheme, sampling_frame_id, stratum, sp_sample_size_all_panels_stratum) %>%
   # for MNE, non-core schemes (dropped below) have yet to be taken back (but I
@@ -650,8 +650,8 @@ moco_scheme_ps_stratum_dom_spsamples_nested <-
     })
   )
       
-moco_scheme_ps_stratum_dom_spsamples <- 
-  moco_scheme_ps_stratum_dom_spsamples_nested %>% 
+scheme_moco_ps_stratum_dom_spsamples <- 
+  scheme_moco_ps_stratum_dom_spsamples_nested %>% 
   mutate(
     domain_spsample = map(domain_spsample, function(ds) {
       ds %>% 
@@ -661,22 +661,21 @@ moco_scheme_ps_stratum_dom_spsamples <-
         unnest(sample)
     })
   ) %>% 
-  unnest(domain_spsample) %>% 
-  relocate(module_combo_code)
+  unnest(domain_spsample)
 ```
 
 Check that no sampling units overlap between domains within the combination of module combo, scheme, panel split and stratum:
 
 ```{r}
-moco_scheme_ps_stratum_dom_spsamples %>% 
-  count(module_combo_code, scheme, panel_split, stratum, grts_address) %>% 
+scheme_moco_ps_stratum_dom_spsamples %>% 
+  count(scheme, module_combo_code, panel_split, stratum, grts_address) %>% 
   filter(n > 1) %>% 
   nrow() == 0
 ```
 
 #### Reclassify by spatial poststratum and add spare units
 
-The `moco_scheme_ps_stratum_dom_spsamples` object distinguishes domains which can spatially overlap.
+The `scheme_moco_ps_stratum_dom_spsamples` object distinguishes domains which can spatially overlap.
 This is caused by the domains envisaged by specific modules, and the sampling units attributed to the different domains are mutually exclusive.
 It is also a consequence of the fact that sample sizes are typically set at the module x domain x scheme level, so it reflects this module-wise sampling approach.
 Hence in this object it is clear which sampling units are added surplus in specific (included) domains in order to increase coverage of those domains.
@@ -695,9 +694,9 @@ Now generating the spatial poststrata (which replace the domain level) and addin
 (Note: for domain-specific inferences, re-introduction of domains is needed, where units in overlapped domains will be present in each domain but with different sampling weights.)
 
 ```{r}
-moco_scheme_ps_stratum_sppost_spsamples_spares <- 
-  moco_scheme_ps_stratum_dom_spsamples_nested %>% 
-    inner_join(
+scheme_moco_ps_stratum_sppost_spsamples_spares <- 
+  scheme_moco_ps_stratum_dom_spsamples_nested %>% 
+  inner_join(
     n2khab_strata,
     join_by(stratum),
     relationship = "many-to-one",
@@ -805,19 +804,19 @@ moco_scheme_ps_stratum_sppost_spsamples_spares <-
     )
   ) %>% 
   select(
-    module_combo_code,
     scheme,
+    module_combo_code,
     panel_split,
     stratum,
     sp_poststr_samples_spareunits
   ) %>% 
-  arrange(module_combo_code, scheme, panel_split, stratum)
+  arrange(scheme, module_combo_code, panel_split, stratum)
 ```
 
-Total size of `moco_scheme_ps_stratum_sppost_spsamples_spares` after unnesting.
+Total size of `scheme_moco_ps_stratum_sppost_spsamples_spares` after unnesting.
 
 ```{r}
-moco_scheme_ps_stratum_sppost_spsamples_spares %>% 
+scheme_moco_ps_stratum_sppost_spsamples_spares %>% 
   unnest(sp_poststr_samples_spareunits) %>% 
   nrow()
 ```
@@ -825,7 +824,7 @@ moco_scheme_ps_stratum_sppost_spsamples_spares %>%
 Overall representation of spatial poststrata in the spatial samples (of all modules, schemes and strata):
 
 ```{r paged.print=FALSE}
-moco_scheme_ps_stratum_sppost_spsamples_spares %>% 
+scheme_moco_ps_stratum_sppost_spsamples_spares %>% 
   unnest(sp_poststr_samples_spareunits) %>% 
   mutate(sp_poststratum = factor(as.character(sp_poststratum))) %>%
   count(sp_poststratum)
@@ -836,7 +835,7 @@ In general, note that the above spatial poststrata are to be interpreted within 
 Overall distribution of sample status (across all modules, schemes and strata):
 
 ```{r paged.print=FALSE}
-moco_scheme_ps_stratum_sppost_spsamples_spares %>% 
+scheme_moco_ps_stratum_sppost_spsamples_spares %>% 
   unnest(sp_poststr_samples_spareunits) %>% 
   count(sample_status)
 ```
