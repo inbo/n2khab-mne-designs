@@ -322,6 +322,64 @@ calculate_weighted_overlap_uniformity <- function(break_points,
 
 
 
+#' Select spare units from a sampling frame with sampling units marked
+#'
+#' @param ssf_sample Data frame that reflects a spatial sampling frame with
+#'   columns.
+#'
+#'   - The first column is a grouping variable that will be used to apply the
+#'   operation for each group.
+#'   - The second column must be `grts_address` (integer) and should represent
+#'   the reverse hierarchical GRTS address.
+#'   - The third and last column must be `sample_status` (character), where
+#'   population units that are in the sample must be labelled as `"in_sample"`;
+#'   all other population units must be `NA`.
+#' @param coef_spare Numeric.
+#' The coefficient to apply to (each) sample size in order to determine the
+#' number of corresponding spare units.
+#'
+#' @return A data frame of the same form as `ssf_sample`, only containing
+#' the spare units.
+generate_spare_units <- function(ssf_sample, coef_spare) {
+  spare_unit_count <- ssf_sample %>%
+    summarize(
+      sample_size = sum(sample_status == "in_sample", na.rm = TRUE),
+      .by = 1
+    ) %>%
+    mutate(
+      n_spare_units = round(sample_size * coef_spare) %>%
+        as.integer() %>%
+        pmax(3L)
+    ) %>%
+    select(-sample_size)
+  ssf_sample %>%
+    filter(is.na(sample_status)) %>%
+    inner_join(
+      spare_unit_count,
+      join_by(!!(colnames(ssf_sample)[1])),
+      relationship = "many-to-one",
+      unmatched = c("error", "drop")
+    ) %>%
+    nest(grts_status = c(grts_address, sample_status)) %>%
+    mutate(
+      grts_status = map2(
+        grts_status,
+        n_spare_units,
+        function(grts, nspare) {
+          grts %>%
+            slice_min(grts_address, n = nspare) %>%
+            mutate(sample_status = "spare_unit")
+        }
+      )
+    ) %>%
+    select(-n_spare_units) %>%
+    unnest(grts_status)
+}
+
+
+
+
+
 distribute_sample_over_panels <- function(sps, pan) {
   remainder <- nrow(sps) %% nrow(pan)
   if (remainder > 0) {

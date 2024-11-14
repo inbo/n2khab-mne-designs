@@ -795,43 +795,7 @@ moco_scheme_ps_stratum_sppost_spsamples_spares <-
           arrange(sp_poststratum, grts_address)
         sp_poststr_spareunits <-
           sp_poststr_all %>%
-          (
-            function(poststr_grts, coef_spare = coef) {
-              spare_unit_count <- poststr_grts %>%
-                summarize(
-                  sample_size = sum(sample_status == "in_sample", na.rm = TRUE),
-                  .by = sp_poststratum
-                ) %>%
-                mutate(
-                  n_spare_units = round(sample_size * coef_spare) %>%
-                    as.integer() %>%
-                    pmax(3L)
-                ) %>%
-                select(-sample_size)
-              poststr_grts %>%
-                filter(is.na(sample_status)) %>%
-                inner_join(
-                  spare_unit_count,
-                  join_by(sp_poststratum),
-                  relationship = "many-to-one",
-                  unmatched = c("error", "drop")
-                ) %>%
-                nest(grts_status = c(grts_address, sample_status)) %>%
-                mutate(
-                  grts_status = map2(
-                    grts_status,
-                    n_spare_units,
-                    function(grts, nspare) {
-                      grts %>%
-                        slice_min(grts_address, n = nspare) %>%
-                        mutate(sample_status = "spare_unit")
-                    }
-                  )
-                ) %>%
-                select(-n_spare_units) %>%
-                unnest(grts_status)
-            }
-          )
+          generate_spare_units(coef_spare = coef)
         sp_poststr_all %>%
           filter(sample_status == "in_sample") %>%
           bind_rows(sp_poststr_spareunits) %>%
