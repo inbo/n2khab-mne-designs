@@ -352,28 +352,34 @@ generate_spare_units <- function(ssf_sample, coef_spare) {
         pmax(3L)
     ) %>%
     select(-sample_size)
-  ssf_sample %>%
-    filter(is.na(sample_status)) %>%
-    inner_join(
-      spare_unit_count,
-      join_by(!!(colnames(ssf_sample)[1])),
-      relationship = "many-to-one",
-      unmatched = c("error", "drop")
-    ) %>%
-    nest(grts_status = c(grts_address, sample_status)) %>%
-    mutate(
-      grts_status = map2(
-        grts_status,
-        n_spare_units,
-        function(grts, nspare) {
-          grts %>%
-            slice_min(grts_address, n = nspare) %>%
-            mutate(sample_status = "spare_unit")
-        }
-      )
-    ) %>%
-    select(-n_spare_units) %>%
-    unnest(grts_status)
+  ssf_available <-
+    ssf_sample %>%
+    filter(is.na(sample_status))
+  if (nrow(ssf_available) == 0) {
+    return(ssf_available)
+  } else {
+    ssf_available %>%
+      inner_join(
+        spare_unit_count,
+        join_by(!!(colnames(ssf_sample)[1])),
+        relationship = "many-to-one",
+        unmatched = c("error", "drop")
+      ) %>%
+      nest(grts_status = c(grts_address, sample_status)) %>%
+      mutate(
+        grts_status = map2(
+          grts_status,
+          n_spare_units,
+          function(grts, nspare) {
+            grts %>%
+              slice_min(grts_address, n = nspare) %>%
+              mutate(sample_status = "spare_unit")
+          }
+        )
+      ) %>%
+      select(-n_spare_units) %>%
+      unnest(grts_status)
+  }
 }
 
 
