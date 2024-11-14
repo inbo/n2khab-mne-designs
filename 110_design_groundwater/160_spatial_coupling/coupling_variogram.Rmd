@@ -443,39 +443,81 @@ Question: What is the concentration difference `dmw` or relative concentration d
 - `soilclass` (random effect)
 - distance (`dx`), obviously.
 
+*UPDATE: I did not get the models I liked with `brms`, and went to `rstan`.*
 
 ```{r}
-library("brms")
+library("rstan")
+library("shinystan")
 ```
+
 
 ```{r}
 data %<>% mutate(
-  theta = (dmw_rel + 1.0)/2.0
+  theta = (dmw_rel + 1.0)/2.0,
+  compound_id = as.integer(compound)
   )
+glimpse(data)
 ```
 
-```{r}
-model_file <- "models/exploring.rds"
-diff_model <- brm(
-  formula = theta ~ 0 + dz + dt + (1 + compound), 
-  data = data,
-  family = "beta",
-  warmup = 2^11,
-  iter = 2*2^11,
-  chains = 4,
-  cores = 4,
-  backend = "cmdstanr",
-  file = model_file,
-  file_refit = "on_change",
-  adapt_delta = 0.95,
-  seed = 123
-)
+
+- https://discourse.mc-stan.org/t/modeling-a-continuous-0-1-variable/18468/4
+
+```{stan, output.var="explorative_model"}
+data {
+  int<lower=1> N;               // sample size
+  matrix[N, 2] X; // predictors: distance, depth
+  real<lower=0, upper=1> prob[N]; // outcome variable
+}
+
+parameters {
+  vector[2] slopes;
+  real intercept;
+  real<lower=0> kappa;
+}
+
+
+transformed parameters {
+  vector<lower=0, upper=1>[N] estimator;
+  estimator = inv_logit(intercept + (X * slopes));  // ! brackets!
+}
+
+model {
+  // priors
+  slopes ~ normal(0, 1);
+  intercept ~ normal(0, 1);
+
+  kappa ~ gamma(1, 1); // model residual
+
+  // "posterior", "likelihood", give it a name...
+  prob ~ beta_proportion(estimator, kappa);    //
+
+}
 ```
 
+```{r eval=FALSE}
+explorative_model <- stan_model("./explorative_model.stan")
+```
+
+
 ```{r}
-summary(diff_model)
-mcmc_plot(diff_model) # forest plot
-# plot(diff_model) # traceplot
+exploratory_model_fit <- sampling(
+  explorative_model,
+  list(N = nrow(data),
+       prob = data$theta,
+       X = cbind(data$dx, data$dz)
+       ),
+  iter = 1000,
+  chains = 6,
+  cores = 6
+  )
+                                  
+print(exploratory_model_fit)
+```
+
+
+
+```{r}
+launch_shinystan(exploratory_model_fit)
 ```
 
 
@@ -555,4 +597,165 @@ head(DBI::dbGetQuery(watina_dwh,
     ORDER BY PeilpuntCode ASC
       ")
   ), 10)
+```
+
+## Intermediate, Working Models
+
+```{stan, output.var="explorative_model_plain"}
+data {
+  int<lower=1> N;                  // sample size
+  real<lower=0, upper=1> theta[N]; // outcome variable
+}
+
+parameters {
+  real<lower=0> beta_a;         // posterior dist parameter alpha
+  real<lower=0> beta_b;         // posterior dist parameter beta
+}
+
+model {
+  // priors
+  beta_a ~ cauchy(0.0, 1.0);
+  beta_b ~ cauchy(0.0, 1.0);
+
+  // "posterior", "likelihood", give it a name...
+  // https://mc-stan.org/docs/functions-reference/continuous_distributions_on_0_1.html#beta-distribution
+  theta ~ beta(beta_a, beta_b);
+
+}
+
+```
+
+
+
+```{stan, output.var="explorative_model_randomintercept"}
+data {
+  int<lower=1> N;               // sample size
+  int<lower=1> J;               // number of compounds
+  int<lower=1, upper=J> chem[N]; // chemical ID id
+  real<lower=0, upper=1> theta[N]; // outcome variable
+}
+
+parameters {
+  vector<lower=0, upper=1>[J] u; // chem intercepts
+  real<lower=0> kappa_u;         // chem kappa
+  real<lower=0> kappa_beta;         // ...
+}
+
+model {
+  real estimator;
+
+  // priors
+  kappa_u ~ cauchy(0.0, 2.0);
+  u ~ beta_proportion(0.5, kappa_u); //chem random mean
+  kappa_beta ~ cauchy(0.0, 2.0);
+
+  for (i in 1:N){
+    estimator = u[chem[i]];
+
+    // "posterior", "likelihood", give it a name...
+    theta[i] ~ beta_proportion(estimator, kappa_beta);    //
+  }
+
+}
+
+```
+
+
+```{stan, output.var="explorative_model"}
+data {
+  int<lower=1> N;               // sample size
+  int<lower=1> J;               // number of compounds
+  int<lower=1, upper=J> chem[N]; // chemical ID id
+  real<lower=0, upper=1> theta[N]; // outcome variable
+  real<lower=0, upper=100> dist[N]; // predictor: distance
+}
+
+parameters {
+  vector<lower=0, upper=1>[J] u; // chem intercepts
+  vector[J] v;                   // chem slopes
+  real<lower=0> kappa_u;         // chem kappa
+  real<lower=0> sigma_v;         // chem kappa
+  real<lower=0> kappa_beta;      // ...
+}
+
+model {
+  real estimator;
+
+  // priors
+  sigma_v ~ cauchy(0.0, 0.2);
+  v ~ normal(v, sigma_v); //chem slope mean
+  kappa_u ~ cauchy(0.0, 2.0);
+  u ~ beta_proportion(0.5, kappa_u); //chem intercept
+  kappa_beta ~ cauchy(0.0, 2.0); // model residual
+
+  for (i in 1:N){
+    estimator = u[chem[i]] + v[chem[i]] * dist[i];
+
+    // "posterior", "likelihood", give it a name...
+    theta[i] ~ beta_proportion(estimator, kappa_beta);    //
+  }
+
+}
+```
+
+  list(N = nrow(data),
+       theta = data$theta,
+       J = length(levels(data$compound)),
+       chem = data$compound_id,
+       dist = data$dt
+       ),
+
+
+
+
+```{stan, output.var="explorative_model"}
+data {
+  int<lower=1> N;               // sample size
+  matrix[N, 2] X; // predictors: distance, depth
+  real<lower=0, upper=1> prob[N]; // outcome variable
+}
+
+parameters {
+  vector[2] slopes;
+  real intercept;
+  real<lower=0> kappa;
+}
+
+
+transformed parameters {
+  vector<lower=0, upper=1>[N] estimator;
+  estimator = inv_logit(intercept + (X * slopes));  // ! brackets!
+}
+
+model {
+  // priors
+  slopes ~ normal(0, 1);
+  intercept ~ normal(0, 1);
+
+  kappa ~ gamma(1, 1); // model residual
+
+  // "posterior", "likelihood", give it a name...
+  prob ~ beta_proportion(estimator, kappa);    //
+
+}
+```
+
+```{r eval=FALSE}
+explorative_model <- stan_model("./explorative_model.stan")
+```
+
+
+```{r eval=FALSE}
+exploratory_model_fit <- sampling(
+  explorative_model,
+  list(N = nrow(data),
+       prob = data$theta,
+       X = cbind(data$dx, data$dz)
+       ),
+  iter = 1000,
+  chains = 6,
+  cores = 6
+  )
+                                  
+print(exploratory_model_fit)
 ```
