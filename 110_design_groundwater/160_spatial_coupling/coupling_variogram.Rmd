@@ -39,7 +39,7 @@ source("./zenodo_helper.R")
 # source("./spatial_helpers.R")
 
 # watina_dwh <- connect_watina()
-watina_dwh <- connect_watina()
+# watina_dwh <- connect_watina()
 
 
 # n2khab_data_path <- locate_n2khab_data()
@@ -82,7 +82,7 @@ And then we'll see.
 To create the query below, knowledge of the database structure is beneficial.
 
 The `dimDatum` table:
-```{r}
+```{r eval=FALSE}
 glimpse(DBI::dbGetQuery(watina_dwh,
   paste0("
     SELECT *
@@ -96,7 +96,7 @@ I will use `Jaardag_Nummer/365.0 + Jaar` for restricting time difference.
 
 
 The `dimPeilpunt` table:
-```{r}
+```{r eval=FALSE}
 glimpse(DBI::dbGetQuery(watina_dwh,
   paste0("
     SELECT *,
@@ -111,7 +111,7 @@ I will use `SUBSTRING(PeilpuntCode, 1, 3) = GebiedCode` equality for restricting
 
 
 The `dimGebied` table:
-```{r}
+```{r eval=FALSE}
 glimpse(DBI::dbGetQuery(watina_dwh,
   paste0("
     SELECT *
@@ -125,7 +125,7 @@ glimpse(DBI::dbGetQuery(watina_dwh,
 
 
 The `dimChemVar` table:
-```{r}
+```{r eval=FALSE}
 head(DBI::dbGetQuery(watina_dwh,
   paste0("
     SELECT ChemVarWID, ChemVarNaam, ChemVarEenheid, Ion
@@ -453,14 +453,40 @@ library("shinystan")
 
 ```{r}
 data %<>% mutate(
-  theta = (dmw_rel + 1.0)/2.0,
+  dc = (dmw_rel + 1.0)/2.0,
   compound_id = as.integer(compound)
   )
 glimpse(data)
 ```
 
+```{r}
+data_nh4 <- data %>% filter(
+  compound == "N-NH4"
+  )
+glimpse(data_nh4)
+```
+
+
+## Less Guessing, More Thinking (LGMT) Model
 
 - https://discourse.mc-stan.org/t/modeling-a-continuous-0-1-variable/18468/4
+- https://mc-stan.org/docs/functions-reference/positive_continuous_distributions.html
+- https://mc-stan.org/docs/functions-reference/distributions_over_unbounded_vectors.html#multi-student-t-cholesky-fun
+
+
+considerations (mental notes for Tuesday):
+
+- Using relative difference might not be a good idea.
+- Using absolute difference is required.
+- Difference makes "zero" a valid outcome; in fact, zero is a very likely case (although, maybe not; this might depend on detection limit).
+
+TODO:
+
+- Plot data distribution again. Try transforming \(dc\) = concentration difference 
+- Start with only `data_nh4`, for simplicity: the compounds' concentration differences are independent for all practical purposes.
+- Try lognormal, because why not. Otherwise go exponential (maybe "plus Gaussian" for the wobbling).
+- Model structure: \(dc \sim lognormal(a + b1 dx + b2 dz )\); optionally add (+ b3 dt)
+
 
 ```{stan, output.var="explorative_model"}
 data {
@@ -476,11 +502,6 @@ parameters {
 }
 
 
-transformed parameters {
-  vector<lower=0, upper=1>[N] estimator;
-  estimator = inv_logit(intercept + (X * slopes));  // ! brackets!
-}
-
 model {
   // priors
   slopes ~ normal(0, 1);
@@ -489,7 +510,7 @@ model {
   kappa ~ gamma(1, 1); // model residual
 
   // "posterior", "likelihood", give it a name...
-  prob ~ beta_proportion(estimator, kappa);    //
+  prob ~ beta_proportion(inv_logit(intercept + (X * slopes)), kappa);    //
 
 }
 ```
@@ -503,7 +524,7 @@ explorative_model <- stan_model("./explorative_model.stan")
 exploratory_model_fit <- sampling(
   explorative_model,
   list(N = nrow(data),
-       prob = data$theta,
+       prob = data$dc,
        X = cbind(data$dx, data$dz)
        ),
   iter = 1000,
@@ -519,6 +540,11 @@ print(exploratory_model_fit)
 ```{r}
 launch_shinystan(exploratory_model_fit)
 ```
+
+
+
+
+
 
 
 # Archive
@@ -601,10 +627,12 @@ head(DBI::dbGetQuery(watina_dwh,
 
 ## Intermediate, Working Models
 
+### beta distribution
+#### plain beta
 ```{stan, output.var="explorative_model_plain"}
 data {
   int<lower=1> N;                  // sample size
-  real<lower=0, upper=1> theta[N]; // outcome variable
+  real<lower=0, upper=1> dc[N]; // outcome variable
 }
 
 parameters {
@@ -619,20 +647,20 @@ model {
 
   // "posterior", "likelihood", give it a name...
   // https://mc-stan.org/docs/functions-reference/continuous_distributions_on_0_1.html#beta-distribution
-  theta ~ beta(beta_a, beta_b);
+  dc ~ beta(beta_a, beta_b);
 
 }
 
 ```
 
 
-
+#### beta - compound "intercept"
 ```{stan, output.var="explorative_model_randomintercept"}
 data {
   int<lower=1> N;               // sample size
   int<lower=1> J;               // number of compounds
   int<lower=1, upper=J> chem[N]; // chemical ID id
-  real<lower=0, upper=1> theta[N]; // outcome variable
+  real<lower=0, upper=1> dc[N]; // outcome variable
 }
 
 parameters {
@@ -653,7 +681,7 @@ model {
     estimator = u[chem[i]];
 
     // "posterior", "likelihood", give it a name...
-    theta[i] ~ beta_proportion(estimator, kappa_beta);    //
+    dc[i] ~ beta_proportion(estimator, kappa_beta);    //
   }
 
 }
@@ -661,12 +689,13 @@ model {
 ```
 
 
+#### compound slope and intercept
 ```{stan, output.var="explorative_model"}
 data {
   int<lower=1> N;               // sample size
   int<lower=1> J;               // number of compounds
   int<lower=1, upper=J> chem[N]; // chemical ID id
-  real<lower=0, upper=1> theta[N]; // outcome variable
+  real<lower=0, upper=1> dc[N]; // outcome variable
   real<lower=0, upper=100> dist[N]; // predictor: distance
 }
 
@@ -692,22 +721,25 @@ model {
     estimator = u[chem[i]] + v[chem[i]] * dist[i];
 
     // "posterior", "likelihood", give it a name...
-    theta[i] ~ beta_proportion(estimator, kappa_beta);    //
+    dc[i] ~ beta_proportion(estimator, kappa_beta);    //
   }
 
 }
 ```
 
+```{r eval=FALSE}
   list(N = nrow(data),
-       theta = data$theta,
+       dc = data$dc,
        J = length(levels(data$compound)),
        chem = data$compound_id,
        dist = data$dt
        ),
+```
 
 
 
-
+### Beta - inv logit matrix
+... I ended up here, because I wanted to have `beta` posterior, but `linear model mean`-like behavior.
 ```{stan, output.var="explorative_model"}
 data {
   int<lower=1> N;               // sample size
@@ -722,10 +754,11 @@ parameters {
 }
 
 
-transformed parameters {
-  vector<lower=0, upper=1>[N] estimator;
-  estimator = inv_logit(intercept + (X * slopes));  // ! brackets!
-}
+// transformed parameters get displayed (element-wise) in the output.
+//transformed parameters {
+//  vector<lower=0, upper=1>[N] estimator; // => moved to "model"
+//  estimator = inv_logit(intercept + (X * slopes));  // ! brackets!
+//}
 
 model {
   // priors
@@ -735,21 +768,17 @@ model {
   kappa ~ gamma(1, 1); // model residual
 
   // "posterior", "likelihood", give it a name...
-  prob ~ beta_proportion(estimator, kappa);    //
+  prob ~ beta_proportion(inv_logit(intercept + (X * slopes)), kappa);    //
 
 }
 ```
 
 ```{r eval=FALSE}
 explorative_model <- stan_model("./explorative_model.stan")
-```
-
-
-```{r eval=FALSE}
 exploratory_model_fit <- sampling(
   explorative_model,
   list(N = nrow(data),
-       prob = data$theta,
+       prob = data$dc,
        X = cbind(data$dx, data$dz)
        ),
   iter = 1000,
