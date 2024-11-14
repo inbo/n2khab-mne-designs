@@ -495,7 +495,7 @@ Drawing spatial samples per scheme and GRTS partition (hence for module combos x
 This includes the step to redraw the sample for domains included by another domain (typically because of module combinations), to ensure that no units are drawn more than once and the GRTS series in the domain is one series.
 
 ```{r}
-moco_scheme_ps_stratum_dom_spsamples <-
+moco_scheme_ps_stratum_dom_spsamples_nested <-
   module_domain_scheme_stratum_sample_size %>%
   select(module, domain, scheme, sampling_frame_id, stratum, sp_sample_size_all_panels_stratum) %>%
   # for MNE, non-core schemes (dropped below) have yet to be taken back (but I
@@ -518,6 +518,7 @@ moco_scheme_ps_stratum_dom_spsamples <-
     sp_sample_size_all_panels_stratum = sum(sp_sample_size_all_panels_stratum),
     .by = c(module_combo_code, domain, scheme, panel_split, sampling_frame_id, stratum)
   ) %>%
+  # set first GRTS address of the GRTS partition (GRTS threshold)
   inner_join(
     moco_dom_stratum_grtspart_threshold %>% 
       select(-grts_part),
@@ -543,12 +544,6 @@ moco_scheme_ps_stratum_dom_spsamples <-
   # drawing an independent sample per scheme, domain, stratum and module combo & panel split:
   mutate(
     spsample = map2(moco_ps_domain_stratum_spsamplesize, sampling_frame_domain, function(dss, sfd) {
-      # dss %>% 
-      #   summarize(
-      #     total_sample_size_split = sum(sp_sample_size_all_panels_stratum), 
-      #     .by = c(module_combo_code, panel_split)
-      #   ) %>% 
-      #   arrange(total_sample_size_split)
       dss %>% 
         inner_join(
           sfd %>% 
@@ -557,17 +552,18 @@ moco_scheme_ps_stratum_dom_spsamples <-
           relationship = "many-to-one",
           unmatched = c("error", "drop")
         ) %>% 
+        # the grts_addresses_subset implements the GRTS threshold restriction
         mutate(
           grts_addresses_subset = map2(
             grts_address_start, 
-            grts_addresses, 
+            grts_addresses,
             function(grts_start, grts) {
               grts %>% filter(grts_address >= grts_start)
             }
           ),
           sample =
             map2(
-              sp_sample_size_all_panels_stratum, 
+              sp_sample_size_all_panels_stratum,
               grts_addresses_subset, 
               function(sss, grts_sub) {
                 grts_sub %>% 
@@ -620,7 +616,7 @@ moco_scheme_ps_stratum_dom_spsamples <-
             sample[including]
           ),
           # determine the available unsampled units per domain:
-          grts_addresses_2 = map2(
+          grts_addresses_unsampled = map2(
             grts_addresses_subset, 
             grts_sampled, 
             function(ga, gs) {
@@ -631,7 +627,7 @@ moco_scheme_ps_stratum_dom_spsamples <-
             }),
           # redraw samples for included domains:
           sample_2 = pmap(
-            list(including, sample, grts_addresses_2, sp_sample_size_all_panels_stratum),
+            list(including, sample, grts_addresses_unsampled, sp_sample_size_all_panels_stratum),
             function(inc, sam, grts, sss){
               if (inc) {
                 sam
@@ -644,7 +640,22 @@ moco_scheme_ps_stratum_dom_spsamples <-
           # considered apart from the including domain:
           extends_on_larger_domain = !including & length(including_domains) == 1
         ) %>% 
-        select(domain, sample = sample_2, extends_on_larger_domain) %>% 
+        select(
+          domain,
+          including,
+          grts_addresses_subset,
+          sample = sample_2,
+          extends_on_larger_domain
+        )
+    })
+  )
+      
+moco_scheme_ps_stratum_dom_spsamples <- 
+  moco_scheme_ps_stratum_dom_spsamples_nested %>% 
+  mutate(
+    domain_spsample = map(domain_spsample, function(ds) {
+      ds %>% 
+        select(domain, sample = sample, extends_on_larger_domain) %>% 
         # next step will also drop domains where no sampling units were
         # available (i.e. the whole population was sampled by the larger domain):
         unnest(sample)
