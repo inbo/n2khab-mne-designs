@@ -674,9 +674,191 @@ moco_scheme_ps_stratum_dom_spsamples %>%
   nrow() == 0
 ```
 
+#### Reclassify by spatial poststratum and add spare units
 
-<!-- TODO: also generate the domain-specific sets of spare units, including domain remainders. The domain-remainder labelling will be needed anyway for the construction of panels as well. -->
-<!-- TODO: consider module labelling (wrt unit replacement)? But I think this isn't needed if already looked at domain-wise! -->
+The `moco_scheme_ps_stratum_dom_spsamples` object distinguishes domains which can spatially overlap.
+This is caused by the domains envisaged by specific modules, and the sampling units attributed to the different domains are mutually exclusive.
+It is also a consequence of the fact that sample sizes are typically set at the module x domain x scheme level, so it reflects this module-wise sampling approach.
+Hence in this object it is clear which sampling units are added surplus in specific (included) domains in order to increase coverage of those domains.
+
+However, given samples that belong to different and potentially overlapping domains, we must take into account several aspects:
+
+- **Panel memberships** will be based on the GRTS series for each revisit design of a stratum in a scheme, hence for a module combo x panel split that applies to this scheme (this has already been prepared by implementing the GRTS partition thresholds).
+This is done in order to maintain long-term spatial balance per revisit design and to minimize the possibility that sampling units jump from one revisit design to another as a consequence of changes in the spatial sampling frame.
+Furthermore, the panel membership design is created separately for each included (or multiple non-overlapping) domain and for the remainder of the including domain.
+Otherwise the units of an included domain would not be well spread over the panels when specifically looking at an included domain (for which a module is obviously present, hence an inference requested).
+- We will refer to these mutually exclusive domains / domain remainders as _**spatial poststrata**_, as they will effectively be used for poststratification in the inference about the overall (including) domain.
+- Consequently, a separate set of **spare units** is needed for each revisit design of a stratum in a scheme, hence they must be generated at the level of spatial poststrata in a revisit design.
+The _number_ of spare units will be determined based on the stratum sample size of each spatial poststratum, for a given revisit design (~ module combo x panel split) in a scheme.
+
+Now generating the spatial poststrata (which replace the domain level) and adding spare units.
+(Note: for domain-specific inferences, re-introduction of domains is needed, where units in overlapped domains will be present in each domain but with different sampling weights.)
+
+```{r}
+moco_scheme_ps_stratum_sppost_spsamples_spares <- 
+  moco_scheme_ps_stratum_dom_spsamples_nested %>% 
+    inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  inner_join(
+    n2khab_types_expanded_properties %>% 
+      mutate(is_strictly_aquatic = hydr_class == "HC3") %>% 
+      select(type, is_strictly_aquatic),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  mutate(
+    spare_coef = ifelse(is_strictly_aquatic, spare_coef_aq, spare_coef_default)
+  ) %>% 
+  select(-type, -is_strictly_aquatic) %>% 
+  mutate(
+    sp_poststrata = map(domain_spsample, function(ds) {
+      n_included_doms <- sum(!ds$including)
+      ds %>% 
+        mutate(
+          sp_poststratum = ifelse(
+            including & n_included_doms > 0,
+            str_c(domain, "_remainder"),
+            as.character(domain)
+          )
+        ) %>% 
+        pull(sp_poststratum) %>% 
+        unique()
+    }),
+    overall_grts_addresses_subset = map(domain_spsample, function(ds) {
+      ds_poststrata <- 
+      ds %>% 
+        pull(grts_addresses_subset) %>% 
+        reduce(dplyr::union)
+    }),
+    overall_sample = map(domain_spsample, function(ds) {
+      ds %>% 
+        pull(sample) %>% 
+        reduce(dplyr::union)
+    }),
+    sp_poststr_samples_spareunits = pmap(
+      list(
+        spare_coef,
+        domain_spsample,
+        sp_poststrata,
+        overall_grts_addresses_subset,
+        overall_sample
+      ),
+      function(coef, ds, poststr, grts, sam) {
+        local_domains <- 
+          ds %>% 
+          # if the general including domain (Flanders) is not present, smaller
+          # domains are marked as including
+          filter(!including | !(domain %in% including_domain)) %>% 
+          pull(domain)
+        poststr_remainder <- poststr[!poststr %in% local_domains]
+        if (length(poststr_remainder) > 1 && length(local_domains) > 0) {
+          stop("Mismatch between spatial poststrata and domains!")
+        }
+        sp_poststr_all <-
+          grts %>%
+          left_join(
+            domain_grts_n2khab %>% 
+              {
+                if (length(local_domains) > 0) {
+                  filter(., domain %in% local_domains)
+                } else {
+                  if (length(including_domain) != 1L) {
+                    stop("The left_join approach needs to be revised.")
+                  }
+                  filter(., domain %in% including_domain)
+                }
+              },
+            join_by(grts_address),
+            relationship = "one-to-one",
+            unmatched = "drop"
+          ) %>%
+          rename(sp_poststratum = domain) %>%
+          relocate(sp_poststratum) %>%
+          mutate(
+            sp_poststratum = ifelse(
+              is.na(sp_poststratum),
+              poststr_remainder,
+              as.character(sp_poststratum)
+            ) %>%
+              factor(),
+            sample_status = ifelse(
+              grts_address %in% sam$grts_address,
+              "in_sample",
+              NA_character_
+            )
+          ) %>%
+          arrange(sp_poststratum, grts_address)
+        sp_poststr_spareunits <-
+          sp_poststr_all %>%
+          (
+            function(poststr_grts, coef_spare = coef) {
+              spare_unit_count <- poststr_grts %>%
+                summarize(
+                  sample_size = sum(sample_status == "in_sample", na.rm = TRUE),
+                  .by = sp_poststratum
+                ) %>%
+                mutate(
+                  n_spare_units = round(sample_size * coef_spare) %>%
+                    as.integer() %>%
+                    pmax(3L)
+                ) %>%
+                select(-sample_size)
+              poststr_grts %>%
+                filter(is.na(sample_status)) %>%
+                inner_join(
+                  spare_unit_count,
+                  join_by(sp_poststratum),
+                  relationship = "many-to-one",
+                  unmatched = c("error", "drop")
+                ) %>%
+                nest(grts_status = c(grts_address, sample_status)) %>%
+                mutate(
+                  grts_status = map2(
+                    grts_status,
+                    n_spare_units,
+                    function(grts, nspare) {
+                      grts %>%
+                        slice_min(grts_address, n = nspare) %>%
+                        mutate(sample_status = "spare_unit")
+                    }
+                  )
+                ) %>%
+                select(-n_spare_units) %>%
+                unnest(grts_status)
+            }
+          )
+        sp_poststr_all %>%
+          filter(sample_status == "in_sample") %>%
+          bind_rows(sp_poststr_spareunits) %>%
+          arrange(sp_poststratum, grts_address)
+      }
+    )
+  ) %>% 
+  select(
+    module_combo_code,
+    scheme,
+    panel_split,
+    stratum,
+    sp_poststr_samples_spareunits
+  ) %>% 
+  arrange(module_combo_code, scheme, panel_split, stratum)
+```
+
+Overall representation of spatial poststrata in the spatial samples (of all modules, schemes and strata):
+
+```{r paged.print=FALSE}
+moco_scheme_ps_stratum_sppost_spsamples_spares %>% 
+  unnest(sp_poststr_samples_spareunits) %>% 
+  mutate(sp_poststratum = factor(as.character(sp_poststratum))) %>%
+  count(sp_poststratum)
+```
+
+In general, note that the above spatial poststrata are to be interpreted within a module combo x scheme x stratum; this holds especially for the 'remainder' poststratum which is defined relative to the smaller poststrata (domains).
 
 ### Implementing the revisit design
 
