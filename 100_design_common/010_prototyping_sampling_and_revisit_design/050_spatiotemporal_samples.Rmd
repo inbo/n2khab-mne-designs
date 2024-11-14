@@ -696,6 +696,8 @@ Now generating the spatial poststrata (which replace the domain level) and addin
 ```{r}
 scheme_moco_ps_stratum_sppost_spsamples_spares <- 
   scheme_moco_ps_stratum_dom_spsamples_nested %>% 
+  # characterize strata with 'is_strictly_aquatic' to determine number of 
+  # spare units
   inner_join(
     n2khab_strata,
     join_by(stratum),
@@ -710,11 +712,14 @@ scheme_moco_ps_stratum_sppost_spsamples_spares <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>% 
+  # determine the coefficient to calculate the theoretical number of spare units
   mutate(
     spare_coef = ifelse(is_strictly_aquatic, spare_coef_aq, spare_coef_default)
   ) %>% 
   select(-type, -is_strictly_aquatic) %>% 
+  # add list columns for scheme x module combo x panel split x stratum:
   mutate(
+    # 1. vector that defines relevant spatial poststrata
     sp_poststrata = map(domain_spsample, function(ds) {
       n_included_doms <- sum(!ds$including)
       ds %>% 
@@ -728,17 +733,23 @@ scheme_moco_ps_stratum_sppost_spsamples_spares <-
         pull(sp_poststratum) %>% 
         unique()
     }),
+    # 2. tibble with the GRTS addresses available for sampling (i.e. sampling
+    # frame limited by applicable domains and by the GRTS partition),
+    # integrated over all domains
     overall_grts_addresses_subset = map(domain_spsample, function(ds) {
       ds_poststrata <- 
       ds %>% 
         pull(grts_addresses_subset) %>% 
         reduce(dplyr::union)
     }),
+    # 3. tibble with the sampled GRTS addresses, integrated over all domains
     overall_sample = map(domain_spsample, function(ds) {
       ds %>% 
         pull(sample) %>% 
         reduce(dplyr::union)
     }),
+    # 4. tibble with: spatial poststrata, corresponding sampling units and
+    # spare units
     sp_poststr_samples_spareunits = pmap(
       list(
         spare_coef,
@@ -758,6 +769,8 @@ scheme_moco_ps_stratum_sppost_spsamples_spares <-
         if (length(poststr_remainder) > 1 && length(smaller_domains) > 0) {
           stop("Mismatch between spatial poststrata and domains!")
         }
+        # create the relation between spatial poststrata and all available GRTS
+        # addresses, and mark the sampling units
         sp_poststr_all <-
           grts %>%
           left_join(
@@ -792,9 +805,11 @@ scheme_moco_ps_stratum_sppost_spsamples_spares <-
             )
           ) %>%
           arrange(sp_poststratum, grts_address)
+        # generate the spare units per spatial poststratum
         sp_poststr_spareunits <-
           sp_poststr_all %>%
           generate_spare_units(coef_spare = coef)
+        # combine sample and spare units per spatial poststratum
         sp_poststr_all %>%
           filter(sample_status == "in_sample") %>%
           bind_rows(sp_poststr_spareunits) %>%
