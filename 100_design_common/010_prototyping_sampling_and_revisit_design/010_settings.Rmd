@@ -347,10 +347,10 @@ module_domains <-
 **Where domains with predetermined sample size overlap and if the module(s) they belong to is/are active**, then the relevant sample parts can be stitched together with adjustment of sampling weights.
 This means that overlapping domains give rise to:
 
-- stratification -- if domain sizes differ -- of the larger domain into the domains from the other module + the remaining part;
+- spatial poststratification -- if domain sizes differ -- of the larger domain into the domains from the other module + the remaining part;
 - a split panel in case a different revisit design applies.
 
-In order to not complicate terminology, we just denote all these geographical boundaries as 'domains' but we need to consider the stratification when generating samples and calculating sampling weights.
+We need to consider the poststratification when generating spare units, in generating panels for revisit designs and in calculating sampling weights (chapter \@ref(sampling)).
 
 
 ## Setting the default proportion of spare units
@@ -441,10 +441,10 @@ activities <-
 An **activity sequence** is a set of activities that are tied together at location level for a specific scheme, with a specific chronological order.
 Some activities in an activity sequence may have different panel designs, due to the nature of the activity or other requirements or restrictions, so the frequency of some activities may be higher but the overall chronology remains in place.
 
-A **activity group** is a set of activities with the same panel design (panel count, period, group size and group repetition attributes) _and_ which take place at the same moment; for field activities this means during the same location visit.
+An **activity group** is a set of activities with the same panel design (panel count, period, group size and group repetition attributes) _and_ which take place at the same moment; for field activities this means during the same location visit.
 
 The activity group to which an activity belongs depends on the applicable activity sequence.
-This is due to the fact that different schemes require partly overlapping activities, hence a different activity sequence.
+This is due to the fact that different schemes require only _partly_ overlapping activities, hence a different activity sequence.
 
 Also, different schemes may apply to the same location, hence different activity sequences may be applicable at one location.
 
@@ -825,7 +825,7 @@ mod_scheme_mainfieldmethod_actseq <-
   apply_activity_sequence_filters()
 ```
 
-Check that each main field method per module, scheme and type property was translated to exactly one sequence (this checks the `apply_activity_sequence_filters()` function):
+Check that each main field method per module, scheme and spatial subset was translated to exactly one sequence (this checks the `apply_activity_sequence_filters()` function):
 
 ```{r}
 nrow(mod_scheme_mainfieldmethod_actseq) == 
@@ -907,7 +907,7 @@ mod_scheme_fag <-
   distinct(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset)
 ```
 
-Overview of different existing combinations of `field_activity_group`, `scheme` and `is_core_scheme`:
+Overview of different existing combinations of `field_activity_group`, `scheme`, `is_core_scheme` and spatial subset:
 
 ```{r}
 mod_scheme_fag %>%
@@ -918,7 +918,7 @@ mod_scheme_fag %>%
 Note that some field activities occur in multiple schemes.
 Insofar their field activity groups get a different panel design (which may depend on module x scheme), care has to be taken to not unnecessarily duplicate some non-datacollection methods at different times.
 
-Field activities and FAGS that occur more than once (considering all active modules together):
+Field activities and FAGs that occur more than once (considering all active modules together):
 
 ```{r}
 mod_scheme_field_activity %>% 
@@ -1028,7 +1028,7 @@ mod_scheme_fag_paneldesign <-
   arrange(field_activity_group)
 ```
 
-Overview of different occurring panel designs per FAG:
+Overview of different occurring panel designs per FAG across modules and schemes:
 
 ```{r}
 mod_scheme_fag_paneldesign %>%
