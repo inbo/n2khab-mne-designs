@@ -469,12 +469,14 @@ knitr::include_graphics("figures/difference_distance_binned.png")
 ```
 
 
-## TODO: TiDiDi (Time-Distance-Difference Plot)
+## TiDiDi (Time-Distance-Difference Plot)
 This is the idea to create a 3D surface plot with:
 
 - difference on the `z`-axis,
 - distance on the `x`-axis,
 - sampling interval time on the `y`-axis.
+
+*Idea omitted.*
 
 
 # Modeling in variograms
@@ -498,7 +500,7 @@ library("shinystan")
 
 
 ```{r}
-data %<>% mutate(
+data <- data %>% mutate(
   dc = (dmw_rel + 1.0)/2.0,
   compound_id = as.integer(compound)
   )
@@ -506,16 +508,41 @@ glimpse(data)
 ```
 
 ```{r}
-data_nh4 <- data %>% filter(
+data_onecompound <- data %>% filter(
+  dmw_log > 0,
+  # dx <= 25,
   compound == "N-NH4"
+  # compound == "N-NO3"
+  # compound == "P-PO4"
   )
-glimpse(data_nh4)
+glimpse(data_onecompound)
 ```
 
-## TODO Prior Inspection
+## Prior Inspection
 Plotting the distribution of various model components.
 
+```{r}
+standardize <- function (x) (x - mean(x, na.rm = TRUE))/sd(x, na.rm = TRUE)
+```
 
+```{r}
+plot_data <- data_onecompound %>% 
+  mutate(
+    plotvar = dmw_log
+  )
+
+glimpse(plot_data)
+plot_data %>%
+  ggplot(aes(x = plotvar)) +
+  geom_histogram()
+```
+
+
+```{r}
+plot_data %>%
+  ggplot(aes(x = abs(standardize(dx)), y = abs(standardize(dz)))) +
+  geom_point()
+```
 
 ## Less Guessing, More Thinking (LGMT) Model
 
@@ -530,10 +557,11 @@ considerations:
 - Using absolute difference is required (`dmw`; yet note that the distribution is crappy).
 - Difference makes "zero" a valid outcome; in fact, zero is a very likely case (although, maybe not; this might depend on detection limit).
 
-TODO:
+
+strategy:
 
 - Plot data distribution again. Try transforming \(dc\) = concentration difference 
-- Start with only `data_nh4`, for simplicity: the compounds' concentration differences are independent for all practical purposes, no need for a compound model.
+- Start with only `data_onecompound`, for simplicity: the compounds' concentration differences are independent for all practical purposes, no need for a compound model.
 - Try lognormal, because why not. Otherwise go exponential (maybe "plus a Gaussian" for the wobbling).
 - Model structure: \(d\xi \sim lognormal(a + b1 dx + b2 dz )\); optionally add (+ b3 dt)
 
@@ -542,9 +570,10 @@ TODO:
 
 - `transformed parameters {...}` are parameters, i.e. their samples are added to the output
 - brackets are very mandatory, e.g. `inv_logit(intercept + X * slopes);` is wrong and needs to be `inv_logit(intercept + (X * slopes));`
+- TODO Is it possible to pass in prior values (e.g. pass global mean as intercept)?
 
 
-```{stan, output.var="explorative_model"}
+```{stan eval=FALSE, output.var="explorative_model"}
 data {
   int<lower=1> N;               // sample size
   matrix[N, 3] X; // predictors: distance, depth
@@ -555,6 +584,7 @@ parameters {
   vector[3] slopes;
   real intercept;
   real<lower=0> residual;      // residual variability / model error
+  // real<lower=0> dof;      // the "nu" parameter for Student's T (degrees of freedom)
 }
 
 model {
@@ -562,14 +592,17 @@ model {
   slopes ~ normal(0, 0.1);
   intercept ~ normal(0, 1);
   residual ~ cauchy(1, 1);
+  // dof ~ normal(5, 10);
 
   // "posterior", "likelihood", give it a name...
-  prob ~ normal(intercept + (X * slopes), residual); // mu, sigma
+  // prob ~ normal(intercept + (X * slopes), residual); // mu, sigma
+  prob ~ lognormal(intercept + (X * slopes), residual); // mu, sigma
 
+  // prob ~ student_t(dof, intercept + (X * slopes), residual); // nu, mu, sigma
 }
 ```
 
-```{r eval=FALSE}
+```{r}
 explorative_model <- stan_model(
   file = "./explorative_model.stan",
   model_name = "explorative model"
@@ -580,30 +613,82 @@ explorative_model <- stan_model(
 ```{r}
 exploratory_model_fit <- sampling(
   explorative_model,
-  list(N = nrow(data),
-       prob = data$dmw,
-       X = cbind(data$dx/100, data$dz, data$dt)
-       ),
-  iter = 1000,
+  list(
+    N = nrow(data_onecompound),
+    prob = data_onecompound$dmw_log,
+    X = cbind(
+      abs(standardize(data_onecompound$dx)),
+      abs(standardize(data_onecompound$dz))
+      )
+    ),
+  iter = 2048,
   chains = 6,
   cores = 6
   )
 
-names(exploratory_model_fit)[1:3] <- c("slope_dx", "slope_dz", "slope_dt")
+names(exploratory_model_fit)[1:2] <- c("slope_dx", "slope_dz") # , "slope_dt"
                                   
-print(exploratory_model_fit)
+# print(exploratory_model_fit)
 ```
 
 
-
-```{r}
+```{r eval=FALSE}
 launch_shinystan(exploratory_model_fit)
 ```
 
 
+## Outcome
+
+```{r}
+smry <- summary(exploratory_model_fit)
+knitr::kable(round(smry$summary, 2), "html", padding = 10)
+```
 
 
 
+```{r, echo=FALSE, out.width = "100%", fig.cap = "<i>Forest plot: Model Results.</i>"}
+knitr::include_graphics("figures/posterior_forestplot.png")
+```
+
+
+Notes:
+
+- Non-Representative success with **model on \(NH_4\)**: 
+  - **clear effect of depth difference**; 
+  - **no effect of distance**
+  - large residual variation, weird intercept
+  - convergence: yes; checks good; using standardized data
+  - "zero difference" had to be excluded (`lognormal` requirement)
+  - \(NH_4\) works with Student T posterior; the others don't converge; yet `lognormal` preferred
+- Effects on \(NO_3\) or \(PO_4\): 
+  - none, really
+  - even larger intercept and residual
+
+General note:
+
+- model building was far too erratic; this is not a conventional linear relation.
+
+
+
+```{latex, include=FALSE}
+% latex table generated in R 4.4.2 by xtable 1.8-4 package
+% Tue Nov 19 15:25:14 2024
+\begin{table}[ht]
+\centering
+\begin{tabular}{lrrrrrrr}
+  \toprule
+Parameter & Rhat & n\_eff & mean & sd & 2.5\% & 50\% & 97.5\% \\ 
+  \midrule
+slope\_dx & 1.0 & 3758 & 0.1 & 0.1 & -0.0 & 0.1 & 0.2 \\ 
+  slope\_dz & 1.0 & 4066 & 0.2 & 0.1 & 0.1 & 0.2 & 0.3 \\ 
+  intercept & 1.0 & 3266 & -1.8 & 0.1 & -2.0 & -1.8 & -1.7 \\ 
+  residual & 1.0 & 4701 & 1.4 & 0.0 & 1.3 & 1.4 & 1.4 \\ 
+  log-posterior & 1.0 & 2673 & -1647.5 & 1.4 & -1651.1 & -1647.2 & -1645.8 \\ 
+   \bottomrule
+\end{tabular}
+\caption{model results for \(NH_4\)} 
+\end{table}
+```
 
 
 # Archive
@@ -613,7 +698,7 @@ There was a bug due to failed joins, producing missing data.
 It turned out to be related to `filterdepth` automatically excluded by the `get_locs()` function.
 
 
-```{r}
+```{r eval=FALSE}
 test_data <- data_raw %>%
   filter(region == "VOT") %>%
   summarize(
@@ -625,7 +710,7 @@ head(test_data, 10)
 ```
 
 
-```{r}
+```{r eval=FALSE}
 test_locs <- locs %>%
   filter(area_code == "VOT") %>%
   select(obswell_code, loc_code, x, y) %>%
@@ -634,7 +719,7 @@ head(test_locs, 10)
 ```
 - ~~`test_locs` does not contain `BUIP003X`~~
 
-```{r}
+```{r eval=FALSE}
 head(test_data %>%
   left_join(
     test_locs,
@@ -653,7 +738,7 @@ head(test_data %>%
   - `PeilbuisLengte`, `FilterLengte`, `ReferentieNiveauMaaiveld`
   - `filterdepth_range` was the killer!
 
-```{r}
+```{r eval=FALSE}
 head(DBI::dbGetQuery(watina_dwh,
   paste0("
     SELECT
@@ -849,8 +934,9 @@ print(exploratory_model_fit)
 ```
 
 
-## Students' T distribution
-no convergence :(
+### Students' T distribution
+*no convergence guaranteed.*
+
 ```{stan eval=FALSE, output.var="studentt_nonconvergent_model"}
 data {
   int<lower=1> N;               // sample size
