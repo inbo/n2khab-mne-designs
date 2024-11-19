@@ -38,14 +38,22 @@ source("./watina_migration.R")
 source("./zenodo_helper.R")
 # source("./spatial_helpers.R")
 
-# watina_dwh <- connect_watina()
-# watina_dwh <- connect_watina()
+if (!exists("watina_dwh")) {
+  watina_dwh <- connect_watina()
+}
+
+
+dir.create("./data", showWarnings = FALSE)
 
 
 # n2khab_data_path <- locate_n2khab_data()
 # options(n2khab_data_path = "C:\\R\\n2khab_data")
 
 # options(browser = "librewolf") # a rather personal thing
+
+
+# the user may choose to reload raw data
+choose_to_reload <- FALSE
 ```
 
 
@@ -151,76 +159,84 @@ This includes several filters:
 - validation VLD, SDV, UNK
 
 
-```{r, eval=FALSE}
-data_raw <- DBI::dbGetQuery(watina_dwh,
-  paste0("
-    SELECT * FROM (
-      SELECT
-        CHM1.region AS region,
-        CHM1.ChemVarWID AS chemvar_id,
-        CHM1.ChemMetingWID AS id1,
-        CHM1.pp_code AS pp1,
-        CHM1.filterdepth AS z1,
-        CHM1.MetingStatusCode AS status1,
-        CHM1.DatumWID AS date1,
-        CHM1.time AS t1,
-        CHM1.Meetwaarde AS mw1,
-        CHM2.ChemMetingWID AS id2,
-        CHM2.pp_code AS pp2,
-        CHM2.filterdepth AS z2,
-        CHM2.MetingStatusCode AS status2,
-        CHM2.DatumWID AS date2,
-        CHM2.time AS t2,
-        CHM2.Meetwaarde AS mw2
-      FROM (
+```{r, eval=TRUE}
+
+load_raw_data <- function () {
+  DBI::dbGetQuery(watina_dwh,
+    paste0("
+      SELECT * FROM (
         SELECT
-            FactChemischeMeting.*,
-            Jaardag_Nummer/365.0 + Jaar AS time,
-            SUBSTRING(PeilpuntCode, 1, 3) AS region,
-            (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)) AS filterdepth,
-            dimPeilpunt.PeilpuntCode AS pp_code
-        FROM FactChemischeMeting
-        LEFT JOIN dimDatum ON FactChemischeMeting.DatumWID = dimDatum.DatumWID
-        LEFT JOIN dimPeilpunt ON FactChemischeMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
-        ) CHM1
+          CHM1.region AS region,
+          CHM1.ChemVarWID AS chemvar_id,
+          CHM1.ChemMetingWID AS id1,
+          CHM1.pp_code AS pp1,
+          CHM1.filterdepth AS z1,
+          CHM1.MetingStatusCode AS status1,
+          CHM1.DatumWID AS date1,
+          CHM1.time AS t1,
+          CHM1.Meetwaarde AS mw1,
+          CHM2.ChemMetingWID AS id2,
+          CHM2.pp_code AS pp2,
+          CHM2.filterdepth AS z2,
+          CHM2.MetingStatusCode AS status2,
+          CHM2.DatumWID AS date2,
+          CHM2.time AS t2,
+          CHM2.Meetwaarde AS mw2
+        FROM (
+          SELECT
+              FactChemischeMeting.*,
+              Jaardag_Nummer/365.0 + Jaar AS time,
+              SUBSTRING(PeilpuntCode, 1, 3) AS region,
+              (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)) AS filterdepth,
+              dimPeilpunt.PeilpuntCode AS pp_code
+          FROM FactChemischeMeting
+          LEFT JOIN dimDatum ON FactChemischeMeting.DatumWID = dimDatum.DatumWID
+          LEFT JOIN dimPeilpunt ON FactChemischeMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+          ) CHM1
+        LEFT JOIN (
+          SELECT
+              FactChemischeMeting.*,
+              Jaardag_Nummer/365.0 + Jaar AS time,
+              SUBSTRING(PeilpuntCode, 1, 3) AS region,
+              (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)) AS filterdepth,
+              dimPeilpunt.PeilpuntCode AS pp_code
+          FROM FactChemischeMeting
+          LEFT JOIN dimDatum ON FactChemischeMeting.DatumWID = dimDatum.DatumWID
+          LEFT JOIN dimPeilpunt ON FactChemischeMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+          ) CHM2
+          ON (CHM1.ChemVarWID = CHM2.ChemVarWID)
+         AND (CHM1.region = CHM2.region)
+        WHERE CHM1.ChemVarWID IN (6, 7, 8, 9)
+          AND CHM2.MetingStatusCode = CHM1.MetingStatusCode
+          AND (CHM2.time - CHM1.time) < (30.0/365)
+          AND ABS(CHM2.filterdepth - CHM1.filterdepth) <= 1.0
+          AND (CHM2.ChemMetingWID != CHM1.ChemMetingWID)
+          AND (CHM1.PeilpuntWID < CHM2.PeilpuntWID)
+          AND CHM2.DatumWID >= CHM1.DatumWID
+          AND CHM1.MetingStatusCode IN ('VLD', 'SDV', 'UNK')
+        ) AS ChemRepeated
       LEFT JOIN (
         SELECT
-            FactChemischeMeting.*,
-            Jaardag_Nummer/365.0 + Jaar AS time,
-            SUBSTRING(PeilpuntCode, 1, 3) AS region,
-            (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)) AS filterdepth,
-            dimPeilpunt.PeilpuntCode AS pp_code
-        FROM FactChemischeMeting
-        LEFT JOIN dimDatum ON FactChemischeMeting.DatumWID = dimDatum.DatumWID
-        LEFT JOIN dimPeilpunt ON FactChemischeMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
-        ) CHM2
-        ON (CHM1.ChemVarWID = CHM2.ChemVarWID)
-       AND (CHM1.region = CHM2.region)
-      WHERE CHM1.ChemVarWID IN (6, 7, 8, 9)
-        AND CHM2.MetingStatusCode = CHM1.MetingStatusCode
-        AND (CHM2.time - CHM1.time) < (30.0/365)
-        AND ABS(CHM2.filterdepth - CHM1.filterdepth) <= 1.0
-        AND (CHM2.ChemMetingWID != CHM1.ChemMetingWID)
-        AND (CHM1.PeilpuntWID < CHM2.PeilpuntWID)
-        AND CHM2.DatumWID >= CHM1.DatumWID
-        AND CHM1.MetingStatusCode IN ('VLD', 'SDV', 'UNK')
-      ) AS ChemRepeated
-    LEFT JOIN (
-      SELECT
-        ChemVarWID,
-        ChemVarCode AS compound,
-        ChemVarEenheid AS unit
-      FROM DimChemVar
-      ) AS DCV
-      ON DCV.ChemVarWID = ChemRepeated.chemvar_id
-      ")
-  ) %>% select(-ChemVarWID)
-write_parquet(data_raw, sink = "chem_couplingdata_arrow.parquet")
+          ChemVarWID,
+          ChemVarCode AS compound,
+          ChemVarEenheid AS unit
+        FROM DimChemVar
+        ) AS DCV
+        ON DCV.ChemVarWID = ChemRepeated.chemvar_id
+        ")
+    ) %>% select(-ChemVarWID)
+}
+
 ```
 
 
 ```{r}
-data_raw <- read_parquet("chem_couplingdata_arrow.parquet")
+if (choose_to_reload || !file.exists("data/chem_couplingdata_arrow.parquet")) {
+  data_raw <- load_raw_data()
+  write_parquet(data_raw, sink = "data/chem_couplingdata_arrow.parquet")
+} else {
+  data_raw <- read_parquet("data/chem_couplingdata_arrow.parquet")
+}
 glimpse(data_raw)
 ```
 
@@ -233,12 +249,20 @@ area_code_selection <- data_raw %>%
   pull(region) %>%
   unique
 
-locs <- get_locs(
-  watina_dwh,
-  obswells = TRUE, 
-  filterdepth_range = c(0, 1000),
-  collect = TRUE
-) 
+
+if (choose_to_reload || !file.exists("data/locs_backup.parquet")) {
+  locs <- get_locs(
+    watina_dwh,
+    obswells = TRUE, 
+    filterdepth_range = c(0, 1000),
+    collect = TRUE
+  ) 
+  write_parquet(locs, sink = "data/locs_backup.parquet")
+} else {
+  locs <- read_parquet("data/locs_backup.parquet")
+
+}
+# 
 # locs %>% filter(loc_code == "BUIP003") %>% arrange(loc_code)
 ```
 
@@ -269,6 +293,7 @@ data <- data_raw %>%
     dt = sqrt((t2-t1)^2),
     dz = z2-z1,
     dmw = mw2 - mw1,
+    dmw_log = log(abs(dmw)+1.0),
     dmw_rel = (mw2 - mw1) / (abs(mw1) + abs(mw2))
   ) %>%
   filter(
@@ -351,7 +376,7 @@ glimpse(data)
 
 ```{r}
 data %>%
-  ggplot(aes(x = dx, y = log(abs(dmw)+1.0), color = soilclass1)) +
+  ggplot(aes(x = dx, y = dmw_log, color = soilclass1)) +
   geom_point() +
   geom_smooth() +
   facet_grid(soilclass1 ~ compound, scales = "free_y") +
@@ -397,7 +422,7 @@ data_binned <- data %>%
   group_by(distance_bin, compound) %>%
   summarize_at(
     .funs = function (x) mean(x, na.rm = TRUE),
-    .vars = vars(dx, dt, dz, dmw, dmw_rel),
+    .vars = vars(dx, dt, dz, dmw, dmw_log, dmw_rel),
   )
 glimpse(data_binned)
 ```
@@ -416,26 +441,47 @@ data_binned %>%
 
 Desparate: let's combine compounds:
 ```{r}
-data %>%
+g <- data %>%
   mutate(
     distance_bin = as.factor(ntile(dx, n = 20))
     ) %>%
   group_by(distance_bin) %>%
   summarize_at(
     .funs = function (x) mean(x, na.rm = TRUE),
-    .vars = vars(dx, dt, dz, dmw, dmw_rel),
+    .vars = vars(dx, dt, dz, dmw, dmw_log, dmw_rel),
   ) %>%
   ggplot(aes(x = dx, y = log(abs(dmw_rel)+1.0))) +
   geom_point() +
   geom_smooth() +
   theme_bw() 
+
+ggsave("figures/difference_distance_binned.png",
+  dpi = 300,
+  width = 16, height = 8, units = "in"
+)
 ```
+
+NOTE: this is still "log relative" difference in measurement walue.
+
+
+```{r, echo=FALSE, out.width = "100%", fig.cap = "<i>Heavy binning at least induces some rampup, yet the periodicity remains puzzling.</i>"}
+knitr::include_graphics("figures/difference_distance_binned.png")
+```
+
+
+## TODO: TiDiDi (Time-Distance-Difference Plot)
+This is the idea to create a 3D surface plot with:
+
+- difference on the `z`-axis,
+- distance on the `x`-axis,
+- sampling interval time on the `y`-axis.
+
 
 # Modeling in variograms
 
 I guess it is time to squeeze the last out of this data set with a complex model.
 
-Question: What is the concentration difference `dmw` or relative concentration difference `dmw_rel` between two sites, given:
+Question: What is the concentration difference `dmw`, its log `dmw_log`, or relative concentration difference `dmw_rel` between two sites, given:
 
 - chemical `compound` (random effect)
 - inter-sampling interval (`dt`)
@@ -466,6 +512,10 @@ data_nh4 <- data %>% filter(
 glimpse(data_nh4)
 ```
 
+## TODO Prior Inspection
+Plotting the distribution of various model components.
+
+
 
 ## Less Guessing, More Thinking (LGMT) Model
 
@@ -474,49 +524,58 @@ glimpse(data_nh4)
 - https://mc-stan.org/docs/functions-reference/distributions_over_unbounded_vectors.html#multi-student-t-cholesky-fun
 
 
-considerations (mental notes for Tuesday):
+considerations:
 
 - Using relative difference might not be a good idea.
-- Using absolute difference is required.
+- Using absolute difference is required (`dmw`; yet note that the distribution is crappy).
 - Difference makes "zero" a valid outcome; in fact, zero is a very likely case (although, maybe not; this might depend on detection limit).
 
 TODO:
 
 - Plot data distribution again. Try transforming \(dc\) = concentration difference 
-- Start with only `data_nh4`, for simplicity: the compounds' concentration differences are independent for all practical purposes.
-- Try lognormal, because why not. Otherwise go exponential (maybe "plus Gaussian" for the wobbling).
-- Model structure: \(dc \sim lognormal(a + b1 dx + b2 dz )\); optionally add (+ b3 dt)
+- Start with only `data_nh4`, for simplicity: the compounds' concentration differences are independent for all practical purposes, no need for a compound model.
+- Try lognormal, because why not. Otherwise go exponential (maybe "plus a Gaussian" for the wobbling).
+- Model structure: \(d\xi \sim lognormal(a + b1 dx + b2 dz )\); optionally add (+ b3 dt)
+
+
+`stan` notes (still learning!):
+
+- `transformed parameters {...}` are parameters, i.e. their samples are added to the output
+- brackets are very mandatory, e.g. `inv_logit(intercept + X * slopes);` is wrong and needs to be `inv_logit(intercept + (X * slopes));`
 
 
 ```{stan, output.var="explorative_model"}
 data {
   int<lower=1> N;               // sample size
-  matrix[N, 2] X; // predictors: distance, depth
-  real<lower=0, upper=1> prob[N]; // outcome variable
+  matrix[N, 3] X; // predictors: distance, depth
+  real prob[N]; // outcome variable
 }
 
 parameters {
-  vector[2] slopes;
+  vector[3] slopes;
   real intercept;
-  real<lower=0> kappa;
+  real<lower=0> residual;      // residual variability / model error
+  real<lower=0> dof;      // the "nu" parameter for Student's T (degrees of freedom)
 }
-
 
 model {
   // priors
-  slopes ~ normal(0, 1);
+  slopes ~ normal(0, 0.1);
   intercept ~ normal(0, 1);
-
-  kappa ~ gamma(1, 1); // model residual
+  residual ~ cauchy(0, 1);
+  dof ~ cauchy(0, 10);
 
   // "posterior", "likelihood", give it a name...
-  prob ~ beta_proportion(inv_logit(intercept + (X * slopes)), kappa);    //
+  prob ~ student_t(dof, intercept + (X * slopes), residual); // nu, mu, sigma
 
 }
 ```
 
 ```{r eval=FALSE}
-explorative_model <- stan_model("./explorative_model.stan")
+explorative_model <- stan_model(
+  file = "./explorative_model.stan",
+  model_name = "explorative model"
+  )
 ```
 
 
@@ -524,13 +583,15 @@ explorative_model <- stan_model("./explorative_model.stan")
 exploratory_model_fit <- sampling(
   explorative_model,
   list(N = nrow(data),
-       prob = data$dc,
-       X = cbind(data$dx, data$dz)
+       prob = data$dmw,
+       X = cbind(data$dx/100, data$dz, data$dt)
        ),
   iter = 1000,
   chains = 6,
   cores = 6
   )
+
+names(exploratory_model_fit)[1:3] <- c("slope_dx", "slope_dz", "slope_dt")
                                   
 print(exploratory_model_fit)
 ```

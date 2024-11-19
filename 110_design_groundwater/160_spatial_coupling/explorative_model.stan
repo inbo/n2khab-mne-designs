@@ -1,29 +1,24 @@
 data {
   int<lower=1> N;               // sample size
-  matrix[N, 2] X; // predictors: distance, depth
-  real<lower=0, upper=1> prob[N]; // outcome variable
+  matrix[N, 3] X; // predictors: distance, depth
+  real prob[N]; // outcome variable
 }
 
 parameters {
-  vector[2] slopes;
+  vector[3] slopes;
   real intercept;
-  real<lower=0> kappa;
+  real<lower=0> residual;      // residual variability / model error
+  real<lower=0> dof;      // the "nu" parameter for Student's T (degrees of freedom)
 }
-
-
-//transformed parameters {
-//  vector<lower=0, upper=1>[N] estimator;
-//  estimator = inv_logit(intercept + (X * slopes));  // ! brackets!
-//}
 
 model {
   // priors
-  slopes ~ normal(0, 1);
+  slopes ~ normal(0, 0.1);
   intercept ~ normal(0, 1);
-
-  kappa ~ gamma(1, 1); // model residual
+  residual ~ cauchy(0, 1);
+  dof ~ cauchy(0, 10);
 
   // "posterior", "likelihood", give it a name...
-  prob ~ beta_proportion(inv_logit(intercept + (X * slopes)), kappa);    //
+  prob ~ student_t(dof, intercept + (X * slopes), residual); // nu, mu, sigma
 
 }
