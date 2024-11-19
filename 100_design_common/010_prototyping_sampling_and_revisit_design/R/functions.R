@@ -201,6 +201,36 @@ add_point_coords_grts <- function(
 
 
 
+
+#' Add column 'is_strictly_aquatic' based on stratum column in a data frame
+#'
+#' @param df Data frame that has a column `stratum` and to which a column
+#'   `is_strictly_aquatic` has to be added.
+#' @param strata Data frame with columns `type` and `stratum` (`stratum` is
+#'   primary key) to declare the relation between type and stratum.
+#' @param type_properties Data frame with (at least) columns `type` and
+#'   `hydr_class`, where `type` is a primary key.
+add_col_is_strictly_aquatic <- function(df, strata, type_properties) {
+  df %>%
+    inner_join(
+      strata,
+      join_by(stratum),
+      relationship = "many-to-one",
+      unmatched = c("error", "drop")
+    ) %>%
+    inner_join(
+      type_properties %>%
+        mutate(is_strictly_aquatic = hydr_class == "HC3") %>%
+        select(type, is_strictly_aquatic),
+      join_by(type),
+      relationship = "many-to-one",
+      unmatched = c("error", "drop")
+    ) %>%
+    select(-type)
+}
+
+
+
 #' Choose optimal threshold to distribute sample sizes in a GRTS address series
 #'
 #' Given the sampling frame as a series of GRTS addresses and sizes of several

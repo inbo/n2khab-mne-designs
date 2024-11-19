@@ -321,21 +321,10 @@ dom_stratum_grtspart_threshold <-
   ) %>% 
   # characterize strata with 'is_strictly_aquatic' to determine number of 
   # spare units
-  inner_join(
-    n2khab_strata,
-    join_by(stratum),
-    relationship = "many-to-one",
-    unmatched = c("error", "drop")
+  add_col_is_strictly_aquatic(
+    strata = n2khab_strata,
+    type_properties = n2khab_types_expanded_properties
   ) %>% 
-  inner_join(
-    n2khab_types_expanded_properties %>% 
-      mutate(is_strictly_aquatic = hydr_class == "HC3") %>% 
-      select(type, is_strictly_aquatic),
-    join_by(type),
-    relationship = "many-to-one",
-    unmatched = c("error", "drop")
-  ) %>% 
-  select(-type) %>% 
   arrange(domain, stratum, grts_part) %>% 
   nest(splits = -c(domain, stratum, is_strictly_aquatic)) %>% 
   inner_join(
@@ -708,25 +697,15 @@ scheme_moco_ps_stratum_sppost_spsamples_spares <-
   scheme_moco_ps_stratum_dom_spsamples_nested %>% 
   # characterize strata with 'is_strictly_aquatic' to determine number of 
   # spare units
-  inner_join(
-    n2khab_strata,
-    join_by(stratum),
-    relationship = "many-to-one",
-    unmatched = c("error", "drop")
-  ) %>% 
-  inner_join(
-    n2khab_types_expanded_properties %>% 
-      mutate(is_strictly_aquatic = hydr_class == "HC3") %>% 
-      select(type, is_strictly_aquatic),
-    join_by(type),
-    relationship = "many-to-one",
-    unmatched = c("error", "drop")
+  add_col_is_strictly_aquatic(
+    strata = n2khab_strata,
+    type_properties = n2khab_types_expanded_properties
   ) %>% 
   # determine the coefficient to calculate the theoretical number of spare units
   mutate(
     spare_coef = ifelse(is_strictly_aquatic, spare_coef_aq, spare_coef_default)
   ) %>% 
-  select(-type, -is_strictly_aquatic) %>% 
+  select(-is_strictly_aquatic) %>% 
   # add list columns for scheme x module combo x panel split x stratum:
   mutate(
     # 1. vector that defines relevant spatial poststrata
