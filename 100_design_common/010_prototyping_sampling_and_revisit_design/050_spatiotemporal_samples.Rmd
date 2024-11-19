@@ -498,9 +498,12 @@ This includes the step to redraw the sample for domains included by another doma
 scheme_moco_ps_stratum_dom_spsamples_nested <-
   module_domain_scheme_stratum_sample_size %>%
   select(module, domain, scheme, sampling_frame_id, stratum, sp_sample_size_all_panels_stratum) %>%
-  # for MNE, non-core schemes (dropped below) have yet to be taken back (but I
-  # think this step also drops things we always need to drop).
-  # This is relevant for specifically added types for those non-core-schemes.
+  # For non-core-schemes, only specifically added types with explicit sample
+  # size are kept, i.e. below filter step (the other sampling units are covered
+  # already by the data collection of core types). This is the logical approach
+  # for spatial sampling and data collection plans, however for inference we
+  # also need to compile an expanded object with all applicable combinations of
+  # sampling unit and scheme.
   filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
   # joining module combos
   inner_join(
@@ -672,6 +675,13 @@ scheme_moco_ps_stratum_dom_spsamples %>%
   filter(n > 1) %>% 
   nrow() == 0
 ```
+
+**Missing functionality**: generate object that reflects relationship between all sampling units and schemes, including non-core schemes, needed for the inference stage.
+Currently, we only consider the needs for sampling and data collection, hence not the exact duplications between (parts of) core-schemes and (parts of) non-core schemes.
+See also the above code comment about non-core schemes.
+In essence this means joining duplicating existing sampling units using applicable rows from `module_domain_scheme_stratum_sample_size`, `mod_scheme_target_paneldesign` or `scheme_target_paneldesign` with relation to non-core schemes.
+This object then also contains the spatial poststrata, needed for inference, and we also need to add the sampling weights at that level.
+
 
 #### Reclassify by spatial poststratum and add spare units
 
