@@ -1,0 +1,119 @@
+#+title: Summary: Spatial Coupling
+#+author: Falk Mielke
+#+date: 20241119
+#+options: toc:nil
+
+
+* Setting
+Imagine we select a site for sampling in the framework of the MNE project.
+With the intention to place a =novel= well, we come to the field with our drills, tubes, and stuff, just to find *there is an =existing= well next to the chosen site.
+
+#+begin_center
+Under what circumstances will we include that well, instead of creating a new one?
+#+end_center
+
+
+Below I summarize some outcomes and possible criteria, up for discussion.
+
+* Conceptual Framework
+There was conceptual discussion with Toon Van Daele on <2024-09-24 Tue>.
+More insights evolved on later discussions.
+
+
+Aspects to keep in mind:
++ distance =novel= to =existing= (generally: conservative distance criterium, \(< 10m\) or less)
++ filter depth and placement:
+  + restriction to shallow groundwater
+  + compliance with =novel= placement rules (reduction horizon; installation type)
++ similar distance to water body or streams (analogous to distance criterium)
++ data quality of =existing= well
++ environmental factors (usually covered by distance criterium):
+  + same soil class (potentially soil structure analysis)
+  + habitat characteristics, in particular vegetation
+  + absence of topological discontinuities
+
+
+Further consideration needed might be on the cost side:
++ What is the economic saving of re-use?
++ What is the eco-environmental cost of =novel= drilling?
+
+
+* Chemical Data
+For the monitoring network =GW_03.3= (eutrophication via groundwater), which is to be rolled out with priority, we are interested in nutrient concentrations.
+
+
+There is existing chemical data available in the /watina database/.
+I used those data to estimate spatial coupling of nutrient concentration.
+
+General observations:
++ Concentrations are generally low; a certain number data points are just around detection threshold.
++ This complicates analysis of temporospatial differences.
++ Coverage is sparse: sampling is done bi-weekly in rare cases, usually less frequent.
++ We focus on several classes of chemical compounds:
+  + including \(NH_4\), \(NO_3\), and \(PO_4\)
+  + excluding \(NO_2\) (generally low concentrations; chemical reasons)
+
+
+* Distance-Difference Analysis
+The distance-dependence of chemical measurements was analyzed both visually and by means of statistical modeling.
+
+#+begin_center
+Generally, I observe a *lack of systematic effects*.
+#+end_center
+
+
+Visually, each of the inspected compounds shows a different pattern of variation, and none of those take the conventional form of a variogram.
+
+
+Following rigurous modeling assertions would forbid the calculation of any model, yet ignoring this detail confirms that there are *no predictable influences of distance or inter-sampling interval on chemical concentration*.
++ Effects are only "significant" for one compound (\(NH_4\)), and only when using specific model structures and tricks such as covariate standardization and log transform.
++ Residual variation exceeds the covariate effects by far.
++ Inter-sampling interval and depth difference are clearly more relevant than distance.
+
+
+To re-iterate, this conclusion has to be taken with a grain of salt (ammonia salt, to be exact): we are operating with sparse sampling, close to the detection limit, and the data was not designed for this analysis purpose.
+
+
+* Data Helpers
+Initiating this task, I set out to set up the tools which are necessary to query all of the information listed in the [[Conceptual Framework]].
+
+In the process, tools were created to query
++ spatial distance,
++ distance to water bodies (multiple data sources)
++ elevation.
+
+Previously available or trivially implementable are data sources for soil type and eco-region.
+
+I did not yet assess "well quality" criteria or (underground) topology.
+
+Furthermore, it should be decided whether to combine all these tools into a single R script or package (/triv./).
+
+
+* Suggestion
+The biggest "show stopper" for a profound, quantitative decision rule is the enormous residual temporospatial variability of chemical measurements.
+
+In plain words:
+#+begin_center
+If we measure the same tube twice, it is not guaranteed that we get the same concentration readouts.
+#+end_center
+
+This re-iterates the requirement of standardized field protocols.
+It also justifies using a *rule of thumb* selection criterium, shifting focus to our judgement of the economic and environmental cost mentioned above.
+Example for a practical rule:
+
+If we have an =existing= site,
++ Withing \(10 m\) radius of =novel= (to be negotiated),
++ at approximately target depth (\(\pm 1 m\)),
++ at similar distance to water bodies (\(\pm 1 m\)),
++ which delivered any usable chemical measurements in the past,
+Then we include it.
+
+
+Converse question:
++ Given that we apply this rule in an unbiased fashion, and given the target sampling density of our monitoring network, can we live with this minimal deviation from the "non-selectivity" assumption for site selection?
+
+
+* TODO's
++ Double-check the above rules with experts.
++ Wrap the data query tools in a neat package.
++ We should run a sampling simulation to see what fraction of MNM-like sample sets would be affected; I would expect this to be low \(<1\%\), in which case there is little risk of a bias.
