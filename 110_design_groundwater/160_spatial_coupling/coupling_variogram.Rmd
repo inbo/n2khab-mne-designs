@@ -555,18 +555,16 @@ parameters {
   vector[3] slopes;
   real intercept;
   real<lower=0> residual;      // residual variability / model error
-  real<lower=0> dof;      // the "nu" parameter for Student's T (degrees of freedom)
 }
 
 model {
   // priors
   slopes ~ normal(0, 0.1);
   intercept ~ normal(0, 1);
-  residual ~ cauchy(0, 1);
-  dof ~ cauchy(0, 10);
+  residual ~ cauchy(1, 1);
 
   // "posterior", "likelihood", give it a name...
-  prob ~ student_t(dof, intercept + (X * slopes), residual); // nu, mu, sigma
+  prob ~ normal(intercept + (X * slopes), residual); // mu, sigma
 
 }
 ```
@@ -690,7 +688,7 @@ head(DBI::dbGetQuery(watina_dwh,
 
 ### beta distribution
 #### plain beta
-```{stan, output.var="explorative_model_plain"}
+```{stan eval=FALSE, output.var="explorative_model_plain"}
 data {
   int<lower=1> N;                  // sample size
   real<lower=0, upper=1> dc[N]; // outcome variable
@@ -716,7 +714,7 @@ model {
 
 
 #### beta - compound "intercept"
-```{stan, output.var="explorative_model_randomintercept"}
+```{stan eval=FALSE, output.var="explorative_model_randomintercept"}
 data {
   int<lower=1> N;               // sample size
   int<lower=1> J;               // number of compounds
@@ -751,7 +749,7 @@ model {
 
 
 #### compound slope and intercept
-```{stan, output.var="explorative_model"}
+```{stan eval=FALSE, output.var="explorative_model_compound"}
 data {
   int<lower=1> N;               // sample size
   int<lower=1> J;               // number of compounds
@@ -801,7 +799,7 @@ model {
 
 ### Beta - inv logit matrix
 ... I ended up here, because I wanted to have `beta` posterior, but `linear model mean`-like behavior.
-```{stan, output.var="explorative_model"}
+```{stan eval=FALSE, output.var="beta_inv_logit_model"}
 data {
   int<lower=1> N;               // sample size
   matrix[N, 2] X; // predictors: distance, depth
@@ -848,4 +846,34 @@ exploratory_model_fit <- sampling(
   )
                                   
 print(exploratory_model_fit)
+```
+
+
+## Students' T distribution
+no convergence :(
+```{stan eval=FALSE, output.var="studentt_nonconvergent_model"}
+data {
+  int<lower=1> N;               // sample size
+  matrix[N, 3] X; // predictors: distance, depth
+  real prob[N]; // outcome variable
+}
+
+parameters {
+  vector[3] slopes;
+  real intercept;
+  real<lower=0> residual;      // residual variability / model error
+  real<lower=0> dof;      // the "nu" parameter for Student's T (degrees of freedom)
+}
+
+model {
+  // priors
+  slopes ~ normal(0, 0.1);
+  intercept ~ normal(0, 1);
+  residual ~ cauchy(1, 1);
+  dof ~ normal(5, 10);
+
+  // "posterior", "likelihood", give it a name...
+  prob ~ student_t(dof, intercept + (X * slopes), residual); // nu, mu, sigma
+
+}
 ```
