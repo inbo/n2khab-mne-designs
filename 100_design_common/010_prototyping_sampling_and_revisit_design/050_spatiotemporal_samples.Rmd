@@ -864,6 +864,35 @@ Adding some ideas:
 - in the first year of each compartment, start on 1 Jan and wind up to month_first_default
 <!-- --------------------------- -->
 
+#### Preparations
+
+##### Isolating the spatial samples (without spare units)
+
+`scheme_moco_ps_stratum_sppost_spsamples` is like `scheme_moco_ps_stratum_sppost_spsamples_spares` without the spare units.
+
+```{r}
+scheme_moco_ps_stratum_sppost_spsamples <- 
+  scheme_moco_ps_stratum_sppost_spsamples_spares %>% 
+  mutate(
+    sp_poststr_samples_spareunits = map(sp_poststr_samples_spareunits, function(df) {
+      filter(df, sample_status == "in_sample")
+    })
+  ) %>% 
+  rename(sp_poststr_samples = sp_poststr_samples_spareunits)
+```
+
+We can see that matching spatial samples across schemes, panel splits and module combos only occur for smaller strata; consequently we cannot generalize spatial samples above the level of scheme, panel split and module combo in the revisit design.
+
+```{r paged.print=FALSE}
+scheme_moco_ps_stratum_sppost_spsamples %>% 
+  count(stratum, sp_poststr_samples, name = "number_of_scheme_ps_moco") %>% 
+  filter(number_of_scheme_ps_moco > 1)
+```
+
+However we will combine multiple FAGs within a scheme that have the same revisit design.
+Also, we will maximize the chance for cross-scheme and cross-compartment spatial alignment of sampling units by starting all panel designs on the same virtual date, and drop non-applicable (too early) parts afterwards.
+
+
 #### Number of panels
 
 Determining the _number_ of panels for each module x scheme x spatial subset x 'field activity group' (FAG).
