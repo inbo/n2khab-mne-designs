@@ -65,7 +65,7 @@ to estimate spatial similarity range.
 
 # Chemical Data
 ## rationale/demarcation
-The measurement intervals and data structure of hydrogeographical and chemical data in `watinA` are fundamentally different, and justify separate investigation.
+The measurement intervals and data structure of hydrogeographical and chemical data in `watina` are fundamentally different, and justify separate investigation.
 In particular:
 
 - Temporal sampling: water levels are monitored quasi-continuously (ideally), whereas chemical measurements happen twice a year at best.
@@ -82,7 +82,7 @@ Herein, I focus on chemistry, and more specifically on the following compound cl
 
 We will not regard \(NO_2\).
 
-I will query pairs of (approximately) simultaneously samples sites and quantify differences of measurement outcome, depending on site distance. 
+I will query pairs of (approximately) simultaneously sampled sites and quantify differences of measurement outcome, depending on site distance. 
 And then we'll see.
 
 
@@ -102,7 +102,7 @@ glimpse(DBI::dbGetQuery(watina_dwh,
 I will use `Jaardag_Nummer/365.0 + Jaar` for restricting time difference.
 
 
-
+<br>
 The `dimPeilpunt` table:
 ```{r eval=FALSE}
 glimpse(DBI::dbGetQuery(watina_dwh,
@@ -118,6 +118,7 @@ I will use `SUBSTRING(PeilpuntCode, 1, 3) = GebiedCode` equality for restricting
 
 
 
+<br>
 The `dimGebied` table:
 ```{r eval=FALSE}
 glimpse(DBI::dbGetQuery(watina_dwh,
@@ -132,6 +133,7 @@ glimpse(DBI::dbGetQuery(watina_dwh,
 
 
 
+<br>
 The `dimChemVar` table:
 ```{r eval=FALSE}
 head(DBI::dbGetQuery(watina_dwh,
@@ -142,8 +144,7 @@ head(DBI::dbGetQuery(watina_dwh,
   ), 32)
 ```
 
--> `GebiedCode` can be used to join locs afterwards.
-
+-> holds both the ID and the name of compounds; either can be used (6 = \(PO_4\), 7 = \(NO_3\), 8 = \(NO_2\), 9 = \(NH_4\)).
 
 ## data query
 There are existing `watina` functions for chemical data.
@@ -412,7 +413,7 @@ knitr::include_graphics("figures/difference_distance_facets.png")
 
 
 ## binned variogram
-There must be a reason why 9/10 variogram experts apply binning.
+*There must be a reason why 9 out of 10 variogram experts apply binning.*
 
 ```{r}
 data_binned <- data %>%
@@ -476,6 +477,9 @@ This is the idea to create a 3D surface plot with:
 - distance on the `x`-axis,
 - sampling interval time on the `y`-axis.
 
+Opationally, filterdepth difference could replace one of those axes.
+
+
 *Idea omitted.*
 
 
@@ -485,13 +489,14 @@ I guess it is time to squeeze the last out of this data set with a complex model
 
 Question: What is the concentration difference `dmw`, its log `dmw_log`, or relative concentration difference `dmw_rel` between two sites, given:
 
-- chemical `compound` (random effect)
+- ~~chemical `compound` (random effect)~~
 - inter-sampling interval (`dt`)
 - filter depth difference (`dz`)
-- `soilclass` (random effect)
+- ~~`soilclass` (random effect)~~
 - distance (`dx`), obviously.
 
-*UPDATE: I did not get the models I liked with `brms`, and went to `rstan`.*
+*UPDATE 1: I did not get the models I liked with `brms`, and went to `rstan`.*
+*UPDATE 2: random effects were disregarded to reduce power loss due to data fragmentation.*
 
 ```{r}
 library("rstan")
@@ -644,6 +649,11 @@ smry <- summary(exploratory_model_fit)
 knitr::kable(round(smry$summary, 2), "html", padding = 10)
 ```
 
+```{r eval=FALSE, include=FALSE}
+sink("figures/modelresult_summary.org")
+knitr::kable(round(smry$summary, 2), "org", padding = 10)
+sink()
+```
 
 
 ```{r, echo=FALSE, out.width = "100%", fig.cap = "<i>Forest plot: Model Results.</i>"}
