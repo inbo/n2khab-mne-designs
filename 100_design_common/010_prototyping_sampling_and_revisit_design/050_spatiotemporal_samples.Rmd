@@ -891,6 +891,119 @@ scheme_moco_ps_stratum_sppost_spsamples %>%
 However we will combine multiple FAGs within a scheme that have the same revisit design.
 Also, we will maximize the chance for cross-scheme and cross-compartment spatial alignment of sampling units by starting all panel designs on the same virtual date, and drop non-applicable (too early) parts afterwards.
 
+##### Lifting mod_scheme_fag_paneldesign to the module combo & FA supergroup level
+
+The module combos (of a scheme x panel split) reflect a common revisit design of the main field method of the target variable, across modules.
+We use this entity to populate all the different FAG panel designs (grouped into FA supergroups) with the same corresponding sampling units (from `scheme_moco_ps_stratum_sppost_spsamples`).
+In this way we ensure alignment of membership designs of different FAGs at the FA supergroup level (FA supergroup = multiple FAGs with the same revisit design, in the same module x scheme x spatial subset).
+
+<!-- Check whether the combination of modules in a module combo where the same scheme is a core and a non-core scheme because of the different modules, causes a clash for the involved FAGs since all FAGs are applied to all sampling units of the module combo. -->
+
+<!-- One solution may be to still lump those different incompatible FAGs of a FA supergroup across modules (as we currently do), and indeed apply the panel membership at this level, but afterwards filter the FAGs per sampling unit according to the module membership of each sampling unit, which assumes module labelling of sampling units! Module membership then may need to be an interspersion of the modules in the GRTS address series, since otherwise this conflicts with spread over panels for each module (but then we do sacrifice the spatial balance at module level!) -->
+
+<!-- The other solution may be to work at the module level right away, hence respecting different sets of FAGs per module; this as well assumes module labelling of sampling units! -->
+
+<!-- For now I prefer to ignore this on condition that no modules are effectively combined that pose this problem, hence we always need to verify the existence of clashes, for main field methods (which directly relate to target environmental vars) and for activity sequences (which trigger the FAGs). -->
+
+<!-- Note that the following is wrong, since the spatial samples and spatial subsets already cover 'stratum': ~Since different modules can have different target populations for the same scheme, hence different applicable spatial subsets, we must do this at the stratum level.~ -->
+
+Before we execute this plan, we must verify the degree to which:
+
+- main field methods are present _for all modules_ in the same scheme x module combo x panel split.
+Where this is not the case, it must be verified whether the combination of modules poses problems at the level of the interpretation of the involved (target) environmental variable, and it should be decided whether this combination of modules can be held.
+
+  Main field methods not represented across all modules in the same scheme x module combo x panel split:
+
+```{r}
+moco_mod_scheme_ps_conflicting_mainfieldmethods <- 
+  mod_scheme_mainfieldmethod %>% 
+  # join module combos:
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  # determine number of different modules per scheme x module combo x panel
+  # split:
+  mutate(
+    n_mod = n_distinct(module),
+    .by = c(scheme, module_combo_code, panel_split)
+  ) %>% 
+  # differentiate number of different modules for each main field method
+  mutate(
+    n_mod_mainfieldmethod = n_distinct(module),
+    .by = c(scheme, module_combo_code, panel_split, main_field_method)
+  ) %>% 
+  # we like both of these numbers to be the same, but which ones are different?
+  filter(n_mod != n_mod_mainfieldmethod)
+moco_mod_scheme_ps_conflicting_mainfieldmethods
+```
+
+<!-- A potential conflict is observed between the PAN effectmonitoring vs the MBAA modules, for reading surfacewater levels in GW_05.1_aq. -->
+<!-- However the involved environmental variables are temporally aggregated variables, and these modules will normally not clash as they will rather apply upgrades to the field methods of each other's locations (but sample sizes will not always be equal) rather than add new locations on top of each other (this is not taken into account; their activity sequences have been chosen to represent the individual modules, not their combination). -->
+
+  Target variables of the associated modules and schemes:
+
+```{r}
+envvars %>% 
+  filter(target) %>% 
+  semi_join(
+    moco_mod_scheme_ps_conflicting_mainfieldmethods,
+    join_by(module, scheme)
+  ) %>% 
+  distinct(pick(starts_with("env"), target, main_datacollection_method))
+```
+
+- activity sequences are present _for all modules_ in the same scheme x module combo x panel split.
+Similarly we have to decide potential consequences (restrictions) in the combination of modules if this is not the case.
+
+```{r}
+mod_scheme_mainfieldmethod_actseq %>% 
+  distinct(module, scheme, in_aquatic_subset, activity_sequence,) %>% 
+  # join module combos:
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  # determine number of different modules per scheme x module combo x panel
+  # split:
+  mutate(
+    n_mod = n_distinct(module),
+    .by = c(scheme, module_combo_code, panel_split, in_aquatic_subset)
+  ) %>% 
+  # differentiate number of different modules for each activity sequence
+  mutate(
+    n_mod_actseq = n_distinct(module),
+    .by = c(
+      scheme, 
+      module_combo_code, 
+      panel_split, 
+      in_aquatic_subset, 
+      activity_sequence
+    )
+  ) %>% 
+  # we like both of these numbers to be the same, but which ones are different?
+  filter(n_mod != n_mod_actseq)
+```
+
+<!-- We only have a conflict between the PAN effectmonitoring vs the MBAA modules, for the activity sequence for groundwater (and surfacewater) levels. -->
+<!-- We see no actual clashes for this combination, see reasoning above, provided that only one (the superior) activity sequence is actually applied to a single location. -->
+
+We must bear in mind that mixing and applying such conflicting field method / activity sequence combinations to each module of the module combo (all sampling units) does not make sense, except when the  different field method / activity sequence is divided between different sampling units according to the module.
+We currently don't handle a clash like this; we still expect the modules to use the same methods.
+
+**Missing functionality**: combinations of modules might in some cases (specific module combinations!) apply to the _same_ sampling units (or at least maximize the common sampling unit set), and only differ in the applicable field activities, so that a choice is to be made between the latter.
+Our code currently does not handle this case; we just sum the module sample sizes in all cases and apply the overall set of FAGs to all involved sampling units.
+When the above code chunks spit out a result, this will normally indicate such an unsupported module combination.
+
+
 
 #### Number of panels
 
