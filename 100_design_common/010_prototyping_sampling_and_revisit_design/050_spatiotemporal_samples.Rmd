@@ -1003,6 +1003,103 @@ We currently don't handle a clash like this; we still expect the modules to use 
 Our code currently does not handle this case; we just sum the module sample sizes in all cases and apply the overall set of FAGs to all involved sampling units.
 When the above code chunks spit out a result, this will normally indicate such an unsupported module combination.
 
+Creating preparatory objects to lift `mod_scheme_fag_paneldesign` to the module combo & FA supergroup level.
+
+```{r}
+moco_scheme_ps_fagsuper_paneldesign <- 
+  mod_scheme_fag_paneldesign %>% 
+  # join module combos:
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme, panel_split),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  relocate(module_combo_code, .after = scheme) %>% 
+  arrange(module, scheme, field_activity_group, in_aquatic_subset) %>% 
+  summarize(
+    fagsuper_spsubset = list(
+      tibble(
+        field_activity_group = field_activity_group,
+        in_aquatic_subset = in_aquatic_subset
+      ) %>% 
+        distinct()
+    ),
+    .by = -c(module, is_core_scheme, field_activity_group, in_aquatic_subset)
+  ) %>% 
+  relocate(fagsuper_spsubset, .after = panel_split)
+# object with FAGs and explicit spatial subsets (as in mod_scheme_field_activity)
+moco_scheme_ps_fagset_spsubsetfull <-   
+  mod_scheme_field_activity %>%
+  distinct(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset) %>% 
+  # join module combos:
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  relocate(module_combo_code, .after = scheme) %>% 
+  arrange(module, scheme, field_activity_group, in_aquatic_subset) %>% 
+  summarize(
+    fag_spsubsetfull = list(
+      tibble(
+        field_activity_group = field_activity_group,
+        in_aquatic_subset = in_aquatic_subset
+      ) %>% 
+        distinct()
+    ),
+    .by = -c(module, is_core_scheme, field_activity_group, in_aquatic_subset)
+  ) %>% 
+  relocate(fag_spsubsetfull, .after = panel_split)
+```
+
+Creating final object.
+It expands `moco_scheme_ps_fagsuper_paneldesign` to explicit spatial subsets, but only where needed.
+
+```{r}
+moco_scheme_ps_spsubset_fagsuper_paneldesign <- 
+  moco_scheme_ps_fagsuper_paneldesign %>% 
+  arrange(scheme, module_combo_code) %>% 
+  inner_join(
+    moco_scheme_ps_fagset_spsubsetfull,
+    join_by(scheme, module_combo_code, panel_split),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  mutate(
+    fagsuper_spsubset = map2(
+      fagsuper_spsubset, 
+      fag_spsubsetfull, 
+      function(fsp, f) {
+        if (anyNA(fsp) && any(!is.na(fsp$in_aquatic_subset))) {
+          fsp %>% 
+            inner_join(
+              f %>% rename(in_aquatic_subset_explicit = in_aquatic_subset),
+              join_by(field_activity_group),
+              relationship = "one-to-many",
+              unmatched = c("error", "drop")
+            ) %>% 
+            mutate(in_aquatic_subset = ifelse(
+              is.na(in_aquatic_subset),
+              in_aquatic_subset_explicit,
+              in_aquatic_subset
+            )) %>% 
+            distinct(field_activity_group, in_aquatic_subset)
+        } else {
+          fsp
+        }
+    })
+  ) %>% 
+  select(-fag_spsubsetfull) %>% 
+  unnest(fagsuper_spsubset) %>% 
+  nest(fagsuper = field_activity_group) %>% 
+  relocate(fagsuper, .after = in_aquatic_subset)
+```
 
 
 #### Number of panels
