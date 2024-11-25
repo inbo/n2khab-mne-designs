@@ -882,19 +882,31 @@ Another possible source are protocol variants that are scheme-specific _and_ hav
 The 'field activity groups' (FAGs) are those activity groups that exist of field activities.
 Hence, a FAG is a set of _field_ activities with the same panel design _and_ which take place during the same location visit.
 
-Constructing FAGs per module, scheme and spatial subset by abstracting away the field activities and activity sequences.
+We will construct FAGs per module, scheme and spatial subset by abstracting away the field activities and collapsing activity sequences, ranks and maximum ranks.
 Also, the spatial subset is only given where relevant.
 
+First, construct the FAGs while still retaining the activity sequence.
+
 ```{r}
-mod_scheme_fag <- 
+mod_scheme_actseq_fag <- 
   mod_scheme_field_activity %>% 
-  distinct(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset) %>% 
+  distinct(
+    module,
+    scheme,
+    is_core_scheme,
+    activity_sequence,
+    field_activity_group,
+    rank,
+    max_rank,
+    in_aquatic_subset
+  ) %>% 
   # only consider spatial subsets where needed to distinguish between activity
   # groups:
   inner_join(
     mod_scheme_mainfieldmethod_subsets %>% 
       distinct(module, scheme, in_aquatic_subset) %>% 
       summarize(
+        # is more than one subset covered by the module x scheme?
         multiple_subsets = n() > 1,
         .by = c(module, scheme)
       ),
@@ -903,13 +915,64 @@ mod_scheme_fag <-
     relationship = "many-to-one"
   ) %>% 
   mutate(
-    duplicate = n() > 1,
+    # is more than one subset represented for the FAG?
+    # This currently assumes that ALL subsets are hence represented for the FAG
+    duplicate = n_distinct(in_aquatic_subset) > 1,
     in_aquatic_subset = ifelse(duplicate | !multiple_subsets, NA, in_aquatic_subset),
     .by = c(module, scheme, field_activity_group)
   ) %>% 
-  # now type properties are mere attributes of unique combination of
-  # module, scheme & field_activity_group:
-  distinct(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset)
+  # now spatial subsets are mere attributes of unique combination of
+  # module, scheme, activity_sequence & field_activity_group:
+  distinct(
+    module,
+    scheme,
+    is_core_scheme,
+    activity_sequence,
+    field_activity_group,
+    rank,
+    max_rank,
+    in_aquatic_subset
+  )
+```
+
+Now we must verify that ranks will actually be meaningful after collapsing, by inspecting the cases that would be collapsed and filter for cases that have more than one rank number.
+If this works when neglecting the module (useful for the revisit design), which we look at below, then of course it also holds when keeping the module.
+
+```{r paged.print=FALSE}
+scheme_fag_differentranks <- 
+  mod_scheme_actseq_fag %>% 
+  distinct(pick(-module)) %>% 
+  mutate(
+    n_actseqs = n_distinct(activity_sequence),
+    has_different_ranks = n_distinct(rank) > 1,
+    .by = c(scheme, in_aquatic_subset, field_activity_group)
+  ) %>% 
+  filter(n_actseqs > 1, has_different_ranks) %>% 
+  arrange(scheme, in_aquatic_subset, field_activity_group, rank)
+scheme_fag_differentranks
+```
+
+```{r}
+stopifnot(nrow(scheme_fag_differentranks) == 0)
+```
+
+Next, construct the FAGs per module, scheme and spatial subset while collapsing activity sequences, ranks and maximum ranks.
+
+```{r}
+mod_scheme_fag <-
+  mod_scheme_actseq_fag %>%
+  summarize(
+    rank = min(rank),
+    max_rank = if (all(is.na(max_rank))) NA else max(max_rank, na.rm = TRUE),
+    actseqs = str_c(unique(activity_sequence), collapse = ", "),
+    .by = c(
+      module,
+      scheme,
+      is_core_scheme,
+      field_activity_group,
+      in_aquatic_subset
+    )
+  )
 ```
 
 Overview of different existing combinations of `field_activity_group`, `scheme`, `is_core_scheme` and spatial subset:
