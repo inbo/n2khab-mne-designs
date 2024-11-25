@@ -755,7 +755,7 @@ field_activity_sequences
 
 Field activities can be linked to modules x schemes via the main field method by using the applicable activity sequence, and abstracting variable sets away.
 
-Determining the main field methods per module x scheme, where useful split into spatial subsets (based on type properties in the target population) that will be linked to different field activity sequences.
+Determining the main field methods per module x scheme, where useful split into spatial subsets (based on type properties in the target population) that will be linked to different activity sequences.
   
 ```{r}
 mod_scheme_mainfieldmethod <- 
@@ -784,7 +784,7 @@ mod_scheme_mainfieldmethod_subsets <-
   # between activity sequences, e.g. the distinction between aquatic and
   # terrestrial types. This gives rise to spatial subsets of module x scheme
   # based on type properties (if there's only one such subset, then the scheme
-  # will not be split with regard to field activity sequences).
+  # will not be split with regard to activity sequences).
   inner_join(
     module_targetpops %>% 
       inner_join(
@@ -882,7 +882,7 @@ Another possible source are protocol variants that are scheme-specific _and_ hav
 The 'field activity groups' (FAGs) are those activity groups that exist of field activities.
 Hence, a FAG is a set of _field_ activities with the same panel design _and_ which take place during the same location visit.
 
-Constructing FAGs per module, scheme and spatial subset by abstracting away the field activities.
+Constructing FAGs per module, scheme and spatial subset by abstracting away the field activities and activity sequences.
 Also, the spatial subset is only given where relevant.
 
 ```{r}
@@ -920,6 +920,20 @@ mod_scheme_fag %>%
   arrange(field_activity_group, scheme, is_core_scheme, in_aquatic_subset) 
 ```
 
+#### Note on the role of activity sequences in a module x scheme
+
+Note that quite some FAGs are present in more than one `activity_sequence`, within a module x scheme x spatial subset, and this has been abstracted away in `mod_scheme_fag`.
+
+The activity sequences serve two purposes:
+
+- getting all field activities and FAGs for a given main field method of a module, scheme and spatial subset (see above in the creation of `mod_scheme_field_activity`);
+- setting the required chronological order between field activities / FAGs.
+
+Abstracting them away makes things more simple from now on, but at the same time we will need to set new requirements for the chronological order of FAGs, reflecting the (single or multiple) activity sequences they came from, perhaps still bound by scheme.
+
+
+#### Note on duplication of field activities across schemes
+
 Note that some field activities occur in multiple schemes.
 Insofar their field activity groups get a different panel design (which may depend on module x scheme), care has to be taken to not unnecessarily duplicate some non-datacollection methods at different times.
 
@@ -937,6 +951,8 @@ mod_scheme_fag %>%
   count(field_activity_group, in_aquatic_subset) %>% 
   filter(n > 1)
 ```
+
+#### Note on competing field activities
 
 Something similar occurs when the same location gets two different but competing FAGs, one of which is superior to another, e.g. `GWINSTPIEZWELL` is superior to `GWINSTPIEZNODIVER`.
 This will mostly be avoided by generating spatiotemporal samples for non-core schemes only for types (hence, locations) that are not covered by a competing core scheme (which would compete and win otherwise).
