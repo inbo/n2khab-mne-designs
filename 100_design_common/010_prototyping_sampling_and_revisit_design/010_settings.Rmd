@@ -1005,15 +1005,31 @@ We already checked above that the ranks were constant at this level, so their in
 
 #### Note on the role of activity sequences in a module x scheme
 
-Note that quite some FAGs are present in more than one `activity_sequence`, within a module x scheme x spatial subset, and this has been abstracted away in `mod_scheme_fag`.
+Note that quite some FAGs are present in more than one `activity_sequence`, within a module x scheme x spatial subset (below result), and this has been collapsed in `mod_scheme_fag`.
+
+```{r}
+mod_scheme_fag %>% 
+  select(-c(actseqs, rank, max_rank)) %>% 
+  inner_join(
+    mod_scheme_actseq_fag %>% 
+      mutate(
+        n_actseq = n_distinct(activity_sequence),
+        .by = c(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset)
+      ) %>% 
+      filter(n_actseq > 1),
+    join_by(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset),
+    relationship = "one-to-many",
+    unmatched = c("drop", "error")
+  ) %>% 
+  select(-n_actseq)
+```
 
 The activity sequences serve two purposes:
 
 - getting all field activities and FAGs for a given main field method of a module, scheme and spatial subset (see above in the creation of `mod_scheme_field_activity`);
 - setting the required chronological order between field activities / FAGs.
 
-Abstracting them away makes things more simple from now on, but at the same time we will need to set new requirements for the chronological order of FAGs, reflecting the (single or multiple) activity sequences they came from, perhaps still bound by scheme.
-
+By collapsing them in `mod_scheme_fag` we have made things more simple from now on, but note that we still need the requirements for the chronological order of FAGs, reflecting the (single or multiple) activity sequences they came from.
 
 #### Note on duplication of field activities across schemes
 
