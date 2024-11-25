@@ -1024,7 +1024,7 @@ When the above code chunks output a result, this will normally indicate such an 
 Creating preparatory objects to lift `mod_scheme_fag_paneldesign` to the module combo & FAS level.
 
 ```{r}
-moco_scheme_ps_fagsuper_paneldesign <- 
+moco_scheme_ps_fas_paneldesign <- 
   mod_scheme_fag_paneldesign %>% 
   # join module combos:
   inner_join(
@@ -1038,7 +1038,7 @@ moco_scheme_ps_fagsuper_paneldesign <-
   relocate(module_combo_code, .after = scheme) %>% 
   arrange(module, scheme, field_activity_group, in_aquatic_subset) %>% 
   summarize(
-    fagsuper_spsubset = list(
+    fas_spsubset = list(
       tibble(
         field_activity_group = field_activity_group,
         in_aquatic_subset = in_aquatic_subset
@@ -1047,7 +1047,7 @@ moco_scheme_ps_fagsuper_paneldesign <-
     ),
     .by = -c(module, is_core_scheme, field_activity_group, in_aquatic_subset)
   ) %>% 
-  relocate(fagsuper_spsubset, .after = panel_split)
+  relocate(fas_spsubset, .after = panel_split)
 # object with FAGs and explicit spatial subsets (as in mod_scheme_field_activity)
 moco_scheme_ps_fagset_spsubsetfull <-   
   mod_scheme_field_activity %>%
@@ -1077,11 +1077,11 @@ moco_scheme_ps_fagset_spsubsetfull <-
 ```
 
 Creating final object.
-It expands `moco_scheme_ps_fagsuper_paneldesign` to explicit spatial subsets, but only where needed.
+It expands `moco_scheme_ps_fas_paneldesign` to explicit spatial subsets, but only where needed, i.e. we want each row of `moco_scheme_ps_fas_paneldesign` to have spatial subsets for all FAGs or for none.
 
 ```{r}
-moco_scheme_ps_spsubset_fagsuper_paneldesign <- 
-  moco_scheme_ps_fagsuper_paneldesign %>% 
+moco_scheme_ps_spsubset_fas_paneldesign <- 
+  moco_scheme_ps_fas_paneldesign %>% 
   arrange(scheme, module_combo_code) %>% 
   inner_join(
     moco_scheme_ps_fagset_spsubsetfull,
@@ -1090,8 +1090,8 @@ moco_scheme_ps_spsubset_fagsuper_paneldesign <-
     unmatched = "error"
   ) %>% 
   mutate(
-    fagsuper_spsubset = map2(
-      fagsuper_spsubset, 
+    fas_spsubset = map2(
+      fas_spsubset, 
       fag_spsubsetfull, 
       function(fsp, f) {
         if (anyNA(fsp) && any(!is.na(fsp$in_aquatic_subset))) {
@@ -1114,9 +1114,9 @@ moco_scheme_ps_spsubset_fagsuper_paneldesign <-
     })
   ) %>% 
   select(-fag_spsubsetfull) %>% 
-  unnest(fagsuper_spsubset) %>% 
-  nest(fagsuper = field_activity_group) %>% 
-  relocate(fagsuper, .after = in_aquatic_subset)
+  unnest(fas_spsubset) %>% 
+  nest(fas = field_activity_group) %>% 
+  relocate(fas, .after = in_aquatic_subset)
 ```
 
 
