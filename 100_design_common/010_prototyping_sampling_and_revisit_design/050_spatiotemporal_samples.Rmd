@@ -1026,6 +1026,7 @@ Creating preparatory objects to lift `mod_scheme_fag_paneldesign` to the module 
 ```{r}
 moco_scheme_ps_fas_paneldesign <- 
   mod_scheme_fag_paneldesign %>% 
+  select(-actseqs) %>% 
   # join module combos:
   inner_join(
     scheme_target_paneldesign %>% 
@@ -1037,21 +1038,63 @@ moco_scheme_ps_fas_paneldesign <-
   ) %>% 
   relocate(module_combo_code, .after = scheme) %>% 
   arrange(module, scheme, field_activity_group, in_aquatic_subset) %>% 
+  # adding applicable activity sequences
+  inner_join(
+    mod_scheme_actseq_fag %>% 
+      select(
+        module, 
+        scheme, 
+        is_core_scheme, 
+        field_activity_group, 
+        in_aquatic_subset, 
+        activity_sequence
+      ),
+    join_by(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset),
+    relationship = "one-to-many",
+    unmatched = "error"
+  ) %>% 
+  # prepare for collapsing
+  mutate(
+    actseqs = str_c(unique(activity_sequence), collapse = ", "),
+    .by = !c(module, is_core_scheme, activity_sequence)
+  ) %>% 
   summarize(
     fas_spsubset = list(
       tibble(
         field_activity_group = field_activity_group,
-        in_aquatic_subset = in_aquatic_subset
+        in_aquatic_subset = in_aquatic_subset,
+        rank = rank,
+        max_rank = max_rank,
+        actseqs = actseqs
       ) %>% 
         distinct()
     ),
-    .by = -c(module, is_core_scheme, field_activity_group, in_aquatic_subset)
+    .by = !c(
+      module, 
+      is_core_scheme, 
+      field_activity_group, 
+      rank, 
+      max_rank, 
+      in_aquatic_subset, 
+      activity_sequence,
+      actseqs
+    )
   ) %>% 
   relocate(fas_spsubset, .after = panel_split)
+
 # object with FAGs and explicit spatial subsets (as in mod_scheme_field_activity)
 moco_scheme_ps_fagset_spsubsetfull <-   
   mod_scheme_field_activity %>%
-  distinct(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset) %>% 
+  distinct(
+    module, 
+    scheme, 
+    is_core_scheme, 
+    field_activity_group, 
+    in_aquatic_subset,
+    activity_sequence, 
+    rank,
+    max_rank
+  ) %>% 
   # join module combos:
   inner_join(
     scheme_target_paneldesign %>% 
@@ -1063,15 +1106,39 @@ moco_scheme_ps_fagset_spsubsetfull <-
   ) %>% 
   relocate(module_combo_code, .after = scheme) %>% 
   arrange(module, scheme, field_activity_group, in_aquatic_subset) %>% 
+  mutate(
+    rank = min(rank),
+    max_rank = if (all(is.na(max_rank))) NA else max(max_rank, na.rm = TRUE),
+    actseqs = str_c(unique(activity_sequence), collapse = ", "),
+    .by = c(
+      scheme,
+      module_combo_code,
+      panel_split,
+      field_activity_group,
+      in_aquatic_subset
+    )
+  ) %>% 
   summarize(
     fag_spsubsetfull = list(
       tibble(
         field_activity_group = field_activity_group,
-        in_aquatic_subset = in_aquatic_subset
+        in_aquatic_subset = in_aquatic_subset,
+        rank = rank,
+        max_rank = max_rank,
+        actseqs = actseqs
       ) %>% 
         distinct()
     ),
-    .by = -c(module, is_core_scheme, field_activity_group, in_aquatic_subset)
+    .by = !c(
+      module, 
+      is_core_scheme, 
+      field_activity_group, 
+      in_aquatic_subset,
+      rank,
+      max_rank,
+      activity_sequence,
+      actseqs
+    )
   ) %>% 
   relocate(fag_spsubsetfull, .after = panel_split)
 ```
@@ -1097,17 +1164,46 @@ moco_scheme_ps_spsubset_fas_paneldesign <-
         if (anyNA(fsp$in_aquatic_subset) && any(!is.na(fsp$in_aquatic_subset))) {
           fsp %>% 
             inner_join(
-              f %>% rename(in_aquatic_subset_explicit = in_aquatic_subset),
+              f %>% 
+                rename(
+                  in_aquatic_subset_explicit = in_aquatic_subset,
+                  rank_explicit = rank,
+                  max_rank_explicit = max_rank,
+                  actseqs_explicit = actseqs
+                ),
               join_by(field_activity_group),
               relationship = "one-to-many",
               unmatched = c("error", "drop")
             ) %>% 
-            mutate(in_aquatic_subset = ifelse(
-              is.na(in_aquatic_subset),
-              in_aquatic_subset_explicit,
-              in_aquatic_subset
-            )) %>% 
-            distinct(field_activity_group, in_aquatic_subset)
+            mutate(
+              rank = ifelse(
+                is.na(in_aquatic_subset),
+                rank_explicit,
+                rank
+              ),
+              max_rank = ifelse(
+                is.na(in_aquatic_subset),
+                max_rank_explicit,
+                max_rank
+              ),
+              actseqs = ifelse(
+                is.na(in_aquatic_subset),
+                actseqs_explicit,
+                actseqs
+              ),
+              in_aquatic_subset = ifelse(
+                is.na(in_aquatic_subset),
+                in_aquatic_subset_explicit,
+                in_aquatic_subset
+              )
+            ) %>% 
+            distinct(
+              field_activity_group, 
+              in_aquatic_subset, 
+              rank, 
+              max_rank, 
+              actseqs
+            )
         } else {
           fsp
         }
@@ -1115,8 +1211,24 @@ moco_scheme_ps_spsubset_fas_paneldesign <-
   ) %>% 
   select(-fag_spsubsetfull) %>% 
   unnest(fas_spsubset) %>% 
-  nest(fas = field_activity_group) %>% 
+  nest(fas = c(field_activity_group, rank, max_rank, actseqs)) %>% 
   relocate(fas, .after = in_aquatic_subset)
+```
+
+Let's verify that no FAGs have been duplicated because `rank` or `max_rank` were not unique.
+
+```{r}
+moco_scheme_ps_spsubset_fas_paneldesign %>% 
+  mutate(
+    fas_nrow = map_int(fas, ~ nrow(.)),
+    fas_simple_nrow = map_int(fas, function(df) {
+      df %>% 
+        distinct(field_activity_group) %>% 
+        nrow
+    })
+  ) %>% 
+  filter(fas_nrow != fas_simple_nrow) %>% 
+  nrow() == 0
 ```
 
 
