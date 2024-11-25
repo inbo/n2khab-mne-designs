@@ -983,6 +983,26 @@ mod_scheme_fag %>%
   arrange(field_activity_group, scheme, is_core_scheme, in_aquatic_subset) 
 ```
 
+We also construct an object with the FAG ranks at scheme x spatial subset level, hence after dropping module.
+(But note we're actually not using it, it seems.)
+
+```{r}
+scheme_fag <- 
+  mod_scheme_actseq_fag %>%
+  summarize(
+    rank = min(rank),
+    max_rank = if (all(is.na(max_rank))) NA else max(max_rank, na.rm = TRUE),
+    actseqs = str_c(activity_sequence, collapse = ", "),
+    .by = c(
+      scheme,
+      field_activity_group,
+      in_aquatic_subset
+    )
+  )
+```
+
+We already checked above that the ranks were constant at this level, so their interpretation remains straightforward.
+
 #### Note on the role of activity sequences in a module x scheme
 
 Note that quite some FAGs are present in more than one `activity_sequence`, within a module x scheme x spatial subset, and this has been abstracted away in `mod_scheme_fag`.
