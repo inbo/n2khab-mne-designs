@@ -482,6 +482,21 @@ including_domain <- unique(domain_relations_spsamples$included_by)
 Drawing spatial samples per scheme and GRTS partition (hence for module combos x panel splits), for each stratum x domain.
 This includes the step to redraw the sample for domains included by another domain (typically because of module combinations), to ensure that no units are drawn more than once and the GRTS series in the domain is one series.
 
+Note that the term 'domain' causes some confusion when considered across modules:
+
+- Each module targets one or multiple (geographically defined) domains with a predetermined sample size.
+- While domains may overlap between modules, the domain name is kept as foreseen by a module, since the sample size must be maintained at that level for the module.
+Sample sizes of two modules are summed only when domains are identical.
+- Next, the specified number of sampling units is drawn for each domain.
+- In a separate step, it is taken care of to have no overlapping sampling units because domains may overlap.
+In this step, the membership of each unit with respect to a smaller, included domain is taken into account, so that all units that belong to that domain have contiguous GRTS addresses.
+Nevertheless, it still keep their original (module-bound) domain attribute.
+Sampling units from smaller domains that have a shifted GRTS address to avoid overlap with sampling units from a larger, including domain, have a value `TRUE` in the `extends_on_larger_domain` column of below created `scheme_moco_ps_stratum_dom_spsamples`.
+- Consequently, which units belong to an overlapped domain across modules will not yet be apparent from the resulting object.
+We will need this though in order to add spare units and apply the revisit design.
+Preparing for this will be the topic see section \@ref(sppoststrata) (spatial poststrata).
+
+
 ```{r}
 scheme_moco_ps_stratum_dom_spsamples_nested <-
   module_domain_scheme_stratum_sample_size %>%
@@ -671,7 +686,7 @@ In essence this means joining duplicating existing sampling units using applicab
 This object then also contains the spatial poststrata, needed for inference, and we also need to add the sampling weights at that level.
 
 
-#### Reclassify by spatial poststratum and add spare units
+#### Reclassify by spatial poststratum and add spare units {#sppoststrata}
 
 The `scheme_moco_ps_stratum_dom_spsamples` object distinguishes domains which can spatially overlap.
 This is caused by the domains envisaged by specific modules, and the sampling units attributed to the different domains are mutually exclusive.
