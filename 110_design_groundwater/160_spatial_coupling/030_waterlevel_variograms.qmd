@@ -1,0 +1,407 @@
+---
+title: "Water Level Variograms"
+format:
+  html:
+    toc: true
+    html-math-method: katex
+  pdf:
+    fig-pos: 'H'
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Introduction 
+
+```{r setup}
+#| include: false
+library("dplyr") # our favorite data wrangling toolbox
+library("dbplyr") # dplyr + databases
+library("arrow") # writing parquet files
+library("ggplot2") # a visualization toolbox
+
+
+source("./watina_migration.R")
+
+if (!exists("watina_dwh")) {
+  watina_dwh <- connect_watina()
+}
+
+# create a data folder (if not present)
+dir.create("./data", showWarnings = FALSE)
+
+# options(browser = "librewolf") # a rather personal thing
+
+# the user may choose to reload raw data
+choose_to_reload <- FALSE
+```
+
+
+
+This notebook has similar purpose as the previous one, 
+yet instead of working with water chemistry, I will query water levels 
+to calculate their spatial interrelation.
+
+
+# Data
+## Database Exploration
+List of tables, as a reminder:
+```{r watina-table-list}
+table_list <- get_db_table_list()
+table_list
+```
+
+Content of water level table:
+```{r watina-peilmeting-1}
+#| eval: false
+glimpse(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT *
+    FROM FactPeilMeting
+    LIMIT 1000
+      ")
+  ))
+```
+
+```{r watina-peilmeting-2}
+waterlevels_preview <- tbl(watina_dwh, "FactPeilMeting")
+glimpse(waterlevels_preview)
+```
+
+
+```{r peilmeting-query-example}
+# test <- DBI::dbGetQuery(watina_dwh,
+#   paste0("
+#     SELECT *
+#     FROM FactPeilMeting
+#   "))
+# test
+# # long exec
+```
+
+```{r peilmeting-query-dbplyr}
+test <- tbl(watina_dwh, "FactPeilMeting") %>%
+    left_join(tbl(watina_dwh, "dimPeilpunt"),
+              by = join_by(PeilpuntWID == PeilpuntID))
+glimpse(test)
+```
+
+## Query building
+This will require a similar query as with water chemistry.
+
+Some constraints:
+
+- query `mTAW`
+- maximal sampling interval: 1d (join `DatumWID`)
+- same `GebiedWID`
+- maximal filterdepth difference: 0.1m
+- validation VLD, SDV, UNK
+
+
+```{r check-existing-rawdata}
+raw_data_export_file <- "data/wata_couplingdata_arrow.parquet"
+reload <- choose_to_reload || !file.exists(raw_data_export_file)
+```
+
+```{r raw-data-query-dbplyr}
+
+
+query_measurement <- function (){
+  tbl(watina_dwh, "FactPeilMeting") %>%
+    left_join(
+      tbl(watina_dwh, "dimPeilpunt"),
+      by = join_by(PeilpuntWID == PeilpuntID),
+      relationship = "many-to-many"
+    ) %>%
+    filter(PeilmetingStatusCode == "VLD") %>% 
+    select(
+      PeilMetingWID,
+      PeilbuisLengte,
+      ReferentieNiveauMaaiveld,
+      FilterLengte,
+      PeilpuntStatusCode,
+      PeilpuntCode,
+      MeetpuntWID.x,
+      DatumWID,
+      PeilpuntXCoordinaat,
+      PeilpuntYCoordinaat,
+      mTAW
+    ) %>%
+    mutate(
+      filterdepth = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)
+    ) %>%
+    rename(
+      idx = PeilMetingWID,
+      pblen = PeilbuisLengte,
+      ref_mv = ReferentieNiveauMaaiveld,
+      flen = FilterLengte,
+      fdepth = filterdepth,
+      pp_code = PeilpuntCode,
+      status = PeilpuntStatusCode,
+      mp_idx = MeetpuntWID.x,
+      date = DatumWID,
+      x = PeilpuntXCoordinaat,
+      y = PeilpuntYCoordinaat,
+      w = mTAW
+    ) %>%
+   filter_at(
+    vars(flen, fdepth, pp_code, w),
+    all_vars(!is.na(.))
+  )
+
+}
+
+if (reload) {
+  fpm1 <- query_measurement()
+  fpm2 <- query_measurement()
+
+  glimpse(fpm1)
+  # fpm1 %>% count
+  # unique(fpm1 %>% pull(status))
+}
+
+```
+
+TODO attempting:
+```{r raw-data-join-dbplyr}
+
+if (reload) {
+  data_raw <- fpm1 %>%
+    left_join(fpm2,
+      by = join_by(
+        idx > idx,
+        date == date
+      )
+    ) %>% mutate(
+      dr = sqrt(abs(x.x-y.x) + abs(x.y-y.y))
+    ) %>%
+    filter(dr < 100) %>%
+    collect
+
+  write_parquet(data_raw, sink = raw_data_export_file)
+} else {
+  data_raw <- read_parquet(raw_data_export_file)
+}
+
+glimpse(data_raw)
+```
+
+
+
+
+
+
+```{r raw-data-query-function}
+#| include: false
+#| eval: false
+
+load_raw_data <- function () {
+  DBI::dbGetQuery(watina_dwh,
+    paste0("
+        SELECT
+          PEIL1.region AS region,
+          PEIL1.PeilMetingWID AS id1,
+          PEIL1.pp_code AS pp1,
+          PEIL1.pp_status AS status1,
+          PEIL1.filterdepth AS z1,
+          PEIL1.MeetpuntWID AS mp1,
+          PEIL1.DatumWID AS date1,
+          PEIL1.mTAW AS mw1,
+          PEIL2.PeilMetingWID AS id2,
+          PEIL2.pp_code AS pp2,
+          PEIL2.pp_status AS status2,
+          PEIL2.filterdepth AS z2,
+          PEIL2.MeetpuntWID AS mp2,
+          PEIL2.DatumWID AS date2,
+          PEIL2.mTAW AS mw2
+        FROM (
+          SELECT 
+            FactPeilMeting.*,
+            SUBSTRING(PeilpuntCode, 1, 3) AS region,
+            (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2))
+              AS filterdepth,
+            dimPeilpunt.PeilpuntCode AS pp_code,
+            dimPeilpunt.PeilpuntStatusCode AS pp_status
+          FROM FactPeilMeting
+          LEFT JOIN dimPeilpunt 
+            ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+          ) PEIL1
+        LEFT JOIN (
+          SELECT 
+            FactPeilMeting.*,
+            SUBSTRING(PeilpuntCode, 1, 3) AS region,
+            (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2))
+              AS filterdepth,
+            dimPeilpunt.PeilpuntCode AS pp_code,
+            dimPeilpunt.PeilpuntStatusCode AS pp_status
+          FROM FactPeilMeting
+          LEFT JOIN dimPeilpunt
+            ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+          ) PEIL2
+          ON (PEIL1.DatumWID = PEIL2.DatumWID)
+         AND (PEIL1.region = PEIL2.region)
+        WHERE (PEIL1.PeilpuntWID < PEIL2.PeilpuntWID)
+          AND ABS(PEIL2.filterdepth - PEIL1.filterdepth) <= 1.0
+        ")
+    ) 
+}
+
+```
+
+
+```{r raw-data-loading}
+raw_data_export_file <- "data/wata_couplingdata_arrow.parquet"
+if (choose_to_reload || !file.exists(raw_data_export_file)) {
+  data_raw <- load_raw_data()
+  write_parquet(data_raw, sink = raw_data_export_file)
+} else {
+  data_raw <- read_parquet(raw_data_export_file)
+}
+glimpse(data_raw)
+```
+
+## obswell locations
+Again, for the query of spatial information, `get_locs` will be fine.
+
+```{r raw-data-locs}
+area_code_selection <- data_raw %>%
+  pull(region) %>%
+  unique
+
+
+if (choose_to_reload || !file.exists("data/locs_backup.parquet")) {
+  locs <- get_locs(
+    watina_dwh,
+    obswells = TRUE, 
+    filterdepth_range = c(0, 1000),
+    collect = TRUE
+  ) 
+  write_parquet(locs, sink = "data/locs_backup.parquet")
+} else {
+  locs <- read_parquet("data/locs_backup.parquet")
+
+}
+# 
+# locs %>% filter(loc_code == "BUIP003") %>% arrange(loc_code)
+```
+
+## double-joining locs
+Comparing two locations, I will join the locs twice: once to every location in the pair.
+Then, distances and differences are computed, and relevant entries filtered.
+Finally, factors are generated from categorical variables.
+
+```{r raw-data-join-locs}
+data <- data_raw %>%
+  left_join(
+    select(locs, obswell_code, x, y),
+    by = join_by(pp1 == obswell_code),
+    relationship = "many-to-one"
+  ) %>% rename(c("x1" = x, "y1" = y)) %>%
+  left_join(
+    select(locs, obswell_code, x, y),
+    by = join_by(pp2 == obswell_code),
+    relationship = "many-to-one"
+  ) %>% rename(c("x2" = x, "y2" = y)) %>%
+  filter_at(
+    vars(x1, x2, y1, y2, z1, z2),
+    all_vars(!is.na(.))
+  ) %>%
+  mutate(
+    dx = sqrt((x2-x1)^2 + (y2-y1)^2),
+    dx_log = log10(dx + 1),
+    dt = sqrt((t2-t1)^2),
+    dz = z2-z1,
+    dmw = mw2 - mw1,
+    # dmw_log = log(abs(dmw)+1.0),
+    dmw_rel = (mw2 - mw1) / (abs(mw1) + abs(mw2))
+  ) %>%
+  filter(
+    dx > 0,
+    dx <= 1000,
+    abs(dmw) <= 16
+  ) %>%
+  mutate_at(
+    vars(
+      region
+    ), as.factor
+  )
+
+```
+
+
+```{r brief-regionwise-count}
+data %>%
+  summarize(cnt = n(), .by = c(region))
+```
+
+
+# Difference-Distance Plots
+
+## unbinned
+
+```{r plot-data-unbinned}
+#| label: fig-dmw-dx
+#| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against distance ($\\log{\\Delta x}$)."
+
+data %>%
+  ggplot(aes(x = dx_log, y = abs(dmw))) +
+  geom_point(alpha = 0.1) +
+  geom_smooth() +
+  theme_bw()
+```
+
+
+```{r plot-data-unbinned-dz}
+#| label: fig-dmw-dz
+#| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against filter depth difference ($\\Delta z$)."
+
+data %>%
+  ggplot(aes(x = abs(dz), y = abs(dmw))) +
+  geom_point(alpha = 0.1) +
+  geom_smooth() +
+  theme_bw()
+```
+
+## binned variogram
+*There must be a reason why 9 out of 10 variogram experts apply binning.*
+
+```{r bin-data}
+data_binned <- data %>%
+  mutate(
+    distance_bin = as.factor(ntile(dx, n = 200))
+    )
+
+data_binned <- data_binned %>%
+  summarize_at(
+    .funs = function (x) mean(x, na.rm = TRUE),
+    .vars = vars(dx, dx_log, dt, dz, dmw, dmw_rel),
+    .by = distance_bin
+  ) %>%
+  left_join(
+    data_binned %>% summarize(count = n(), .by = distance_bin),
+    by = "distance_bin",
+    relationship = "one-to-one"
+    )
+glimpse(data_binned)
+```
+
+
+```{r plot-data-binned}
+#| label: fig-dmw-dx-binned
+#| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
+
+data_binned %>%
+  ggplot(aes(x = dx, y = abs(dmw))) +
+  geom_point(alpha = 0.1) +
+  geom_smooth() +
+  theme_bw() 
+
+```
+
+
+# Archive
+```{r disconnect-watina}
+#| include: false
+DBI::dbDisconnect(watina_dwh)
+```
