@@ -567,7 +567,7 @@ envvars <-
       main_datacollection_method, 
       levels = levels(activities$activity)
     ),
-    across(c(target:quality_control, starts_with("mne")), ~ !is.na(.)),
+    across(target:quality_control, ~ !is.na(.)),
     across(where(is.character), factor),
     variable_set = factor(
       variable_set, 
@@ -575,10 +575,11 @@ envvars <-
     )
   ) %>% 
   pivot_longer(
-    cols = starts_with("mne"),
+    cols = where(~ max(as.character(.), na.rm = TRUE) == "X"),
     names_to = "module",
     values_to = "keep"
   ) %>% 
+  mutate(keep = !is.na(keep)) %>% 
   filter(keep) %>% 
   # warn about inactive or unknown modules:
   {
