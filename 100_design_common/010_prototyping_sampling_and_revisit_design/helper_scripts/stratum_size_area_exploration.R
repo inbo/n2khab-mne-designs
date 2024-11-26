@@ -21,7 +21,7 @@ wsh_strata_area <-
 
 module_domain_scheme_stratum_target_sample_size %>%
   filter(
-    module == "mne2024_mbaa_mne_phase_1",
+    module == "mbaa_mne_phase_1",
     domain == "Flanders",
     scheme == "SURF_03.4_lentic"
   ) %>%
@@ -78,7 +78,7 @@ habquarries_strata_area <-
 
 module_domain_scheme_stratum_target_sample_size %>%
   filter(
-    module == "mne2024_mbaa_mne_phase_1",
+    module == "mbaa_mne_phase_1",
     domain == "Flanders",
   ) %>%
   select(scheme, type, stratum, nunits, matches("sp_sample_.+(type|stratum)")) %>%

@@ -243,7 +243,7 @@ mhq_mod_dom_type_no_sample %>%
 # Below code requires availability of:
 # - scheme_domain_fag_panel_calendar
 # - scheme_domain_fag_stratum_spsamples_calendar
-# This code was tailored specifically for module mne2024_pan_effectmon_flanders !!
+# This code was tailored specifically for module pan_effectmon_flanders !!
 
 scheme_domain_fag_panel_calendar %>%
   select(domain, field_activity_group, panel, date_interval) %>%

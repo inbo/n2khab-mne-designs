@@ -16,15 +16,15 @@ Also restricting columns to the necessary ones for workflows (unlike for 'displa
 
 ```{r}
 n2khab_schemes <- read_schemes(lang = lang)
-mne2024_pan_effectmon_core_schemes_vec <- c(
+pan_effectmon_core_schemes_vec <- c(
   "GW_03.3",
   "SOIL_03.2",
   "SURF_03.4_lentic",
   "SURF_03.4_lotic"
 ) %>%
   factor(levels = levels(n2khab_schemes$scheme))
-mne2024_pan_schemes_vec <- c(
-  as.character(mne2024_pan_effectmon_core_schemes_vec),
+pan_schemes_vec <- c(
+  as.character(pan_effectmon_core_schemes_vec),
   "GW_04.2",
   "GW_05.1_aq",
   "GW_05.1_terr", # don't take the whole target population here!! Only groups 2 and 3
@@ -33,11 +33,11 @@ mne2024_pan_schemes_vec <- c(
   "SURF_064_lentic", # this one's existence is still to be confirmed XXXXXXXXX
   "SURF_07.2"
 )
-mne2024_pan_schemes <-
+pan_schemes <-
   n2khab_schemes %>%
-  filter(scheme %in% mne2024_pan_schemes_vec | programme == "MHQ") %>%
+  filter(scheme %in% pan_schemes_vec | programme == "MHQ") %>%
   mutate(
-    is_core_scheme = scheme %in% mne2024_pan_effectmon_core_schemes_vec | 
+    is_core_scheme = scheme %in% pan_effectmon_core_schemes_vec | 
       programme == "MHQ"
   ) %>%
   select(
@@ -50,7 +50,7 @@ mne2024_pan_schemes <-
     tag_1,
     spatial_restriction
   )
-mne2024_mbaa_mne_phase_1_schemes <-
+mbaa_mne_phase_1_schemes <-
   n2khab_schemes %>%
   filter(attribute_1 %in% c("GW", "SURF", "SOIL"), tag_1 == "focal") %>%
   mutate(is_core_scheme = TRUE) %>%
@@ -66,18 +66,18 @@ mne2024_mbaa_mne_phase_1_schemes <-
   )
 ```
 
-Defining a variant of `mne2024_pan_schemes` without the MHQ schemes.
+Defining a variant of `pan_schemes` without the MHQ schemes.
 
 ```{r}
-mne2024_pan_schemes_mne <-
-  mne2024_pan_schemes %>%
+pan_schemes_mne <-
+  pan_schemes %>%
   filter(programme == "MNE")
 ```
 
-Preparing restriction of target populations for mne2024_pan to that of schemes SOIL_03.2, GW_03.3 & SURF_03.4_*, including the addition of 6430_mr for GW_05.1_terr (typegroup 3 completion) & for GW_05.2 (to complete its target population).
+Preparing restriction of target populations for pan to that of schemes SOIL_03.2, GW_03.3 & SURF_03.4_*, including the addition of 6430_mr for GW_05.1_terr (typegroup 3 completion) & for GW_05.2 (to complete its target population).
 
 ```{r}
-targetpops_exclude_from_mne2024_pan <-
+targetpops_exclude_from_pan <-
   read_scheme_types(lang = lang) %>%
   filter(
     scheme == "GW_05.1_terr",
@@ -92,9 +92,9 @@ The 'core schemes' of a 'scheme + target population set' are the schemes with a 
 
 ```{r paged.print=FALSE}
 stset_name_vec <- c(
-  "mne2024_pan_schemes",
-  "mne2024_pan_schemes_mne",
-  "mne2024_mbaa_mne_phase_1_schemes"
+  "pan_schemes",
+  "pan_schemes_mne",
+  "mbaa_mne_phase_1_schemes"
 )
 scheme_targetpop_sets <-
   tibble(
@@ -108,12 +108,12 @@ scheme_targetpop_sets <-
         select(scheme, type) %>%
         semi_join(sts, by = "scheme") %>%
         {
-          if (!str_detect(stsn, "mne2024_pan")) {
+          if (!str_detect(stsn, "pan_")) {
             .
           } else {
             anti_join(
               .,
-              targetpops_exclude_from_mne2024_pan,
+              targetpops_exclude_from_pan,
               by = c("scheme", "type")
             )
           }
@@ -168,27 +168,41 @@ A module is like a project, that aims at realizing some well-defined part of MNE
 ```{r}
 modules <- tribble(
   ~module, ~code_short, ~year_firstdefinition, ~year_last, ~stset_id,
-  "mne2024_pan_effectmon_flanders", "panfl", 2024, 2037, 2,
-  "mne2024_pan_effectmon_sac_subset_5", "pan5", 2024, 2037, 1,
-  "mne2024_pan_be2100024_restoration", "pan2124", 2024, 2030, 1,
-  "mne2024_mbaa_mne_phase_1", "mbaa", 2024, 2031, 3,
-  "mne2024_map", "map", 2024, NA_integer_, NA_integer_
+  "pan_effectmon_flanders", "panfl", 2024, 2037, 2,
+  "pan_effectmon_sac5_custommeas", "pan5", 2024, 2037, 1,
+  "pan_transmon_be2100024", "pan2124", 2024, 2030, 1,
+  "mbaa_mne_phase_1", "mbaa", 2024, 2031, 3,
+  "map_mne", "map", 2024, NA_integer_, NA_integer_
 ) %>% 
   bind_cols(
     tibble(
-      name_nl = c(
-        "PAS effectmonitoring in Vlaanderen", 
-        "PAS effectmonitoring in maatwerkgebieden", 
-        "Habitatmonitoring BE2100024 voor flankerend PAS-beleid",
+      shortname_nl = c(
+        "PAS-effectmonitoring in Vlaanderen", 
+        "PAS-effectmonitoring in 5 maatwerkgebieden", 
+        "Monitoring SBZ-H BE2100024 voor PAS-landbouwtransitie",
         "MBAG-MNM fase 1",
-        "MAP monitoring natuurlijk milieu"
+        "MAP-MNM"
+      ),
+      shortname_en = c(
+        "PAN effect monitoring in Flanders",
+        "PAN effect monitoring in 5 areas with custom measures",
+        "Monitoring SAC BE2100024 for PAN agricultural transition",
+        "MBAA-MNE phase 1",
+        "MAP-MNE"
+      ),
+      name_nl = c(
+        "Programmatische Aanpak Stikstof (PAS) effectmonitoring in Vlaanderen", 
+        "Programmatische Aanpak Stikstof (PAS) effectmonitoring in 5 maatwerkgebieden", 
+        "Monitoring van het natuurlijk milieu en de biotische kwaliteit in Speciale Beschermingszone BE2100024 in het kader van landbouwtransitie voor de Programmatische Aanpak Stikstof (PAS)",
+        "Meetnetten Natuurlijk Milieu in Vlaanderen (MNM) in het kader van het Meetnet Biodiversiteit Agrarisch Gebied, fase 1",
+        "Meetnetten Natuurlijk Milieu in Vlaanderen (MNM) in het kader van het Mestactieplan (MAP)"
       ),
       name_en = c(
-        "PAN effect monitoring in Flanders",
-        "PAN effect monitoring in areas with specific measures",
-        "Habitat monitoring BE2100024 for PAN facilitation policy",
-        "MBAA-MNE phase 1",
-        "MAP natural environment monitoring"
+        "Programmatic Approach Nitrogen (PAN) effect monitoring in Flanders",
+        "Programmatic Approach Nitrogen (PAN) effect monitoring in 5 Special Areas of Conservation with custom measures",
+        "Monitoring of the natural environment and biotic quality in Special Area of Conservation BE2100024 in the framework of agricultural transition for the Programmatic Approach Nitrogen (PAN)",
+        "Monitoring Programme for the Natural Environment in Flanders (MNE) in the framework of Monitoring Biodiversity in Agricultural Areas (MBAA), phase 1",
+        "Monitoring Programme for the Natural Environment in Flanders (MNE) in the framework of the Manure Action Plan (MAP)"
       )
     )
   ) %>%
@@ -319,15 +333,15 @@ At this level, we also define which domains get a specific sample size allocatio
 ```{r}
 module_domains <- tribble(
   ~module, ~domain, ~sample_size_predetermined,
-  "mne2024_pan_effectmon_flanders", "Flanders", TRUE,
-  "mne2024_pan_effectmon_flanders", "SAC_network", FALSE,
-  "mne2024_pan_effectmon_sac_subset_5", "BE2100015", TRUE,
-  "mne2024_pan_effectmon_sac_subset_5", "BE2100024", TRUE,
-  "mne2024_pan_effectmon_sac_subset_5", "BE2200028", TRUE,
-  "mne2024_pan_effectmon_sac_subset_5", "BE2200035", TRUE,
-  "mne2024_pan_effectmon_sac_subset_5", "BE2200039", TRUE,
-  "mne2024_pan_be2100024_restoration", "BE2100024", TRUE,
-  "mne2024_mbaa_mne_phase_1", "Flanders", TRUE,
+  "pan_effectmon_flanders", "Flanders", TRUE,
+  "pan_effectmon_flanders", "SAC_network", FALSE,
+  "pan_effectmon_sac5_custommeas", "BE2100015", TRUE,
+  "pan_effectmon_sac5_custommeas", "BE2100024", TRUE,
+  "pan_effectmon_sac5_custommeas", "BE2200028", TRUE,
+  "pan_effectmon_sac5_custommeas", "BE2200035", TRUE,
+  "pan_effectmon_sac5_custommeas", "BE2200039", TRUE,
+  "pan_transmon_be2100024", "BE2100024", TRUE,
+  "mbaa_mne_phase_1", "Flanders", TRUE,
 ) %>%
   mutate(
     module = factor(module, levels = levels(modules$module)),
@@ -392,7 +406,7 @@ module_scheme_cycle_duration <-
   module_schemes %>%
   select(module, scheme) %>%
   mutate(cycle_duration_y = case_when(
-    module == "mne2024_pan_be2100024_restoration" ~ 3L,
+    module == "pan_transmon_be2100024" ~ 3L,
     str_detect(scheme, "^SURF") ~ 3L,
     .default = 6L
   ))
