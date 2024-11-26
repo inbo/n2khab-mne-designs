@@ -34,7 +34,7 @@ dir.create("./data", showWarnings = FALSE)
 # options(browser = "librewolf") # a rather personal thing
 
 # the user may choose to reload raw data
-choose_to_reload <- FALSE
+force_reload <- FALSE
 ```
 
 
@@ -60,7 +60,7 @@ glimpse(DBI::dbGetQuery(watina_dwh,
     SELECT *
     FROM FactPeilMeting
     LIMIT 1000
-      ")
+    ;")
   ))
 ```
 
@@ -69,16 +69,26 @@ waterlevels_preview <- tbl(watina_dwh, "FactPeilMeting")
 glimpse(waterlevels_preview)
 ```
 
+```{r watina-gebied-1}
+#| eval: false
+glimpse(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT TOP 10 *
+    FROM dimGebied
+    ;")
+  ))
+```
 
 ```{r peilmeting-query-example}
+# # heavy exec - ain't do! (HEAD)
 # test <- DBI::dbGetQuery(watina_dwh,
 #   paste0("
 #     SELECT *
 #     FROM FactPeilMeting
 #   "))
 # test
-# # long exec
 ```
+
 
 ```{r peilmeting-query-dbplyr}
 test <- tbl(watina_dwh, "FactPeilMeting") %>%
@@ -101,7 +111,7 @@ Some constraints:
 
 ```{r check-existing-rawdata}
 raw_data_export_file <- "data/wata_couplingdata_arrow.parquet"
-reload <- choose_to_reload || !file.exists(raw_data_export_file)
+reload <- force_reload || !file.exists(raw_data_export_file)
 ```
 
 ```{r raw-data-query-dbplyr}
@@ -163,7 +173,8 @@ if (reload) {
 
 ```
 
-TODO attempting:
+
+Downloading A LOT OF data:
 ```{r raw-data-join-dbplyr}
 
 if (reload) {
@@ -174,9 +185,9 @@ if (reload) {
         date == date
       )
     ) %>% mutate(
-      dr = sqrt(abs(x.x-y.x) + abs(x.y-y.y))
+      dr = sqrt((x.y-x.x)^2 + (y.y-y.x)^2)
     ) %>%
-    filter(dr < 100) %>%
+    filter(dr < 1000) %>%
     collect
 
   write_parquet(data_raw, sink = raw_data_export_file)
@@ -185,14 +196,187 @@ if (reload) {
 }
 
 glimpse(data_raw)
+data_raw %>% count
 ```
 
 
 
 
 
+## obswell locations
+Again, for the query of spatial information, `get_locs` will be fine.
 
-```{r raw-data-query-function}
+```{r raw-data-locs}
+area_code_selection <- data_raw %>%
+  pull(pp_code.x, pp_code.y) %>%
+  substring(first = 1, last = 3) %>% 
+  unique
+
+
+if (force_reload || !file.exists("data/locs_backup.parquet")) {
+  locs <- get_locs(
+    watina_dwh,
+    area_codes = area_code_selection,
+    obswells = TRUE, 
+    filterdepth_range = c(0, 1000),
+    collect = TRUE
+  ) 
+  write_parquet(locs, sink = "data/locs_backup.parquet")
+} else {
+  locs <- read_parquet("data/locs_backup.parquet")
+
+}
+# 
+# locs %>% filter(loc_code == "BUIP003") %>% arrange(loc_code)
+```
+
+## double-joining locs
+Comparing two locations, I will join the locs twice: once to every location in the pair.
+Then, distances and differences are computed, and relevant entries filtered.
+Finally, factors are generated from categorical variables.
+
+```{r raw-data-join-locs}
+data <- data_raw %>%
+  rename(
+    idx1 = idx.x,
+    loc1 = pp_code.x, 
+    mp1  = mp_idx.x, 
+    x1   = x.x,
+    y1   = y.x,
+    z1  = fdepth.x, 
+    w1   = w.x,
+    idx2 = idx.y,
+    loc2 = pp_code.y, 
+    mp2  = mp_idx.y, 
+    x2   = x.y,
+    y2   = y.y,
+    z2  = fdepth.y, 
+    w2   = w.y,
+  ) %>% select(
+    idx1, loc1, mp1,
+    x1, y1, z1, w1,
+    idx2, loc2,
+    mp2,
+    x2, y2, z2, w2,
+    date, dr
+  ) %>%
+  filter_at(
+    vars(x1, x2, y1, y2, z1, z2, w1, w2),
+    all_vars(!is.na(.))
+  ) %>%
+  mutate(
+    region = substring(loc1, 1, 3),
+    dx = sqrt((x2-x1)^2 + (y2-y1)^2),
+    dx_log = log10(dx + 1),
+    dz = z2-z1,
+    dmw = w2-w1
+  ) %>% 
+  arrange(idx1, idx2) %>% 
+  mutate_at(
+    vars(
+      loc1, loc2, mp1, mp2
+    ), as.factor
+  ) %>%
+  group_by(region, loc1, loc2) %>%
+  summarize(
+    dx = mean(abs(dx), na.rm = TRUE),
+    dz = mean(dz, na.rm = TRUE),
+    dmw = mean(abs(dmw), na.rm = TRUE),
+    # vx = var(dx, na.rm = TRUE),
+    # vz = var(dz, na.rm = TRUE),
+    # vmw = var(dmw, na.rm = TRUE),
+    cnt = n()
+  ) %>% ungroup
+glimpse(data)
+```
+
+
+```{r brief-regionwise-count}
+data %>% group_by(region) %>% summarize(cnt = sum(cnt))
+```
+
+
+# Difference-Distance Plots
+
+## unbinned
+
+```{r plot-data-unbinned}
+#| label: fig-dmw-dx
+#| fig-cap: "Distance-Difference-Plot of absolute difference in water level (mTAW) against distance (${\\Delta x}$)."
+
+data %>%
+  ggplot(aes(x = dx, y = abs(dmw))) +
+  geom_point(alpha = 0.05) +
+  geom_smooth() +
+  xlim(0, 100) +
+  ylim(0,  25) +
+  theme_bw()
+```
+
+
+```{r plot-data-unbinned-dz}
+#| label: fig-dmw-dz
+#| fig-cap: "Distance-Difference-Plot of absolute difference in water level (mTAW) against filter depth difference ($\\Delta z$)."
+
+data %>%
+  ggplot(aes(x = abs(dz), y = abs(dmw))) +
+  geom_point(alpha = 0.05) +
+  geom_smooth() +
+  ylim(0, 100) +
+  xlim(0, 50) +
+  theme_bw()
+```
+
+
+
+## binned variogram
+*There must be a reason why 9 out of 10 variogram experts apply binning.*
+
+```{r bin-data}
+data_binned <- data %>%
+  mutate(
+    distance_bin = ntile(dx, n = 1000)
+    )
+
+nanmean <- function (val) mean(val)
+nansd <- function (val) sd(val, na.rm = TRUE)
+data_binned <- data_binned %>%
+  group_by(distance_bin) %>% 
+  summarize(
+    dx = nanmean(abs(dx)), dz = nanmean(abs(dz)), dmw = nanmean(abs(dmw)),
+    vx = nansd(dx), vz = nansd(dz), vmw = nansd(dmw),
+    cnt = sum(cnt)
+  ) %>% ungroup %>% arrange(dx)
+glimpse(data_binned)
+```
+
+
+```{r plot-data-binned}
+#| label: fig-dmw-dx-binned
+#| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
+
+data_binned %>%
+  ggplot(aes(x = dx, y = abs(dmw))) +
+  geom_point(alpha = 0.1) +
+  geom_smooth() +
+  theme_bw() 
+
+```
+
+
+
+
+# Archive
+```{r disconnect-watina}
+#| include: false
+DBI::dbDisconnect(watina_dwh)
+```
+
+
+
+query attempt
+
+```{r raw-data-query-dbi, eval=FALSE}
 #| include: false
 #| eval: false
 
@@ -249,159 +433,3 @@ load_raw_data <- function () {
 
 ```
 
-
-```{r raw-data-loading}
-raw_data_export_file <- "data/wata_couplingdata_arrow.parquet"
-if (choose_to_reload || !file.exists(raw_data_export_file)) {
-  data_raw <- load_raw_data()
-  write_parquet(data_raw, sink = raw_data_export_file)
-} else {
-  data_raw <- read_parquet(raw_data_export_file)
-}
-glimpse(data_raw)
-```
-
-## obswell locations
-Again, for the query of spatial information, `get_locs` will be fine.
-
-```{r raw-data-locs}
-area_code_selection <- data_raw %>%
-  pull(region) %>%
-  unique
-
-
-if (choose_to_reload || !file.exists("data/locs_backup.parquet")) {
-  locs <- get_locs(
-    watina_dwh,
-    obswells = TRUE, 
-    filterdepth_range = c(0, 1000),
-    collect = TRUE
-  ) 
-  write_parquet(locs, sink = "data/locs_backup.parquet")
-} else {
-  locs <- read_parquet("data/locs_backup.parquet")
-
-}
-# 
-# locs %>% filter(loc_code == "BUIP003") %>% arrange(loc_code)
-```
-
-## double-joining locs
-Comparing two locations, I will join the locs twice: once to every location in the pair.
-Then, distances and differences are computed, and relevant entries filtered.
-Finally, factors are generated from categorical variables.
-
-```{r raw-data-join-locs}
-data <- data_raw %>%
-  left_join(
-    select(locs, obswell_code, x, y),
-    by = join_by(pp1 == obswell_code),
-    relationship = "many-to-one"
-  ) %>% rename(c("x1" = x, "y1" = y)) %>%
-  left_join(
-    select(locs, obswell_code, x, y),
-    by = join_by(pp2 == obswell_code),
-    relationship = "many-to-one"
-  ) %>% rename(c("x2" = x, "y2" = y)) %>%
-  filter_at(
-    vars(x1, x2, y1, y2, z1, z2),
-    all_vars(!is.na(.))
-  ) %>%
-  mutate(
-    dx = sqrt((x2-x1)^2 + (y2-y1)^2),
-    dx_log = log10(dx + 1),
-    dt = sqrt((t2-t1)^2),
-    dz = z2-z1,
-    dmw = mw2 - mw1,
-    # dmw_log = log(abs(dmw)+1.0),
-    dmw_rel = (mw2 - mw1) / (abs(mw1) + abs(mw2))
-  ) %>%
-  filter(
-    dx > 0,
-    dx <= 1000,
-    abs(dmw) <= 16
-  ) %>%
-  mutate_at(
-    vars(
-      region
-    ), as.factor
-  )
-
-```
-
-
-```{r brief-regionwise-count}
-data %>%
-  summarize(cnt = n(), .by = c(region))
-```
-
-
-# Difference-Distance Plots
-
-## unbinned
-
-```{r plot-data-unbinned}
-#| label: fig-dmw-dx
-#| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against distance ($\\log{\\Delta x}$)."
-
-data %>%
-  ggplot(aes(x = dx_log, y = abs(dmw))) +
-  geom_point(alpha = 0.1) +
-  geom_smooth() +
-  theme_bw()
-```
-
-
-```{r plot-data-unbinned-dz}
-#| label: fig-dmw-dz
-#| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against filter depth difference ($\\Delta z$)."
-
-data %>%
-  ggplot(aes(x = abs(dz), y = abs(dmw))) +
-  geom_point(alpha = 0.1) +
-  geom_smooth() +
-  theme_bw()
-```
-
-## binned variogram
-*There must be a reason why 9 out of 10 variogram experts apply binning.*
-
-```{r bin-data}
-data_binned <- data %>%
-  mutate(
-    distance_bin = as.factor(ntile(dx, n = 200))
-    )
-
-data_binned <- data_binned %>%
-  summarize_at(
-    .funs = function (x) mean(x, na.rm = TRUE),
-    .vars = vars(dx, dx_log, dt, dz, dmw, dmw_rel),
-    .by = distance_bin
-  ) %>%
-  left_join(
-    data_binned %>% summarize(count = n(), .by = distance_bin),
-    by = "distance_bin",
-    relationship = "one-to-one"
-    )
-glimpse(data_binned)
-```
-
-
-```{r plot-data-binned}
-#| label: fig-dmw-dx-binned
-#| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
-
-data_binned %>%
-  ggplot(aes(x = dx, y = abs(dmw))) +
-  geom_point(alpha = 0.1) +
-  geom_smooth() +
-  theme_bw() 
-
-```
-
-
-# Archive
-```{r disconnect-watina}
-#| include: false
-DBI::dbDisconnect(watina_dwh)
-```
