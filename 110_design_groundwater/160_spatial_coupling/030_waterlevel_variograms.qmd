@@ -34,7 +34,7 @@ dir.create("./data", showWarnings = FALSE)
 # options(browser = "librewolf") # a rather personal thing
 
 # the user may choose to reload raw data
-force_reload <- FALSE
+force_database_download <- FALSE
 ```
 
 
@@ -42,83 +42,43 @@ force_reload <- FALSE
 This notebook has similar purpose as the previous one, 
 yet instead of working with water chemistry, I will query water levels 
 to calculate their spatial interrelation.
+This serves as
+
+- a proxy for water chemistry, where data availability was sparse
+- a measurement for coupling of sites used for mnw `GW_05.1`.
 
 
 # Data
-## Database Exploration
-List of tables, as a reminder:
-```{r watina-table-list}
-table_list <- get_db_table_list()
-table_list
-```
-
-Content of water level table:
-```{r watina-peilmeting-1}
-#| eval: false
-glimpse(DBI::dbGetQuery(watina_dwh,
-  paste0("
-    SELECT *
-    FROM FactPeilMeting
-    LIMIT 1000
-    ;")
-  ))
-```
-
-```{r watina-peilmeting-2}
-waterlevels_preview <- tbl(watina_dwh, "FactPeilMeting")
-glimpse(waterlevels_preview)
-```
-
-```{r watina-gebied-1}
-#| eval: false
-glimpse(DBI::dbGetQuery(watina_dwh,
-  paste0("
-    SELECT TOP 10 *
-    FROM dimGebied
-    ;")
-  ))
-```
-
-```{r peilmeting-query-example}
-# # heavy exec - ain't do! (HEAD)
-# test <- DBI::dbGetQuery(watina_dwh,
-#   paste0("
-#     SELECT *
-#     FROM FactPeilMeting
-#   "))
-# test
-```
-
-
-```{r peilmeting-query-dbplyr}
-test <- tbl(watina_dwh, "FactPeilMeting") %>%
-    left_join(tbl(watina_dwh, "dimPeilpunt"),
-              by = join_by(PeilpuntWID == PeilpuntID))
-glimpse(test)
-```
-
 ## Settings
+Here some design choices on settings that will constrain the data set.
 
 ```{r data-settings}
-distance_cap <- 1024 # DO NOT CHANGE without reloading.
-n_bins <- 512
+distance_cap <- 1024 # (m) # DO NOT CHANGE without reloading.
+n_bins <- 1024 # number of bins for binning of distances (best use 2^x)
+max_filterdepth <- 3 # (m) # choice to focus on shallow gw (ecologically relevant for GW_03.3 and GW_05.1)
+taw_buffer <- 10 # allow mTAW observations to be below well depth (ReferentieNiveauTAW - PeilbuisLengte) 
+maaiveld_margin <- 24 # differences in water level must be within a margin from differences in ReferentieNiveauMaaiveld
 ```
 
-## Query building
-This will require a similar query as with water chemistry.
 
-Some constraints:
+Other constraints:
 
 - query `mTAW`
-- maximal sampling interval: 1d (join `DatumWID`)
+- maximal sampling interval: same day (join `DatumWID`)
 - same `GebiedWID`
 - maximal filterdepth difference: 0.1m
 - validation VLD, SDV, UNK
 
 
+
+## Query building
+This will require a similar query as with water chemistry.
+The amount of available data exceeded sql capacity, yet the `dbplyr` strategy worked.
+
+
 ```{r check-existing-rawdata}
 raw_data_export_file <- "data/wata_couplingdata_arrow.parquet"
-reload <- force_reload || !file.exists(raw_data_export_file)
+reload <- force_database_download || !file.exists(raw_data_export_file)
 ```
 
 ```{r raw-data-query-dbplyr}
@@ -131,11 +91,15 @@ query_measurement <- function (){
       by = join_by(PeilpuntWID == PeilpuntID),
       relationship = "many-to-many"
     ) %>%
-    filter(PeilmetingStatusCode == "VLD") %>% 
+    filter(PeilmetingStatusCode == "VLD",
+      ReferentieNiveauTAW + PeilbuisLengte > mTAW - taw_buffer,
+      !(PeilMetingWID %in% c(9078367)) # ZWAP outlier (see TODO)
+    ) %>% 
     select(
       PeilMetingWID,
       PeilbuisLengte,
       ReferentieNiveauMaaiveld,
+      ReferentieNiveauTAW,
       FilterLengte,
       PeilpuntStatusCode,
       PeilpuntCode,
@@ -148,10 +112,12 @@ query_measurement <- function (){
     mutate(
       filterdepth = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)
     ) %>%
+    filter(filterdepth <= max_filterdepth) %>% 
     rename(
       idx = PeilMetingWID,
       pblen = PeilbuisLengte,
       ref_mv = ReferentieNiveauMaaiveld,
+      ref_taw = ReferentieNiveauTAW,
       flen = FilterLengte,
       fdepth = filterdepth,
       pp_code = PeilpuntCode,
@@ -188,13 +154,19 @@ if (reload) {
   data_raw <- fpm1 %>%
     left_join(fpm2,
       by = join_by(
-        idx > idx,
-        date == date
+        idx > idx, # measurement index
+        date == date # on the same day
       )
     ) %>% mutate(
-      dr = sqrt((x.y-x.x)^2 + (y.y-y.x)^2)
+      dr = sqrt((x.y-x.x)^2 + (y.y-y.x)^2),
+      dtaw = abs(ref_taw.y - ref_taw.x),
+      dw = abs(w.y - w.x),
     ) %>%
-    filter(dr < distance_cap) %>%
+    filter(
+      dr < distance_cap,
+      dw - dtaw < maaiveld_margin,
+      mp_idx.x < mp_idx.y # unidirectional difference / avoid duplicates
+      ) %>%
     collect
 
   write_parquet(data_raw, sink = raw_data_export_file)
@@ -206,43 +178,18 @@ glimpse(data_raw)
 data_raw %>% count
 ```
 
+The data is saved to disc locally and restored
 
 
 
 
-## obswell locations
-Again, for the query of spatial information, `get_locs` will be fine.
-
-```{r raw-data-locs}
-area_code_selection <- data_raw %>%
-  pull(pp_code.x, pp_code.y) %>%
-  substring(first = 1, last = 3) %>% 
-  unique
-
-
-if (force_reload || !file.exists("data/locs_backup.parquet")) {
-  locs <- get_locs(
-    watina_dwh,
-    area_codes = area_code_selection,
-    obswells = TRUE, 
-    filterdepth_range = c(0, 1000),
-    collect = TRUE
-  ) 
-  write_parquet(locs, sink = "data/locs_backup.parquet")
-} else {
-  locs <- read_parquet("data/locs_backup.parquet")
-
-}
-# 
-# locs %>% filter(loc_code == "BUIP003") %>% arrange(loc_code)
-```
 
 ## double-joining locs
 Comparing two locations, I will join the locs twice: once to every location in the pair.
 Then, distances and differences are computed, and relevant entries filtered.
 Finally, factors are generated from categorical variables.
 
-```{r raw-data-join-locs}
+```{r raw-data-processing}
 data <- data_raw %>%
   rename(
     idx1 = idx.x,
@@ -274,7 +221,7 @@ data <- data_raw %>%
   mutate(
     region = substring(loc1, 1, 3),
     dx = sqrt((x2-x1)^2 + (y2-y1)^2),
-    distance_bin = cut(dx, breaks = n_bins),
+    distance_bin = cut(dx, breaks = seq(-distance_cap/n_bins, distance_cap, length.out = n_bins+2)),
     dx_log = log10(dx + 1),
     dz = z2-z1,
     dmw = w2-w1
@@ -290,16 +237,16 @@ data <- data_raw %>%
     dx = mean(abs(dx), na.rm = TRUE),
     dz = mean(dz, na.rm = TRUE),
     dmw = mean(abs(dmw), na.rm = TRUE),
-    vx = var(dx, na.rm = TRUE),
-    vz = var(dz, na.rm = TRUE),
-    vmw = var(dmw, na.rm = TRUE),
     cnt = n()
   ) %>% ungroup
 glimpse(data)
 ```
 
 
-```{r brief-regionwise-count}
+```{r fig-samplesize}
+#| label: fig-samplesize
+#| fig-cap: "Sample size (number of site pairs observed) per distance (${\\Delta x}$)."
+
 data %>% 
   group_by(distance_bin) %>% 
   summarize(cnt = sum(cnt)) %>% 
@@ -307,7 +254,7 @@ data %>%
   arrange(distance_bin) %>% 
   mutate(distance = distance_cap/n_bins * as.numeric(distance_bin)) %>% 
   ggplot(aes(x = distance, y = cnt)) +
-  geom_bar(stat = "identity") +
+  geom_bar(stat = "identity", width = 1) +
   scale_x_continuous(breaks=seq(0,distance_cap,64)) +
   xlab("distance (m)") +
   ylab("number of observations (N)") +
@@ -329,7 +276,7 @@ data %>%
   ggplot(aes(x = dx, y = abs(dmw))) +
   geom_point(alpha = 0.05) +
   geom_smooth() +
-  xlim(0, 100) +
+  # xlim(0, 100) +
   ylim(0,  25) +
   xlab("distance (m)") +
   ylab("absolute water level difference Δw (mTAW)") +
@@ -346,29 +293,32 @@ data %>%
   geom_point(alpha = 0.05) +
   geom_smooth() +
   ylim(0, 100) +
-  xlim(0, 50) +
+  xlim(0, 3) +
   xlab("filter depth difference dz (m)") +
   ylab("absolute water level difference Δw (mTAW)") +
   theme_bw()
 ```
 
-NOTE: we have some very deep drills (\(dz >> 50m\)).
+NOTE: we do have some very deep drills (\(dz >> 50m\)), yet those were filtered above.
 
 
 ## binned variogram
 *There must be a reason why 9 out of 10 variogram experts apply binning.*
 
-```{r bin-data}
-var(data$dx)
-```
+https://library.soton.ac.uk/variance-standard-deviation-and-standard-error
 
 ```{r bin-data}
 nanmean <- function (val) mean(val, na.rm = TRUE)
 nanvar <- function (val) var(val, na.rm = TRUE)
+nansd <- function (val) sd(val, na.rm = TRUE)
+nansem <- function (val) sd(val, na.rm = TRUE)/sqrt(sum(!is.na(val)))
 data_binned <- data %>%
   group_by(distance_bin) %>% 
   summarize(
-    vx = nanvar(dx), vz = nanvar(dz), vmw = nanvar(dmw),
+    vx = nanvar(dx), vz = nanvar(dz),
+    vmw = nanvar(dmw),
+    sigmw = nansd(dmw),
+    semmw = nansem(dmw),
     dx = nanmean(abs(dx)), dz = nanmean(abs(dz)), dmw = nanmean(abs(dmw)),
     cnt = sum(cnt)
   ) %>% ungroup %>% arrange(dx)
@@ -390,21 +340,22 @@ data_binned %>%
 
 ```
 
+
+# Variograms
+
 ```{r variogram}
 #| label: fig-variogram
 #| fig-cap: "variogram of difference in water level (mTAW) against binned distance ($\\Delta x$)."
 
 data_binned %>%
-  ggplot(aes(x = dx, y = vmw)) +
+  ggplot(aes(x = dx, y = vmw/2)) +
   geom_point(alpha = 0.8) +
   geom_smooth() +
   xlab("site distance (m)") +
-  ylab("variance in water level difference var(Δw) (mTAW)") +
+  ylab("semivariance in water level difference var(Δw)/2 (mTAW)") +
   theme_bw()
 
 ```
-
-
 
 
 # Archive
@@ -415,7 +366,7 @@ DBI::dbDisconnect(watina_dwh)
 
 
 
-query attempt
+## query attempt
 
 ```{r raw-data-query-dbi, eval=FALSE}
 #| include: false
@@ -474,3 +425,227 @@ load_raw_data <- function () {
 
 ```
 
+
+## obswell locations
+Again, for the query of spatial information, `get_locs` will be fine.
+
+```{r raw-data-locs}
+#| eval: false
+#| include: false
+
+area_code_selection <- data_raw %>%
+  pull(pp_code.x, pp_code.y) %>%
+  substring(first = 1, last = 3) %>% 
+  unique
+
+
+if (force_database_download || !file.exists("data/locs_backup.parquet")) {
+  locs <- get_locs(
+    watina_dwh,
+    area_codes = area_code_selection,
+    obswells = TRUE, 
+    filterdepth_range = c(0, 1000),
+    collect = TRUE
+  ) 
+  write_parquet(locs, sink = "data/locs_backup.parquet")
+} else {
+  locs <- read_parquet("data/locs_backup.parquet")
+
+}
+# 
+# locs %>% filter(loc_code == "BUIP003") %>% arrange(loc_code)
+```
+
+
+## Database Exploration
+List of tables, as a reminder...
+```{r watina-table-list}
+#| eval: false
+table_list <- get_db_table_list()
+table_list
+```
+
+Content of water level table:
+```{r watina-peilmeting-1}
+#| eval: false
+glimpse(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT TOP 100 *
+    FROM dimPeilpunt
+    ;")
+  ))
+```
+
+```{r watina-peilmeting-2}
+#| eval: false
+waterlevels_preview <- tbl(watina_dwh, "FactPeilMeting")
+glimpse(waterlevels_preview)
+```
+
+```{r watina-gebied-1}
+#| eval: false
+glimpse(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT TOP 10 *
+    FROM dimGebied
+    ;")
+  ))
+```
+
+```{r peilmeting-query-example}
+# # heavy exec - ain't do! (HEAD)
+# test <- DBI::dbGetQuery(watina_dwh,
+#   paste0("
+#     SELECT *
+#     FROM FactPeilMeting
+#   "))
+# test
+```
+
+
+```{r peilmeting-query-dbplyr}
+#| eval: false
+test <- tbl(watina_dwh, "FactPeilMeting") %>%
+    left_join(tbl(watina_dwh, "dimPeilpunt"),
+              by = join_by(PeilpuntWID == PeilpuntID))
+glimpse(test)
+```
+
+
+## Data Consistency
+There are some observation bins wehre the variance goes crazy; worth investigating.
+
+```{r find-outlier-bins}
+#| eval: false
+
+data_binned %>%
+  arrange(-vmw)
+
+```
+
+- (761, 762]
+- (952, 953]
+
+what is going on in those?
+```{r find-outliers-data}
+#| eval: false
+
+data %>%
+  filter(dx > 1020, dx <= 1021)
+  # filter(dx > 952, dx <= 953)
+  # filter(dmw >= 20)
+
+```
+
+```{r find-outliers-raw}
+#| eval: false
+outlier <- data_raw %>%
+  filter(
+    # pp_code.x == "ABEP115X",
+    # pp_code.y == "ABEP111X"
+    # pp_code.x == "ZWAP234X",
+    # pp_code.y == "ZWAP212X"
+    # pp_code.x == "BOBP218X",
+    # pp_code.y == "BOBP201X"
+    pp_code.x == "GGVP012X",
+    pp_code.y == "GGVP024X"
+  ) %>%
+  mutate(dw = abs(w.y-w.x)) %>% 
+  arrange(-dw)
+glimpse(outlier)
+```
+
+```{r find-outliers-general}
+#| eval: false
+incosistent_depth <- fpm1 %>%
+  filter(w - fdepth > 10) %>% 
+  collect %>% 
+  mutate(subdepth = w - fdepth) %>%
+  arrange(-subdepth)
+  
+glimpse(incosistent_depth)
+```
+
+```{r find-outlier-query}
+#| eval: false
+
+outliers <- DBI::dbGetQuery(
+  watina_dwh,
+  paste0("
+    SELECT 
+      FactPeilMeting.*,
+      (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2))
+        AS filterdepth,
+      dimPeilpunt.*,
+      mTAW AS WTF
+    FROM FactPeilMeting
+    LEFT JOIN dimPeilpunt 
+      ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+    WHERE PeilpuntCode IN ('ZWAP234X', 'ZWAP212X')
+      AND DatumWID = 20011129
+      -- WHERE (PeilbuisLengte - ReferentieNiveauMaaiveld) < 10
+      -- AND (ReferentieNiveauTAW - PeilbuisLengte) < FactPeilMeting.mTAW
+      -- AND FactPeilMeting.mTAW > 10
+      -- AND mTAW > 100
+    ORDER BY mTAW DESC
+  ")
+) %>% janitor::clean_names()
+glimpse(outliers)
+outliers %>% filter(peil_meting_wid == 4785841)
+outliers %>%
+  group_by(peilpunt_code) %>%
+  summarize_all(mean)
+    select(peilpunt_code, datum_wid, m_taw, referentie_niveau_taw, filterdepth, peilbuis_lengte) %>%
+  head(10)
+```
+
+A query for the experts (✉20241127):
+```{r}
+#| eval: false
+outliers <- DBI::dbGetQuery(
+  watina_dwh,
+  paste0("
+    SELECT DISTINCT PeilpuntCode,
+      PeilMetingStatusCode,
+      AVG(PeilbuisLengte) AS PeilbuisLengte,
+      AVG(ReferentieNiveauTAW) AS ReferentieNiveauTAW,
+      AVG(mTAW) AS mTAW,
+      AVG(Niveau) AS Niveau,
+      COUNT(PeilMetingWID) AS n,
+      MAX(mTAW - ReferentieNiveauTAW) AS max_verschil
+    FROM FactPeilMeting
+    LEFT JOIN dimPeilpunt 
+      ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+    WHERE (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)) < 6
+      AND ReferentieNiveauTAW + PeilbuisLengte + 10 < FactPeilMeting.mTAW
+    GROUP BY PeilpuntCode, FactPeilMeting.PeilpuntWID, PeilMetingStatusCode
+    ORDER BY max_verschil DESC
+  ")
+)
+glimpse(outliers)
+```
+
+# TODO
+
+```{r zwap-inconsistency-query}
+#| eval: false
+
+outliers <- DBI::dbGetQuery(
+  watina_dwh,
+  paste0("
+    SELECT 
+      FactPeilMeting.*,
+      (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2))
+        AS filterdepth,
+      dimPeilpunt.*,
+      mTAW AS WTF
+    FROM FactPeilMeting
+    LEFT JOIN dimPeilpunt 
+      ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+    WHERE PeilpuntCode IN ('ZWAP234X', 'ZWAP212X')
+      AND DatumWID = 20011129
+    ORDER BY mTAW DESC
+  ")
+) %>% janitor::clean_names()
+glimpse(outliers)
+```
