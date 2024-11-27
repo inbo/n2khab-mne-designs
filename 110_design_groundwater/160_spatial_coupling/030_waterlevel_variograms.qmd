@@ -97,6 +97,13 @@ test <- tbl(watina_dwh, "FactPeilMeting") %>%
 glimpse(test)
 ```
 
+## Settings
+
+```{r data-settings}
+distance_cap <- 1024 # DO NOT CHANGE without reloading.
+n_bins <- 512
+```
+
 ## Query building
 This will require a similar query as with water chemistry.
 
@@ -187,7 +194,7 @@ if (reload) {
     ) %>% mutate(
       dr = sqrt((x.y-x.x)^2 + (y.y-y.x)^2)
     ) %>%
-    filter(dr < 1000) %>%
+    filter(dr < distance_cap) %>%
     collect
 
   write_parquet(data_raw, sink = raw_data_export_file)
@@ -267,6 +274,7 @@ data <- data_raw %>%
   mutate(
     region = substring(loc1, 1, 3),
     dx = sqrt((x2-x1)^2 + (y2-y1)^2),
+    distance_bin = cut(dx, breaks = n_bins),
     dx_log = log10(dx + 1),
     dz = z2-z1,
     dmw = w2-w1
@@ -274,17 +282,17 @@ data <- data_raw %>%
   arrange(idx1, idx2) %>% 
   mutate_at(
     vars(
-      loc1, loc2, mp1, mp2
+      region, loc1, loc2, mp1, mp2, distance_bin
     ), as.factor
   ) %>%
-  group_by(region, loc1, loc2) %>%
+  group_by(region, loc1, loc2, distance_bin) %>%
   summarize(
     dx = mean(abs(dx), na.rm = TRUE),
     dz = mean(dz, na.rm = TRUE),
     dmw = mean(abs(dmw), na.rm = TRUE),
-    # vx = var(dx, na.rm = TRUE),
-    # vz = var(dz, na.rm = TRUE),
-    # vmw = var(dmw, na.rm = TRUE),
+    vx = var(dx, na.rm = TRUE),
+    vz = var(dz, na.rm = TRUE),
+    vmw = var(dmw, na.rm = TRUE),
     cnt = n()
   ) %>% ungroup
 glimpse(data)
@@ -292,8 +300,21 @@ glimpse(data)
 
 
 ```{r brief-regionwise-count}
-data %>% group_by(region) %>% summarize(cnt = sum(cnt))
+data %>% 
+  group_by(distance_bin) %>% 
+  summarize(cnt = sum(cnt)) %>% 
+  ungroup %>% 
+  arrange(distance_bin) %>% 
+  mutate(distance = distance_cap/n_bins * as.numeric(distance_bin)) %>% 
+  ggplot(aes(x = distance, y = cnt)) +
+  geom_bar(stat = "identity") +
+  scale_x_continuous(breaks=seq(0,distance_cap,64)) +
+  xlab("distance (m)") +
+  ylab("number of observations (N)") +
+  theme_bw()
 ```
+
+NOTE: there are many co-located sites (\(dx \eqiv 0m\)).
 
 
 # Difference-Distance Plots
@@ -310,6 +331,8 @@ data %>%
   geom_smooth() +
   xlim(0, 100) +
   ylim(0,  25) +
+  xlab("distance (m)") +
+  ylab("absolute water level difference Δw (mTAW)") +
   theme_bw()
 ```
 
@@ -324,27 +347,29 @@ data %>%
   geom_smooth() +
   ylim(0, 100) +
   xlim(0, 50) +
+  xlab("filter depth difference dz (m)") +
+  ylab("absolute water level difference Δw (mTAW)") +
   theme_bw()
 ```
 
+NOTE: we have some very deep drills (\(dz >> 50m\)).
 
 
 ## binned variogram
 *There must be a reason why 9 out of 10 variogram experts apply binning.*
 
 ```{r bin-data}
-data_binned <- data %>%
-  mutate(
-    distance_bin = ntile(dx, n = 1000)
-    )
+var(data$dx)
+```
 
-nanmean <- function (val) mean(val)
-nansd <- function (val) sd(val, na.rm = TRUE)
-data_binned <- data_binned %>%
+```{r bin-data}
+nanmean <- function (val) mean(val, na.rm = TRUE)
+nanvar <- function (val) var(val, na.rm = TRUE)
+data_binned <- data %>%
   group_by(distance_bin) %>% 
   summarize(
+    vx = nanvar(dx), vz = nanvar(dz), vmw = nanvar(dmw),
     dx = nanmean(abs(dx)), dz = nanmean(abs(dz)), dmw = nanmean(abs(dmw)),
-    vx = nansd(dx), vz = nansd(dz), vmw = nansd(dmw),
     cnt = sum(cnt)
   ) %>% ungroup %>% arrange(dx)
 glimpse(data_binned)
@@ -357,9 +382,25 @@ glimpse(data_binned)
 
 data_binned %>%
   ggplot(aes(x = dx, y = abs(dmw))) +
-  geom_point(alpha = 0.1) +
+  geom_point(alpha = 0.8) +
   geom_smooth() +
+  xlab("site distance (m)") +
+  ylab("mean absolute water level difference <|Δw|> (mTAW)") +
   theme_bw() 
+
+```
+
+```{r variogram}
+#| label: fig-variogram
+#| fig-cap: "variogram of difference in water level (mTAW) against binned distance ($\\Delta x$)."
+
+data_binned %>%
+  ggplot(aes(x = dx, y = vmw)) +
+  geom_point(alpha = 0.8) +
+  geom_smooth() +
+  xlab("site distance (m)") +
+  ylab("variance in water level difference var(Δw) (mTAW)") +
+  theme_bw()
 
 ```
 
@@ -367,7 +408,7 @@ data_binned %>%
 
 
 # Archive
-```{r disconnect-watina}
+```{r disconnect-watina, eval=FALSE}
 #| include: false
 DBI::dbDisconnect(watina_dwh)
 ```
