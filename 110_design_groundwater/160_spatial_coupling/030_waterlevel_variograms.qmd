@@ -11,6 +11,17 @@ knitr:
     echo: true
 ---
 
+# Summary 
+## TL;DR
+
+
+## List of Relevant Figures
+
+Analyzing water levels (mTAW):
+- sample size: @fig-samplesize
+- binned difference-distance plot: @fig-dw-dx-binned 
+- variogram: @fig-variogram
+
 
 # Introduction 
 
@@ -24,7 +35,11 @@ library("ggplot2") # a visualization toolbox
 
 source("./watina_migration.R")
 
-if (!exists("watina_dwh")) {
+# option to work offline; requires previous data download
+work_offline <- FALSE
+
+# connect watina 
+if (!work_offline && !exists("watina_dwh")) {
   watina_dwh <- connect_watina()
 }
 
@@ -426,7 +441,7 @@ data %>%
 ```
 
 
-## binned variogram
+## binned data
 *There must be a reason why 9 out of 10 variogram experts apply binning.*
 
 https://library.soton.ac.uk/variance-standard-deviation-and-standard-error
@@ -482,12 +497,18 @@ data_binned %>%
 ```
 
 
+TODO: 
+- package variograms
+- models
+
 
 
 # Archive
 ```{r disconnect-watina, eval=FALSE}
 #| include: false
-DBI::dbDisconnect(watina_dwh)
+if (!work_offline) {
+  DBI::dbDisconnect(watina_dwh)
+}
 ```
 
 
@@ -619,7 +640,8 @@ glimpse(DBI::dbGetQuery(watina_dwh,
 ```
 
 ```{r peilmeting-query-example}
-# # heavy exec - ain't do! (HEAD)
+#| eval: false
+# heavy exec - ain't do! (HEAD)
 # test <- DBI::dbGetQuery(watina_dwh,
 #   paste0("
 #     SELECT *
@@ -804,6 +826,7 @@ col_list <- get_tablecolumns("dimPeilpunt")
 ```
 
 ```{r watina-medewerker-3}
+#| eval: false
 glimpse(DBI::dbGetQuery(watina_dwh,
   paste0("
 SELECT
