@@ -55,6 +55,7 @@ Here some design choices on settings that will constrain the data set.
 ```{r data-settings}
 distance_cap <- 1024 # (m) # DO NOT CHANGE without reloading.
 n_bins <- 1024 # number of bins for binning of distances (best use 2^x)
+plot_bins <- 128 # a little less bins for plotting
 max_filterdepth <- 3 # (m) # choice to focus on shallow gw (ecologically relevant for GW_03.3 and GW_05.1)
 taw_buffer <- 10 # allow mTAW observations to be below well depth (ReferentieNiveauTAW - PeilbuisLengte) 
 maaiveld_margin <- 16 # differences in water level must be within a margin from differences in ReferentieNiveauMaaiveld
@@ -67,6 +68,7 @@ Other constraints:
 - query `mTAW`
 - maximal sampling interval: same day (join `DatumWID`)
 - same `GebiedWID`
+- same `soilclass` on both locations
 - maximal filterdepth difference: 0.1m
 - validation VLD, SDV, UNK
 
@@ -254,6 +256,11 @@ glimpse(data)
 #| fig-cap: "Sample size (number of site pairs observed) per distance (${\\Delta x}$)."
 
 data %>% 
+  mutate(
+    distance_bin = cut(
+        dx,
+        breaks = seq(-distance_cap/plot_bins, distance_cap, length.out = plot_bins+2)),
+  ) %>% 
   group_by(distance_bin) %>% 
   summarize(cnt = sum(cnt)) %>% 
   ungroup %>% 
@@ -269,6 +276,98 @@ data %>%
 
 NOTE: there are many co-located sites (\(dx \eqiv 0m\)).
 
+# Soilclass
+
+```{r check-existing-soilclass}
+soilclass_export_file <- "data/soilclass.parquet"
+reload_soil <- force_database_download || !file.exists(soilclass_export_file)
+```
+
+
+```{r load-soilclass}
+if (reload_soil) {
+  source("./zenodo_helper.R")
+  soilmap_raw <- load_zenodo_data("soilmap")
+  
+  soilmap <- soilmap_raw %>%
+    transmute(
+      soilclass = case_when(
+        stringr::str_detect(bsm_mo_tex, "V") ~ "peat",
+        stringr::str_detect(bsm_mo_tex, "^U") ~ "heavy",
+        stringr::str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+        stringr::str_detect(bsm_mo_tex, ".+") ~ "heavy",
+        .default = "unknown"
+      ) %>%
+        factor()
+    )
+
+  soil_locations <- data_raw %>%
+    select(pp_code.x, x.x, y.x) %>% 
+    rename(loc = pp_code.x, x = x.x, y = y.x) %>% 
+    distinct(.keep_all = TRUE)
+
+  soil_locations <- data_raw %>%
+    select(pp_code.y, x.y, y.y) %>% 
+    rename(loc = pp_code.y, x = x.y, y = y.y) %>% 
+    distinct(.keep_all = TRUE) %>%
+    rbind(soil_locations) %>% 
+    distinct(.keep_all = TRUE) %>% 
+    sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+  lookup_soil <- sf::st_join(
+    soil_locations, soilmap
+  ) %>%
+  mutate(soilclass = tidyr::replace_na(soilclass, "unknown")) %>%
+  sf::st_drop_geometry()
+  
+
+  write_parquet(lookup_soil, sink = soilclass_export_file)
+} else {
+  lookup_soil <- read_parquet(soilclass_export_file)
+}
+
+```
+
+```{r join-soilclass}
+data <- data %>%
+  left_join(
+    rename(lookup_soil, c("soilclass" = soilclass)),
+    by = join_by(loc1 == loc),
+    relationship = "many-to-one"
+    ) %>%
+  left_join(
+    rename(lookup_soil, c("soilclass2" = soilclass)),
+    by = join_by(loc2 == loc),
+    relationship = "many-to-one"
+    )
+
+data <- data %>%
+  dplyr::filter(soilclass == soilclass2) %>%
+  select(-soilclass2)
+```
+
+```{r fig-samplesize-soilclass}
+#| label: fig-samplesize-soilclass
+#| fig-cap: "Sample size (number of site pairs observed) per distance (${\\Delta x}$), split per soil class."
+
+data %>% 
+  mutate(
+    distance_bin = cut(
+        dx,
+        breaks = seq(-distance_cap/plot_bins, distance_cap, length.out = plot_bins+2)),
+  ) %>% 
+  group_by(distance_bin, soilclass) %>% 
+  summarize(cnt = sum(cnt)) %>% 
+  ungroup %>% 
+  arrange(distance_bin) %>% 
+  mutate(distance = distance_cap/n_bins * as.numeric(distance_bin)) %>% 
+  ggplot(aes(x = distance, y = cnt, fill = soilclass)) +
+  geom_bar(stat = "identity", width = 1) +
+  scale_x_continuous(breaks=seq(0,distance_cap,64)) +
+  xlab("distance (m)") +
+  ylab("number of observations (N)") +
+  theme_bw()
+```
 
 # Difference-Distance Plots
 
@@ -313,7 +412,7 @@ NOTE: we do have some very deep drills (\(dz >> 50m\)), yet those were filtered 
 #| fig-cap: "Influence of reference: absolute difference in water level (mTAW) against absolute difference in site reference TAW."
 
 data %>%
-  ggplot(aes(x = log(abs(dref)), y = abs(dw))) +
+  ggplot(aes(x = log10(abs(dref)), y = abs(dw))) +
   geom_point(alpha = 0.05) +
   geom_smooth() +
   # ylim(0, 100) +
@@ -335,7 +434,7 @@ nanvar <- function (val) var(val, na.rm = TRUE)
 nansd <- function (val) sd(val, na.rm = TRUE)
 nansem <- function (val) sd(val, na.rm = TRUE)/sqrt(sum(!is.na(val)))
 data_binned <- data %>%
-  group_by(distance_bin) %>% 
+  group_by(distance_bin, soilclass) %>% 
   summarize(
     vx = nanvar(dx), vz = nanvar(dz),
     vmw = nanvar(dw),
@@ -353,8 +452,8 @@ glimpse(data_binned)
 #| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
 
 data_binned %>%
-  ggplot(aes(x = dx, y = abs(dw))) +
-  geom_point(alpha = 0.8) +
+  ggplot(aes(x = dx, y = abs(dw), fill = soilclass)) +
+  geom_point(alpha = 0.8, aes(color = soilclass)) +
   geom_smooth() +
   xlab("site distance (m)") +
   ylab("mean absolute water level difference <|Δw|> (mTAW)") +
@@ -371,13 +470,15 @@ data_binned %>%
 
 data_binned %>%
   ggplot(aes(x = dx, y = vmw/2)) +
-  geom_point(alpha = 0.8) +
-  geom_smooth() +
+  geom_point(alpha = 0.8, aes(color = soilclass)) +
+  geom_smooth(aes(x = dx, y = vmw/2), color = "black") +
   xlab("site distance (m)") +
   ylab("semivariance in water level difference var(Δw)/2 (mTAW)") +
   theme_bw()
 
 ```
+
+
 
 
 # Archive
@@ -745,7 +846,7 @@ glimpse(outliers)
 ```
 
 More examples:
-```{r find-outliers-raw}
+```{r find-outliers-backup}
 #| eval: false
 outlier <- data_raw %>%
   filter(
