@@ -577,8 +577,10 @@ outlier <- data_raw %>%
     # pp_code.y == "BOBP201X"
     # pp_code.x == "GGVP012X",
     # pp_code.y == "GGVP024X"
-    pp_code.x == "RONP119X",
-    pp_code.y == "RONP124X"
+    # pp_code.x == "RONP119X",
+    # pp_code.y == "RONP124X"
+    pp_code.x == "WALP066X",
+    pp_code.y == "WALP043X"
   ) %>%
   mutate(dw = abs(w.y-w.x)) %>% 
   arrange(-dw)
@@ -655,7 +657,69 @@ outliers <- DBI::dbGetQuery(
 glimpse(outliers)
 ```
 
+
+## Medewerker nVarchar?
+I got an error that MedewerkerWID in dimPeilpunt is of dtype `nvarchar`.
+
+```{r watina-medewerker-1}
+#| eval: false
+glimpse(DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT DISTINCT MedewerkerWID, COUNT(PeilpuntWID) AS cnt
+    FROM dimPeilpunt
+    GROUP BY MedewerkerWID
+    ORDER BY MedewerkerWID ASC
+    ;")
+  ))
+```
+
+```{r watina-medewerker-2}
+#| eval: false
+query <- function(query_string) {
+  rs <- DBI::dbGetQuery(watina_dwh, query_string)
+  return(rs)
+}
+
+get_tablecolumns <- function(tbl_name) {
+  my_columns <- query(paste0(
+    "SELECT OBJECT_NAME(object_id), name, column_id, TYPE_NAME(system_type_id)
+     FROM sys.columns
+     WHERE (object_id = OBJECT_ID('",
+    tbl_name, "')) ;")
+  )
+  return(my_columns)
+}
+
+
+table_list <- tbl(watina_dwh, "sysobjects") %>%
+  filter(xtype == "U") %>%
+  pull(name)
+
+
+col_list <- get_tablecolumns("dimPeilpunt")
+```
+
+```{r watina-medewerker-3}
+glimpse(DBI::dbGetQuery(watina_dwh,
+  paste0("
+SELECT
+  OBJECT_NAME(object_id) AS tbl,
+  name,
+  column_id,
+  TYPE_NAME(system_type_id) AS dtype
+FROM sys.columns
+WHERE (object_id = OBJECT_ID('dimPeilpunt'))
+  AND name LIKE '%medew%'
+;")
+  ))
+
+```
+
+
 # TODO
+
+## mTAW/refTAW inconsistency
+Some colocated sites have inconsistent TAW references and/or mTAW measurements.
 
 ```{r zwap-inconsistency-query}
 #| eval: false
@@ -679,3 +743,27 @@ outliers <- DBI::dbGetQuery(
 ) %>% janitor::clean_names()
 glimpse(outliers)
 ```
+
+More examples:
+```{r find-outliers-raw}
+#| eval: false
+outlier <- data_raw %>%
+  filter(
+    # pp_code.x == "ABEP115X",
+    # pp_code.y == "ABEP111X"
+    # pp_code.x == "ZWAP234X",
+    # pp_code.y == "ZWAP212X"
+    # pp_code.x == "BOBP218X",
+    # pp_code.y == "BOBP201X"
+    # pp_code.x == "GGVP012X",
+    # pp_code.y == "GGVP024X"
+    # pp_code.x == "RONP119X",
+    # pp_code.y == "RONP124X"
+    pp_code.x == "WALP066X",
+    pp_code.y == "WALP043X"
+  ) %>%
+  mutate(dw = abs(w.y-w.x)) %>% 
+  arrange(-dw)
+glimpse(outlier)
+```
+
