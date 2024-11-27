@@ -188,10 +188,9 @@ The data is saved to disc locally and restored
 
 
 
-## double-joining locs
-Comparing two locations, I will join the locs twice: once to every location in the pair.
-Then, distances and differences are computed, and relevant entries filtered.
-Finally, factors are generated from categorical variables.
+## data preparation
+Renaming, selecting, mutating, re-arranging, summarizing.
+
 
 ```{r raw-data-processing}
 data <- data_raw %>%
@@ -251,6 +250,7 @@ glimpse(data)
 ```
 
 
+
 ```{r fig-samplesize}
 #| label: fig-samplesize
 #| fig-cap: "Sample size (number of site pairs observed) per distance (${\\Delta x}$)."
@@ -274,7 +274,8 @@ data %>%
   theme_bw()
 ```
 
-NOTE: there are many co-located sites (\(dx \eqiv 0m\)).
+NOTE: there are many co-located sites (\(dx \eq 0m\)).
+
 
 # Soilclass
 
@@ -328,6 +329,7 @@ if (reload_soil) {
 
 ```
 
+
 ```{r join-soilclass}
 data <- data %>%
   left_join(
@@ -345,6 +347,7 @@ data <- data %>%
   dplyr::filter(soilclass == soilclass2) %>%
   select(-soilclass2)
 ```
+
 
 ```{r fig-samplesize-soilclass}
 #| label: fig-samplesize-soilclass
@@ -382,7 +385,7 @@ data %>%
   geom_point(alpha = 0.05) +
   geom_smooth() +
   # xlim(0, 100) +
-  ylim(0,  25) +
+  # ylim(0,  25) +
   xlab("distance (m)") +
   ylab("absolute water level difference Δw (mTAW)") +
   theme_bw()
@@ -397,8 +400,8 @@ data %>%
   ggplot(aes(x = abs(dz), y = abs(dw))) +
   geom_point(alpha = 0.05) +
   geom_smooth() +
-  ylim(0, 100) +
-  xlim(0, 3) +
+  # ylim(0, 100) +
+  # xlim(0, 3) +
   xlab("filter depth difference dz (m)") +
   ylab("absolute water level difference Δw (mTAW)") +
   theme_bw()
@@ -452,9 +455,9 @@ glimpse(data_binned)
 #| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
 
 data_binned %>%
-  ggplot(aes(x = dx, y = abs(dw), fill = soilclass)) +
+  ggplot(aes(x = dx, y = abs(dw))) +
   geom_point(alpha = 0.8, aes(color = soilclass)) +
-  geom_smooth() +
+  geom_smooth(color = "black") +
   xlab("site distance (m)") +
   ylab("mean absolute water level difference <|Δw|> (mTAW)") +
   theme_bw() 
@@ -471,7 +474,7 @@ data_binned %>%
 data_binned %>%
   ggplot(aes(x = dx, y = vmw/2)) +
   geom_point(alpha = 0.8, aes(color = soilclass)) +
-  geom_smooth(aes(x = dx, y = vmw/2), color = "black") +
+  geom_smooth(color = "black") +
   xlab("site distance (m)") +
   ylab("semivariance in water level difference var(Δw)/2 (mTAW)") +
   theme_bw()
