@@ -57,7 +57,8 @@ distance_cap <- 1024 # (m) # DO NOT CHANGE without reloading.
 n_bins <- 1024 # number of bins for binning of distances (best use 2^x)
 max_filterdepth <- 3 # (m) # choice to focus on shallow gw (ecologically relevant for GW_03.3 and GW_05.1)
 taw_buffer <- 10 # allow mTAW observations to be below well depth (ReferentieNiveauTAW - PeilbuisLengte) 
-maaiveld_margin <- 24 # differences in water level must be within a margin from differences in ReferentieNiveauMaaiveld
+maaiveld_margin <- 16 # differences in water level must be within a margin from differences in ReferentieNiveauMaaiveld
+dtaw_cap <- 16 # (m) # difference in reference TAW must be below this value; rationale: not interesting in steep slope comparison
 ```
 
 
@@ -165,6 +166,7 @@ if (reload) {
     filter(
       dr < distance_cap,
       dw - dtaw < maaiveld_margin,
+      dtaw < dtaw_cap,
       mp_idx.x < mp_idx.y # unidirectional difference / avoid duplicates
       ) %>%
     collect
@@ -197,25 +199,27 @@ data <- data_raw %>%
     mp1  = mp_idx.x, 
     x1   = x.x,
     y1   = y.x,
-    z1  = fdepth.x, 
+    z1   = fdepth.x, 
     w1   = w.x,
+    ref1 = ref_taw.x,
     idx2 = idx.y,
     loc2 = pp_code.y, 
     mp2  = mp_idx.y, 
     x2   = x.y,
     y2   = y.y,
-    z2  = fdepth.y, 
+    z2   = fdepth.y, 
     w2   = w.y,
+    ref2 = ref_taw.y,
   ) %>% select(
     idx1, loc1, mp1,
     x1, y1, z1, w1,
-    idx2, loc2,
-    mp2,
+    idx2, loc2, mp2,
     x2, y2, z2, w2,
+    ref1, ref2,
     date, dr
   ) %>%
   filter_at(
-    vars(x1, x2, y1, y2, z1, z2, w1, w2),
+    vars(x1, x2, y1, y2, z1, z2, w1, w2, ref1, ref2),
     all_vars(!is.na(.))
   ) %>%
   mutate(
@@ -224,7 +228,8 @@ data <- data_raw %>%
     distance_bin = cut(dx, breaks = seq(-distance_cap/n_bins, distance_cap, length.out = n_bins+2)),
     dx_log = log10(dx + 1),
     dz = z2-z1,
-    dmw = w2-w1
+    dref = ref2-ref1,
+    dw = w2-w1
   ) %>% 
   arrange(idx1, idx2) %>% 
   mutate_at(
@@ -236,7 +241,8 @@ data <- data_raw %>%
   summarize(
     dx = mean(abs(dx), na.rm = TRUE),
     dz = mean(dz, na.rm = TRUE),
-    dmw = mean(abs(dmw), na.rm = TRUE),
+    dw = mean(abs(dw), na.rm = TRUE),
+    dref = mean(abs(dref), na.rm = TRUE),
     cnt = n()
   ) %>% ungroup
 glimpse(data)
@@ -269,11 +275,11 @@ NOTE: there are many co-located sites (\(dx \eqiv 0m\)).
 ## unbinned
 
 ```{r plot-data-unbinned}
-#| label: fig-dmw-dx
+#| label: fig-dw-dx
 #| fig-cap: "Distance-Difference-Plot of absolute difference in water level (mTAW) against distance (${\\Delta x}$)."
 
 data %>%
-  ggplot(aes(x = dx, y = abs(dmw))) +
+  ggplot(aes(x = dx, y = abs(dw))) +
   geom_point(alpha = 0.05) +
   geom_smooth() +
   # xlim(0, 100) +
@@ -285,11 +291,11 @@ data %>%
 
 
 ```{r plot-data-unbinned-dz}
-#| label: fig-dmw-dz
+#| label: fig-dw-dz
 #| fig-cap: "Distance-Difference-Plot of absolute difference in water level (mTAW) against filter depth difference ($\\Delta z$)."
 
 data %>%
-  ggplot(aes(x = abs(dz), y = abs(dmw))) +
+  ggplot(aes(x = abs(dz), y = abs(dw))) +
   geom_point(alpha = 0.05) +
   geom_smooth() +
   ylim(0, 100) +
@@ -300,6 +306,22 @@ data %>%
 ```
 
 NOTE: we do have some very deep drills (\(dz >> 50m\)), yet those were filtered above.
+
+
+```{r plot-data-dref}
+#| label: fig-dw-dref
+#| fig-cap: "Influence of reference: absolute difference in water level (mTAW) against absolute difference in site reference TAW."
+
+data %>%
+  ggplot(aes(x = log(abs(dref)), y = abs(dw))) +
+  geom_point(alpha = 0.05) +
+  geom_smooth() +
+  # ylim(0, 100) +
+  # xlim(0, 3) +
+  xlab("log absolute difference in reference TAW") +
+  ylab("absolute water level difference Δw (mTAW)") +
+  theme_bw()
+```
 
 
 ## binned variogram
@@ -316,10 +338,10 @@ data_binned <- data %>%
   group_by(distance_bin) %>% 
   summarize(
     vx = nanvar(dx), vz = nanvar(dz),
-    vmw = nanvar(dmw),
-    sigmw = nansd(dmw),
-    semmw = nansem(dmw),
-    dx = nanmean(abs(dx)), dz = nanmean(abs(dz)), dmw = nanmean(abs(dmw)),
+    vmw = nanvar(dw),
+    sigmw = nansd(dw),
+    semmw = nansem(dw),
+    dx = nanmean(abs(dx)), dz = nanmean(abs(dz)), dw = nanmean(abs(dw)),
     cnt = sum(cnt)
   ) %>% ungroup %>% arrange(dx)
 glimpse(data_binned)
@@ -327,11 +349,11 @@ glimpse(data_binned)
 
 
 ```{r plot-data-binned}
-#| label: fig-dmw-dx-binned
+#| label: fig-dw-dx-binned
 #| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
 
 data_binned %>%
-  ggplot(aes(x = dx, y = abs(dmw))) +
+  ggplot(aes(x = dx, y = abs(dw))) +
   geom_point(alpha = 0.8) +
   geom_smooth() +
   xlab("site distance (m)") +
@@ -519,21 +541,27 @@ There are some observation bins wehre the variance goes crazy; worth investigati
 #| eval: false
 
 data_binned %>%
-  arrange(-vmw)
+  arrange(-abs(dw))
+  # arrange(-vmw)
 
 ```
 
 - (761, 762]
 - (952, 953]
+- (954, 955]
+- (1010, 1012]
+- (811, 812]
+
 
 what is going on in those?
 ```{r find-outliers-data}
 #| eval: false
 
+
 data %>%
-  filter(dx > 1020, dx <= 1021)
+  filter(dx > 811, dx <= 812)
   # filter(dx > 952, dx <= 953)
-  # filter(dmw >= 20)
+  # filter(dw >= 20)
 
 ```
 
@@ -547,8 +575,10 @@ outlier <- data_raw %>%
     # pp_code.y == "ZWAP212X"
     # pp_code.x == "BOBP218X",
     # pp_code.y == "BOBP201X"
-    pp_code.x == "GGVP012X",
-    pp_code.y == "GGVP024X"
+    # pp_code.x == "GGVP012X",
+    # pp_code.y == "GGVP024X"
+    pp_code.x == "RONP119X",
+    pp_code.y == "RONP124X"
   ) %>%
   mutate(dw = abs(w.y-w.x)) %>% 
   arrange(-dw)
