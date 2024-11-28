@@ -430,13 +430,13 @@ NOTE: we do have some very deep drills (\(dz >> 50m\)), yet those were filtered 
 #| fig-cap: "Influence of reference: absolute difference in water level (mTAW) against absolute difference in site reference TAW."
 
 data %>%
-  ggplot(aes(x = log10(abs(dref)), y = abs(dw))) +
+  ggplot(aes(x = log(abs(dref)), y = log(abs(dw)))) +
   geom_point(alpha = 0.05) +
   geom_smooth() +
   # ylim(0, 100) +
   # xlim(0, 3) +
   xlab("log absolute difference in reference TAW") +
-  ylab("absolute water level difference Δw (mTAW)") +
+  ylab("log absolute water level difference Δw (mTAW)") +
   theme_bw()
 ```
 
@@ -487,33 +487,71 @@ data_binned %>%
 #| fig-cap: "variogram of difference in water level (mTAW) against binned distance ($\\Delta x$)."
 
 data_binned %>%
-  ggplot(aes(x = dx, y = vmw/2)) +
-  geom_point(alpha = 0.8, aes(color = soilclass)) +
-  geom_smooth(color = "black") +
-  xlab("site distance (m)") +
-  ylab("semivariance in water level difference var(Δw)/2 (mTAW)") +
+  ggplot(aes(x = dx, y = log10(vmw/2))) +
+  geom_point(alpha = 0.2, aes(color = soilclass)) +
+  geom_smooth( aes(color = soilclass)) +
+  geom_vline(xintercept = 125, linetype = "solid", color = "black", size = 0.5) +
+  # xlim(0, 200) +
+  xlab("site distance (m), binned") +
+  ylab("log10 semivariance in water level difference var(Δw)/2 (mTAW)") +
   theme_bw()
 
 ```
 
 
 TODO: 
+
+- random variogram
 - package variograms
+- "niveau" instead of "mTAW"? (shallow GW)
 - models
 
 
 
 # Archive
+## watina disconnect
 ```{r disconnect-watina, eval=FALSE}
-#| include: false
+#| include: true
 if (!work_offline) {
   DBI::dbDisconnect(watina_dwh)
 }
 ```
 
+## erroneous join
+Up until 20241127, the code above contained an erroneous join between 
+`dimPeilMeting.PeilpuntWID` (note the `W` in `WID`) and
+`dimPeilpunt.PeilpuntID`.
+This led to random coupling of sites.
 
+```{r backup-false-query, eval=FALSE}
+#| eval: false
+DBI::dbGetQuery(watina_dwh,
+  paste0("
+    SELECT DISTINCT PeilpuntCode,
+      PeilMetingStatusCode,
+      AVG(PeilbuisLengte) AS PeilbuisLengte,
+      AVG(ReferentieNiveauTAW) AS ReferentieNiveauTAW,
+      AVG(mTAW) AS mTAW,
+      AVG(Niveau) AS Niveau,
+      COUNT(PeilMetingWID) AS n,
+      MAX(mTAW - ReferentieNiveauTAW) AS max_verschil
+    FROM FactPeilMeting
+    LEFT JOIN dimPeilpunt
+      ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntWID
+    WHERE (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)) < 6
+      AND ReferentieNiveauTAW + PeilbuisLengte + 0 < FactPeilMeting.mTAW
+    GROUP BY PeilpuntCode, FactPeilMeting.PeilpuntWID, PeilMetingStatusCode
+    ORDER BY max_verschil DESC
+  ")
+) 
+```
+(there was a margin of 10m, which I reduced here to find three leftovers)
 
 ## query attempt
+
+NOTE: it might be more efficient to first join all locations (`dimPeilpunt`/`dimMeetpunt`) 
+and filter for distance;
+only afterwards left join in `dimPeilMeting` and filter for same date.
 
 ```{r raw-data-query-dbi, eval=FALSE}
 #| include: false
@@ -548,7 +586,7 @@ load_raw_data <- function () {
             dimPeilpunt.PeilpuntStatusCode AS pp_status
           FROM FactPeilMeting
           LEFT JOIN dimPeilpunt 
-            ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+            ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntWID
           ) PEIL1
         LEFT JOIN (
           SELECT 
@@ -560,7 +598,7 @@ load_raw_data <- function () {
             dimPeilpunt.PeilpuntStatusCode AS pp_status
           FROM FactPeilMeting
           LEFT JOIN dimPeilpunt
-            ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+            ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntWID
           ) PEIL2
           ON (PEIL1.DatumWID = PEIL2.DatumWID)
          AND (PEIL1.region = PEIL2.region)
@@ -655,7 +693,7 @@ glimpse(DBI::dbGetQuery(watina_dwh,
 #| eval: false
 test <- tbl(watina_dwh, "FactPeilMeting") %>%
     left_join(tbl(watina_dwh, "dimPeilpunt"),
-              by = join_by(PeilpuntWID == PeilpuntID))
+              by = join_by(PeilpuntWID == PeilpuntWID))
 glimpse(test)
 ```
 
@@ -738,7 +776,7 @@ outliers <- DBI::dbGetQuery(
       mTAW AS WTF
     FROM FactPeilMeting
     LEFT JOIN dimPeilpunt 
-      ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+      ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntWID
     WHERE PeilpuntCode IN ('ZWAP234X', 'ZWAP212X')
       AND DatumWID = 20011129
       -- WHERE (PeilbuisLengte - ReferentieNiveauMaaiveld) < 10
@@ -773,7 +811,7 @@ outliers <- DBI::dbGetQuery(
       MAX(mTAW - ReferentieNiveauTAW) AS max_verschil
     FROM FactPeilMeting
     LEFT JOIN dimPeilpunt 
-      ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntID
+      ON FactPeilMeting.PeilpuntWID = dimPeilpunt.PeilpuntWID
     WHERE (PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)) < 6
       AND ReferentieNiveauTAW + PeilbuisLengte + 10 < FactPeilMeting.mTAW
     GROUP BY PeilpuntCode, FactPeilMeting.PeilpuntWID, PeilMetingStatusCode
