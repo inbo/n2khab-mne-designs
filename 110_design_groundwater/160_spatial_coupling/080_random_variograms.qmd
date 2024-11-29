@@ -2,6 +2,7 @@
 title: "Variograms Like a Pro"
 author: "Falk Mielke"
 date: "`r lubridate::today()`"
+number-sections: true
 output:
   html_document:
     keep_md: TRUE
@@ -26,10 +27,28 @@ I should learn to do it correctly.
 This is my learning trajectory, documented for others.
 
 ```{r setup}
+#| eval: true
+
+library("gstat")
+library("sp")
+library("dplyr") # for group-apply function
 
 ```
 
+
 # Data
+
+## settings
+Some general settings:
+```{r settings}
+n_observations <- 2^12
+extent <- 50
+smooth_sigma <- 10
+zrange <- pi
+
+```
+
+## raw random
 Due to an [error on my side](https://github.com/inbo/n2khab-mne-design/commit/6f43f5991f9de56e8fd060b86a352fc175423fdf), 
 I randomly paired locations instead of using acutal spatial distance as a coupling criterium.
 
@@ -38,35 +57,509 @@ But let's make something out of it.
 
 
 The pseudo-random data showed a degree of spatial covariance.
-Let's try with totally random data.
+Let's try with totally random data, with an amplitude of approximately 1.
 
 
 ```{r simulation}
 gimme_points <- function(N = 100, scale = 1.0) (runif(N)*2.0-1.0) * scale
-n_observations = 2^10
 data <- data.frame(
-  x = gimme_points(n_observations, 20),
-  y = gimme_points(n_observations, 20),
-  z = gimme_points(n_observations,  1)
+  x = gimme_points(n_observations, extent),
+  y = gimme_points(n_observations, extent),
+  z_ = gimme_points(n_observations, zrange)
 )
+head(data, 5)
 ```
 
+*Mental note: points towards the rim will tend to have fewer neighbors.*
+
+
+## covariate
+
+I also want to add in a covariate, say... `a`.
+
+```{r covariate-definition}
+
+a_slope <- pi/4
+
+data$a <- 0.7 * data$x / extent + 0.3 * data$y / extent
+data$z <- data$z_ + a_slope * data$a
+
+```
+
+*Mental note: `a` is correlated to `x` and `y`.*
+
+
+Visualizing, with color:
 ```{r datavis}
-rbPal <- colorRampPalette(c('red','blue'))
+rbpal <- colorRampPalette(c('black','gold'))
 
 # https://stackoverflow.com/a/9946970
-color <- rbPal(n_observations)[as.numeric(cut(data$z, breaks = n_observations))]
+color <- rbpal(n_observations)[as.numeric(cut(data$z, breaks = n_observations))]
 
 plot(data$x, data$y, col = color, pch = 20)
 ```
 
-Mental note: points towards the rim will tend to have fewer neighbors.
 
+
+## smoothing
+
+Just so that we can optionally incorporate some Tobler spirit: a smoother.
+
+```{r cross-distance}
+cross_diff <- function (vec) outer(X = vec, Y = vec, FUN = function(X, Y)  Y-X)
+Euclid <- function (data) sqrt(cross_diff(data$x)^2 + cross_diff(data$y)^2 )
+zdiff <- function (data) cross_diff(data$s)
+zdiff_abs <- function (data) sqrt( cross_diff(data$s)^2 )
+
+
+smooth <- function (data, sigma = NULL) {
+  # u <- seq(0, 5, length.out = 201)
+  # plot(u, dnorm(u, 0, 1))
+  
+  if (sigma <= 0 || is.null(sigma) || is.na(sigma)) {
+    return(data$z)
+  }
+
+  dist <- Euclid(data)
+  # sigma <- extent / 3
+  weight <- dnorm(dist, 0, sigma) 
+  weight <- weight / colSums(weight)
+  # do.call("cbind", rep(list(data$z), length(data$z)))
+  
+  zmoothed <- weight %*% data$z
+  return (zmoothed[,1])
+}
+
+data$s <- smooth(data, smooth_sigma)
+color <- rbpal(n_observations)[as.numeric(cut(data$s, breaks = n_observations))]
+plot(data$x, data$y, col = color, pch = 20)
+
+
+```
+
+Nice and smooth. 
+Feel free to draw a sunrise.
+
+
+## "De-Trending"
+
+Just a desparate last try.
+Pay good attention, please.
+
+This will actually provide **the answer** [@sec-answer] below.
+
+```{r detrending}
+data$d <- lm(s ~ x + y, data)$residual
+# color <- rbpal(n_observations)[as.numeric(cut(data$d, breaks = n_observations))]
+# plot(data$x, data$y, col = color, pch = 20)
+
+```
 
 
 # Variograms
-... this should work out-of-the-box, right?
+... should work out-of-the-box, right?
+Then there remains the question: which box?
 
+
+## distance-difference plots
+
+It is good to keep track of the difference-distance plot.
+
+```{r difference-distance-plot}
+
+unwrap <- function (mat) mat[lower.tri(mat)]
+detrend <- function(data) {
+  fit <- lm(difference ~ distance, data)
+  return(fit$residual)
+  # return(fit$fitted.values)
+}
+
+# compute raw distance and difference
+dist_diff <- data.frame(
+  distance = unwrap(Euclid(data)),
+  difference = unwrap(zdiff(data)),
+  abs_difference = unwrap(zdiff_abs(data))
+)
+
+# limit range
+dist_diff <- dist_diff %>% filter(distance < extent)
+
+# "detrend"
+dist_diff$detrend <- detrend(dist_diff)
+
+
+# binning
+dist_diff$bin <- as.factor(cut(dist_diff$distance, breaks = 65))
+dist_diff_binned <- dist_diff %>% 
+  group_by(bin) %>%
+  summarize_all(
+    c("mean" = mean,
+      "var" = var,
+      "sem" = function (vec) var(vec)/sqrt(length(vec)),
+      "cressie" = function (h) (sum((abs(h))^(1/2))/length(h))^4 / (0.457 + 0.494/length(h)),
+      "median" = function (h) median(abs(h)),
+      "medsq" = function (h) (median((abs(h))^(1/2)))^2
+    )
+  ) # note: sem does not help
+# cf. Cressie, 1993, p. 75 
+
+
+# choose one parameter
+dist_diff_binned$semivariance <- 0.5 * dist_diff_binned$difference_var
+# dist_diff_binned$semivariance <- 0.5 * dist_diff_binned$detrend_mean # totally wrong.
+
+
+# plot(distance, difference, pch = 21, color = 'black', alpha = 0.1)
+head(dist_diff_binned)
+
+
+# plot
+par(mfrow = c(2,1))
+plot(dist_diff_binned$distance_mean, dist_diff_binned$abs_difference_mean, type = "o", col = "darkblue")
+plot(dist_diff_binned$distance_mean, dist_diff_binned$semivariance, type = "o", col = "darkgreen")
+
+par(mfrow = c(1,1))
+```
+
+The lower plot is the variance, plotted against the distance.
+
+Good to have.
+
+
+
+## fields::vgram()
+
+There is a variogram in the `fields` package.
+It seems easy-to-use and intuitive, no large dependencies, and the documentation was fine.
+
+```{r empirical-variogram}
+#| eval: true
+
+loc <- as.matrix(data)[,1:2]
+y <- data$s
+fields_vgram <- fields::vgram(loc = loc, y = y, N = 16, dmax = extent)
+
+plot(fields_vgram, breaks = seq(0, extent, length.out = 65), type = "o", col = "darkgreen")
+
+```
+
+
+This is reassuring.
+The outcome matches the semivariance-distance plot above. 
+
+However, the smoothed data does not show a classical nugget-range-sill like plot.
+
+
+Technically, I could work with this.
+Might be a good reference.
+Only downside: the performance is not great.
+
+
+
+Next try.
+
+
+## gstat::variogram() 
+... has a [documentation](https://r-spatial.github.io/gstat/reference/variogram.html) which leaves me ridiculously clueless:
+
+|   Calculate Sample or Residual Variogram or Variogram Cloud
+|   Description:
+|      Calculates the sample variogram from data, or in case of a linear
+|      model is given, for the residuals, with options for directional,
+|      robust, and pooled variogram, and for irregular distance
+|      intervals.
+|      In case spatio-temporal data is provided, the function
+|      ‘variogramST’ is called with a different set of parameters.
+
+Always careful with functions which doe multiple things.
+
+Yet it's the `examples` that matter:
+| Examples:
+|    library(sp)
+|    data(meuse)
+|    # no trend:
+|    coordinates(meuse) = ~x+y
+|    variogram(log(zinc)~1, meuse)
+|    # residual variogram w.r.t. a linear trend:
+|    variogram(log(zinc)~x+y, meuse)
+|    # directional variogram:
+|    variogram(log(zinc)~x+y, meuse, alpha=c(0,45,90,135))
+|    variogram(log(zinc)~1, meuse, width=90, cutoff=1300)
+|
+|    # GLS residual variogram:
+|    v = variogram(log(zinc)~x+y, meuse)
+|    v.fit = fit.variogram(v, vgm(1, "Sph", 700, 1))
+|    v.fit
+|    set = list(gls=1)
+|    v
+|    g = gstat(NULL, "log-zinc", log(zinc)~x+y, meuse, model=v.fit, set = set)
+|    variogram(g)
+
+
+Good, or not: I need to transform my data into an `sp` type with coordinates.
+I then have to use a model forula, even if there is no model (yet).
+I have a hundred options to include models, or create a "variogram cloud".
+
+And, to my amazement, they reference the same book as the above package.
+
+> Cressie, N.A.C., 1993, Statistics for Spatial Data, Wiley.
+
+(Maybe I should read it?)
+
+
+
+I will stick with the examples to finally get my variogram of the data.
+
+```{r gstat-vgram-basic}
+
+data_sp <- data
+sp::coordinates(data_sp) = ~x+y
+gstat_vgram <- gstat::variogram(s ~ 1, data_sp, cutoff = extent, width = extent / 64)
+
+# compute a Matèrn model
+#
+m <- suppressWarnings({fit.variogram(gstat_vgram, vgm("Mat"), fit.kappa = TRUE)})
+
+# plot(gstat_vgram, model = m, pch = 22, col = "darkblue", type = "o")
+# grid(nx = NA, ny = NULL) # <- I would expect this to work, yet it doesn't
+
+plot(gstat_vgram, model = m, pch = 22, col = "darkblue", type = "o")
+```
+
+Same as above. 
+Nice and performant.
+Still no nugget-sill story.
+
+
+## linear trend, w.r.t.?!
+
+Let us try another one of the examples!
+I choose the
+> residual variogram w.r.t. a linear trend:
+
+Above, I clearly set `sp::coordinates(data_sp) = ~x+y`. 
+It took me a while to figure that setting coordinates does not do the trick.
+You seemingly have to add them to the variogram formula.
+
+
+```{r gstat-vgram-formula}
+
+# all as above, except the model formula
+gstat_vgram_detrend <- gstat::variogram(s ~ x + y, data_sp, cutoff = extent, width = extent / 64)
+
+m <- fit.variogram(gstat_vgram_detrend, vgm("Mat"), fit.kappa = TRUE)
+plot(gstat_vgram_detrend, model = m, pch = 22, col = "darkblue", type = "o")
+
+```
+
+There we go!
+This is the image I would have expected!
+
+
+However, expecting is not enough.
+Which one is right?
+Certainly the "de-trended" one with `s ~ x + y`.
+Yet, I do not understand why! 
+The `~x+y` of the formula are not part of the `model` argument;
+yet the y-values change drastically with this argument (residuals?).
+
+The only hint that this is about "de-trending" is from the comment in the documentation.
+
+
+There is more trouble.
+
+Initially, [I saw no way](https://r-spatial.github.io/gstat/reference/plot.gstatVariogram.html) to set the `breaks`.
+
+Yet they are needed for [gstat::variogram](https://r-spatial.github.io/gstat/reference/variogram.html)
+> width: the width of subsequent distance intervals into which data point pairs are grouped for semivariance estimates
+
+
+I also struggled getting a straight line into the plot, to see whether the bins are plotted on a slope.
+
+
+
+## unsmoothed
+
+Now, smoothing has a critical effect; I would like to see my variogram for the raw and edgy data.
+I not yet remove the covariate.
+
+```{r gstat-vgram-unsmoothed}
+
+# all as above, except the outcome variable
+gstat_vgram_unsmoothed <- gstat::variogram(z ~ x + y, data_sp, cutoff = extent, width = extent / 64)
+
+m <- suppressWarnings({fit.variogram(gstat_vgram_unsmoothed, vgm("Mat"), fit.kappa = TRUE)})
+plot(gstat_vgram_unsmoothed, model = m, pch = 22, col = "darkblue", type = "o")
+
+```
+
+At least, there are `warnings` (as supressed above), I guess it is for the model fit.
+Variogram fitting is not trivial.
+
+
+## plotting a horizontal line
+Yet note that the empirical variogram line is rising!
+Just that you cannot see it with the bare eye.
+To show, I need to mess with that horrible `gstatVariogram` object.
+It truly is a mess!
+Just try to manually plot the variogram data... [see here for help]().
+
+- The [documentation](https://r-spatial.github.io/gstat/reference/plot.gstatVariogram.html) is not helpful.
+- I tried `?graphics::grid`; the vgram plot seems not to be a regular plot.
+- I tried accessing the vgram data, but `attributes(vgram)` are not exactly obvious.
+- The [source code](https://github.com/r-spatial/gstat/blob/main/R/plot.gstatVariogram.R) lacks relevant meaningful comments.
+
+
+But, hey, I can live with wasting an hour just to not being able to plot straight lines.
+
+Here is a workaround, using `vgram$gamma`.
+Remember: `gamma` is the symbol of the variance.
+I compare the unsmoothed, but covariate-trended data variogram to the very raw data.
+
+
+```{r gstat-vgram-extractpoints}
+v <- gstat_vgram_unsmoothed
+# attributes(v)
+breaks_ref <- seq(1, 64, length.out = 64)
+dots_ref <- v$gamma[breaks_ref]
+
+# remove the covariate
+gstat_vgram_flat <- gstat::variogram(z_ ~ x + y, data_sp, cutoff = extent, width = extent / 64)
+v <- gstat_vgram_flat
+breaks_flat <- seq(1, 64, length.out = 64)
+dots_flat <- v$gamma[breaks_flat]
+plot(breaks_flat, dots_flat, ylim = c(3.0, 3.5), col = 'black', pch = 21, type = 'l')
+points(breaks_ref, dots_ref, col = 'blue', pch = 19)
+# plot(breaks_ref, dots_ref, col = 'blue', pch = 19)
+grid(ny = NULL)
+```
+
+Good. 
+That was non-instructive.
+Unsmoothed data (but with the covariate) and "flat" data (without the covariate) yield exactly the same variogram.
+I guess I should not have coupled `a` to `x, y`.
+
+
+Maybe being able to extract variogram data helps someone.
+
+
+On we go.
+
+
+## reminder - what do we have
+
+So far, so bad.
+To wrap up: Intermediate Summary™!
+
+
+- There are two kinds of people: those who understand what a variogram is (`fields`), and those who understand it differently (`gstat`).
+- Above, I worked on random data which was smoothed with a kernel of about `{r} smooth_sigma`.
+- Adding a covariate does not change the picture too drastically. 
+- `gstat` seems to be most sophisticated, but also least understandable.
+
+
+The first point is critical:
+the "semivariance-distance" plot is not the end of the story. 
+`gstat::variogram`, when used with the `~x+y` formula, performs some data transformation (linear detrending??) which brings the simulation data into a nice and smooth Matèrn shape.
+
+
+# The Source (Code)
+By now, I do not know why the `gstat` people understand variograms differently and how they bring their data to a space where fitting a Matèrn function goes so well.
+My last hope is the source code.
+And, oh boy, is it badly documented!
+
+- <https://github.com/r-spatial/gstat/blob/main/R/variogram.default.R>
+
+
+... 
+...
+
+...
+
+
+Source code does not help.
+
+
+Further leads:
+- <https://stackoverflow.com/questions/29425101/why-does-my-detrending-not-result-in-a-different-semivariogram-in-r>
+
+- <https://surferhelp.goldensoftware.com/vario/Variogram_Frequently_Asked_Questions.htm>
+
+
+There is the formula:
+\[2\gamma = \varepsilon \left[\left(z_j - z_i\right)^2 \right]\]
+
+and the only things unclear to me are the epsilon \(\varepsilon\) and the brackets \(\left[\cdot\right]\).
+In other places (Cressie, 1993, p.40, eq. 2.2.7) this is just taken as the mean difference (i.e. sum over all \(i, j\), and normalized by the count of lag vectors).
+
+
+No success.
+
+
+
+
+Hmmm... 
+
+# The Answer {#sec-answer}
+Watch This:
+
+```{r vgram-o-matic}
+vgram_o_matic <- function(formula) {
+    vgram <- gstat::variogram(formula, data_sp, cutoff = extent, width = extent / 64)
+}
+```
+
+
+My own variogram and that computed with `fields::variogram` has the following form, same as `gstat::variogram` with `s ~ 1`:
+
+```{r vgram-s1}
+plot(vgram_o_matic(s~1), pch = 22, col = "darkblue", type = "o")
+```
+
+However, the gstat "variogram" takes a different form
+
+```{r vgram-sxy}
+plot(vgram_o_matic(s ~ x + y), pch = 22, col = "darkblue", type = "o")
+
+```
+
+
+
+The obvious difference is the "formula": what *exactly* does the ` ~ x + y` part do?
+
+```{r vgram-d}
+plot(vgram_o_matic(d ~ 1), pch = 22, col = "darkblue", type = "o")
+```
+
+
+:mic-drop:
+
+
+
+# Modeling Covariates
+
+Time to recover the covariate introduced above.
+No more postponing to read the `gstat` manual.
+
+- https://www.gstat.org/gstat.pdf
+
+... or better not. 
+It is highly confusing (probably my bad).
+And after all, there is a formula in the variogram function.
+
+
+```{r gstat-vgram-covariate-1}
+
+# work in progress
+gstat_vgram_cov <- gstat::variogram(s ~ x+y+a, data_sp, cutoff = extent, width = extent / 64)
+
+m <- fit.variogram(gstat_vgram_cov, vgm("Mat"), fit.kappa = TRUE)
+plot(gstat_vgram_cov, model = m, pch = 22, col = "darkblue", type = "o")
+
+```
+
+
+To be continued!
 
 
 # Notes
@@ -100,7 +593,7 @@ Ik zou die a priori kiezen obv intuïtie en kijken wat het geeft, nadien bijstel
 Met gstat (dat uiteindelijk op kriging gericht is), kun je een variogram model fitten als volgt:
 
 - eerst empirisch variogram maken met `variogram()`
-- dan variogrammodel met initiële waarden definiëren met `vgm()` (zie show.vgms() voor beschikbare vormen)
+- dan variogrammodel met initiële waarden definiëren met `vgm()` (zie `show.vgms()` voor beschikbare vormen)
 - de modelparameters van dit object verfijnen obv de data met `fit.variogram()`
 
 < Floris Vanderhaeghe, 10:56 AM
