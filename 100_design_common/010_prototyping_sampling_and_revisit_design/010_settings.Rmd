@@ -16,15 +16,15 @@ Also restricting columns to the necessary ones for workflows (unlike for 'displa
 
 ```{r}
 n2khab_schemes <- read_schemes(lang = lang)
-pan_effectmon_core_schemes_vec <- c(
+pan_core_schemes_vec <- c(
   "GW_03.3",
   "SOIL_03.2",
   "SURF_03.4_lentic",
   "SURF_03.4_lotic"
 ) %>%
   factor(levels = levels(n2khab_schemes$scheme))
-pan_schemes_vec <- c(
-  as.character(pan_effectmon_core_schemes_vec),
+pan_transmon_schemes_vec <- c(
+  as.character(pan_core_schemes_vec),
   "GW_04.2",
   "GW_05.1_aq",
   "GW_05.1_terr", # don't take the whole target population here!! Only groups 2 and 3
@@ -33,11 +33,11 @@ pan_schemes_vec <- c(
   "SURF_064_lentic", # this one's existence is still to be confirmed XXXXXXXXX
   "SURF_07.2"
 )
-pan_schemes <-
+pan_transmon_schemes <-
   n2khab_schemes %>%
-  filter(scheme %in% pan_schemes_vec | programme == "MHQ") %>%
+  filter(scheme %in% pan_transmon_schemes_vec | programme == "MHQ") %>%
   mutate(
-    is_core_scheme = scheme %in% pan_effectmon_core_schemes_vec | 
+    is_core_scheme = scheme %in% pan_core_schemes_vec | 
       programme == "MHQ"
   ) %>%
   select(
@@ -50,6 +50,11 @@ pan_schemes <-
     tag_1,
     spatial_restriction
   )
+# Since scheme SURF_07.2 has no habitat types, only RIBs, we should never list
+# it as a member scheme for pan_effectmon modules:
+pan_effectmon_schemes <- 
+  pan_transmon_schemes %>% 
+  filter(scheme != "SURF_07.2")
 mbaa_mne_phase_1_schemes <-
   n2khab_schemes %>%
   filter(attribute_1 %in% c("GW", "SURF", "SOIL"), tag_1 == "focal") %>%
@@ -66,15 +71,15 @@ mbaa_mne_phase_1_schemes <-
   )
 ```
 
-Defining a variant of `pan_schemes` without the MHQ schemes.
+Defining a variant of `pan_effectmon_schemes` without the MHQ schemes.
 
 ```{r}
-pan_schemes_mne <-
-  pan_schemes %>%
+pan_effectmon_schemes_mne <-
+  pan_effectmon_schemes %>%
   filter(programme == "MNE")
 ```
 
-Preparing restriction of target populations for pan to that of schemes SOIL_03.2, GW_03.3 & SURF_03.4_*, including the addition of 6430_mr for GW_05.1_terr (typegroup 3 completion) & for GW_05.2 (to complete its target population).
+Preparing restriction of target populations for all 'pan' modules to that of schemes SOIL_03.2, GW_03.3 & SURF_03.4_*, including the addition of 6430_mr for GW_05.1_terr (typegroup 3 completion) & for GW_05.2 (to complete its target population).
 
 ```{r}
 targetpops_exclude_from_pan <-
@@ -86,14 +91,19 @@ targetpops_exclude_from_pan <-
   select(scheme, type)
 ```
 
+Note that 'completion' of target population takes into account that RIBs are not included in the target population of 'pan_effectmon' schemes by definition.
+
+So we must also define these target populations in 'pan_effectmon' schemes as not considering RIBs.
+
 Defining 'scheme + target population sets', i.e. different collections of schemes with associated target populations, that will be tied to modules.
 A 'scheme + target population set' defines both the schemes and optional subsetting of types in the definition of associated target populations.
 The 'core schemes' of a 'scheme + target population set' are the schemes with a custom sample size in a module.
 
 ```{r paged.print=FALSE}
 stset_name_vec <- c(
-  "pan_schemes",
-  "pan_schemes_mne",
+  "pan_effectmon_schemes",
+  "pan_effectmon_schemes_mne",
+  "pan_transmon_schemes",
   "mbaa_mne_phase_1_schemes"
 )
 scheme_targetpop_sets <-
@@ -107,6 +117,7 @@ scheme_targetpop_sets <-
       read_scheme_types(lang = lang) %>%
         select(scheme, type) %>%
         semi_join(sts, by = "scheme") %>%
+        # restrict GW_05.1_terr target populations in 'pan' schemes:
         {
           if (!str_detect(stsn, "pan_")) {
             .
@@ -116,6 +127,14 @@ scheme_targetpop_sets <-
               targetpops_exclude_from_pan,
               by = c("scheme", "type")
             )
+          }
+        } %>% 
+        # restrict all 'pan_effectmon' schemes to habitat types:
+        {
+          if (str_detect(stsn, "pan_effectmon_")) {
+            filter(., !str_detect(type, "^rbb"))
+          } else {
+            .
           }
         }
     })
@@ -170,8 +189,8 @@ modules <- tribble(
   ~module, ~code_short, ~year_firstdefinition, ~year_last, ~stset_id,
   "pan_effectmon_flanders", "panfl", 2024, 2037, 2,
   "pan_effectmon_sac5_custommeas", "pan5", 2024, 2037, 1,
-  "pan_transmon_be2100024", "pan2124", 2024, 2030, 1,
-  "mbaa_mne_phase_1", "mbaa", 2024, 2031, 3,
+  "pan_transmon_be2100024", "pan2124", 2024, 2030, 3,
+  "mbaa_mne_phase_1", "mbaa", 2024, 2031, 4,
   "map_mne", "map", 2024, NA_integer_, NA_integer_
 ) %>% 
   bind_cols(
