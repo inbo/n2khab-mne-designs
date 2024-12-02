@@ -414,6 +414,16 @@ generate_spare_units <- function(ssf_sample, coef_spare) {
 
 
 
+#' Convert a Period object to simplified string
+#'
+#' @param x A scalar of class 'Period'.
+simplify_period <- function(x) {
+  as.character(x) %>%
+    str_split_1(" ") %>%
+    {.[!str_detect(., "^0")]}
+}
+
+
 
 
 distribute_sample_over_panels <- function(sps, pan) {

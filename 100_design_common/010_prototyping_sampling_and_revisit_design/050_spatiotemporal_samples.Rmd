@@ -1253,28 +1253,55 @@ scheme_moco_ps_spsubset_fas_paneldesign %>%
 
 ### Number of panels
 
-Determining the _number_ of panels for each module x scheme x spatial subset x 'field activity group' (FAG).
+Determining the _number_ of panels for each scheme x module combo x panel split x spatial subset x 'field activity supergroup' (FAS).
 We also add period, group size and group repetition attributes.
 Grouping refers to the subgroup structure in nested serially alternated patterns.
 
-```{r}
-mod_scheme_dom_fag_panel_count <-
-  module_domain_scheme_stratum_sample_size %>%
-  # to be revisited filter step (see above); this is especially important since
-  # field activities are done e.g. for GW_05.1_aq (SURFLEVINST, SURFLEVREAD)
-  # that will also be dropped later on, as a consequence of this.
-  # So even though for a specific module the non-core schemes don't have their
-  # own sample size, they may have their own field activities that must be
-  # taken into account
+Note, while below object does not distinguish between spatial poststrata, we will effectively populate the panels taking into account the spatial poststrata.
+Also the spare units are considered per spatial poststratum, so that replacements with spare units cause a shift in the panel membership _within_ the spatial poststratum.
 
-  # filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
-  distinct(module, scheme, domain, year_first, year_last) %>%
+<!-- Still need to choose whether panels therefore must be defined separately between spatial poststrata, or not. -->
+<!-- In fact they shouldn't need to be if the spatial poststratum is an attribute of the sampling (or spare) unit, although it is possible that this poses problems at some stage. -->
+
+```{r}
+scheme_moco_ps_spsubset_fas_panelcount <-
+  module_domain_scheme_stratum_sample_size %>%
+  # next filter step is in alignment with earlier (see above); field
+  # activities of non-core schemes should (by definition) only apply to the
+  # explicitly (and only exceptionally) added sampling units for such non-core
+  # schemes.
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
+  distinct(module, scheme, year_first, year_last) %>%
+  # join module combos:
   inner_join(
-    mod_scheme_fag_paneldesign, 
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      unnest(module_combo),
     join_by(module, scheme),
-    relationship = "many-to-many",
-    unmatched = "error"
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  arrange(scheme, module_combo_code, panel_split) %>% 
+  # year_first has been set module-agnostic and scheme-specific, while year_last
+  # is module-dependent; however let's just assume year_first may become also
+  # module dependent in the future
+  summarize(
+    year_first = min(year_first),
+    year_last = max(year_last),
+    .by = c(scheme, module_combo_code, panel_split)
+  ) %>% 
+  # Add revisit designs by FAS x spatial subset. The origins of
+  # 'scheme_moco_ps_spsubset_fas_paneldesign' lie in objects
+  # 'mod_scheme_variableset_mainfieldmethod' and 'activity_sequence', which
+  # don't distinguish between schemes that got a sample size or not. So we
+  # expect some cases to be dropped.
+  inner_join(
+    scheme_moco_ps_spsubset_fas_paneldesign,
+    join_by(scheme, module_combo_code, panel_split),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
   ) %>%
+  # integrating main panel design and subpanel design to a single panel design
   mutate(
     panel_count = case_when(
       revisit_pattern == "pure_panel" ~ 1L,
@@ -1290,54 +1317,115 @@ mod_scheme_dom_fag_panel_count <-
       is.na(panel_subperiod) ~ panel_period_main,
       .default = panel_subperiod
     ),
+    # number of panels in a panel group, to be taken together in repetitions
+    # (below)
     panel_group_size = ifelse(
       !is.na(limit_n_subpanels_per_panel),
       limit_n_subpanels_per_panel,
       1L
     ),
+    # number of times a panel group must be repeated during a cycle
     panel_group_repetitions = case_when(
       !is.na(limit_n_subpanels_per_panel) ~ as.integer(
-        panel_period_main / panel_subperiod
-      ) / limit_n_subpanels_per_panel,
+        (panel_period_main / panel_subperiod) / limit_n_subpanels_per_panel
+      ),
       revisit_subpattern == "pure_panel" ~ min(
         as.integer(panel_period_main / panel_subperiod),
         limit_n_subcycles,
         na.rm = TRUE
       ),
       .default = 1L
-    )
-  ) %>%
+    ),
+    panel_period_main_chr = map_chr(panel_period_main, simplify_period),
+    panel_period_chr = map_chr(panel_period, simplify_period),
+    revisit_pattern_abbrev = str_sub(revisit_pattern, 1, 3) %>% str_to_upper(),
+    revisit_subpattern_abbrev = ifelse(
+      !is.na(revisit_subpattern), 
+      str_sub(revisit_subpattern, 1, 3), 
+      ""
+    ) %>% 
+      str_to_upper(),
+    notation_pattern = case_when(
+      revisit_pattern_abbrev == "SER" & 
+        revisit_subpattern_abbrev %in% c("SER", "PUR") ~
+        str_c(
+          revisit_pattern_abbrev, 
+          panel_period_main_chr, 
+          "-",
+          revisit_subpattern_abbrev,
+          ifelse(
+            panel_group_size > 1L, 
+            str_c("by", panel_group_size),
+            ""
+          )
+        ),
+      revisit_pattern_abbrev == "PUR" & revisit_subpattern_abbrev == "SER" ~
+        "SER",
+      .default = str_c(revisit_pattern_abbrev, revisit_subpattern_abbrev)
+    ),
+    notation_paneldesign = str_c(
+      panel_count,
+      ifelse(panel_count == 1L, "panelof","panelsof"),
+      panel_period_chr,
+      "for",
+      cycle_duration_y,
+      "y(",
+      notation_pattern,
+      ")",
+      ifelse(
+        !is.na(limit_n_cycles), 
+        str_c(limit_n_cycles, "cycle"),
+        ""
+      ),
+      ifelse(
+        !is.na(limit_n_subcycles), 
+        str_c(limit_n_subcycles, "subcycle"),
+        ""
+      )
+    ) %>% 
+      fct()
+    # PURE PANELS (main or sub) do not meet following check:
+    # check = panel_count * panel_period * panel_group_repetitions ==
+    #   cycle_duration_y * years(1)
+  ) %>% 
+  # distinct(notation_paneldesign)
+  # filter(!check) %>% 
   select(
-    module,
     scheme,
-    is_core_scheme,
+    module_combo_code,
+    panel_split,
     in_aquatic_subset,
-    domain,
-    field_activity_group,
+    fas,
     starts_with("year"),
     panel_period,
     panel_count,
+    limit_n_cycles,
+    limit_n_subcycles,
     panel_group_size,
-    panel_group_repetitions
+    panel_group_repetitions,
+    notation_paneldesign
   )
-mod_scheme_dom_fag_panel_count %>%
+scheme_moco_ps_spsubset_fas_panelcount %>%
   glimpse()
 ```
 
 Different occurring patterns at the compartment level, with 'HQ' referring to the MHQ 'compartment', for information and thought:
 
 ```{r}
-mod_scheme_dom_fag_panel_count %>%
+scheme_moco_ps_spsubset_fas_panelcount %>%
   mutate(
     compartment = str_extract(scheme, "^[A-Z]+") %>% 
       factor() %>% 
-      fct_relevel("HQ", after = Inf)
-  ) %>%
+      fct_relevel("HQ", after = Inf),
+    fags = map(fas, ~.$field_activity_group),
+    # actseqs_vec = map(fas, ~unique(unlist(.$actseqs_vec)))
+  ) %>% 
   summarize(
-    field_activity_groups = str_c(unique(field_activity_group), collapse = ", "),
-    .by = c(compartment, starts_with("panel"))
+    fags = str_c(sort(unique(unlist(fags))), collapse = ", "),
+    # actseqs = str_c(sort(unique(unlist(actseqs_vec))), collapse = ", "),
+    .by = c(compartment, notation_paneldesign)
   ) %>%
-  arrange(compartment, panel_period) %>% 
+  arrange(compartment, notation_paneldesign) %>% 
   kable()
 ```
 
