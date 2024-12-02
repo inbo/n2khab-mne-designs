@@ -3,6 +3,7 @@ title: "Variograms Like a Pro"
 author: "Falk Mielke"
 date: "`r lubridate::today()`"
 number-sections: true
+bibliography: references.bib
 output:
   html_document:
     keep_md: TRUE
@@ -43,8 +44,12 @@ Some general settings:
 ```{r settings}
 n_observations <- 2^12
 extent <- 50
-smooth_sigma <- 10
+smooth_sigma <- 8
 zrange <- pi
+
+# covariate effect magnitudes
+a_slope <- pi/6
+b_slope <- pi/8
 
 ```
 
@@ -57,7 +62,7 @@ But let's make something out of it.
 
 
 The pseudo-random data showed a degree of spatial covariance.
-Let's try with totally random data, with an amplitude of approximately 1.
+Let's try with totally random data, with an amplitude of approximately `{r} round(zrange,5)`.
 
 
 ```{r simulation}
@@ -73,20 +78,32 @@ head(data, 5)
 *Mental note: points towards the rim will tend to have fewer neighbors.*
 
 
-## covariate
+## covariates
 
-I also want to add in a covariate, say... `a`.
+I also want to throw in two covariates, say... `a` and `b`.
+Think of parameters such as "installation depth" (for water levels) or "installation type", which I here try to simulate and later recover.
 
 ```{r covariate-definition}
 
-a_slope <- pi/4
-
 data$a <- 0.7 * data$x / extent + 0.3 * data$y / extent
-data$z <- data$z_ + a_slope * data$a
 
 ```
 
 *Mental note: `a` is correlated to `x` and `y`.*
+
+
+In contrast, `b` is a categorical and randomly distributed:
+
+```{r covariate-b}
+data$b <- as.integer(rbinom(n = n_observations, size = 1, prob = 0.4))
+
+data$z <- data$z_ + a_slope * data$a + b_slope * data$b
+
+head(data, 3)
+```
+
+There no noise applied to those covariates, moderate noise on the raw data, so they should be recover-able.
+
 
 
 Visualizing, with color:
@@ -96,9 +113,12 @@ rbpal <- colorRampPalette(c('black','gold'))
 # https://stackoverflow.com/a/9946970
 color <- rbpal(n_observations)[as.numeric(cut(data$z, breaks = n_observations))]
 
-plot(data$x, data$y, col = color, pch = 20)
+plot(data$x, data$y, col = color, pch = as.integer(18 + 2*data$b))
 ```
 
+If you look closely, the upper right is more golden than the lower-left. 
+This is the effect of covariate `a`. 
+Symbols indicate the categorical covariate.
 
 
 ## smoothing
@@ -141,22 +161,21 @@ Nice and smooth.
 Feel free to draw a sunrise.
 
 
-## "De-Trending"
+## "De-Trending" {#sec-detrending}
 
-Just a desparate last try.
-Pay good attention, please.
-
-This will actually provide **the answer** [@sec-answer] below.
+Below, you will follow my trouble in understanding the `gstat::vgram()`, a function which put *de-trending* top of the line but not in my face. 
+This here was a desparate last (and successful) try to understand it.
+Pay good attention, please, since this will actually provide **the answer** in [@sec-answer] below.
 
 ```{r detrending}
 data$d <- lm(s ~ x + y, data)$residual
 # color <- rbpal(n_observations)[as.numeric(cut(data$d, breaks = n_observations))]
-# plot(data$x, data$y, col = color, pch = 20)
+# plot(data$x, data$y, col = color, pch = 20) # not another sunrise...
 
 ```
 
 
-# Variograms
+# Variograms...
 ... should work out-of-the-box, right?
 Then there remains the question: which box?
 
@@ -165,6 +184,22 @@ Then there remains the question: which box?
 
 It is good to keep track of the difference-distance plot.
 
+
+I tried around with various "difference" quantifiers.
+It turned out that "variance" is fine.
+Classically, variance is the average difference of observations (or a subset of observatrions, e.g. in a group or bin) from the average.
+In *variograms*, the mean is replaced by a given point on the landscape (we want to look at differences from that focus point), and then we iterate over all points.
+This will lead to a structurally similar formula as the classical variance, and in fact the concepts are related [@Cressie1993, p. 75].
+We define the **semivariance** $\gamma$ [@Matheron1962]:
+
+$\gamma = \frac{1}{2N} \sum\limits_{N} \left(z_j - z_i\right)^2$
+
+
+Herein, $N$ is the number of observation pairs $\{i, j\}$; those are usually grouped (binned) so to quantify variances at different distances $\gamma\left(h\right)$ (with $h$ the "lag vector magnitude", i.e. distance group).
+
+
+Cross differences of all sorts are extract as follows:
+
 ```{r difference-distance-plot}
 
 unwrap <- function (mat) mat[lower.tri(mat)]
@@ -172,20 +207,23 @@ detrend <- function(data) {
   fit <- lm(difference ~ distance, data)
   return(fit$residual)
   # return(fit$fitted.values)
-}
+} # WARNING: this is not correct detrending!
+det_diff <- function (data) cross_diff(data$d)
+# "Euclid" and "zdiff" are defined above, see "smoothing"
 
 # compute raw distance and difference
 dist_diff <- data.frame(
   distance = unwrap(Euclid(data)),
   difference = unwrap(zdiff(data)),
+  det_difference = unwrap(det_diff(data)),
   abs_difference = unwrap(zdiff_abs(data))
 )
 
 # limit range
 dist_diff <- dist_diff %>% filter(distance < extent)
 
-# "detrend"
-dist_diff$detrend <- detrend(dist_diff)
+# "detrend" - the wrong way
+# dist_diff$detrend <- detrend(dist_diff)
 
 
 # binning
@@ -214,14 +252,20 @@ head(dist_diff_binned)
 
 
 # plot
-par(mfrow = c(2,1))
-plot(dist_diff_binned$distance_mean, dist_diff_binned$abs_difference_mean, type = "o", col = "darkblue")
-plot(dist_diff_binned$distance_mean, dist_diff_binned$semivariance, type = "o", col = "darkgreen")
+par(mfrow = c(1,2))
+plot(dist_diff_binned$distance_mean, dist_diff_binned$abs_difference_mean,
+   type = "o", col = "darkblue",
+   ylab = "mean abs difference"
+   )
+plot(dist_diff_binned$distance_mean, dist_diff_binned$semivariance,
+   type = "o", col = "darkgreen",
+   ylab = "semivariance"
+   )
 
 par(mfrow = c(1,1))
 ```
 
-The lower plot is the variance, plotted against the distance.
+The right plot is the semivariance, plotted against the distance.
 
 Good to have.
 
@@ -262,6 +306,7 @@ Next try.
 ## gstat::variogram() 
 ... has a [documentation](https://r-spatial.github.io/gstat/reference/variogram.html) which leaves me ridiculously clueless:
 
+```
 |   Calculate Sample or Residual Variogram or Variogram Cloud
 |   Description:
 |      Calculates the sample variogram from data, or in case of a linear
@@ -270,10 +315,12 @@ Next try.
 |      intervals.
 |      In case spatio-temporal data is provided, the function
 |      ‘variogramST’ is called with a different set of parameters.
+```
 
 Always careful with functions which doe multiple things.
 
 Yet it's the `examples` that matter:
+```
 | Examples:
 |    library(sp)
 |    data(meuse)
@@ -294,17 +341,18 @@ Yet it's the `examples` that matter:
 |    v
 |    g = gstat(NULL, "log-zinc", log(zinc)~x+y, meuse, model=v.fit, set = set)
 |    variogram(g)
+```
 
 
 Good, or not: I need to transform my data into an `sp` type with coordinates.
-I then have to use a model forula, even if there is no model (yet).
-I have a hundred options to include models, or create a "variogram cloud".
+I then have to use a model formula, even if there is no model (yet).
+I have a hundred options to include models, or create a "variogram cloud" (see `show.vgms()`).
 
-And, to my amazement, they reference the same book as the above package.
+And, to my amazement, they reference the same book as the above package [@Cressie1993].
 
 > Cressie, N.A.C., 1993, Statistics for Spatial Data, Wiley.
 
-(Maybe I should read it?)
+(Maybe one should read it?)
 
 
 
@@ -329,34 +377,37 @@ plot(gstat_vgram, model = m, pch = 22, col = "darkblue", type = "o")
 Same as above. 
 Nice and performant.
 Still no nugget-sill story.
+*Good luck fitting a Matèrn on it.*
 
 
 ## linear trend, w.r.t.?!
 
 Let us try another one of the examples!
 I choose the
-> residual variogram w.r.t. a linear trend:
+```
+| residual variogram w.r.t. a linear trend
+```
 
 Above, I clearly set `sp::coordinates(data_sp) = ~x+y`. 
-It took me a while to figure that setting coordinates does not do the trick.
-You seemingly have to add them to the variogram formula.
+It took me a while to figure that setting coordinates does not quite do the trick.
+You seemingly **also** have to add them to the variogram formula.
 
 
 ```{r gstat-vgram-formula}
 
-# all as above, except the model formula
+# note the model formula: smoothed atarget variable `s`, as a function of `x` and `y`
 gstat_vgram_detrend <- gstat::variogram(s ~ x + y, data_sp, cutoff = extent, width = extent / 64)
 
-m <- fit.variogram(gstat_vgram_detrend, vgm("Mat"), fit.kappa = TRUE)
+m <- suppressWarnings({fit.variogram(gstat_vgram_detrend, vgm("Mat"), fit.kappa = TRUE)})
 plot(gstat_vgram_detrend, model = m, pch = 22, col = "darkblue", type = "o")
 
 ```
 
-There we go!
-This is the image I would have expected!
+**There we go!**
+Fit not perfect, but this is an image of the kind I would have *expected*!
 
 
-However, expecting is not enough.
+However, *expecting* is not enough.
 Which one is right?
 Certainly the "de-trended" one with `s ~ x + y`.
 Yet, I do not understand why! 
@@ -370,80 +421,16 @@ There is more trouble.
 
 Initially, [I saw no way](https://r-spatial.github.io/gstat/reference/plot.gstatVariogram.html) to set the `breaks`.
 
-Yet they are needed for [gstat::variogram](https://r-spatial.github.io/gstat/reference/variogram.html)
-> width: the width of subsequent distance intervals into which data point pairs are grouped for semivariance estimates
-
-
-I also struggled getting a straight line into the plot, to see whether the bins are plotted on a slope.
-
-
-
-## unsmoothed
-
-Now, smoothing has a critical effect; I would like to see my variogram for the raw and edgy data.
-I not yet remove the covariate.
-
-```{r gstat-vgram-unsmoothed}
-
-# all as above, except the outcome variable
-gstat_vgram_unsmoothed <- gstat::variogram(z ~ x + y, data_sp, cutoff = extent, width = extent / 64)
-
-m <- suppressWarnings({fit.variogram(gstat_vgram_unsmoothed, vgm("Mat"), fit.kappa = TRUE)})
-plot(gstat_vgram_unsmoothed, model = m, pch = 22, col = "darkblue", type = "o")
-
+Yet they are needed for [gstat::variogram](https://r-spatial.github.io/gstat/reference/variogram.html).
+Glad I found them:
+```
+| width: the width of subsequent distance intervals into which data point pairs are grouped for semivariance estimates
 ```
 
-At least, there are `warnings` (as supressed above), I guess it is for the model fit.
-Variogram fitting is not trivial.
 
+Also, recovering the covariates is a whole different story if `x` and `y` become part of the equation.
+Hold that thought for later, I will cover it below.
 
-## plotting a horizontal line
-Yet note that the empirical variogram line is rising!
-Just that you cannot see it with the bare eye.
-To show, I need to mess with that horrible `gstatVariogram` object.
-It truly is a mess!
-Just try to manually plot the variogram data... [see here for help]().
-
-- The [documentation](https://r-spatial.github.io/gstat/reference/plot.gstatVariogram.html) is not helpful.
-- I tried `?graphics::grid`; the vgram plot seems not to be a regular plot.
-- I tried accessing the vgram data, but `attributes(vgram)` are not exactly obvious.
-- The [source code](https://github.com/r-spatial/gstat/blob/main/R/plot.gstatVariogram.R) lacks relevant meaningful comments.
-
-
-But, hey, I can live with wasting an hour just to not being able to plot straight lines.
-
-Here is a workaround, using `vgram$gamma`.
-Remember: `gamma` is the symbol of the variance.
-I compare the unsmoothed, but covariate-trended data variogram to the very raw data.
-
-
-```{r gstat-vgram-extractpoints}
-v <- gstat_vgram_unsmoothed
-# attributes(v)
-breaks_ref <- seq(1, 64, length.out = 64)
-dots_ref <- v$gamma[breaks_ref]
-
-# remove the covariate
-gstat_vgram_flat <- gstat::variogram(z_ ~ x + y, data_sp, cutoff = extent, width = extent / 64)
-v <- gstat_vgram_flat
-breaks_flat <- seq(1, 64, length.out = 64)
-dots_flat <- v$gamma[breaks_flat]
-plot(breaks_flat, dots_flat, ylim = c(3.0, 3.5), col = 'black', pch = 21, type = 'l')
-points(breaks_ref, dots_ref, col = 'blue', pch = 19)
-# plot(breaks_ref, dots_ref, col = 'blue', pch = 19)
-grid(ny = NULL)
-```
-
-Good. 
-That was non-instructive.
-Unsmoothed data (but with the covariate) and "flat" data (without the covariate) yield exactly the same variogram.
-I guess I should not have coupled `a` to `x, y`.
-
-
-Maybe being able to extract variogram data helps someone.
-
-
-On we go.
 
 
 ## reminder - what do we have
@@ -453,8 +440,7 @@ To wrap up: Intermediate Summary™!
 
 
 - There are two kinds of people: those who understand what a variogram is (`fields`), and those who understand it differently (`gstat`).
-- Above, I worked on random data which was smoothed with a kernel of about `{r} smooth_sigma`.
-- Adding a covariate does not change the picture too drastically. 
+- Above, I worked on random data which was smoothed with a kernel of about $\sigma = $ `{r} smooth_sigma`.
 - `gstat` seems to be most sophisticated, but also least understandable.
 
 
@@ -463,9 +449,11 @@ the "semivariance-distance" plot is not the end of the story.
 `gstat::variogram`, when used with the `~x+y` formula, performs some data transformation (linear detrending??) which brings the simulation data into a nice and smooth Matèrn shape.
 
 
-# The Source (Code)
-By now, I do not know why the `gstat` people understand variograms differently and how they bring their data to a space where fitting a Matèrn function goes so well.
-My last hope is the source code.
+## the source (code)
+By now, I initially did not know why the `gstat` people understand variograms differently and how they bring their data to a space where fitting a Matèrn function goes so well.
+I searched the documentation, to no avail.
+
+My last hope was the source code.
 And, oh boy, is it badly documented!
 
 - <https://github.com/r-spatial/gstat/blob/main/R/variogram.default.R>
@@ -480,28 +468,44 @@ And, oh boy, is it badly documented!
 Source code does not help.
 
 
-Further leads:
-- <https://stackoverflow.com/questions/29425101/why-does-my-detrending-not-result-in-a-different-semivariogram-in-r>
+No more postponing to read the `gstat` manual, I guess: Let's read it!
 
+- <https://www.gstat.org/gstat.pdf>
+
+... or better not. 
+It is highly confusing (probably my bad).
+
+
+
+Further leads:
+
+- <https://stackoverflow.com/questions/29425101/why-does-my-detrending-not-result-in-a-different-semivariogram-in-r>
 - <https://surferhelp.goldensoftware.com/vario/Variogram_Frequently_Asked_Questions.htm>
 
 
-There is the formula:
-\[2\gamma = \varepsilon \left[\left(z_j - z_i\right)^2 \right]\]
+I mentioned the variance formula above.
+Seems like in other places, they mystically add an epsilon $\varepsilon$ and brackets $\left[\cdot\right]$.
 
-and the only things unclear to me are the epsilon \(\varepsilon\) and the brackets \(\left[\cdot\right]\).
-In other places (Cressie, 1993, p.40, eq. 2.2.7) this is just taken as the mean difference (i.e. sum over all \(i, j\), and normalized by the count of lag vectors).
+$2\gamma = \varepsilon \left[\left(z_j - z_i\right)^2 \right]$
 
 
-No success.
+
+But I could not make sense of that.
+No success, no lead.
 
 
 
 
 Hmmm... 
 
-# The Answer {#sec-answer}
-Watch This:
+## The Answer {#sec-answer}
+But then I decided to naïvely apply the `lm` and retain the residual (see [@sec-detrending]).
+Just because it can also use a formula.
+It is, per its official documentation, used for (multi-)linear regression; no word of "de-trending".
+The `gstat::variogram.default()` source receives a `trend.beta` argument, and I could not identify the detrending function.
+
+
+However, watch This:
 
 ```{r vgram-o-matic}
 vgram_o_matic <- function(formula) {
@@ -516,7 +520,8 @@ My own variogram and that computed with `fields::variogram` has the following fo
 plot(vgram_o_matic(s~1), pch = 22, col = "darkblue", type = "o")
 ```
 
-However, the gstat "variogram" takes a different form
+
+However, the gstat "x-y-detrended variogram" takes a different form:
 
 ```{r vgram-sxy}
 plot(vgram_o_matic(s ~ x + y), pch = 22, col = "darkblue", type = "o")
@@ -524,8 +529,9 @@ plot(vgram_o_matic(s ~ x + y), pch = 22, col = "darkblue", type = "o")
 ```
 
 
-
-The obvious difference is the "formula": what *exactly* does the ` ~ x + y` part do?
+The obvious difference is the "formula".
+What *exactly* does the ` ~ x + y` part do?
+You guessed it:
 
 ```{r vgram-d}
 plot(vgram_o_matic(d ~ 1), pch = 22, col = "darkblue", type = "o")
@@ -535,67 +541,314 @@ plot(vgram_o_matic(d ~ 1), pch = 22, col = "darkblue", type = "o")
 :mic-drop:
 
 
+# Intermediate Summary: De-Trended Variograms
+For one or the other reason, we need to de-trend our data prior to submitting it to the intuitive variogram procedure.
+
+This seems to be good practice, and I anticipate that it facilitates model fitting (which is where we want to go, ultimately).
+
+
+However, careless de-trending will also mess with the covariates, if they are non-homogeneously distributed.
+This will be the quest for the second part of this notebook.
+
 
 # Modeling Covariates
 
-Time to recover the covariate introduced above.
-No more postponing to read the `gstat` manual.
+## recap
+Time to recover the covariates introduced above.
 
-- https://www.gstat.org/gstat.pdf
-
-... or better not. 
-It is highly confusing (probably my bad).
-And after all, there is a formula in the variogram function.
+Those are `a` (correlated to `x` and `y`, continuous, effect magnitude `{r} round(a_slope, 2)`) and `b` (random spatial distribution, categorical, effect magnitude `{r} round(b_slope, 2)`).
 
 
-```{r gstat-vgram-covariate-1}
+However, my first question is whether some distance effect is present in the purely random data.
+For that, I need to change plot attributes, which turned out to be another challenge.
 
-# work in progress
-gstat_vgram_cov <- gstat::variogram(s ~ x+y+a, data_sp, cutoff = extent, width = extent / 64)
 
-m <- fit.variogram(gstat_vgram_cov, vgm("Mat"), fit.kappa = TRUE)
-plot(gstat_vgram_cov, model = m, pch = 22, col = "darkblue", type = "o")
+## unsmoothed
+
+
+The "smoothing" applied initially has a critical effect on spatial interdependence; I would like to also inspect a variogram for the raw and edgy data.
+Raw data, without effects of the covariate, are available and serve as a reference.
+
+```{r vgram-unsmoothed}
+
+# all as above, except that the outcome variable is as raw as can be
+vgram_unsmoothed <- gstat::variogram(z_ ~ x + y, data_sp, cutoff = extent, width = extent / 64)
+
+m <- suppressWarnings({fit.variogram(vgram_unsmoothed, vgm("Mat"), fit.kappa = TRUE)})
+plot(vgram_unsmoothed, model = m, pch = 22, col = "darkblue", type = "o")
+
+```
+
+Note that the line is a fit, but with the wrong function, and we cannot tell whether it is rising or not.
+
+At least, there are `warnings` (as supressed above), I guess it is for the model fit.
+Variogram fitting is not trivial, yet that is a topic for another notebook.
+
+
+
+## plotting a horizontal line
+
+
+Yet note how the empirical variogram line is rising!
+You have to get very close and imagine very hard, then you will see.
+Or maybe you cannot see it with the bare eye.
+To ultimately test whether there is a slope, I need to mess with that horrible `gstatVariogram` object.
+I would ideally extract the dots and fit a regression line.
+Or, as a shortcut, I would be fine with a straight line in the plot, to see whether the bins are plotted on a slope.
+
+`gstat` is truly is a mess!
+Just try to manually plot the variogram data...
+
+- The [documentation](https://r-spatial.github.io/gstat/reference/plot.gstatVariogram.html) is not helpful.
+- I tried `?graphics::grid`; the vgram plot seems not to be a regular plot.
+- I tried accessing the vgram data, but `attributes(vgram)` are not exactly obvious.
+- The [source code](https://github.com/r-spatial/gstat/blob/main/R/plot.gstatVariogram.R) lacks relevant meaningful comments.
+- Again, this is tribute to my limited R skills, but hey - I am trying!
+
+
+I can live with wasting an hour just to not being able to plot straight lines.
+
+Here is a workaround, using `vgram$gamma`.
+Remember: `gamma` is the symbol of the semivariance.
+I compare the unsmoothed, but covariate-affected data variogram (`_flat`) to the very raw data (`_ref`).
+
+
+```{r vgram-extractpoints}
+#| fig-cap: "Black line: raw data reference, black dots: including covariates `a` and `b`. Green dots are the non-detrended (`z~1`) data."
+
+v <- vgram_unsmoothed
+# attributes(v)
+breaks <- seq(1, 64, length.out = 64)
+dots_ref <- vgram_unsmoothed$gamma[breaks]
+
+# remove the covariate
+vgram_flat <- gstat::variogram(z ~ x + y, data_sp, cutoff = extent, width = extent / 64)
+dots_flat <- vgram_flat$gamma[breaks]
+
+# remove the covariate
+vgram_sloped <- gstat::variogram(z ~ 1, data_sp, cutoff = extent, width = extent / 64)
+dots_sloped <- vgram_sloped$gamma[breaks]
+
+plot(breaks, dots_ref, ylim = c(3.0, 3.6), col = 'black', pch = 21, type = 'l', ylab = "semivariance")
+points(breaks, dots_flat, col = 'black', pch = 20)
+points(breaks, dots_sloped, col = 'darkgreen', pch = 19)
+# plot(breaks, dots_ref, col = 'blue', pch = 19)
+grid(ny = NULL)
+```
+
+Wow. 
+That semivariogram was at least semi-instructive.
+Maybe being able to extract variogram data helps someone.
+
+Unsmoothed data (but with the covariate) and "flat" data (without the covariate) yield exactly the same variogram pattern, but shifted.
+The shift from the ref is caused by the `b_slope` (categorical effect), but not trivially related to it.
+```{r}
+mean(abs(dots_ref - dots_flat)) / b_slope
+```
+::: {.callout-note}
+Randomly distributed effects in the data cause a shift of the variogram, if points are independent. 
+:::
+
+
+And because I coupled `a` to `x, y`, it leads to a slope, unless we de-trend for the spatial coordinates which it correlates to.
+
+Remember: I saw a linear trend in my data when randomly pairing them (my error, mentioned initially).
+It now became clear to me that this was only visible due to not de-trending.
+
+::: {.callout-note}
+Linear effects in the data cause a slope in the variogram. 
+:::
+
+Likewise, any linear trends in `x` or `y` will be superimposed on the difference-distance-plot.
+Think of standing on a slope, drawing circles: the further-away points (larger circles) will differ from the center just because of the slope.
+In consequence, an empirical semivariogram will not look Matèrn-like anymore.
+This explains the use of de-trending to me.
+
+
+
+Good to know.
+On we go.
+
+
+## extending the detrending formula
+Having worked with formula's above, why not simply plug them in?
+
+```{r vgram-covariate-1}
+#| fig-cap: "Black line: raw data reference, black dots (as above): including covariates `a` and `b` and de-trended for `x + y`. Blue dots: same, but de-trended for `x + y + a + b`"
+
+# reference: see above
+# dots_flat <- vgram_flat$gamma[breaks]
+# m0 <- suppressWarnings({fit.variogram(vgram_flat, vgm("Mat"), fit.kappa = TRUE)})
+# plot(vgram_flat, model = m0, pch = 22, col = "darkblue", type = "o")
+
+# with covariate de-trending
+vgram_cov <- gstat::variogram(z ~ x+y+a+b, data_sp, cutoff = extent, width = extent / 64)
+dots_cov <- vgram_cov$gamma[breaks]
+# m1 <- suppressWarnings({fit.variogram(vgram_cov, vgm("Mat"), fit.kappa = TRUE)})
+# plot(vgram_cov, model = m0, pch = 22, col = "darkblue", type = "o")
+
+
+plot(breaks, dots_ref, ylim = c(3.0, 3.6), col = 'black', pch = 21, type = 'l', ylab = "semivariance")
+points(breaks, dots_flat, col = 'black', pch = 20)
+points(breaks, dots_cov, col = 'darkblue', pch = 19)
+grid(ny = NULL)
+```
+
+This formula in `gstat::variogram()` has disadvantages:
+
+- We do not receive de-trending regression parameters. Yet we know how to get them by prior manual de-trending with `lm`.
+- The covariate effects are only partially recaptured. As mentioned above, a `b_slope` caused the shift, an `a_slope` the slope, and it can be recovered with the appropriate formula.
+- ... which seems not to work reliably: the result of `z ~ x+y+a+b` seems sloped and shifted. 
+
+
+Quick test: how well does `lm` perform in recovering the trends?
+```{r quick-test-lm}
+lm(z ~ x + y + a + b, data_sp)
+# lm(z ~ a + b, data_sp)
+
+```
+
+Great: `lm` recovers the categorical, randomly distributed `b` with sufficient accuracy.
+However, it cannot retrieve any value for `a`, because that is perfectly correlated to `x` and `y`.
+
+This is expected.
+At any rate, it is good to have the diagnostic functionality of `lm`.
+
+
+# Final Remarks
+
+To wrap up the procedure, one can use this for getting an accurate[^1] variogram:
+```{r final-gstat}
+
+detrend_regression_sp <- lm(s ~ x + y + b, data_sp)
+data_sp$uncov <- detrend_regression_sp$residual
+
+detrend_regression_sp
+
+# vgram_test <- gstat::variogram(NULL, data_sp, formula = s~a+b, cutoff = extent, width = extent / 64)
+vgram_test <- gstat::variogram(uncov ~ 1, data_sp, cutoff = extent, width = extent / 128)
+m <- fit.variogram(vgram_test, vgm("Mat"), fit.kappa = TRUE)
+plot(vgram_test, model = m, pch = 22, col = "darkblue", type = "o")
+
+```
+
+[^1]: Note that when using the smoothed estimator, recovered values for `b_slope` are much smaller due to the post-hoc applied spatial coupling.
+
+
+We can reproduce this variogram with the following steps:
+
+::: {.callout-tip}
+1. de-trend the data, note slopes and continue on residual
+2. cross-calculate distance and difference
+3. binning, continuing on mean(distance) and variance(difference)
+4. (optional) visualization and modeling 
+:::
+
+
+Here is the code to do so:
+
+```{r final-repro}
+
+# helper functions
+cross_diff <- function (vec) outer(X = vec, Y = vec, FUN = function(X, Y)  Y-X)
+Euclid <- function (data) sqrt(cross_diff(data$x)^2 + cross_diff(data$y)^2 )
+unwrap <- function (mat) mat[lower.tri(mat)]
+
+# detrend, proceeding with residuals
+detrend_regression <- lm(s ~ x + y + b, data)
+data$res <- detrend_regression$residual
+
+# compute raw distance and difference
+dist_diff <- data.frame(
+  distance = unwrap(Euclid(data)),
+  difference = unwrap(cross_diff(data$s)),
+  difference_detrend = unwrap(cross_diff(data$res))
+)
+
+# limit range
+dist_diff <- dist_diff %>% filter(distance < extent)
+
+# binning
+dist_diff$bin <- as.factor(cut(dist_diff$distance, breaks = 128))
+dist_diff_binned <- dist_diff %>% 
+  group_by(bin) %>%
+  summarize_all(c(
+    "mean" = function(vec) mean(vec, na.rm = TRUE),
+    "semivariance" = function(vec) 0.5*var(vec, na.rm = TRUE))
+  ) %>%
+  select(
+    distance_mean,
+    difference_semivariance,
+    difference_detrend_semivariance
+  )
+
+detrend_regression
+```
+
+
+```{r final-vis-comparison}
+#| fig-cap: "black line: manual variogram, green dots: reference calculation with `gstat`."
+#
+# visualization
+breaks <- seq(1, 128, length.out = 128)
+dots_test <- vgram_test$gamma[breaks] ## for comparison
+
+plot(
+  dist_diff_binned$distance_mean,
+  dist_diff_binned$difference_detrend_semivariance,
+  type = 'l', col = 'black'
+)
+points(breaks*extent/128, dots_test, col = 'green', pch = 21)
 
 ```
 
 
-To be continued!
+The Matèrn fit of `gstat` works reasonably well, though with warnings.
+I will leave that regression for another day, since variogram model fitting is not on my agenda right now (it would be, if multiple variograms would need to be compared).
+
+Also, the act of [Kriging](https://en.wikipedia.org/wiki/Kriging) is an obvious further step I have not yet explored.
 
 
-# Notes
+# Potential
 
-> Dat hoogteligging van het meetpunt gecorreleerd is met waterstand TAW, is te verwachten. Ook voor verschillen op grote afstand is dit te verwachten: grote verschillen in hoogteligging TAW gaan gepaard met grote verschillen in waterstand TAW.
-< Karen Wuyts, 10:12 AM, Edited
-Bedoel je dan dat er in het variogram best geplot wordt voor een aantal hoogteverschilklassen? Het lijkt me dan wel nuttig om te weten of de criteria voor hergebruik van bestaande piezo's/peilbuizen in de praktijk enkel via een desktopanalyse worden getest of op terrein. Om het op terrein toe te passen, moeten we niet afkomen met hoogteverschillen van een halve meter.
+Implementing a custom variogram procedure seems more work, features might be limited, bugs might ruin my day.
+Yet to me, reproducing the `gstat` "gold standard" for variograms has several obvious advantages.
 
-Kan je afstand en verschil in hoogte samen in het model steken? Ze zijn waarschijnlijk met elkaar gecorreleerd?
-
-< Floris Vanderhaeghe, 10:15 AM
-"het variogram best geplot wordt voor een aantal hoogteverschilklassen": dat was het idee dat ik had, ja.
-
-< Floris Vanderhaeghe, 10:21 AM
-Of je modelleert het variogram met hoogteverschil als covariaat, kan wellicht ook inderdaad (afhankelijk van wat de bestaande variogrammodellen toelaten; klassiek is alleen ifv afstandsverschil). Ik kan wel eens kijken wat er gaat. Dan kun je range (of een bepaald verschilcriterium) uitdrukken ifv afstandsverschil + hoogteverschil bv. Waarbij het variogram zelf nog steeds gedefinieerd is obv waterstand in m TAW, het gaat dus niet om het variogram van een residual.
-
-Afstand tot waterloop was ook nog een criterium.
+- Clarity and better understanding of the procedure (e.g. that there is *prior* and *post-hoc* regression).
+- It can be done in `base-r`, reducing dependency load (`gstat` itself and `sp`/`sf`, amongst others).
+- I less rely on their documentation, which will be crucial not only if `gstat` ever change anything to their logic in an update.
+- For *prior* regression (de-trending), I retain the regression outcome.
+- I get more flexible with *post-hoc* regression ("modeling" in the conventional sense).
+- I can `plot()` the outcome in my preferred visualization environment, even add elements with `base-r`.
+- I can still run a `gstat::variogram` to double-check my own (and their) outcomes.
 
 
-> Kan je afstand en verschil in hoogte samen in het model steken? Ze zijn waarschijnlijk met elkaar gecorreleerd?
-Dat is inderdaad opletten geblazen.
-Hoogteverschilklassen met aparte variogrammen gaan daar meer controle over geven lijkt me.
+There are some possible future trajectories for exploration.
 
-< Karen Wuyts, 10:28 AM
-Hoe beslissen we welke grenzen we voor de klassen gebruiken? Bovenstaande figuur van log |delta W| ifv log |delta h| bevat natuurlijk ook het afstandseffect.
 
-< Floris Vanderhaeghe, 10:49 AM
-Ik zou die a priori kiezen obv intuïtie en kijken wat het geeft, nadien bijstellen indien nodig. Bv klassegrenzen 0, 0.1, 0.2, 0.3, 0.5, 0.75, 1.5.
+Right now, I demonstrated the *prior* de-trending modeling via `lm`.
+While this is perfectly valid, it might be useful to have more powerful regression tools at hand, such as probabilistic- and robust regression.
 
-< Floris Vanderhaeghe, 10:53 AM
-Met gstat (dat uiteindelijk op kriging gericht is), kun je een variogram model fitten als volgt:
+This is enabled by exposing the de-trending mechanism above. 
+One could, in principle, use [`brms`](https://tutorials.inbo.be/tutorials/r_brms/) and the like to fit a model, quantify effects of interest, calculate one "best fit" prediction per distance (arguably a simplification from the probabilistic nature of the regression), and continue on residuals.
+Those might even be able to separate correlated effects by providing a prior for a correlation matrix (e.g. with an [LKJ prior](https://mc-stan.org/docs/stan-users-guide/regression.html#multivariate-hierarchical-priors.section)).
 
-- eerst empirisch variogram maken met `variogram()`
-- dan variogrammodel met initiële waarden definiëren met `vgm()` (zie `show.vgms()` voor beschikbare vormen)
-- de modelparameters van dit object verfijnen obv de data met `fit.variogram()`
 
-< Floris Vanderhaeghe, 10:56 AM
-In kriging kun je extra covariaten meenemen, en in een variogram kun je anisotropieparameters meenemen en ook een model specifiëren om er de residuals van te kunnen gebruiken voor het variogram, maar een variogram dat 'variabel' is ifv covariaten heb ik niet onmiddellijk gezien (maar ik zou me veel meer moeten verdiepen in de materie daarrond, bv Cressie 1993 en de gstat manual).
+If the unit of the measurement of interest is equal to the spatial units, then a spatial PCA transformation could extract the spatial (x, y) aspect of the parameter interrelation - one could continue work on the third principal component, and add more specific de-trending afterwards.
 
+
+So many options... 
+
+Enjoy tinkering!
+
+
+
+# References
+
+::: {#refs}
+:::
+
+
+<!--
+ https://quarto.org/docs/authoring/figures.html#caption-locations 
+-->

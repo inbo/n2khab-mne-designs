@@ -1,0 +1,47 @@
+
+# Notes
+
+> Dat hoogteligging van het meetpunt gecorreleerd is met waterstand TAW, is te verwachten. Ook voor verschillen op grote afstand is dit te verwachten: grote verschillen in hoogteligging TAW gaan gepaard met grote verschillen in waterstand TAW.
+< Karen Wuyts, 10:12 AM, Edited
+Bedoel je dan dat er in het variogram best geplot wordt voor een aantal hoogteverschilklassen? Het lijkt me dan wel nuttig om te weten of de criteria voor hergebruik van bestaande piezo's/peilbuizen in de praktijk enkel via een desktopanalyse worden getest of op terrein. Om het op terrein toe te passen, moeten we niet afkomen met hoogteverschillen van een halve meter.
+
+Kan je afstand en verschil in hoogte samen in het model steken? Ze zijn waarschijnlijk met elkaar gecorreleerd?
+
+< Floris Vanderhaeghe, 10:15 AM
+"het variogram best geplot wordt voor een aantal hoogteverschilklassen": dat was het idee dat ik had, ja.
+
+< Floris Vanderhaeghe, 10:21 AM
+Of je modelleert het variogram met hoogteverschil als covariaat, kan wellicht ook inderdaad (afhankelijk van wat de bestaande variogrammodellen toelaten; klassiek is alleen ifv afstandsverschil). Ik kan wel eens kijken wat er gaat. Dan kun je range (of een bepaald verschilcriterium) uitdrukken ifv afstandsverschil + hoogteverschil bv. Waarbij het variogram zelf nog steeds gedefinieerd is obv waterstand in m TAW, het gaat dus niet om het variogram van een residual.
+
+Afstand tot waterloop was ook nog een criterium.
+
+
+> Kan je afstand en verschil in hoogte samen in het model steken? Ze zijn waarschijnlijk met elkaar gecorreleerd?
+Dat is inderdaad opletten geblazen.
+Hoogteverschilklassen met aparte variogrammen gaan daar meer controle over geven lijkt me.
+
+< Karen Wuyts, 10:28 AM
+Hoe beslissen we welke grenzen we voor de klassen gebruiken? Bovenstaande figuur van log |delta W| ifv log |delta h| bevat natuurlijk ook het afstandseffect.
+
+< Floris Vanderhaeghe, 10:49 AM
+Ik zou die a priori kiezen obv intuïtie en kijken wat het geeft, nadien bijstellen indien nodig. Bv klassegrenzen 0, 0.1, 0.2, 0.3, 0.5, 0.75, 1.5.
+
+< Floris Vanderhaeghe, 10:53 AM
+Met gstat (dat uiteindelijk op kriging gericht is), kun je een variogram model fitten als volgt:
+
+- eerst empirisch variogram maken met `variogram()`
+- dan variogrammodel met initiële waarden definiëren met `vgm()` (zie `show.vgms()` voor beschikbare vormen)
+- de modelparameters van dit object verfijnen obv de data met `fit.variogram()`
+
+< Floris Vanderhaeghe, 10:56 AM
+In kriging kun je extra covariaten meenemen, en in een variogram kun je anisotropieparameters meenemen en ook een model specifiëren om er de residuals van te kunnen gebruiken voor het variogram, maar een variogram dat 'variabel' is ifv covariaten heb ik niet onmiddellijk gezien (maar ik zou me veel meer moeten verdiepen in de materie daarrond, bv Cressie 1993 en de gstat manual).
+
+
+Lessons learned:
+- Ik kon de functies uit `gstat` volledig reproduceren; dit was niet evident.
+- Er zijn twee regressie-stappen: eentje vooraf ("de-trending", bv. `z~x+y`), eentje achteraf ("variogram modeling", bv. `vgm("Mat")`).
+- Als hoogteverschil (`reference TAW`) er systematisch in zit, dan komt het eruit bij de-trending.
+- ... Maar ik kan ook beslissen om dit als nieuwe dimensie en met "bins" erin te steken en zo een effect beter te kwantificeren/visualiseren. (TODO @FM)
+- ... Hetzelfde voor "afstand waterlopen" (ga ik doen) of andere.
+- Als bv. filterdiepte een effect heeft, dan zou het ook in "de-trending" te vatten zijn.
+- Floris, de Cressie en vooral ook de `gstat` manual zijn volgens mij op dit ogenblik niet nodig om verder te raadplegen.
