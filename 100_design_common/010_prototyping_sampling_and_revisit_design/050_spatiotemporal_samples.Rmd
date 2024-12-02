@@ -62,7 +62,6 @@ Also, think about common field activity supergroups x sample size between module
 For now still without:
 
 - GRTS address offset for MHQ at Flemish level = undefined module
-- adding (and labelling) spare sampling units. These can be shared among modules when these have the same panel design AND domain, but their module membership is applied at the moment of replacement, according to module the replaced unit belonged to.
 - collapsing nearby units for groundwater schemes
 - gradual increase, during the first cycle, of the number of installed groundwater and surfacewater observation wells.
 Also, the fact that the _installation_ of observation wells must be accelerated in the module's first cycle if the latter is shorter than the enforced cycle duration.
@@ -488,9 +487,9 @@ Note that the term 'domain' causes some confusion when considered across modules
 - While domains may overlap between modules, the domain name is kept as foreseen by a module, since the sample size must be maintained at that level for the module.
 Sample sizes of two modules are summed only when domains are identical.
 - Next, the specified number of sampling units is drawn for each domain.
-- In a separate step, it is taken care of to have no overlapping sampling units because domains may overlap.
-In this step, the membership of each unit with respect to a smaller, included domain is taken into account, so that all units that belong to that domain have contiguous GRTS addresses.
-Nevertheless, it still keep their original (module-bound) domain attribute.
+- In a separate step, it is taken care of to have no common sampling units between modules where domains overlap.
+In this step, the membership of each unit with respect to a smaller, included domain is taken into account, so that all units that belong to that domain, across modules, have contiguous GRTS addresses.
+Nevertheless, their original (module-bound) domain attributeis still kept.
 Sampling units from smaller domains that have a shifted GRTS address to avoid overlap with sampling units from a larger, including domain, have a value `TRUE` in the `extends_on_larger_domain` column of below created `scheme_moco_ps_stratum_dom_spsamples`.
 - Consequently, which units belong to an overlapped domain across modules will not yet be apparent from the resulting object.
 We will need this though in order to add spare units and apply the revisit design.
@@ -867,8 +866,8 @@ scheme_moco_ps_stratum_sppost_spsamples_spares %>%
 <!-- --------------------------- -->
 Adding some ideas:
 
-- organize the membership design for the combination of field activity supergroups, i.e. with the same panel design across FAGs, and sample size. Still within module combo x scheme since sample sizes may differ, but across schemes where they don't.
-- also make membership design depend between such different supergroups of the same sample size, where these have a compatible number of panels, e.g. if one panel in one supergroup can be the sum of 4 panels of another supergroup.
+- organize the membership design for the combination of field activity supergroups, i.e. with the same panel design across FAGs, and sample size. Still within module combo x scheme since sample sizes may otherwise differ, but across schemes where they don't.
+- also make membership design linked between such different supergroups of the same sample size, where these have a compatible number of panels, e.g. if one panel in one supergroup can be the sum of 4 panels of another supergroup.
 - start with the supergroups that coincide with the panel designs of the _main_ field method of _target_ variables, as we plan to optimize the spatial samples in order to deal with the representation of those panel designs across modules, schemes and domains.
 - apply non-core FAG panels only to locations not covered by a corresponding core FAG
 - select a single winning FAG for competition in time (for the same FAG) or between interlinked FAGs (take the superior one and schedule it as the first one). However don't do this for the FAG with the main field method of each scheme: the data collection design must not be harmed!
@@ -895,13 +894,15 @@ scheme_moco_ps_stratum_sppost_spsamples <-
   rename(sp_poststr_samples = sp_poststr_samples_spareunits)
 ```
 
-We can see that matching spatial samples across schemes, panel splits and module combos only occur for smaller strata; consequently we cannot generalize spatial samples above the level of scheme, panel split and module combo in the revisit design.
+We can see that identical spatial samples ('identical' includes the sample size) across schemes, panel splits and module combos only occur for smaller strata:
 
 ```{r paged.print=FALSE}
 scheme_moco_ps_stratum_sppost_spsamples %>% 
   count(stratum, sp_poststr_samples, name = "number_of_scheme_ps_moco") %>% 
   filter(number_of_scheme_ps_moco > 1)
 ```
+
+Consequently we cannot generalize spatial samples above the level of scheme, panel split and module combo in the revisit design.
 
 However, within a scheme we will combine multiple FAGs that have the same revisit design, called field activity supergroups (FASs).
 Also, we will maximize the chance for cross-scheme and cross-compartment spatial alignment of sampling units by starting all panel designs on the same virtual date, and drop non-applicable (too early) parts afterwards.
@@ -928,7 +929,7 @@ FASs of different spatial subsets can share their revisit design, scheme, module
 
 Before we execute this plan, we must verify the degree to which:
 
-- a main field methods is present _for all modules_ in the same scheme x module combo x panel split.
+- main field methods are repeated _in all modules_ in the same scheme x module combo x panel split.
 Where this is not the case, it must be verified whether the combination of modules poses problems at the level of the interpretation of the involved (target) environmental variable, and it should be decided whether this combination of modules can be held.
 
   Main field methods not represented across all modules in the same scheme x module combo x panel split:
@@ -976,7 +977,7 @@ envvars %>%
   distinct(pick(starts_with("env"), target, main_datacollection_method))
 ```
 
-- an activity sequence is present _for all modules_ in the same scheme x module combo x panel split.
+- activity sequences are repeated _in all modules_ in the same scheme x module combo x panel split.
 Similarly we have to decide potential consequences (restrictions) in the combination of modules if this is not the case.
 
 ```{r}
@@ -1147,7 +1148,7 @@ scheme_moco_ps_fagset_spsubsetfull <-
 ```
 
 Creating final object.
-It expands `moco_scheme_ps_fas_paneldesign` to explicit spatial subsets, but only where needed, i.e. we want each row of `moco_scheme_ps_fas_paneldesign` to have spatial subsets for all FAGs or for none.
+It expands `scheme_moco_ps_fas_paneldesign` to explicit spatial subsets, but only where needed, i.e. we want each row of `scheme_moco_ps_fas_paneldesign` to have spatial subsets for all FAGs or for none.
 Also, it unnests the spatial subset.
 
 ```{r}
