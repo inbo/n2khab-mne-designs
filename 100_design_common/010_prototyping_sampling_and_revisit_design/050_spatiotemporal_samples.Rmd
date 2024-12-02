@@ -30,7 +30,7 @@ module_domain_scheme_stratum_sample_size_2 <-
   filter(module %in% module_selection)
 ```
 
-## Constructing the samples
+## Considerations
 
 The samples don't explicitly address the non-core schemes, except for their types that are not covered by core schemes.
 There's no intention to do that, as for overlapping types the samples of the core schemes are the ones to be used for the non-core schemes.
@@ -67,7 +67,7 @@ For now still without:
 Also, the fact that the _installation_ of observation wells must be accelerated in the module's first cycle if the latter is shorter than the enforced cycle duration.
 So it's currently assumed that all observation wells are in place already.
 
-### Module combinations (module combos) per scheme based on common panel design of target variables
+## Module combinations (module combos) per scheme based on common panel design of target variables
 
 Determining module combos per scheme based on common panel design characteristics _of target variables_.
 The target variables limit the main field methods of a module x scheme to a great extent, since the latter also comprise variables for explanation & quality control.
@@ -219,9 +219,9 @@ Nevertheless, it should be warned that the latter approach can lead to challengi
 It should also be accepted that for rare types, these samples may by necessity overlap between module combos.
 Hence, this should be simplified afterwards to avoid unnecessary duplication of fieldwork planning.
 
-### Spatial samples
+## Spatial samples
 
-#### Set GRTS address thresholds per domain and stratum for cross-scheme synergies
+### Set GRTS address thresholds per domain and stratum for cross-scheme synergies
 
 Determining fixed GRTS address thresholds per domain and stratum to assign to module combos and panel splits, applicable across schemes, in order to maintain maximum synergy across schemes.
 
@@ -417,7 +417,7 @@ dom_stratum_grtspart_threshold %>%
 **Missing functionality**: write a file with these thresholds (GRTS partition definitions), so that it can be read in a static way from some point on!!
 
 
-#### Apply the GRTS address threshold to the module combos and panel splits
+### Apply the GRTS address threshold to the module combos and panel splits
 
 Expanding the GRTS-partition-level GRTS-threshold to the level of module combos and panel splits (per domain and stratum).
 
@@ -458,7 +458,7 @@ mod_dom_scheme_ps_stratum_grtspart <-
   relocate(module, domain, scheme, panel_split)
 ```
 
-#### Draw spatial samples
+### Draw spatial samples
 
 Determining the applicable domain relations.
 
@@ -685,7 +685,7 @@ In essence this means duplicating existing sampling units using applicable rows 
 This object then also contains the spatial poststrata, needed for inference, and we also need to add the sampling weights at that level.
 
 
-#### Reclassify by spatial poststratum and add spare units {#sppoststrata}
+### Reclassify by spatial poststratum and add spare units {#sppoststrata}
 
 The `scheme_moco_ps_stratum_dom_spsamples` object distinguishes domains which can spatially overlap.
 This is caused by the domains envisaged by specific modules, and the sampling units attributed to the different domains are mutually exclusive.
@@ -859,7 +859,7 @@ scheme_moco_ps_stratum_sppost_spsamples_spares %>%
 ```
 
 
-### Implementing the revisit design
+## Implementing the revisit design
 
 **Missing functionality**: make the code below work for other field activities than those in module `pan_effectmon_flanders` (e.g. wrt prefix extraction).
 
@@ -877,9 +877,9 @@ Adding some ideas:
 - in the first year of each compartment, start on 1 Jan and wind up to month_first_default
 <!-- --------------------------- -->
 
-#### Preparations
+### Preparations
 
-##### Isolating the spatial samples (without spare units)
+#### Isolating the spatial samples (without spare units)
 
 `scheme_moco_ps_stratum_sppost_spsamples` is like `scheme_moco_ps_stratum_sppost_spsamples_spares` without the spare units.
 
@@ -907,7 +907,7 @@ Consequently we cannot generalize spatial samples above the level of scheme, pan
 However, within a scheme we will combine multiple FAGs that have the same revisit design, called field activity supergroups (FASs).
 Also, we will maximize the chance for cross-scheme and cross-compartment spatial alignment of sampling units by starting all panel designs on the same virtual date, and drop non-applicable (too early) parts afterwards.
 
-##### Lifting mod_scheme_fag_paneldesign to the module combo & FA supergroup level
+#### Lifting mod_scheme_fag_paneldesign to the module combo & FA supergroup level
 
 The module combos (of a scheme x panel split) reflect a common revisit design of the main field method of the target variable, across modules.
 We use this entity to populate all the different FAG panel designs (grouped into field activity supergroups) with the same corresponding sampling units (from `scheme_moco_ps_stratum_sppost_spsamples`).
@@ -1238,7 +1238,7 @@ scheme_moco_ps_spsubset_fas_paneldesign %>%
 ```
 
 
-#### Number of panels
+### Number of panels
 
 Determining the _number_ of panels for each module x scheme x spatial subset x 'field activity group' (FAG).
 We also add period, group size and group repetition attributes.
@@ -1328,7 +1328,7 @@ mod_scheme_dom_fag_panel_count %>%
   kable()
 ```
 
-#### Panels and their properties
+### Panels and their properties
 
 Defining panels.
 
@@ -1408,7 +1408,7 @@ scheme_domain_fag_panel_calendar <-
   relocate(panel, .after = field_activity_group)
 ```
 
-#### Panel membership of spatial sampling units
+### Panel membership of spatial sampling units
 
 Panel membership is randomized by following the GRTS address sequence at the stratum level.
 
@@ -1442,7 +1442,7 @@ This has consequences for the READ and the SAMP activities in these compartments
 **Missing functionality**: apply more generic coding approach to prepare and create the panel memberships.
 Currently this is customized to cater for a specific revisit approach in the `pan_effectmon_flanders` module.
 
-##### Membership of generic panels
+#### Membership of generic panels
 
 Defining generic panel sets: each set corresponds to a different combination of compartment and number of panels.
 This will be the basis to make different panel memberships.
@@ -1637,7 +1637,7 @@ generic_spsample_membership %>%
   count(compartment, domain, generic_panel, spsunit_groups)
 ```
 
-##### Panel membership
+#### Panel membership
 
 Deriving panel membership from generic panel membership.
 A panel is defined for a scheme x field activity group (see `scheme_domain_fag_panels`).
@@ -1694,7 +1694,7 @@ scheme_domain_fag_panel_stratum_spsamples <-
   )
 ```
 
-### Spatiotemporal samples
+## Spatiotemporal samples
 
 Joining the date intervals per panel with panel memberships to generate the spatiotemporal samples.
 
@@ -1708,7 +1708,7 @@ scheme_domain_fag_stratum_spsamples_calendar <-
   )
 ```
 
-### Field activities in space and time
+## Field activities in space and time
 
 Some field activity groups may overlap between schemes, i.e. when the same sampling unit is present in more than one scheme _and_ the same field activity group happens in these schemes at the same time for this sampling unit.
 
