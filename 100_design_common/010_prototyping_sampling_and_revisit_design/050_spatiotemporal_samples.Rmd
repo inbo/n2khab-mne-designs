@@ -1059,7 +1059,8 @@ scheme_moco_ps_fas_paneldesign <-
   ) %>% 
   # prepare for collapsing
   mutate(
-    actseqs = str_c(unique(activity_sequence), collapse = ", "),
+    actseqs = str_c(sort(unique(activity_sequence)), collapse = ", "),
+    actseqs_vec = list(sort(unique(activity_sequence))),
     .by = !c(module, is_core_scheme, activity_sequence)
   ) %>% 
   summarize(
@@ -1069,7 +1070,8 @@ scheme_moco_ps_fas_paneldesign <-
         in_aquatic_subset = in_aquatic_subset,
         rank = rank,
         max_rank = max_rank,
-        actseqs = actseqs
+        actseqs = actseqs,
+        actseqs_vec = actseqs_vec
       ) %>% 
         distinct()
     ),
@@ -1081,7 +1083,8 @@ scheme_moco_ps_fas_paneldesign <-
       max_rank, 
       in_aquatic_subset, 
       activity_sequence,
-      actseqs
+      actseqs,
+      actseqs_vec
     )
   ) %>% 
   relocate(fas_spsubset, .after = panel_split)
@@ -1113,7 +1116,8 @@ scheme_moco_ps_fagset_spsubsetfull <-
   mutate(
     rank = min(rank),
     max_rank = if (all(is.na(max_rank))) NA else max(max_rank, na.rm = TRUE),
-    actseqs = str_c(unique(activity_sequence), collapse = ", "),
+    actseqs = str_c(sort(unique(activity_sequence)), collapse = ", "),
+    actseqs_vec = list(sort(unique(activity_sequence))),
     .by = c(
       scheme,
       module_combo_code,
@@ -1129,7 +1133,8 @@ scheme_moco_ps_fagset_spsubsetfull <-
         in_aquatic_subset = in_aquatic_subset,
         rank = rank,
         max_rank = max_rank,
-        actseqs = actseqs
+        actseqs = actseqs,
+        actseqs_vec = actseqs_vec
       ) %>% 
         distinct()
     ),
@@ -1141,7 +1146,8 @@ scheme_moco_ps_fagset_spsubsetfull <-
       rank,
       max_rank,
       activity_sequence,
-      actseqs
+      actseqs,
+      actseqs_vec
     )
   ) %>% 
   relocate(fag_spsubsetfull, .after = panel_split)
@@ -1174,7 +1180,8 @@ scheme_moco_ps_spsubset_fas_paneldesign <-
                   in_aquatic_subset_explicit = in_aquatic_subset,
                   rank_explicit = rank,
                   max_rank_explicit = max_rank,
-                  actseqs_explicit = actseqs
+                  actseqs_explicit = actseqs,
+                  actseqs_vec_explicit = actseqs_vec
                 ),
               join_by(field_activity_group),
               relationship = "one-to-many",
@@ -1196,6 +1203,11 @@ scheme_moco_ps_spsubset_fas_paneldesign <-
                 actseqs_explicit,
                 actseqs
               ),
+              actseqs_vec = ifelse(
+                is.na(in_aquatic_subset),
+                actseqs_vec_explicit,
+                actseqs_vec
+              ),
               in_aquatic_subset = ifelse(
                 is.na(in_aquatic_subset),
                 in_aquatic_subset_explicit,
@@ -1207,7 +1219,8 @@ scheme_moco_ps_spsubset_fas_paneldesign <-
               in_aquatic_subset, 
               rank, 
               max_rank, 
-              actseqs
+              actseqs,
+              actseqs_vec
             )
         } else {
           fsp
@@ -1217,7 +1230,7 @@ scheme_moco_ps_spsubset_fas_paneldesign <-
   select(-fag_spsubsetfull) %>% 
   unnest(fas_spsubset) %>% 
   mutate(actseqs = factor(actseqs)) %>% 
-  nest(fas = c(field_activity_group, rank, max_rank, actseqs)) %>% 
+  nest(fas = c(field_activity_group, rank, max_rank, actseqs, actseqs_vec)) %>% 
   relocate(fas, .after = in_aquatic_subset)
 ```
 
