@@ -1324,24 +1324,8 @@ Also the spare units are considered per spatial poststratum, so that replacement
 <!-- In fact they shouldn't need to be if the spatial poststratum is an attribute of the sampling (or spare) unit, although it is possible that this poses problems at some stage. -->
 
 ```{r}
-scheme_moco_ps_spsubset_fas_panelcount <-
-  module_domain_scheme_stratum_sample_size %>%
-  # next filter step is in alignment with earlier (see above); field
-  # activities of non-core schemes should (by definition) only apply to the
-  # explicitly (and only exceptionally) added sampling units for such non-core
-  # schemes.
-  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
-  distinct(module, scheme, year_first, year_last) %>%
-  # join module combos:
-  inner_join(
-    scheme_target_paneldesign %>% 
-      select(scheme, module_combo_code, module_combo, panel_split) %>% 
-      unnest(module_combo),
-    join_by(module, scheme),
-    relationship = "many-to-one",
-    unmatched = c("error", "drop")
-  ) %>% 
-  arrange(scheme, module_combo_code, panel_split) %>% 
+scheme_moco_ps_spsubset_fas_panelcount_full <-
+  mod_scheme_yrs_moco_ps %>% 
   # year_first has been set module-agnostic and scheme-specific, while year_last
   # is module-dependent; however let's just assume year_first may become also
   # module dependent in the future, so we keep it in
@@ -1447,9 +1431,11 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     # PURE PANELS (main or sub) do not meet following check:
     # check = panel_count * panel_period * panel_group_repetitions ==
     #   cycle_duration_y * years(1)
-  ) %>% 
-  # distinct(notation_paneldesign)
-  # filter(!check) %>% 
+  )
+# scheme_moco_ps_spsubset_fas_panelcount_full %>% distinct(notation_paneldesign)
+# scheme_moco_ps_spsubset_fas_panelcount_full %>% filter(!check)
+scheme_moco_ps_spsubset_fas_panelcount <- 
+  scheme_moco_ps_spsubset_fas_panelcount_full %>% 
   select(
     scheme,
     module_combo_code,
@@ -1467,6 +1453,39 @@ scheme_moco_ps_spsubset_fas_panelcount <-
   )
 scheme_moco_ps_spsubset_fas_panelcount %>%
   glimpse()
+```
+
+Performing several checks on the result.
+
+```{r}
+# The notation_paneldesign column must effectively distinguish all occurring
+# different revisit designs
+stopifnot(
+  scheme_moco_ps_spsubset_fas_panelcount_full %>% 
+    distinct(pick(revisit_pattern:last_col(), -enforced_cycle_duration)) %>% 
+    nrow() == 
+    n_distinct(scheme_moco_ps_spsubset_fas_panelcount$notation_paneldesign)
+)
+# The rows of scheme_moco_ps_spsubset_fas_panelcount are unique if you drop
+# fas and notation* columns
+stopifnot(
+  scheme_moco_ps_spsubset_fas_panelcount %>% 
+    distinct(pick(-fas, -starts_with("notation"))) %>% 
+    nrow() == nrow(scheme_moco_ps_spsubset_fas_panelcount)
+)
+# The uniqueness of the rows of scheme_moco_ps_spsubset_fas_panelcount is
+# wholly captured by scheme x module_combo_code x in_aquatic_subset x 
+# notation_paneldesign
+stopifnot(
+  scheme_moco_ps_spsubset_fas_panelcount %>% 
+    distinct(
+      scheme,
+      module_combo_code,
+      in_aquatic_subset,
+      notation_paneldesign
+    ) %>% 
+    nrow() == nrow(scheme_moco_ps_spsubset_fas_panelcount)
+)
 ```
 
 Different occurring patterns at the compartment level, with 'HQ' referring to the MHQ 'compartment', for information and thought:
