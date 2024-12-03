@@ -182,6 +182,60 @@ scheme_target_paneldesign %>%
   all()
 ```
 
+Creating an object that holds the relation between module, scheme, module combo, panel split and first & last years.
+
+```{r}
+mod_scheme_yrs_moco_ps <- 
+  module_domain_scheme_stratum_sample_size %>%
+  # next filter step is in alignment with earlier (see above); field
+  # activities of non-core schemes should (by definition) only apply to the
+  # explicitly (and only exceptionally) added sampling units for such non-core
+  # schemes.
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
+  distinct(module, scheme, year_first, year_last) %>%
+  # join module combos:
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  arrange(scheme, module_combo_code, panel_split)
+
+```
+
+Checking which scheme x module combo x panel split rows have conflicting first or last years across modules.
+
+- conflicting last years:
+
+```{r paged.print=FALSE}
+mod_scheme_yrs_moco_ps_yrsmoco <- 
+  mod_scheme_yrs_moco_ps %>% 
+  mutate(
+    year_first_moco = min(year_first),
+    year_last_moco = max(year_last),
+    .by = c(scheme, panel_split, module_combo_code)
+  )
+mod_scheme_yrs_moco_ps_yrsmoco %>% 
+  filter(year_last_moco != year_last)
+```
+
+- conflicting first years:
+
+```{r paged.print=FALSE}
+mod_scheme_ps_different_1styr <- 
+  mod_scheme_yrs_moco_ps_yrsmoco %>% 
+  filter(year_first_moco != year_first)
+mod_scheme_ps_different_1styr
+if (nrow(mod_scheme_ps_different_1styr) > 0L) {
+  warning("Conflicting first years detected!")
+} 
+```
+
+We ignore differing last years (assuming the maximum last year for the module combo; see section \@ref(considerations)), but we must pay attention to additional remedies in case of conflicting first years.
+
 From inspection of `scheme_target_paneldesign`, we decide to use the following order to prioritize module combos in the GRTS sampling.
 
 ```{r}
