@@ -18,6 +18,7 @@ knitr:
 ## List of Relevant Figures
 
 Analyzing water levels (mTAW):
+
 - sample size: @fig-samplesize
 - binned difference-distance plot: @fig-dw-dx-binned 
 - variogram: @fig-variogram
@@ -31,12 +32,13 @@ library("dplyr") # our favorite data wrangling toolbox
 library("dbplyr") # dplyr + databases
 library("arrow") # writing parquet files
 library("ggplot2") # a visualization toolbox
+library("gstat") # geospatial statistics
 
 
 source("./watina_migration.R")
 
 # option to work offline; requires previous data download
-work_offline <- FALSE
+work_offline <- TRUE
 
 # connect watina 
 if (!work_offline && !exists("watina_dwh")) {
@@ -61,6 +63,11 @@ This serves as
 
 - a proxy for water chemistry, where data availability was sparse
 - a measurement for coupling of sites used for mnw `GW_05.1`.
+
+
+::: {.callout-tip}
+Conceptual exploration of variogram methodology can be found in [this tutorial-style notebook](./080_random_variograms.qmd).
+:::
 
 
 # Data
@@ -197,14 +204,24 @@ glimpse(data_raw)
 data_raw %>% count
 ```
 
-The data is saved to disc locally and restored
-
+The data is saved to disc locally and restored upon demand.
 
 
 
 
 ## data preparation
 Renaming, selecting, mutating, re-arranging, summarizing.
+
+
+::: {.callout-warning}
+Abbreviations, for reference:
+
+- $x\quad\ldots$ longitude (approximately)
+- $y  \quad\ldots$ orthogonal to $x$ and gravity
+- $z  \quad\ldots$ filter depth
+- $w  \quad\ldots$ water level
+- $ref\quad\ldots$ site reference elevation ([TAW](https://nl.wikipedia.org/wiki/Tweede_Algemene_Waterpassing))
+:::
 
 
 ```{r raw-data-processing}
@@ -237,14 +254,29 @@ data <- data_raw %>%
   filter_at(
     vars(x1, x2, y1, y2, z1, z2, w1, w2, ref1, ref2),
     all_vars(!is.na(.))
-  ) %>%
+  )
+
+data <- data %>%
   mutate(
     region = substring(loc1, 1, 3),
     dx = sqrt((x2-x1)^2 + (y2-y1)^2),
-    distance_bin = cut(dx, breaks = seq(-distance_cap/n_bins, distance_cap, length.out = n_bins+2)),
+    distance_bin = cut(
+      dx,
+      breaks = seq(
+        -distance_cap/n_bins,
+        distance_cap,
+        length.out = n_bins+2
+      ) # cut to "meters" bin
+    ),
     dx_log = log10(dx + 1),
-    dz = z2-z1,
+    dz = z2-z1,      # difference
     dref = ref2-ref1,
+    w2d1 = lm(w1 ~ x1 + y1, data)$residual,
+    w2d2 = lm(w2 ~ x2 + y2, data)$residual,
+    w3d1 = lm(w1 ~ x1 + y1 + ref1, data)$residual,
+    w3d2 = lm(w2 ~ x2 + y2 + ref2, data)$residual,
+    dw2d = w2d2 - w2d1, # 2D de-trended difference
+    dw3d = w3d2 - w3d1, # 3D de-trended difference
     dw = w2-w1
   ) %>% 
   arrange(idx1, idx2) %>% 
@@ -258,11 +290,44 @@ data <- data_raw %>%
     dx = mean(abs(dx), na.rm = TRUE),
     dz = mean(dz, na.rm = TRUE),
     dw = mean(abs(dw), na.rm = TRUE),
+    dw2d = mean(abs(dw2d), na.rm = TRUE),
+    dw3d = mean(abs(dw3d), na.rm = TRUE),
     dref = mean(abs(dref), na.rm = TRUE),
     cnt = n()
   ) %>% ungroup
 glimpse(data)
 ```
+
+Briefly check the effect of de-trending:
+
+```{r detrending-effect-2D}
+#| fig-cap: "Effect of de-trending with `w~x+y`, by region (grey shades)."
+data %>%
+  mutate(diff = dw2d - dw) %>%
+  ggplot(aes(x = diff, fill = region)) +
+  geom_histogram(bins = 128, color = "black") +
+  xlab("difference in water level differences of two sites: `detrended - raw` (m)") +
+  theme_bw() +
+  scale_fill_grey() +
+  theme(legend.position = "none")
+
+```
+
+```{r detrending-effect-3D}
+#| fig-cap: "Effect of de-trending with `w~x+y+z`, by region (grey shades)."
+data %>%
+  mutate(diff = dw3d - dw) %>%
+  ggplot(aes(x = diff, fill = region)) +
+  geom_histogram(bins = 128, color = "black") +
+  xlab("difference in water level differences of two sites: `detrended - raw` (m)") +
+  theme_bw() +
+  scale_fill_grey() +
+  theme(legend.position = "none")
+
+```
+
+The effect of de-trending is $O(0.5m)$ in magnitude; to be followed up.
+
 
 
 
@@ -273,8 +338,12 @@ glimpse(data)
 data %>% 
   mutate(
     distance_bin = cut(
-        dx,
-        breaks = seq(-distance_cap/plot_bins, distance_cap, length.out = plot_bins+2)),
+      dx,
+      breaks = seq(
+        -distance_cap/plot_bins,
+        distance_cap,
+        length.out = plot_bins+2)
+    ), # more coarse binning than above (better vis)
   ) %>% 
   group_by(distance_bin) %>% 
   summarize(cnt = sum(cnt)) %>% 
@@ -289,10 +358,21 @@ data %>%
   theme_bw()
 ```
 
-NOTE: there are many co-located sites (\(dx \eq 0m\)).
+::: {.callout-note}
+~~There are many co-located sites (\(dx \eq 0m\)).~~
+:::
+
+::: {.callout-tip}
+It might be useful to plot sample size histogram alongside variogram, [see here](https://scikit-gstat.readthedocs.io/en/latest/auto_examples/tutorial_04_plotting.html#variogram) for example.
+:::
 
 
 # Soilclass
+
+Optionally, soil class can be included as a factor affecting water level co-variance.
+Here, I query this information [from the `soilmap` dataset](https://zenodo.org/records/3387008).
+
+Re-loading is optional.
 
 ```{r check-existing-soilclass}
 soilclass_export_file <- "data/soilclass.parquet"
@@ -319,13 +399,13 @@ if (reload_soil) {
 
   soil_locations <- data_raw %>%
     select(pp_code.x, x.x, y.x) %>% 
-    rename(loc = pp_code.x, x = x.x, y = y.x) %>% 
-    distinct(.keep_all = TRUE)
+    rename(loc = pp_code.x, x = x.x, y = y.x)
+  # %>% distinct(.keep_all = TRUE) # TODO: check that this still works
 
   soil_locations <- data_raw %>%
     select(pp_code.y, x.y, y.y) %>% 
     rename(loc = pp_code.y, x = x.y, y = y.y) %>% 
-    distinct(.keep_all = TRUE) %>%
+    # distinct(.keep_all = TRUE) %>%
     rbind(soil_locations) %>% 
     distinct(.keep_all = TRUE) %>% 
     sf::st_as_sf(coords = c("x", "y"), crs = 31370)
@@ -394,9 +474,23 @@ data %>%
 ```{r plot-data-unbinned}
 #| label: fig-dw-dx
 #| fig-cap: "Distance-Difference-Plot of absolute difference in water level (mTAW) against distance (${\\Delta x}$)."
+#| layout-ncol: 2
+#| fig-subcap: 
+#|   - "Raw. Note the y-axis."
+#|   - "De-trended `w~x+y+ref`"
 
 data %>%
   ggplot(aes(x = dx, y = abs(dw))) +
+  geom_point(alpha = 0.05) +
+  geom_smooth() +
+  # xlim(0, 100) +
+  # ylim(0,  25) +
+  xlab("distance (m)") +
+  ylab("absolute water level difference Δw (mTAW)") +
+  theme_bw()
+
+data %>%
+  ggplot(aes(x = dx, y = abs(dw3d))) +
   geom_point(alpha = 0.05) +
   geom_smooth() +
   # xlim(0, 100) +
@@ -409,25 +503,31 @@ data %>%
 
 ```{r plot-data-unbinned-dz}
 #| label: fig-dw-dz
-#| fig-cap: "Distance-Difference-Plot of absolute difference in water level (mTAW) against filter depth difference ($\\Delta z$)."
+#| fig-cap: "Distance-Difference-Plot of absolute difference in water level (mTAW) against filter depth difference ($\\Delta z$) after de-trending of water level."
 
 data %>%
-  ggplot(aes(x = abs(dz), y = abs(dw))) +
+  ggplot(aes(x = abs(dz), y = abs(dw3d))) +
   geom_point(alpha = 0.05) +
   geom_smooth() +
   # ylim(0, 100) +
   # xlim(0, 3) +
   xlab("filter depth difference dz (m)") +
-  ylab("absolute water level difference Δw (mTAW)") +
+  ylab("absolute water level difference Δw (mTAW) after de-trending") +
   theme_bw()
 ```
 
-NOTE: we do have some very deep drills (\(dz >> 50m\)), yet those were filtered above.
+::: {.callout-note}
+We do have some very deep drills (\(dz >> 50m\)), yet those were filtered above.
+:::
 
 
 ```{r plot-data-dref}
 #| label: fig-dw-dref
 #| fig-cap: "Influence of reference: absolute difference in water level (mTAW) against absolute difference in site reference TAW."
+#| layout-ncol: 2
+#| fig-subcap: 
+#|   - "Raw. Note the y-axis."
+#|   - "De-trended `w~x+y+ref`"
 
 data %>%
   ggplot(aes(x = log(abs(dref)), y = log(abs(dw)))) +
@@ -438,27 +538,35 @@ data %>%
   xlab("log absolute difference in reference TAW") +
   ylab("log absolute water level difference Δw (mTAW)") +
   theme_bw()
+
+data %>%
+  ggplot(aes(x = log(abs(dref)), y = log(abs(dw3d)))) +
+  geom_point(alpha = 0.05) +
+  geom_smooth() +
+  # ylim(0, 100) +
+  # xlim(0, 3) +
+  xlab("log absolute difference in reference TAW") +
+  ylab("log absolute water level difference Δw (mTAW) after de-trending.") +
+  theme_bw()
 ```
 
 
 ## binned data
 *There must be a reason why 9 out of 10 variogram experts apply binning.*
 
-https://library.soton.ac.uk/variance-standard-deviation-and-standard-error
 
 ```{r bin-data}
 nanmean <- function (val) mean(val, na.rm = TRUE)
 nanvar <- function (val) var(val, na.rm = TRUE)
-nansd <- function (val) sd(val, na.rm = TRUE)
-nansem <- function (val) sd(val, na.rm = TRUE)/sqrt(sum(!is.na(val)))
+# nansem <- function (val) sd(val, na.rm = TRUE)/sqrt(sum(!is.na(val)))
 data_binned <- data %>%
   group_by(distance_bin, soilclass) %>% 
   summarize(
-    vx = nanvar(dx), vz = nanvar(dz),
-    vmw = nanvar(dw),
-    sigmw = nansd(dw),
-    semmw = nansem(dw),
-    dx = nanmean(abs(dx)), dz = nanmean(abs(dz)), dw = nanmean(abs(dw)),
+    vw = nanvar(dw), vw2d = nanvar(dw2d), vw3d = nanvar(dw3d),
+    dx = nanmean(abs(dx)), dz = nanmean(abs(dz)),
+    dw = nanmean(abs(dw)),
+    dw2d = nanmean(abs(dw2d)),
+    dw3d = nanmean(abs(dw3d)),
     cnt = sum(cnt)
   ) %>% ungroup %>% arrange(dx)
 glimpse(data_binned)
@@ -470,7 +578,7 @@ glimpse(data_binned)
 #| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
 
 data_binned %>%
-  ggplot(aes(x = dx, y = abs(dw))) +
+  ggplot(aes(x = dx, y = abs(dw3d))) +
   geom_point(alpha = 0.8, aes(color = soilclass)) +
   geom_smooth(color = "black") +
   xlab("site distance (m)") +
@@ -482,29 +590,99 @@ data_binned %>%
 
 # Variograms
 
+## self-made
 ```{r variogram}
 #| label: fig-variogram
 #| fig-cap: "variogram of difference in water level (mTAW) against binned distance ($\\Delta x$)."
+#| layout-ncol: 2
+#| fig-subcap: 
+#|   - "Raw. Note the y-axis."
+#|   - "De-trended `w~x+y+ref`"
+
+
+trafo <- function(x) x
+trafo <- function(x) log(x)
 
 data_binned %>%
-  ggplot(aes(x = dx, y = log10(vmw/2))) +
+  ggplot(aes(x = dx, y = trafo(vw/2))) +
   geom_point(alpha = 0.2, aes(color = soilclass)) +
   geom_smooth( aes(color = soilclass)) +
-  geom_vline(xintercept = 125, linetype = "solid", color = "black", size = 0.5) +
+  # geom_vline(xintercept = 125, linetype = "solid", color = "black", size = 0.5) +
   # xlim(0, 200) +
   xlab("site distance (m), binned") +
-  ylab("log10 semivariance in water level difference var(Δw)/2 (mTAW)") +
+  ylab("log semivariance in water level difference var(Δw)/2 (mTAW)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+
+data_binned %>%
+  ggplot(aes(x = dx, y = trafo(vw3d/2))) +
+  geom_point(alpha = 0.2, aes(color = soilclass)) +
+  geom_smooth( aes(color = soilclass)) +
+  # geom_vline(xintercept = 125, linetype = "solid", color = "black", size = 0.5) +
+  # xlim(0, 200) +
+  xlab("site distance (m), binned") +
+  ylab("log semivariance in water level difference var(Δw)/2 (mTAW, detrended)") +
   theme_bw()
 
 ```
 
 
-TODO: 
+# `gstat`
 
-- random variogram
-- package variograms
-- "niveau" instead of "mTAW"? (shallow GW)
-- models
+## data
+Out-of-the-box variograms can work on very raw data:
+
+```{r gstat-data}
+
+gstat_data_export_file <- "data/gstat_rawsites.parquet"
+reload_gstat <- force_database_download || !file.exists(gstat_data_export_file)
+
+if ((!work_offline) && reload_gstat) {
+  gdata <- query_measurement() %>%
+    rename(z = fdepth, ref = ref_taw) %>%
+    select(idx, pp_code, mp_idx, date, x, y, z, ref, w) %>% 
+    filter_at(
+      vars(x, y, ref, w),
+      all_vars(!is.na(.))
+    ) %>% 
+    collect
+  write_parquet(gdata, sink = gstat_data_export_file)
+} else {
+  gdata <- read_parquet(gstat_data_export_file)
+}
+
+glimpse(gdata)
+
+```
+
+```{r}
+extent <- 1024 # m
+n_bins <- 128
+
+sp::coordinates(gdata) = ~x+y+ref
+```
+
+
+## variogram
+
+```{r}
+
+vgrm <- gstat::variogram(
+  w ~ 1,
+  data = gdata,
+  cutoff = extent,
+  width = extent / n_bins
+  )
+
+```
+
+
+
+
+# TODO
+- "niveau" instead of "mTAW"? (shallow GW) but see conflict with detrending
+- models and implementation variants (e.g. depth difference class)
 
 
 
@@ -549,9 +727,11 @@ DBI::dbGetQuery(watina_dwh,
 
 ## query attempt
 
-NOTE: it might be more efficient to first join all locations (`dimPeilpunt`/`dimMeetpunt`) 
+::: {.callout-note}
+It might be more efficient to first join all locations (`dimPeilpunt`/`dimMeetpunt`) 
 and filter for distance;
 only afterwards left join in `dimPeilMeting` and filter for same date.
+:::
 
 ```{r raw-data-query-dbi, eval=FALSE}
 #| include: false
@@ -706,7 +886,7 @@ There are some observation bins wehre the variance goes crazy; worth investigati
 
 data_binned %>%
   arrange(-abs(dw))
-  # arrange(-vmw)
+  # arrange(-vw)
 
 ```
 
