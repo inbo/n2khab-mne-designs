@@ -1513,19 +1513,46 @@ scheme_moco_ps_spsubset_fas_panelcount %>%
 Defining panels.
 
 ```{r}
-scheme_domain_fag_panels <-
-  scheme_domain_fag_panel_count %>%
+scheme_moco_ps_spsubset_fas_panels <-
+  scheme_moco_ps_spsubset_fas_panelcount %>%
+  mutate(
+    spatial_subset_abbr = if_else(
+      in_aquatic_subset,
+      "AQ",
+      "TERR",
+      ""
+    ),
+    scheme_moco_has_multiple_panel_splits = n_distinct(panel_split) > 1,
+    .by = c(scheme, module_combo_code)
+  ) %>% 
   uncount(panel_count) %>%
   mutate(
     panel = str_c(
       scheme,
-      field_activity_group,
-      str_c("PAN", str_pad(seq_len(n()), 2, pad = "0")),
+      spatial_subset_abbr,
+      ifelse(scheme_moco_has_multiple_panel_splits, 
+             str_c(
+               str_remove_all(module_combo_code, "_"), 
+               "_", 
+               "ps", 
+               panel_split
+             ), 
+             str_remove_all(module_combo_code, "_")
+      ),
+      notation_paneldesign,
+      str_c("PANEL", str_pad(seq_len(n()), 2, pad = "0")),
       sep = "_"
     ),
-    .by = c(scheme, field_activity_group)
+    .by = c(
+      scheme, 
+      module_combo_code, 
+      panel_split, 
+      in_aquatic_subset,
+      notation_paneldesign
+    )
   ) %>%
-  mutate(panel = factor(panel))
+  mutate(panel = factor(panel)) %>% 
+  select(-spatial_subset_abbr, -scheme_moco_has_multiple_panel_splits)
 ```
 
 Defining date intervals and assigning panels to these intervals.
