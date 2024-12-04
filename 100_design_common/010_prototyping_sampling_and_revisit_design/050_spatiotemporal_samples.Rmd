@@ -1493,20 +1493,31 @@ Note that the uniqueness of the rows of `scheme_moco_ps_spsubset_fas_panelcount`
 Different occurring patterns at the compartment level, with 'HQ' referring to the MHQ 'compartment', for information and thought:
 
 ```{r}
-scheme_moco_ps_spsubset_fas_panelcount %>%
+compartment_paneldesign_fags <- 
+  scheme_moco_ps_spsubset_fas_panelcount %>%
   mutate(
     compartment = str_extract(scheme, "^[A-Z]+") %>% 
       factor() %>% 
-      fct_relevel("HQ", after = Inf),
+      fct_relevel("SOIL", "HQ", after = Inf),
     fags = map(fas, ~.$field_activity_group),
     # actseqs_vec = map(fas, ~unique(unlist(.$actseqs_vec)))
+  ) %>% 
+  mutate(
+    scheme_moco = str_c(
+      scheme,
+      ": ",
+      str_c(sort(unique(module_combo_code)), collapse = ", ")
+    ),
+    .by = c(scheme, notation_paneldesign)
   ) %>% 
   summarize(
     fags = str_c(sort(unique(unlist(fags))), collapse = ", "),
     # actseqs = str_c(sort(unique(unlist(actseqs_vec))), collapse = ", "),
+    scheme_moco = str_c(sort(unique(scheme_moco)), collapse = " | "),
     .by = c(compartment, notation_paneldesign)
   ) %>%
-  arrange(compartment, notation_paneldesign) %>% 
+  arrange(compartment, notation_paneldesign)
+compartment_paneldesign_fags %>%
   kable()
 ```
 
