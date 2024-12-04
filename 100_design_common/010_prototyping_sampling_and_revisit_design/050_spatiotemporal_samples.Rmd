@@ -1532,12 +1532,7 @@ scheme_moco_ps_spsubset_fas_panels <-
   scheme_moco_ps_spsubset_fas_panelcount %>%
   # spatial_subset_abbr is a temporary string used in the panel labels
   mutate(
-    spatial_subset_abbr = if_else(
-      in_aquatic_subset,
-      "AQ",
-      "TERR",
-      ""
-    ),
+    spatial_subset_abbr = if_else(in_aquatic_subset, "AQ", "TERR", ""),
     scheme_moco_has_multiple_panel_splits = n_distinct(panel_split) > 1,
     .by = c(scheme, module_combo_code)
   ) %>% 
@@ -1545,8 +1540,11 @@ scheme_moco_ps_spsubset_fas_panels <-
   # 'panel' is essentially a label of an individual panel
   mutate(
     panel = str_c(
-      scheme,
-      spatial_subset_abbr,
+      if_else(
+        spatial_subset_abbr != "", 
+        str_c(scheme, "_", spatial_subset_abbr), 
+        scheme
+      ),
       ifelse(scheme_moco_has_multiple_panel_splits, 
              str_c(
                str_remove_all(module_combo_code, "_"), 
