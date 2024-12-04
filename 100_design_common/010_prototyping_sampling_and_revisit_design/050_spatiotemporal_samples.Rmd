@@ -1380,6 +1380,11 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
       ),
       .default = 1L
     ),
+    n_subcycles_per_main_period = ifelse(
+      is.na(panel_subperiod),
+      1L,
+      as.integer(panel_period_main / panel_subperiod)
+    ),
     panel_period_main_chr = map_chr(panel_period_main, simplify_period),
     panel_period_chr = map_chr(panel_period, simplify_period),
     revisit_pattern_abbrev = str_sub(revisit_pattern, 1, 3) %>% str_to_upper(),
@@ -1458,6 +1463,7 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     panel_period,
     panel_count,
     limit_n_cycles,
+    n_subcycles_per_main_period,
     limit_n_subcycles,
     panel_group_size,
     panel_group_repetitions,
@@ -1599,6 +1605,7 @@ scheme_moco_ps_spsubset_fas_panel_calendar <-
   nest(
     revisit = c(
       matches("^year|^limit_"), 
+      n_subcycles_per_main_period,
       panel_period,
       panel_group_size, 
       panel_group_repetitions, 
@@ -1641,6 +1648,10 @@ scheme_moco_ps_spsubset_fas_panel_calendar <-
     panel_date_assignment = map2(revisit, panels, function(revis, pan) {
       group_size <- revis$panel_group_size[1]
       group_repetitions <- revis$panel_group_repetitions[1]
+      n_subcycles <- revis$n_subcycles_per_main_period[1]
+      n_subcycles_limit <- revis$limit_n_subcycles[1]
+      # set the panel order of one cycle according to group_size &
+      # group_repetitions
       if (group_size == 1 && group_repetitions == 1) {
         pan2 <- pan
       } else {
@@ -1652,10 +1663,28 @@ scheme_moco_ps_spsubset_fas_panel_calendar <-
           unname()
         pan2 <- pan[indexes_grouped, ]
       }
-      indexes <- rep(seq_len(nrow(pan2)), nrow(revis) %/% nrow(pan2) + 1) %>%
-        head(nrow(revis))
+      # subset revis periodically to meet the n_subcycles_limit requirement
+      if (is.na(n_subcycles_limit)) {
+        revis2 <- revis
+      } else {
+        indexes_limitsubcycle <- 
+          seq_len(nrow(revis)) %>% 
+          # split the periods according to the number of subcycles in one main
+          # period of the cycle
+          split(rep(
+            seq_len(ceiling(nrow(revis) / (n_subcycles))), 
+            each = n_subcycles
+          )) %>% 
+          map_int(~ .[n_subcycles_limit]) %>% 
+          unname()
+        revis2 <- revis[indexes_limitsubcycle, ]
+      }
+      # determine indexes to recycle rows of pan2
+      indexes <- rep(seq_len(nrow(pan2)), nrow(revis2) %/% nrow(pan2) + 1) %>%
+        head(nrow(revis2))
+      # combine the dates in revis2 with the panels in (recycled) pan2
       bind_cols(
-        revis %>% select(date_start, date_end, date_interval),
+        revis2 %>% select(date_start, date_end, date_interval),
         pan2[indexes, ]
       )
     })
