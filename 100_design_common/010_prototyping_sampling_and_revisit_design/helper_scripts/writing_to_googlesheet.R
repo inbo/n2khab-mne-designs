@@ -1,11 +1,6 @@
 # This code is to support intermediate discussions and not to be considered part
 # of the workflow. Just like the other helper scripts.
 
-# This code requires availability of the following objects:
-# - n2khab_types_expanded_properties
-# - schemes
-# - non_core_types
-
 if (Sys.getenv("GARGLE_OAUTH_EMAIL") != "") {
   options(gargle_oauth_email = Sys.getenv("GARGLE_OAUTH_EMAIL"))
 }
@@ -16,6 +11,12 @@ if (Sys.getenv("GARGLE_OAUTH_CACHE") != "") {
 library(googlesheets4)
 
 gs_id <- "1vqxRmWVuc39HCF15K6xZhJEa5ls7Z7uF_xsEr_swQdk"
+
+# Below code requires availability of the following objects:
+# - n2khab_types_expanded_properties
+# - schemes
+# - non_core_types
+
 n2khab_types_expanded_properties %>%
   select(type, grts_join_method, sample_support) %>%
   inner_join(
