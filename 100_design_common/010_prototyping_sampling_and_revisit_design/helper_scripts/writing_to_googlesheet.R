@@ -239,6 +239,16 @@ mhq_mod_dom_type_no_sample %>%
 
 
 
+# Below code requires availability of:
+# - compartment_paneldesign_fags
+
+compartment_paneldesign_fags %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "compartment_paneldesign_FAGs"
+  )
+
+
 
 # Below code requires availability of:
 # - scheme_domain_fag_panel_calendar
