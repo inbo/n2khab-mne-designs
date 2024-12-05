@@ -418,6 +418,7 @@ generate_spare_units <- function(ssf_sample, coef_spare) {
 #'
 #' @param x A scalar of class 'Period'.
 simplify_period <- function(x) {
+  if (is.na(x)) return(x)
   as.character(x) %>%
     str_split_1(" ") %>%
     {.[!str_detect(., "^0")]}
