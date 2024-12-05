@@ -1,0 +1,165 @@
+---
+title: "Explore sdmTMB"
+author: "Falk Mielke"
+date: "`r lubridate::today()`"
+number-sections: true
+bibliography: references.bib
+output:
+  html_document:
+    keep_md: TRUE
+    number_sections: yes
+    code_folding: show
+    code_download: yes
+    fig_width: 10
+    fig_height: 5
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../../header.html
+---
+
+# Purpose
+
+Testing the `sdmTMB` package on synthetic data.
+
+
+```{r setup}
+#| eval: true
+silence <- suppressPackageStartupMessages
+# library("sp") |> silence() # SPatial stuff
+library("dplyr") |> silence() # for group-apply function
+library("ggplot2") |> silence() # plotting
+library("sdmTMB") |> silence() # modeling
+
+```
+
+
+
+# Data
+
+## general settings
+
+```{r settings}
+n_observations <- 2^12
+extent <- 50
+smooth_sigma <- 8
+zrange <- pi
+
+# covariate effect magnitudes
+a_slope <- pi/6
+b_slope <- pi/8
+
+```
+
+## raw random
+
+```{r simulation}
+gimme_points <- function(N = 100, scale = 1.0) (runif(N)*2.0-1.0) * scale
+data <- data.frame(
+  x = gimme_points(n_observations, extent),
+  y = gimme_points(n_observations, extent),
+  z_ = gimme_points(n_observations, zrange)
+)
+```
+
+
+## covariates
+
+```{r covariate-definition}
+
+data$a <- 0.7 * data$x / extent + 0.3 * data$y / extent
+data$b <- as.integer(rbinom(n = n_observations, size = 1, prob = 0.4))
+
+data$z <- data$z_ + a_slope * data$a + b_slope * data$b
+
+```
+
+
+## smoothing
+
+```{r cross-distance}
+cross_diff <- function (vec) outer(X = vec, Y = vec, FUN = function(X, Y)  Y-X)
+Euclid <- function (data) sqrt(cross_diff(data$x)^2 + cross_diff(data$y)^2 )
+zdiff <- function (data) cross_diff(data$s)
+zdiff_abs <- function (data) sqrt( cross_diff(data$s)^2 )
+
+
+smooth <- function (data, sigma = NULL) {
+
+  if (sigma <= 0 || is.null(sigma) || is.na(sigma)) {
+    return(data$z)
+  }
+
+  dist <- Euclid(data)
+  weight <- dnorm(dist, 0, sigma)
+  weight <- weight / colSums(weight)
+
+  zmoothed <- weight %*% data$z
+  return (zmoothed[,1])
+}
+
+data$s <- smooth(data, smooth_sigma)
+
+```
+
+## "De-Trending"
+
+```{r detrending}
+data$d <- lm(s ~ x + y, data)$residual
+
+```
+
+
+## glimpse
+
+```{r glimpse-data}
+head(data, 5)
+```
+
+# *Gadus macrocephalus*
+([reference](https://pbs-assess.github.io/sdmTMB/index.html#basic-use))
+
+> Our model contains a main effect of depth as a penalized smoother, a spatial random field, and Tweedie observation error. 
+
+```{r pacific-cod}
+head(pcod)
+```
+  
+
+> We start by creating a mesh object that contains matrices to apply the SPDE approach.
+> Here, cutoff defines the minimum allowed distance between points in the units of X and Y (km). Alternatively, we could have created any mesh via the fmesher or INLA packages and supplied it to make_mesh(). We can inspect our mesh object with the associated plotting method plot(mesh)
+```{r cod-mesh}
+mesh <- make_mesh(pcod, xy_cols = c("X", "Y"), cutoff = 10)
+plot(mesh)
+```
+
+> Fit a spatial model with a smoother for depth:
+
+```{r cod-model}
+fit <- sdmTMB(
+  density ~ s(depth),
+  data = pcod,
+  mesh = mesh,
+  family = tweedie(link = "log"),
+  spatial = "on"
+)
+sanity(fit)
+fit
+```
+
+- There are visualization and data extraction options.
+- Different families have different kids.
+
+
+([further reading](https://pbs-assess.github.io/sdmTMB/articles/basic-intro.html))
+
+
+# Water Level Analysis (WLA™)
+
+```{r basic-model}
+
+```
