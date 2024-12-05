@@ -1459,11 +1459,10 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     panel_split,
     in_aquatic_subset,
     fas,
-    cycle_duration_y,
     starts_with("year"),
-    limit_n_cycles,
     panel_period,
     panel_count,
+    limit_n_cycles,
     n_subcycles_per_main_period,
     limit_n_subcycles,
     panel_group_size,
@@ -1605,7 +1604,6 @@ scheme_moco_ps_spsubset_fas_panel_calendar <-
   mutate(year_first_overall = min(year_first)) %>% 
   nest(
     revisit = c(
-      cycle_duration_y,
       matches("^year|^limit_"), 
       n_subcycles_per_main_period,
       panel_period,
@@ -1624,14 +1622,8 @@ scheme_moco_ps_spsubset_fas_panel_calendar <-
           # we always define panels from the first (overall) year and the first
           # month; if a module or scheme starts later, then this part is dropped
           # from the first cycle
-          nr_periods = ifelse(
-            is.na(limit_n_cycles),
-            years(year_last - year_first_overall + 1) / panel_period,
-            years(pmin(
-              year_last - year_first_overall + 1,
-              limit_n_cycles * cycle_duration_y
-            )) / panel_period
-          )
+          nr_periods =
+            years(year_last - year_first_overall + 1) / panel_period
         ) %>%
         uncount(nr_periods) %>%
         mutate(
