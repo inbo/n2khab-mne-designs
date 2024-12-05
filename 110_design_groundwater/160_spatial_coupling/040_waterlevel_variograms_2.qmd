@@ -1,0 +1,314 @@
+---
+title: "Water Level Variograms"
+format:
+  html:
+    toc: true
+    html-math-method: katex
+  pdf:
+    fig-pos: 'H'
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+# Summary
+## TL;DR
+
+
+# Data
+
+## prep
+```{r setup}
+#| include: false
+library("dplyr") # our favorite data wrangling toolbox
+library("dbplyr") # dplyr + databases
+library("arrow") # writing parquet files
+library("ggplot2") # a visualization toolbox
+library("gstat") # geospatial statistics
+library("sdmTMB") # species distribution models Template Model Builder
+library("mapview") # viewing maps
+
+
+source("./watina_migration.R")
+
+# option to work offline; requires previous data download
+work_offline <- TRUE
+
+# connect watina 
+if (!work_offline && !exists("watina_dwh")) {
+  watina_dwh <- connect_watina()
+}
+
+# create a data folder (if not present)
+dir.create("./data", showWarnings = FALSE)
+
+# options(browser = "librewolf") # a rather personal thing
+
+# the user may choose to reload raw data
+force_database_download <- FALSE
+
+if (is.null(getOption("browser"))) options(browser = "librewolf")
+
+```
+
+
+```{r data-settings}
+
+extent <- 128 # m
+n_bins <- 16
+
+```
+
+
+## query
+```{r raw-data-query-xg3}
+
+
+query_xg3 <- function (){
+  tbl(watina_dwh, "factBRPeilMetingJaar") %>%
+    filter(IsHydroJaar == 1) %>% 
+    select(
+      MeetpuntWID,
+      Jaar,
+      HGmTAWValue,
+      LGmTAWValue,
+      VGmTAWValue
+    ) %>%
+    filter_at(
+      vars(HGmTAWValue, LGmTAWValue),
+      all_vars(!is.na(.))
+    ) %>% 
+    left_join(
+      tbl(watina_dwh, "dimMeetpunt"),
+      by = join_by(MeetpuntWID == MeetpuntWID),
+      relationship = "many-to-many"
+    ) %>%
+    filter(MeetpuntStatusCode == "VLD") %>%
+    select(
+      MeetpuntWID,
+      # FilterLengte,
+      # MeetpuntStatusCode,
+      MeetpuntCode,
+      Jaar,
+      MeetpuntXCoordinaat,
+      MeetpuntYCoordinaat,
+      HGmTAWValue,
+      LGmTAWValue,
+    ) %>%
+    rename(
+      idx = MeetpuntWID,
+      code = MeetpuntCode,
+      hyear = Jaar,
+      x = MeetpuntXCoordinaat,
+      y = MeetpuntYCoordinaat,
+      hw = HGmTAWValue,
+      lw = LGmTAWValue
+    ) %>%
+   filter_at(
+    vars(code, hyear, hw, lw),
+    all_vars(!is.na(.))
+  )
+
+}
+
+```
+
+
+```{r query-data}
+data_export_file <- "data/xg3_data_raw.parquet"
+reload <- force_database_download || !file.exists(data_export_file)
+
+if ((!work_offline) && reload_gstat) {
+  data <- query_xg3() %>%
+    # rename(z = fdepth, ref = ref_taw) %>%
+    select(idx, code, hyear, x, y, hw, lw) %>% 
+    filter_at(
+      vars(x, y, hw, lw),
+      all_vars(!is.na(.))
+    ) %>% 
+    collect %>%
+    mutate(
+      region = substring(code, first = 1, last = 3)
+    ) %>%
+    filter(region != "VBS") # remove 
+  write_parquet(data, sink = data_export_file)
+} else {
+  data <- read_parquet(data_export_file)
+}
+
+glimpse(data)
+```
+
+## map
+
+```{r find-lux}
+#| eval: true
+# data %>%
+#   select(x, y, region ) %>% 
+#   distinct(region, x, y) %>% 
+#   sf::st_as_sf(coords = c("x", "y"),
+#     crs = 31370
+#   ) %>% 
+#   mapview(
+#     map.types = c("OpenStreetMap", "OpenTopoMap"),
+#     zcol = "region"
+#   )
+
+data %>%
+  # filter(region == "KAL") %>% 
+  select(x, y, code, hw ) %>% 
+  summarize(mean(hw), .by = c(code, x, y)) %>% 
+  sf::st_as_sf(coords = c("x", "y"),
+    crs = 31370
+  ) %>% 
+  mapview(
+    map.types = c("OpenStreetMap", "OpenTopoMap"),
+    zcol = "mean(hw)"
+  )
+
+```
+
+## subset
+```{r data-test-subset}
+test <- data %>%
+  filter(region == "KAL")
+
+test <- test %>%
+  mutate(
+    hwd2 = lm(hw ~ x + y, test)$residual,
+    lwd2 = lm(lw ~ x + y, test)$residual
+  )
+
+```
+
+
+
+# Analyses
+
+## gstat variogram
+
+Try on a subset:
+```{r gstat-subset-variogram}
+#| eval: false
+
+gstest <- test
+sp::coordinates(gstest) = ~x+y
+vgrm <- gstat::variogram(
+  hwd2 ~ 1,
+  data = gstest,
+  cutoff = extent,
+  width = extent / n_bins
+  )
+plot(vgrm, color = "darkblue", type = "o")
+```
+*Takes longer than a coffee break.*
+
+
+## sdmTMB
+
+
+
+```{r sdmTMB-mesh}
+#| eval: true
+mesh <- make_mesh(test, xy_cols = c("x", "y"), cutoff = as.integer(extent / n_bins))
+print(mesh$mesh$n)
+plot(mesh)
+
+```
+
+
+```{r sdmTMB-model}
+
+fit <- sdmTMB(
+  hw ~ 1,
+  # hwd2 ~ 1,
+  data = test,
+  mesh = mesh,
+  family = gaussian(link = "identity"),
+  time = "hyear",
+  spatiotemporal = "ar1",
+  spatial = "on"
+)
+sanity(fit)
+fit
+```
+
+# Archive
+
+```{r disconnect-watina, eval=FALSE}
+#| include: true
+if (!work_offline) {
+  DBI::dbDisconnect(watina_dwh)
+}
+```
+
+
+```{r watina-table-list}
+#| eval: false
+table_list <- get_db_table_list()
+table_list
+```
+
+```{r watina-duurlijnen}
+#| eval: false
+DBI::dbGetQuery(watina_dwh,
+  paste0("
+SELECT
+  OBJECT_NAME(object_id) AS tbl,
+  name,
+  column_id,
+  TYPE_NAME(system_type_id) AS dtype
+FROM sys.columns
+WHERE (object_id = OBJECT_ID('factBRPeilMetingJaar'))
+;")
+)
+
+```
+
+
+```{r watina-columnlist}
+#| eval: false
+query <- function(query_string) {
+  rs <- DBI::dbGetQuery(watina_dwh, query_string)
+  return(rs)
+}
+
+get_tablecolumns <- function(tbl_name) {
+  my_columns <- query(paste0(
+    "SELECT OBJECT_NAME(object_id), name, column_id, TYPE_NAME(system_type_id)
+     FROM sys.columns
+     WHERE (object_id = OBJECT_ID('",
+    tbl_name, "')) ;")
+  )
+  return(my_columns)
+}
+
+
+col_list <- get_tablecolumns("factBRPeilMetingJaar")
+col_list
+```
+
+
+```{r watina-summary-data}
+xgs <- tbl(watina_dwh, "factBRPeilMetingJaar") %>%
+  filter(IsHydroJaar == 1) %>% 
+  select(
+    MeetpuntWID,
+    Jaar,
+    HGmTAWValue,
+    LGmTAWValue,
+    VGmTAWValue
+  ) %>%
+  filter_at(
+    vars(HGmTAWValue, LGmTAWValue),
+    all_vars(!is.na(.))
+  ) %>%
+  collect
+head(xgs)
+```
+
+
+```{r}
+get_tablecolumns("dimMeetpunt")
+head(tbl(watina_dwh, "dimMeetpunt"))
+```
