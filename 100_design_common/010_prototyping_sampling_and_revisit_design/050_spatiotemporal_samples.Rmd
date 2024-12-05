@@ -1387,6 +1387,7 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
     ),
     panel_period_main_chr = map_chr(panel_period_main, simplify_period),
     panel_period_chr = map_chr(panel_period, simplify_period),
+    panel_enddate_addition_chr = map_chr(panel_enddate_addition, simplify_period),
     revisit_pattern_abbrev = str_sub(revisit_pattern, 1, 3) %>% str_to_upper(),
     revisit_subpattern_abbrev = ifelse(
       !is.na(revisit_subpattern), 
@@ -1424,7 +1425,11 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
     notation_paneldesign = str_c(
       panel_count,
       ifelse(panel_count == 1L, "panelof","panelsof"),
-      panel_period_chr,
+      ifelse(
+        is.na(panel_enddate_addition),
+        panel_period_chr,
+        str_c(panel_period_chr,"[",  "+", panel_enddate_addition_chr, "]")
+      ),
       ifelse(
         str_detect(notation_pattern, "-"),
         (str_c("for", cycle_duration_y, "y")),
@@ -1456,6 +1461,7 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     fas,
     starts_with("year"),
     panel_period,
+    panel_enddate_addition,
     panel_count,
     n_subcycles_per_main_period,
     limit_n_subcycles,
@@ -1601,6 +1607,7 @@ scheme_moco_ps_spsubset_fas_panel_calendar <-
       matches("^year|^limit_"), 
       n_subcycles_per_main_period,
       panel_period,
+      panel_enddate_addition,
       panel_group_size, 
       panel_group_repetitions, 
       notation_paneldesign
@@ -1629,7 +1636,12 @@ scheme_moco_ps_spsubset_fas_panel_calendar <-
           date_start = make_date(year_first_overall, 1, 1) + 
             months(panel_cum_months_lag),
           date_end = make_date(year_first_overall, 1, 1) + 
-            months(panel_cum_months) - days(1),
+            if_else(
+              is.na(panel_enddate_addition),
+              months(panel_cum_months),
+              months(panel_cum_months) + panel_enddate_addition
+            ) - 
+            days(1),
           date_interval = interval(
             force_tz(date_start, "Europe/Brussels"), 
             force_tz(date_end, "Europe/Brussels")
