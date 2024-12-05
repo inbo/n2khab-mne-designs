@@ -1116,11 +1116,13 @@ mod_scheme_fag_paneldesign <-
     unmatched = c("error", "drop")
   ) %>% 
   mutate(
+    # revisit pattern of main periodicity
     revisit_pattern = case_when(
       str_detect(field_activity_group, "READDIVER|EMERGENCY") ~ "pure_panel",
       .default = "serially_alternating"
     ) %>%
       factor(),
+    # main periodicity
     panel_period_main = case_when(
       # set some explicitly to the default of 1 year to avoid confusion:
       field_activity_group == "GWINSTPIEZNODIVER" ~ years(1),
@@ -1143,18 +1145,22 @@ mod_scheme_fag_paneldesign <-
       field_activity_group == "SPATPOSITPIPE" & is_core_scheme ~ months(3),
       .default = years(1)
     ),
+    # overruling the cycle duration set by a module
     enforce_cycle_duration_y = case_when(
       str_detect(field_activity_group, "^GWINST") |
         field_activity_group %in% c("SURFINSTWELLDIVER", "SPATPOSITPIPE") ~ 6L,
       field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ 3L,
       .default = NA_integer_
     ),
+    # effective cycle duration
     cycle_duration_y = ifelse(
       !is.na(enforce_cycle_duration_y),
       enforce_cycle_duration_y,
       cycle_duration_y
     ),
+    # was cycle duration enforced?
     enforced_cycle_duration = !is.na(enforce_cycle_duration_y),
+    # revisit pattern of subperiods, if applicable
     revisit_subpattern = case_when(
       str_detect(field_activity_group, "SURF.*DATACOLL") ~ "pure_panel",
       str_detect(scheme, "^SURF") & 
@@ -1162,6 +1168,7 @@ mod_scheme_fag_paneldesign <-
       str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)|LEVREAD") ~ "serially_alternating"
     ) %>%
       factor(levels = levels(revisit_pattern)),
+    # subperiodicity, if applicable
     panel_subperiod = case_when(
       str_detect(field_activity_group, "SURF.*DATACOLL") ~ months(1),
       str_detect(scheme, "^SURF") & 
@@ -1174,11 +1181,17 @@ mod_scheme_fag_paneldesign <-
     panel_enddate_addition = case_when(
       str_detect(field_activity_group, "^SPATPOSIT") ~ months(3)
     ),
+    # optionally limit the number of subperiods in a main period; this causes
+    # uneven coverage of the main period since only the first subperiod(s)
+    # remain
     limit_n_subcycles = case_when(
       str_detect(scheme, "^SURF") & 
         field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ 1L,
       .default = NA_integer_
     ),
+    # optionally fix the number of subpanels in a main panel, which enforces
+    # repetitionwith of these panels in the main period in case of a serially
+    # alternating subpattern
     limit_n_subpanels_per_panel = case_when(
       str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") ~ 2L,
       .default = NA_integer_
