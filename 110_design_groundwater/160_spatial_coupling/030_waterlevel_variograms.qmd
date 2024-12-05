@@ -33,6 +33,7 @@ library("dbplyr") # dplyr + databases
 library("arrow") # writing parquet files
 library("ggplot2") # a visualization toolbox
 library("gstat") # geospatial statistics
+library("sdmTMB") # species distribution models Template Model Builder
 
 
 source("./watina_migration.R")
@@ -650,7 +651,7 @@ if ((!work_offline) && reload_gstat) {
     mutate(
       region = substring(pp_code, first = 1, last = 3)
     ) %>%
-    filter(region != "VBS")
+    filter(region != "VBS") # remove 
   write_parquet(gdata, sink = gstat_data_export_file)
 } else {
   gdata <- read_parquet(gstat_data_export_file)
@@ -663,9 +664,6 @@ glimpse(gdata)
 #| eval: false
 library("mapview")
 gdata %>%
-  mutate(
-  region = substring(pp_code, first = 1, last = 3)
-  ) %>% 
   select(x, y, region ) %>% 
   distinct(region, x, y) %>% 
   sf::st_as_sf(coords = c("x", "y"),
@@ -676,39 +674,95 @@ gdata %>%
     zcol = "region"
   )
 
+gdata %>%
+  filter(region == "ZWA") %>% 
+  select(x, y, pp_code ) %>% 
+  distinct(pp_code, x, y) %>% 
+  sf::st_as_sf(coords = c("x", "y"),
+    crs = 31370
+  ) %>% 
+  mapview(
+    map.types = c("OpenStreetMap", "OpenTopoMap"),
+    zcol = "pp_code"
+  )
+
 ```
 
 ```{r}
-extent <- 1024 # m
-n_bins <- 128
+extent <- 128 # m
+n_bins <- 16
+
+```
+
+```{r gdata-subset}
+gtest <- gdata %>%
+  filter(region == "KAL")
+
+gtest <- gtest %>%
+  mutate(
+    wd2 = lm(w ~ x + y, gtest)$residual,
+    wd3 = lm(w ~ x + y + ref, gtest)$residual
+  )
 
 ```
 
 
 ## gstat variogram
 
-*This did not finish within half a workday.*
+Try on a subset:
+```{r gstat-subset-variogram}
+#| eval: false
+
+gstest <- gtest
+sp::coordinates(gstest) = ~x+y+ref
+vgrm <- gstat::variogram(
+  wd3 ~ 1,
+  data = gstest,
+  cutoff = extent,
+  width = extent / n_bins
+  )
+plot(vgrm, color = "darkblue", type = "o")
+```
+*Takes longer than a coffee break.*
+
 
 ```{r gstat-variogram, eval = FALSE}
 #| eval: false
 
 sp::coordinates(gdata) = ~x+y+ref
 vgrm <- gstat::variogram(
-  w ~ 1,
+  wd2 ~ 1 + ref,
   data = gdata,
   cutoff = extent,
   width = extent / n_bins
   )
 
 ```
+*This did not finish within half a workday.*
 
 
 ## sdmTMB
 
+
+```{r sdmTMB-data}
+region <- "KAL"
+centered_km <- function (x) (x-mean(x, na.rm = TRUE))/1000
+gtest <- gdata %>%
+  filter(region == region)
+gtest <- gtest %>% 
+  mutate(
+    wd2 = lm(w ~ x + y, gtest)$residual,
+    wd3 = lm(w ~ x + y + ref, gtest)$residual,
+    x_c = centered_km(x),
+    y_c = centered_km(y)   
+  )
+```
+
+
 ```{r sdmTMB-mesh}
-#| eval: false
-library("sdmTMB")
-mesh <- make_mesh(gdata, xy_cols = c("x", "y"), cutoff = 1000)
+#| eval: true
+mesh <- make_mesh(gtest, xy_cols = c("x", "y"), cutoff = 10)
+print(mesh$mesh$n)
 plot(mesh)
 
 ```
@@ -718,20 +772,45 @@ plot(mesh)
 
 fit <- sdmTMB(
   w ~ 1,
-  data = gdata,
+  # wd2 ~ 1,
+  data = gtest,
   mesh = mesh,
   family = gaussian(link = "identity"),
   spatial = "on"
+  # time = "date",
+  # spatiotemporal = "ar1"
 )
 sanity(fit)
 fit
 ```
 
 
-# TODO
-- "niveau" instead of "mTAW"? (shallow GW) but see conflict with detrending
-- models and implementation variants (e.g. depth difference class)
+## computer load limit
 
+Regions appropriate as test:
+
+- WAL Walenbos
+- ZWA Zwarte Beek
+- SNO Snoekengracht
+- DYL Doode Bemde
+- WES Natuurreservaat Westhoek
+- VIN Het Vinne
+- KAL Kalmthoutse heide
+
+```{r region-subsets}
+#| eval: false
+
+```
+
+
+# TODO next steps
+- KILL "niveau" instead of "mTAW"? (shallow GW) but see conflict with detrending
+- continue with sdmTMB
+- region subsets!
+- append soilclass to gdata
+- models and implementation variants (e.g. depth difference class)
+- mesh refinement (++computer load)
+- sdmTMB spatiotemporal fits?
 
 
 # Archive
