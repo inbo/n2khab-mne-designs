@@ -646,13 +646,35 @@ if ((!work_offline) && reload_gstat) {
       vars(x, y, ref, w),
       all_vars(!is.na(.))
     ) %>% 
-    collect
+    collect %>%
+    mutate(
+      region = substring(pp_code, first = 1, last = 3)
+    ) %>%
+    filter(region != "VBS")
   write_parquet(gdata, sink = gstat_data_export_file)
 } else {
   gdata <- read_parquet(gstat_data_export_file)
 }
 
 glimpse(gdata)
+```
+
+```{r find-lux}
+#| eval: false
+library("mapview")
+gdata %>%
+  mutate(
+  region = substring(pp_code, first = 1, last = 3)
+  ) %>% 
+  select(x, y, region ) %>% 
+  distinct(region, x, y) %>% 
+  sf::st_as_sf(coords = c("x", "y"),
+    crs = 31370
+  ) %>% 
+  mapview(
+    map.types = c("OpenStreetMap", "OpenTopoMap"),
+    zcol = "region"
+  )
 
 ```
 
@@ -660,17 +682,17 @@ glimpse(gdata)
 extent <- 1024 # m
 n_bins <- 128
 
-sp::coordinates(gdata) = ~x+y+ref
 ```
 
 
 ## gstat variogram
 
-This did not finish within half a day.
+*This did not finish within half a workday.*
 
-```{r}
+```{r gstat-variogram, eval = FALSE}
 #| eval: false
 
+sp::coordinates(gdata) = ~x+y+ref
 vgrm <- gstat::variogram(
   w ~ 1,
   data = gdata,
@@ -680,16 +702,30 @@ vgrm <- gstat::variogram(
 
 ```
 
+
 ## sdmTMB
 
-```{r}
+```{r sdmTMB-mesh}
+#| eval: false
+library("sdmTMB")
+mesh <- make_mesh(gdata, xy_cols = c("x", "y"), cutoff = 1000)
+plot(mesh)
 
-m <- 1e4; n <- 1e3; k <- 3e2
-X <- matrix(rnorm(m*k), nrow=m); Y <- matrix(rnorm(n*k), ncol=n)
-system.time(X %*% Y)
 ```
 
 
+```{r sdmTMB-model}
+
+fit <- sdmTMB(
+  w ~ 1,
+  data = gdata,
+  mesh = mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+sanity(fit)
+fit
+```
 
 
 # TODO
