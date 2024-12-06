@@ -140,10 +140,78 @@ glimpse(data)
 ```
 
 
-## map
+## cluster and map
+
+Clustering fails: there are memory issues and it fails in `hclust` saying `size cannot be NA or exceed 65536.` :(
+```{r cluster-locs}
+#| eval: false
+locs <- data %>% 
+  distinct(x, y)
+locs <- cluster_locs(
+  input = locs,
+  max_dist = 8000, # m 
+  output_var = "cluster",
+  xvar = "x",
+  yvar = "y"
+)
+head(locs)
+data2 <- data %>% 
+  left_join(
+    locs,
+    by = join_by(x == x, y == y),
+    relationship = "many-to-one"
+  )
+
+data2 %>% 
+  group_by(region, code, cluster) %>% 
+  summarize(count = n()) %>%
+  ggplot(aes(x = cluster, fill = region)) +
+  geom_histogram(bins = max(data2$cluster), color = "black") +
+  theme_bw() + theme(legend.position = "none")
+  
+```
+
+```{r plot-clusters}
+data2 %>%
+  # filter(region == "KAL") %>% 
+  select(x, y, cluster ) %>% 
+  sf::st_as_sf(coords = c("x", "y"),
+    crs = 31370
+  ) %>% 
+  mapview(
+    map.types = c("OpenTopoMap"),
+    zcol = "cluster"
+  )
+
+```
+
+```{r cluster-function}
+cluster_locs <- function (
+    input,
+    xvar = "x",
+    yvar = "y",
+    max_dist = 1,
+    output_var = "cluster_id"
+  ) {
+  coords <- input[, c(xvar, yvar)]
+  cluster_data <- coords %>%
+    dist %>%
+    fastcluster::hclust(method = "complete") %>%
+    stats::cutree(h = max_dist) %>%
+    tibble::enframe(name = NULL, value = output_var) %>%
+    bind_cols(input, .)
+}
+```
+
+- https://spatialanalysis.github.io/workshop-notes/spatial-clustering.html
+- https://github.com/jokergoo/ComplexHeatmap/issues/1021 -> https://github.com/cran/fastcluster
+- 
+
+
+
 
 ```{r find-lux}
-#| eval: true
+#| eval: false
 # data %>%
 #   select(x, y, region ) %>% 
 #   distinct(region, x, y) %>% 
@@ -154,7 +222,11 @@ glimpse(data)
 #     map.types = c("OpenStreetMap", "OpenTopoMap"),
 #     zcol = "region"
 #   )
+```
 
+
+```{r show-map}
+#| eval: true
 data %>%
   # filter(region == "KAL") %>% 
   select(x, y, code, hw ) %>% 
