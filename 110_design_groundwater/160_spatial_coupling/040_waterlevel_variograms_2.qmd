@@ -47,7 +47,7 @@ dir.create("./data", showWarnings = FALSE)
 # the user may choose to reload raw data
 force_database_download <- FALSE
 
-if (is.null(getOption("browser"))) options(browser = "librewolf")
+if ("" == getOption("browser")) options(browser = "librewolf")
 
 ```
 
@@ -139,6 +139,7 @@ if ((!work_offline) && reload_gstat) {
 glimpse(data)
 ```
 
+
 ## map
 
 ```{r find-lux}
@@ -162,11 +163,12 @@ data %>%
     crs = 31370
   ) %>% 
   mapview(
-    map.types = c("OpenStreetMap", "OpenTopoMap"),
+    map.types = c("OpenTopoMap"),
     zcol = "mean(hw)"
   )
 
 ```
+
 
 ## subset
 ```{r data-test-subset}
@@ -194,7 +196,7 @@ Try on a subset:
 gstest <- test
 sp::coordinates(gstest) = ~x+y
 vgrm <- gstat::variogram(
-  hwd2 ~ 1,
+  hw ~ 1,
   data = gstest,
   cutoff = extent,
   width = extent / n_bins
@@ -225,8 +227,8 @@ fit <- sdmTMB(
   data = test,
   mesh = mesh,
   family = gaussian(link = "identity"),
-  time = "hyear",
-  spatiotemporal = "ar1",
+  # time = "hyear",
+  # spatiotemporal = "ar1",
   spatial = "on"
 )
 sanity(fit)
@@ -290,6 +292,7 @@ col_list
 
 
 ```{r watina-summary-data}
+#| eval: false
 xgs <- tbl(watina_dwh, "factBRPeilMetingJaar") %>%
   filter(IsHydroJaar == 1) %>% 
   select(
@@ -309,6 +312,7 @@ head(xgs)
 
 
 ```{r}
+#| eval: false
 get_tablecolumns("dimMeetpunt")
 head(tbl(watina_dwh, "dimMeetpunt"))
 ```

@@ -44,15 +44,15 @@ library("sdmTMB") |> silence() # modeling
 ## general settings
 
 ```{r data-settings}
-n_observations <- 2^12
-extent <- 50
-smooth_sigma <- 2
-zrange <- pi
-intercept <- pi/2
+n_observations <- 2^13 # 8192
+extent <- 100 
+smooth_sigma <- 2*pi # 6.283
+zrange <- pi # 3.1416
+intercept <- pi/2 # 1.57
 
 # covariate effect magnitudes
-a_slope <- pi/6
-b_slope <- pi/5
+a_slope <- pi/6 # 0.5236
+b_slope <- pi/5 # 0.6283
 
 ```
 
@@ -175,6 +175,50 @@ plot(dist_diff_binned$distance_mean, dist_diff_binned$semivariance,
 ```
 
 
+# Water Level Analysis (WLA™)
+
+```{r mesh}
+mesh <- make_mesh(data, xy_cols = c("x", "y"), cutoff = 3)
+plot(mesh)
+```
+Fascinating!
+
+```{r model}
+fit <- sdmTMB(
+  s ~ 1 + a + b,
+  # d ~ 1 + b,
+  data = data,
+  mesh = mesh,
+  family = gaussian(link = "identity"), 
+  spatial = "on" 
+)
+# https://pbs-assess.github.io/sdmTMB/articles/model-description.html#observation-model-families
+# https://pbs-assess.github.io/sdmTMB/articles/model-description.html#spatial-random-fields
+sanity(fit)
+
+print(paste0(
+  "intercept: ", round(intercept, 4),
+  "a: ", round(a_slope, 4),
+  ", b: ", round(b_slope, 4)
+))
+fit
+```
+
+Fun fact: they spell "Gamma" with capital "G", but "gaussian" with small letter.
+
+
+# Observations
+
+Great general tool, does exactly what we intend!
+
+- execution order is crucial: smooth first, or covariates first?
+- "a" (xy-correlated slope) is not easily recovered
+- "b" (random categorical) is well recovered
+- Matérn range does not reflect "sigma", except in excessive sampling density
+
+
+
+
 # Reference: *Gadus macrocephalus*
 ([reference](https://pbs-assess.github.io/sdmTMB/index.html#basic-use))
 
@@ -212,42 +256,3 @@ codfit
 
 ([further reading](https://pbs-assess.github.io/sdmTMB/articles/basic-intro.html))
 
-
-# Water Level Analysis (WLA™)
-
-```{r mesh}
-mesh <- make_mesh(data, xy_cols = c("x", "y"), cutoff = 3)
-plot(mesh)
-```
-Fascinating!
-
-```{r model}
-fit <- sdmTMB(
-  s ~ 1 + a + b,
-  # d ~ 1 + b,
-  data = data,
-  mesh = mesh,
-  family = gaussian(link = "identity"), 
-  spatial = "on" 
-)
-# https://pbs-assess.github.io/sdmTMB/articles/model-description.html#observation-model-families
-# https://pbs-assess.github.io/sdmTMB/articles/model-description.html#spatial-random-fields
-sanity(fit)
-
-print(paste0(
-  "intercept: ", round(intercept, 2),
-  "a: ", a_slope,
-  ", b: ", b_slope
-))
-fit
-```
-
-Fun fact: they spell "Gamma" with capital "G", but "gaussian" with small letter.
-
-
-# Observations
-
-- execution order is crucial: smooth first, or covariates first?
-- "a" (xy-correlated slope) is *not* recovered
-- "b" (random categorical) is well recovered
-- Matérn range does not reflect "sigma"
