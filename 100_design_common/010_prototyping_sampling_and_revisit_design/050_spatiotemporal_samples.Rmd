@@ -1766,6 +1766,83 @@ This has consequences for the READ and the SAMP activities in these compartments
 **Missing functionality**: apply more generic coding approach to prepare and create the panel memberships.
 Currently this is customized to cater for a specific revisit approach in the `pan_effectmon_flanders` module.
 
+
+
+```{r}
+set.seed(20241206)
+scheme_moco_ps_stratum_sppost_panelmemship <- 
+  scheme_moco_ps_stratum_sppost_spsamples %>% 
+  unnest(sp_poststr_samples) %>% 
+  select(-sample_status) %>% 
+  nest(spsample = grts_address) %>% 
+  inner_join(
+    scheme_moco_ps_spsubset_fas_panelcount %>% 
+      distinct(scheme, module_combo_code, panel_split, panel_count) %>% 
+      mutate(
+        max_panelcount = max(panel_count),
+        .by = c(scheme, module_combo_code, panel_split)
+      ) %>%
+      nest(panel_counts = panel_count),
+    join_by(scheme, module_combo_code, panel_split),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>% 
+  mutate(
+    generic_panels = map(panel_counts, function(pc) {
+      pcs <- pc$panel_count
+      max_panel_count <- max(pcs)
+      divisors_cond <- all(pcs %in% numbers::divisors(max_panel_count))
+      if (!divisors_cond) {
+        stop("A number of panels occurs that is not a divisor of ", max_panel_count)
+      }
+      mat <- matrix(0L, nrow = max_panel_count, ncol = length(pcs))
+      colnames(mat) <- str_c("generic", pcs, ifelse(pcs == 1, "panel", "panels"))
+      df <- as_tibble(mat)
+      for (nr in pcs) {
+        df[, pcs == nr] <- rep(seq_len(nr), each = max_panel_count / nr)
+      }
+      df %>% 
+        mutate(id = row_number()) %>% 
+        relocate(id)
+    }),
+    panel_membership = map2(spsample, generic_panels, function(sps, gen) {
+      distribute_sample_over_panels(sps, gen) %>% 
+        inner_join(
+          gen,
+          join_by(genericpanels_row == id),
+          relationship = "many-to-one",
+          # "drop" is relevant when nrow(sps) < nrow(gen)
+          unmatched = c("error", "drop")
+        ) %>% 
+        select(-genericpanels_row) %>% 
+        pivot_longer(
+          cols = !grts_address,
+          names_to = "panel_count",
+          values_to = "panel_id",
+          cols_vary = "slowest"
+        ) %>% 
+        mutate(panel_count = str_extract(panel_count, "\\d+") %>% as.integer())
+    })
+  ) %>% 
+  select(
+    scheme,
+    module_combo_code,
+    panel_split,
+    stratum,
+    sp_poststratum,
+    panel_membership
+  ) %>% 
+  add_col_in_aquatic_subset(
+    strata = n2khab_strata,
+    type_properties = n2khab_types_expanded_properties
+  ) %>% 
+  relocate(in_aquatic_subset, .after = panel_split) %>% 
+  arrange(scheme, module_combo_code, panel_split, in_aquatic_subset)
+```
+
+
+
+
 #### Membership of generic panels
 
 Defining generic panel sets: each set corresponds to a different combination of compartment and number of panels.
