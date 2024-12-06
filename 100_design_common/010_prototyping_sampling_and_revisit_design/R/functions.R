@@ -462,19 +462,20 @@ simplify_period <- function(x) {
 
 distribute_sample_over_panels <- function(sps, pan) {
   remainder <- nrow(sps) %% nrow(pan)
+  pan_row_numbers <- seq_len(nrow(pan))
   if (remainder > 0) {
     indexes_remainder <- lpm1(remainder, matrix(rep(1, nrow(pan)), ncol = 1))
-    panels_remainder <- pan$generic_panel[indexes_remainder]
+    panels_remainder <- pan_row_numbers[indexes_remainder]
   } else {
-    panels_remainder <- pan$generic_panel[0]
+    panels_remainder <- pan_row_numbers[0]
   }
   min_group_size <- nrow(sps) %/% nrow(pan)
   if (min_group_size > 0) {
-    panels_complete <- rep(pan$generic_panel, each = min_group_size)
+    panels_complete <- rep(pan_row_numbers, each = min_group_size)
   } else {
-    panels_complete <- pan$generic_panel[0]
+    panels_complete <- pan_row_numbers[0]
   }
   sps %>%
     arrange(grts_address) %>%
-    mutate(panel = sort(c(panels_complete, panels_remainder)))
+    mutate(genericpanels_row = sort(c(panels_complete, panels_remainder)))
 }
