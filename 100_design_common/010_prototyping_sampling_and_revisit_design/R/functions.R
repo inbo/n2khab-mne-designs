@@ -231,6 +231,39 @@ add_col_is_strictly_aquatic <- function(df, strata, type_properties) {
 
 
 
+#' Add column 'in_aquatic_subset' based on stratum column in a data frame
+#'
+#' @param df Data frame that has a column `stratum` and to which a column
+#'   `in_aquatic_subset` has to be added, which potentially invokes duplicating
+#'   rows where a type has `hydr_class == "HC23"`.
+#' @inheritParams add_col_is_strictly_aquatic
+add_col_in_aquatic_subset <- function(df, strata, type_properties) {
+  df %>%
+    inner_join(
+      strata,
+      join_by(stratum),
+      relationship = "many-to-one",
+      unmatched = c("error", "drop")
+    ) %>%
+    inner_join(
+      type_properties %>%
+        select(type, hydr_class),
+      join_by(type),
+      relationship = "many-to-one",
+      unmatched = c("error", "drop")
+    ) %>%
+    select(-type) %>%
+    mutate(in_aquatic_subset = case_when(
+      hydr_class == "HC3" ~ list(TRUE),
+      hydr_class == "HC23" ~ list(c(TRUE, FALSE)),
+      .default = list(FALSE)
+    )) %>%
+    select(-hydr_class) %>%
+    unnest(in_aquatic_subset)
+}
+
+
+
 #' Choose optimal threshold to distribute sample sizes in a GRTS address series
 #'
 #' Given the sampling frame as a series of GRTS addresses and sizes of several
