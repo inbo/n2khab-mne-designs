@@ -44,7 +44,7 @@ library("sdmTMB") |> silence() # modeling
 ## general settings
 
 ```{r data-settings}
-n_observations <- 2^13 # 8192
+n_observations <- 2^12 # 4096
 extent <- 100 
 smooth_sigma <- 2*pi # 6.283
 zrange <- pi # 3.1416
@@ -178,20 +178,25 @@ plot(dist_diff_binned$distance_mean, dist_diff_binned$semivariance,
 # Water Level Analysis (WLA™)
 
 ```{r mesh}
-mesh <- make_mesh(data, xy_cols = c("x", "y"), cutoff = 3)
+mesh <- make_mesh(data, xy_cols = c("x", "y"), cutoff = 8)
+print(mesh$mesh$n)
 plot(mesh)
 ```
 Fascinating!
 
 ```{r model}
 fit <- sdmTMB(
-  s ~ 1 + a + b,
+  s ~ 1 + b,
   # d ~ 1 + b,
+  spatial_varying = ~a,
   data = data,
   mesh = mesh,
   family = gaussian(link = "identity"), 
   spatial = "on" 
 )
+
+run_extra_optimization(fit) # to give our model the little extra fit!
+
 # https://pbs-assess.github.io/sdmTMB/articles/model-description.html#observation-model-families
 # https://pbs-assess.github.io/sdmTMB/articles/model-description.html#spatial-random-fields
 sanity(fit)
@@ -211,16 +216,19 @@ Fun fact: they spell "Gamma" with capital "G", but "gaussian" with small letter.
 
 Great general tool, does exactly what we intend!
 
-- execution order is crucial: smooth first, or covariates first?
-- "a" (xy-correlated slope) is not easily recovered
-- "b" (random categorical) is well recovered
-- Matérn range does not reflect "sigma", except in excessive sampling density
+- execution order for data generation is crucial: smooth first, then covariates 
+- `b` (random categorical, unsmoothed) is well recovered
+- ~~"a" (xy-correlated slope) is not easily recovered~~ use `spatial_varying` where possible -> `a` is also recovered 
+- Matérn range does ~~not~~ reflect "sigma" (as a proxy), if spatial varying parameters are well incorporated
 
 
 
 
 # Reference: *Gadus macrocephalus*
 ([reference](https://pbs-assess.github.io/sdmTMB/index.html#basic-use))
+
+*Below I just copy-pasted the `sdmTMB` vignette to understand general working.*
+
 
 > Our model contains a main effect of depth as a penalized smoother, a spatial random field, and Tweedie observation error. 
 
