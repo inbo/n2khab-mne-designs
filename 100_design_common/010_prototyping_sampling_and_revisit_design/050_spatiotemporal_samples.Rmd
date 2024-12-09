@@ -1879,10 +1879,14 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
 
 Note that (in a scheme x panel split x module combo) only the combination of stratum x spatial poststratum stands for a consecutive GRTS series, equally distributed over panels, and that replacement with spare units of the stratum must happen within spatial poststrata.
 
-## Spatiotemporal samples
+## Field activities & spatiotemporal samples
 
-Joining panel memberships with the date intervals per panel to generate the spatiotemporal samples.
+### Calendar per FAG, stratum and spatial sampling unit
+
+We will join panel memberships with the date intervals per panel to generate the spatiotemporal samples.
 At the same time, each FAS is replaced by its constituting FAGs (field activity groups), which have a common revisit design.
+
+Generating a calendar per FAG, stratum and spatial sampling unit in a scheme x module combo x panel split x spatial poststratum.
 
 ```{r}
 scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <- 
@@ -1897,6 +1901,47 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   )
 ```
 
+### Spatiotemporal samples
+
+Since quite a few FAGs are applied at the same location, it is also useful to derive the subset of FAGs ('target FAGs') that represent the main field method of the target variable(s) in each scheme.
+
+```{r}
+scheme_moco_ps_spsubset_targetfag <- 
+  mod_scheme_field_activity %>% 
+  semi_join(
+    mod_scheme_targetfieldmethod,
+    join_by(module, scheme, field_activity == main_field_method)
+  ) %>% 
+  distinct(module, scheme, in_aquatic_subset, field_activity_group) %>% 
+  # join module combos:
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  distinct(
+    scheme, 
+    module_combo_code, 
+    panel_split, 
+    in_aquatic_subset, 
+    field_activity_group
+  )
+```
+
+Subsetting the sampling unit calendar to the occasions with a target FAG.
+This object comes closest to the notion of **spatiotemporal sample**.
+
+```{r}
+scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <- 
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+  semi_join(
+    scheme_moco_ps_spsubset_targetfag,
+    join_by(module_combo_code, scheme, in_aquatic_subset, field_activity_group)
+  )
+```
 
 ## Field activities in space and time
 
