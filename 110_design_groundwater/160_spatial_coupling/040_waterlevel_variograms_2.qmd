@@ -424,35 +424,35 @@ plot(vgrm, color = "darkblue", type = "o")
 
 ## sdmTMB
 
+### single cluster tryout
 
-
-```{r sdmTMB-mesh}
+```{r sdmTMB-mesh-test}
 #| eval: true
-mesh <- make_mesh(test, xy_cols = c("x", "y"), cutoff = as.integer(extent / n_bins))
-print(mesh$mesh$n)
-plot(mesh)
+test_mesh <- make_mesh(test, xy_cols = c("x", "y"), cutoff = as.integer(extent / n_bins))
+print(test_mesh$mesh$n)
+plot(test_mesh)
 
 ```
 
 
-```{r sdmTMB-model}
-
-fit <- sdmTMB(
+```{r sdmTMB-model-test}
+#| eval: true
+test_fit <- sdmTMB(
   # hw ~ 1,
   # hwd2 ~ 1,
-  # hwd2_cl ~ 1,
+  hwd2_cl ~ 1,
   # lw ~ 1,
   # lwd2 ~ 1,
-  lwd2_cl ~ 1,
+  # lwd2_cl ~ 1,
   data = test,
-  mesh = mesh,
+  mesh = test_mesh,
   family = gaussian(link = "identity"),
   # time = "hyear",
-  # spatiotemporal = "iid",
+  # spatiotemporal = "IID",
   spatial = "on"
 )
-sanity(fit)
-fit
+sanity(test_fit)
+test_fit
 ```
 
 ::: {.callout-note}
@@ -463,6 +463,288 @@ Linear de-trending makes sense!
 - Matérn distance reduces accordingly, seems more plausible.
 
 :::
+
+### meshing Flanders
+```{r sdmTMB-mesh-full}
+#| eval: true
+
+mesh <- make_mesh(data_clusters, xy_cols = c("x", "y"), cutoff = as.integer(extent / n_bins))
+print(mesh$mesh$n)
+plot(mesh)
+```
+
+
+### LG3
+
+- LG3
+- cluster-wise de-trended
+
+```{r sdmTMB-model-lg3}
+#| eval: true
+fit_lg3 <- sdmTMB(
+  lwd2_cl ~ 1,
+  data = data_clusters,
+  mesh = mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+sanity(fit_lg3)
+fit_lg3
+```
+
+
+
+### HG3
+
+- HG3
+- cluster-wise de-trended
+
+
+```{r sdmTMB-model-hg3}
+#| eval: true
+fit_hg3 <- sdmTMB(
+  hwd2_cl ~ 1,
+  data = data_clusters,
+  mesh = mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+sanity(fit_hg3)
+fit_hg3
+```
+
+
+# Variogram
+
+## goal
+- a custom-made variogram
+- joined per cluster and year
+- clusterwise de-trending
+
+
+## self-join
+
+```{r raw-data-join-dbplyr}
+raw_diffdata_export_file <- "data/xg3_couplingdata_clusterwise.parquet"
+reload <- force_database_download || !file.exists(raw_diffdata_export_file)
+
+if (reload) {
+  diffdata_raw <- data_clusters %>%
+    left_join(data_clusters,
+      by = join_by(
+        idx > idx, # only different locations
+        cluster == cluster, # from the same cluster
+        hyear == hyear # in the same year
+      )
+    ) %>% mutate(
+      dr = sqrt((x.y-x.x)^2 + (y.y-y.x)^2),
+      dlg3 = abs(lw.y - lw.x),
+      dlg3_cld = abs(lwd2_cl.y - lwd2_cl.x),
+      dhg3 = abs(hw.y - hw.x),
+      dhg3_cld = abs(hwd2_cl.y - hwd2_cl.x)
+    ) %>%
+    filter(
+      dr < extent
+      ) 
+
+  write_parquet(diffdata_raw, sink = raw_diffdata_export_file)
+} else {
+  diffdata_raw <- read_parquet(raw_diffdata_export_file)
+}
+
+glimpse(diffdata_raw)
+diffdata_raw %>% count
+```
+
+TODO query filter depth?
+
+
+```{r raw-data-processing}
+diffdata <- diffdata_raw %>%
+  rename(
+    idx1 = idx.x,
+    loc1 = code.x, 
+    x1   = x.x,
+    y1   = y.x,
+    lw1  = lw.x,
+    lwd1 = lwd2_cl.x,
+    hw1  = hw.x,
+    hwd1 = hwd2_cl.x,
+    idx2 = idx.y,
+    loc2 = code.y, 
+    x2   = x.y,
+    y2   = y.y,
+    lw2  = lw.y,
+    lwd2 = lwd2_cl.y,
+    hw2  = hw.y,
+    hwd2 = hwd2_cl.y
+  ) %>% select(
+    idx1, loc1, x1, y1, 
+    lw1, lwd1, hw1, hwd1,
+    idx2, loc2, x2, y2, 
+    lw2, lwd2, hw2, hwd2,
+    hyear, dr
+  ) %>%
+  filter_at(
+    vars(
+      idx1, loc1, x1, y1, 
+      lw1, lwd1, hw1, hwd1,
+      idx2, loc2, x2, y2, 
+      lw2, lwd2, hw2, hwd2,
+      hyear, dr
+      ),
+    all_vars(!is.na(.))
+  )
+
+diffdata <- diffdata %>%
+  mutate(
+    region = substring(loc1, 1, 3),
+    dx = sqrt((x2-x1)^2 + (y2-y1)^2),
+    distance_bin = cut(
+      dx,
+      breaks = seq(
+        -extent/n_bins,
+        extent,
+        length.out = n_bins+2
+      ) # cut to "meters" bin
+    ),
+    dx_log = log10(dx + 1),
+    dlw = lw2-lw1,
+    dhw = hw2-hw1,
+    dlwd = lwd2 - lwd1, # cluster-wise de-trended difference
+    dhwd = hwd2 - hwd1 # cluster-wise de-trended difference
+  ) %>% 
+  arrange(idx1, idx2) %>% 
+  mutate_at(
+    vars(
+      region, loc1, loc2, distance_bin, hyear
+    ), as.factor
+  ) 
+glimpse(diffdata)
+```
+
+
+## sample size
+
+ 
+```{r fig-samplesize}
+#| label: fig-samplesize
+#| fig-cap: "Sample size (number of site pairs observed) per distance (${\\Delta x}$)."
+plot_bins <- 128
+diffdata %>% 
+  mutate(
+    distance_bin = cut(
+      dx,
+      breaks = seq(
+        -extent/plot_bins,
+        extent,
+        length.out = plot_bins+2)
+    ), # more coarse binning than above (better vis)
+  ) %>% 
+  group_by(distance_bin) %>% 
+  summarize(cnt = n()) %>% 
+  ungroup %>% 
+  arrange(distance_bin) %>% 
+  mutate(distance = extent/n_bins * as.numeric(distance_bin)) %>% 
+  ggplot(aes(x = distance, y = cnt)) +
+  geom_bar(stat = "identity", width = 5) +
+  scale_x_continuous(breaks=seq(0,extent,64)) +
+  xlab("distance (m)") +
+  ylab("number of observations (N)") +
+  theme_bw()
+```
+
+
+```{r plot-data-unbinned}
+#| label: fig-dw-dx
+#| fig-cap: "Distance-Difference-Plot of absolute difference in water level (hg3) against distance (${\\Delta x}$)."
+
+diffdata %>%
+  ggplot(aes(x = dx, y = abs(dhwd))) +
+  geom_point(alpha = 0.05) +
+  # geom_smooth() +
+  # xlim(0, 100) +
+  # ylim(0,  25) +
+  xlab("distance (m)") +
+  ylab("de-trended hg3 difference (m)") +
+  theme_bw()
+
+```
+
+
+## binned data
+*There must be a reason why 9 out of 10 variogram experts apply binning.*
+
+
+```{r bin-data}
+nanmean <- function (val) mean(val, na.rm = TRUE)
+nanvar <- function (val) var(val, na.rm = TRUE)
+# nansem <- function (val) sd(val, na.rm = TRUE)/sqrt(sum(!is.na(val)))
+data_binned <- diffdata %>%
+  group_by(distance_bin) %>% 
+  summarize(
+    vlg3 = 0.5 * nanvar(dlw),
+    vhg3 = 0.5 * nanvar(dhw),
+    vlg3d = 0.5 * nanvar(dlwd),
+    vhg3d = 0.5 * nanvar(dhwd),
+    dx = nanmean(abs(dx)), 
+    dlg3  = nanmean(dlw),
+    dhg3  = nanmean(dhw),
+    dlg3d = nanmean(dlwd),
+    dhg3d = nanmean(dhwd),
+    cnt = n()
+  ) %>% ungroup %>% arrange(dx)
+glimpse(data_binned)
+```
+
+```{r plot-data-binned}
+#| label: fig-dw-dx-binned
+#| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
+
+data_binned %>%
+  ggplot(aes(x = dx, y = abs(dhg3d))) +
+  geom_point(alpha = 0.8) +
+  geom_smooth(color = "black") +
+  xlab("site distance (m)") +
+  ylab("mean absolute water level difference <|Δw|> (mTAW)") +
+  theme_bw() 
+
+```
+
+
+## self-made variogram
+```{r variogram}
+#| label: fig-variogram
+#| fig-cap: "variogram of difference in xG3 against binned distance ($\\Delta x$)."
+#| layout-ncol: 2
+#| fig-subcap: 
+#|   - "LG3."
+#|   - "HG3."
+
+
+trafo <- function(x) x
+# trafo <- function(x) log(x)
+
+data_binned %>%
+  ggplot(aes(x = dx, y = trafo(vlg3d))) +
+  geom_point(alpha = 0.2) +
+  geom_smooth() +
+  xlab("site distance (m), binned") +
+  ylab("log semivariance in de-trended LG3: var(lg3)/2 (m)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+
+data_binned %>%
+  ggplot(aes(x = dx, y = trafo(vhg3d))) +
+  geom_point(alpha = 0.2) +
+  geom_smooth() +
+  xlab("site distance (m), binned") +
+  ylab("log semivariance in de-trended HG3: var(lg3)/2 (m)") +
+  theme_bw()
+
+```
+
 
 # Archive
 
@@ -540,7 +822,7 @@ head(xgs)
 ```
 
 
-```{r}
+```{r get-tablecols}
 #| eval: false
 get_tablecolumns("dimMeetpunt")
 head(tbl(watina_dwh, "dimMeetpunt"))
