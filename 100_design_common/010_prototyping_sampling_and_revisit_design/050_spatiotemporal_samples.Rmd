@@ -1881,17 +1881,22 @@ Note that (in a scheme x panel split x module combo) only the combination of str
 
 ## Spatiotemporal samples
 
-Joining the date intervals per panel with panel memberships to generate the spatiotemporal samples.
+Joining panel memberships with the date intervals per panel to generate the spatiotemporal samples.
+At the same time, each FAS is replaced by its constituting FAGs (field activity groups), which have a common revisit design.
 
 ```{r}
-scheme_domain_fag_stratum_spsamples_calendar <-
-  scheme_domain_fag_panel_stratum_spsamples %>%
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <- 
+  scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>% 
+  unnest(panel_membership) %>% 
+  unnest(fas) %>% 
   inner_join(
-    scheme_domain_fag_panel_calendar,
-    join_by(scheme, domain, field_activity_group, panel),
-    relationship = "many-to-many"
+    scheme_moco_ps_spsubset_panel_calendar,
+    join_by(scheme, module_combo_code, panel_split, in_aquatic_subset, panel),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
   )
 ```
+
 
 ## Field activities in space and time
 
