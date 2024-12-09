@@ -753,12 +753,25 @@ mod_scheme_variableset_mainfieldmethod
 
 For MHQ the variables are summarized as one variable set 'LSVI', and the hierarchy of involved measurement variables for each scheme (type) is incorporated in the [LSVI](https://packages.inbo.be/LSVI/) package.
 
-Checking that all schemes are covered by `mod_scheme_variableset_mainfieldmethod`.
+Checking that the set of module x schemes not covered by `mod_scheme_variableset_mainfieldmethod` equals the MNE-set not covered by `envvars`.
 
 ```{r check-mod-scheme-variableset-coverage}
-schemes %>%
-  anti_join(mod_scheme_variableset_mainfieldmethod, by = "scheme") %>%
-  nrow() == 0
+stopifnot(
+  module_schemes %>% 
+    anti_join(
+      mod_scheme_variableset_mainfieldmethod %>% 
+        distinct(module, scheme),
+      join_by(module, scheme)
+    ) %>% 
+    all.equal(
+      module_schemes_mne %>% 
+        anti_join(
+          envvars %>% 
+            distinct(module, scheme),
+          join_by(module, scheme)
+        )
+    )
+)
 ```
 
 ## Setting the panel design of field activities
