@@ -316,7 +316,7 @@ data_clusters <- data %>%
 
 
 ```{r map-clusters}
-#| eval: true
+#| eval: false
 data %>%
   # filter(region == "KAL") %>% 
   select(x, y, cluster ) %>% 
@@ -350,6 +350,7 @@ data %>%
 
 
 ```{r cluster-wise-detrend}
+#| eval: true
 
 cluster_detrend <- function(cl) {
   sub_dc <- data_clusters %>%
@@ -373,7 +374,7 @@ data_clusters <- bind_rows(
 
 
 ```{r show-map}
-#| eval: true
+#| eval: false
 
 data_clusters %>%
   # filter(region == "KAL") %>% 
@@ -391,7 +392,11 @@ data_clusters %>%
 
 
 ## subset
+
+A manageable fraction of the data to try analysis:
+
 ```{r data-test-subset}
+#| eval: true
 test <- data_clusters %>%
   filter(cluster == 16)
   # filter(region == "WES")
@@ -407,7 +412,7 @@ test <- data_clusters %>%
 
 Try on a subset:
 ```{r gstat-subset-variogram}
-#| eval: false
+#| eval: true
 
 gstest <- test
 sp::coordinates(gstest) = ~x+y
@@ -451,8 +456,9 @@ test_fit <- sdmTMB(
   # spatiotemporal = "IID",
   spatial = "on"
 )
-sanity(test_fit)
-test_fit
+test_fiti <- run_extra_optimization(test_fit)
+sanity(test_fiti)
+test_fiti
 ```
 
 ::: {.callout-note}
@@ -465,9 +471,9 @@ Linear de-trending makes sense!
 :::
 
 ### meshing Flanders
+
 ```{r sdmTMB-mesh-full}
 #| eval: true
-
 mesh <- make_mesh(data_clusters, xy_cols = c("x", "y"), cutoff = as.integer(extent / n_bins))
 print(mesh$mesh$n)
 plot(mesh)
@@ -479,7 +485,7 @@ plot(mesh)
 - LG3
 - cluster-wise de-trended
 
-```{r sdmTMB-model-lg3}
+```{r sdmTMB-model-lg3, eval=FALSE}
 #| eval: false
 fit_lg3 <- sdmTMB(
   lwd2_cl ~ 1,
@@ -489,9 +495,27 @@ fit_lg3 <- sdmTMB(
   spatial = "on"
 )
 sanity(fit_lg3)
-fit_lg3
+fit_lg3i <- run_extra_optimization(fit_lg3)
+fit_lg3i
 ```
 
+outcome:
+```
+Spatial model fit by ML ['sdmTMB']
+Formula: lwd2_cl ~ 1
+Mesh: mesh (isotropic covariance)
+Data: data_clusters
+Family: gaussian(link = 'identity')
+
+            coef.est coef.se
+(Intercept)    -0.06    0.04
+
+Dispersion parameter: 0.59
+Matérn range: 160.57
+Spatial SD: 6.37
+ML criterion at convergence: 89966.454
+
+```
 
 
 ### HG3
@@ -500,7 +524,7 @@ fit_lg3
 - cluster-wise de-trended
 
 
-```{r sdmTMB-model-hg3}
+```{r sdmTMB-model-hg3, eval=FALSE}
 #| eval: false
 fit_hg3 <- sdmTMB(
   hwd2_cl ~ 1,
@@ -509,8 +533,27 @@ fit_hg3 <- sdmTMB(
   family = gaussian(link = "identity"),
   spatial = "on"
 )
-sanity(fit_hg3)
-fit_hg3
+fit_hg3i <- run_extra_optimization(fit_hg3)
+sanity(fit_hg3i)
+fit_hg3i
+```
+
+outcome:
+```
+Spatial model fit by ML ['sdmTMB']
+Formula: hwd2_cl ~ 1
+Mesh: mesh (isotropic covariance)
+Data: data_clusters
+Family: gaussian(link = 'identity')
+
+            coef.est coef.se
+(Intercept)    -0.06    0.04
+
+Dispersion parameter: 0.57
+Matérn range: 162.34
+Spatial SD: 6.29
+ML criterion at convergence: 87473.574
+
 ```
 
 
