@@ -54,8 +54,8 @@ if ("" == getOption("browser")) options(browser = "librewolf")
 
 ```{r data-settings}
 
-extent <- 128 # m
-n_bins <- 16
+extent <- 1024 # m
+n_bins <- 128
 
 ```
 
@@ -140,50 +140,22 @@ glimpse(data)
 ```
 
 
+Data de-trending:
+
+
+```{r}
+data <- data %>% 
+  mutate(
+    hwd2 = lm(hw ~ x + y, data)$residual,
+    lwd2 = lm(lw ~ x + y, data)$residual
+  )
+```
+
+
 ## cluster and map
 
 Clustering fails: there are memory issues and it fails in `hclust` saying `size cannot be NA or exceed 65536.` :(
-```{r cluster-locs}
-#| eval: false
-locs <- data %>% 
-  distinct(x, y)
-locs <- cluster_locs(
-  input = locs,
-  max_dist = 8000, # m 
-  output_var = "cluster",
-  xvar = "x",
-  yvar = "y"
-)
-head(locs)
-data2 <- data %>% 
-  left_join(
-    locs,
-    by = join_by(x == x, y == y),
-    relationship = "many-to-one"
-  )
 
-data2 %>% 
-  group_by(region, code, cluster) %>% 
-  summarize(count = n()) %>%
-  ggplot(aes(x = cluster, fill = region)) +
-  geom_histogram(bins = max(data2$cluster), color = "black") +
-  theme_bw() + theme(legend.position = "none")
-  
-```
-
-```{r plot-clusters}
-data2 %>%
-  # filter(region == "KAL") %>% 
-  select(x, y, cluster ) %>% 
-  sf::st_as_sf(coords = c("x", "y"),
-    crs = 31370
-  ) %>% 
-  mapview(
-    map.types = c("OpenTopoMap"),
-    zcol = "cluster"
-  )
-
-```
 
 ```{r cluster-function}
 cluster_locs <- function (
@@ -208,8 +180,159 @@ cluster_locs <- function (
 - 
 
 
+Evaluate ideal cluster size:
+```{r evaluate-cluster-distance}
+#| eval: false
+
+locs <- data %>% 
+  distinct(x, y)
+
+dists <- c()
+cluster_count <- c()
+
+for (dist in seq(10, 8000, length.out = 800)) {
+  dists <- c(dists, dist)
+  locs_clustered <- cluster_locs(
+    input = locs,
+    max_dist = dist, # m 
+    output_var = "cluster",
+    xvar = "x",
+    yvar = "y"
+  ) 
+
+  order <- locs_clustered %>%
+    group_by(cluster) %>% 
+    summarize(count = n()) %>%
+    arrange(desc(count)) %>%
+    pull(cluster)
+  cluster_count <- c(cluster_count, length(order))
+
+  
+  # head(locs)
+  # data2 <- data %>% 
+  #   left_join(
+  #     locs_clustered,
+  #     by = join_by(x == x, y == y),
+  #     relationship = "many-to-one"
+  #   )
+  
+  g <- locs_clustered %>% 
+    arrange(match(cluster, order)) %>% 
+    mutate(
+      cluster_sorted = as.integer(
+        factor(
+          locs_clustered$cluster,
+          levels = order,
+          order = FALSE
+        )
+      )
+    ) %>% 
+    # group_by(region, code, cluster) %>% 
+    # group_by(cluster) %>% 
+    # summarize(count = n()) %>%
+    ggplot(aes(x = cluster_sorted)) +
+    geom_histogram(bins = max(data2$cluster), color = "black", fill = "lightgrey") +
+    # xlim(0, nrow(data2)) +
+    scale_x_log10() +
+    ylab("number of cluster members") + 
+    xlab(paste0("sorted cluster number (log scale); dist: ", sprintf("% 5d", dist)," m")) +
+    theme_bw() + theme(legend.position = "none")
+
+  ggsave(paste0("figures/dist_clusters/hist", sprintf("%05d", dist), ".png"),
+         g, dpi = 300, scale = 1,
+         width = 16, height = 10, units = "cm")  
+  rm(g)
+}
 
 
+g <- ggplot(data.frame(
+    x = dists[1:length(dists)-1],
+    y = abs(diff(cluster_count))
+  ), aes(x = x, y = y)) +
+  geom_step(alpha = 1.0, linewidth = 0.5) +
+  geom_vline(xintercept = 2700) +
+  geom_vline(xintercept = 3400) +
+  theme_bw() +
+  ylim(0, 20)
+
+ggsave("figures/cluster_elbow.png",
+       g, dpi = 300, scale = 1,
+       width = 18, height = 10, units = "cm")  
+```
+
+![Location cluster count.](figures/cluster_elbow.png)
+
+
+
+```{r perform-clustering}
+#| eval: true
+
+# the critical cluster distance
+cluster_dist <- 3400 # m
+min_cluster_size <- 16 # cluster member count
+
+locs <- data %>% 
+  distinct(x, y)
+
+# basic clustering
+locs_clustered <- cluster_locs(
+  input = locs,
+  max_dist = cluster_dist, # m 
+  output_var = "cluster",
+  xvar = "x",
+  yvar = "y"
+) 
+
+
+# remove cluster column if already present
+if ("cluster" %in% colnames(data)) {
+  data <- data %>%
+    select(-cluster)
+}
+
+# join the cluster number to the data
+data <- data %>% 
+  left_join(
+    locs_clustered,
+    by = join_by(x == x, y == y),
+    relationship = "many-to-one"
+  )
+  
+# plot number of cluster members
+locs_clustered  %>%
+  ggplot(aes(x = cluster)) +
+  geom_histogram(bins = max(data$cluster))
+
+
+tiny_clusters <- data %>%
+  group_by(cluster) %>%
+  summarize(count = n()) %>% 
+  filter(count < min_cluster_size) %>%
+  pull(cluster)
+
+data_clusters <- data %>%  
+  filter(!cluster %in% tiny_clusters)  
+```
+
+
+```{r map-clusters}
+#| eval: true
+data %>%
+  # filter(region == "KAL") %>% 
+  select(x, y, cluster ) %>% 
+  sf::st_as_sf(coords = c("x", "y"),
+    crs = 31370
+  ) %>% 
+  mapview(
+    map.types = c("OpenTopoMap"),
+    zcol = "cluster"
+  )
+
+```
+
+
+
+(backup: code to find the remote region of Luxemburg)
 ```{r find-lux}
 #| eval: false
 # data %>%
@@ -225,18 +348,43 @@ cluster_locs <- function (
 ```
 
 
+
+```{r cluster-wise-detrend}
+
+cluster_detrend <- function(cl) {
+  sub_dc <- data_clusters %>%
+    filter(cluster == cl)
+  sub_dc <- sub_dc %>%
+    mutate(
+      hwd2_cl = lm(hw ~ x + y, sub_dc)$residual,
+      lwd2_cl = lm(lw ~ x + y, sub_dc)$residual
+    )
+  return(sub_dc)
+}
+
+data_clusters <- bind_rows(
+  lapply(
+    unique(data_clusters$cluster),
+    FUN = cluster_detrend
+  )
+)
+
+```
+
+
 ```{r show-map}
 #| eval: true
-data %>%
+
+data_clusters %>%
   # filter(region == "KAL") %>% 
-  select(x, y, code, hw ) %>% 
-  summarize(mean(hw), .by = c(code, x, y)) %>% 
+  select(x, y, code, hwd2_cl ) %>% 
+  summarize(mean(hwd2_cl), .by = c(code, x, y)) %>% 
   sf::st_as_sf(coords = c("x", "y"),
     crs = 31370
   ) %>% 
   mapview(
     map.types = c("OpenTopoMap"),
-    zcol = "mean(hw)"
+    zcol = "mean(hwd2_cl)"
   )
 
 ```
@@ -244,14 +392,10 @@ data %>%
 
 ## subset
 ```{r data-test-subset}
-test <- data %>%
-  filter(region == "KAL")
-
-test <- test %>%
-  mutate(
-    hwd2 = lm(hw ~ x + y, test)$residual,
-    lwd2 = lm(lw ~ x + y, test)$residual
-  )
+test <- data_clusters %>%
+  filter(cluster == 16)
+  # filter(region == "WES")
+  # filter(region == "KAL")
 
 ```
 
@@ -268,14 +412,14 @@ Try on a subset:
 gstest <- test
 sp::coordinates(gstest) = ~x+y
 vgrm <- gstat::variogram(
-  hw ~ 1,
+  hwd2 ~ 1,
   data = gstest,
   cutoff = extent,
   width = extent / n_bins
   )
 plot(vgrm, color = "darkblue", type = "o")
 ```
-*Takes longer than a coffee break.*
+~~Takes longer than a coffee break.~~ works well on xg3 subset.
 
 
 ## sdmTMB
@@ -294,18 +438,31 @@ plot(mesh)
 ```{r sdmTMB-model}
 
 fit <- sdmTMB(
-  hw ~ 1,
+  # hw ~ 1,
   # hwd2 ~ 1,
+  # hwd2_cl ~ 1,
+  # lw ~ 1,
+  # lwd2 ~ 1,
+  lwd2_cl ~ 1,
   data = test,
   mesh = mesh,
   family = gaussian(link = "identity"),
   # time = "hyear",
-  # spatiotemporal = "ar1",
+  # spatiotemporal = "iid",
   spatial = "on"
 )
 sanity(fit)
 fit
 ```
+
+::: {.callout-note}
+Linear de-trending makes sense!
+
+- It approximately removes spatial covariates.
+- This makes use of `spatial_varying` parameters unnecessary.
+- Matérn distance reduces accordingly, seems more plausible.
+
+:::
 
 # Archive
 
