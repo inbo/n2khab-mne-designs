@@ -1,5 +1,5 @@
 ---
-title: "Water Level Variograms"
+title: "xG3 Variograms"
 format:
   html:
     toc: true
@@ -13,6 +13,27 @@ knitr:
 
 # Summary
 ## TL;DR
+
+This notebook contains
+
+- xG3 database query
+- location clustering (cluster distance of `3.4 km` seems useful)
+- cluster-wise de-trending
+- `sdmTMB` model of xG3s are possible and indicate a Matérn range of `~ 160 m`
+- empirical variograms of xG3 data rather indicate a range in the order of of `250 m ~ 500 m`
+
+
+NOT covered are:
+
+- extra covariates, such as filter depth, soilclass, ecoregion
+
+
+## relevant chapters and figures
+
+- cluster count and size depends on cutoff distance [@fig-clustercount]
+- `sdmTMB` model of LG3 [@sec-lg3] and hG3 [@sec-hg3], de-trend per cluster
+- variogram sample size per distance bin: @fig-samplesize
+- xG3 variograms: @fig-variogram 
 
 
 # Data
@@ -57,6 +78,9 @@ if ("" == getOption("browser")) options(browser = "librewolf")
 extent <- 1024 # m
 n_bins <- 128
 
+# actually a result of the below analysis
+cluster_dist <- 3400 # m # parameter for clustering
+min_cluster_size <- 16 # minimal cluster member count; fewer memeber clusters are removed
 ```
 
 
@@ -66,7 +90,10 @@ n_bins <- 128
 
 query_xg3 <- function (){
   tbl(watina_dwh, "factBRPeilMetingJaar") %>%
-    filter(IsHydroJaar == 1) %>% 
+    filter(
+      IsHydroJaar == 1,
+      ParameterSetWID == 1
+    ) %>% 
     select(
       MeetpuntWID,
       Jaar,
@@ -118,7 +145,7 @@ query_xg3 <- function (){
 data_export_file <- "data/xg3_data_raw.parquet"
 reload <- force_database_download || !file.exists(data_export_file)
 
-if ((!work_offline) && reload_gstat) {
+if ((!work_offline) && reload) {
   data <- query_xg3() %>%
     # rename(z = fdepth, ref = ref_taw) %>%
     select(idx, code, hyear, x, y, hw, lw) %>% 
@@ -260,7 +287,7 @@ ggsave("figures/cluster_elbow.png",
        width = 18, height = 10, units = "cm")  
 ```
 
-![Location cluster count.](figures/cluster_elbow.png)
+![Location cluster count.](figures/cluster_elbow.png){#fig-clustercount}
 
 
 
@@ -268,8 +295,6 @@ ggsave("figures/cluster_elbow.png",
 #| eval: true
 
 # the critical cluster distance
-cluster_dist <- 3400 # m
-min_cluster_size <- 16 # cluster member count
 
 locs <- data %>% 
   distinct(x, y)
@@ -352,7 +377,7 @@ data %>%
 ```{r cluster-wise-detrend}
 #| eval: true
 
-cluster_detrend <- function(cl) {
+detrend_clusterwise <- function(cl) {
   sub_dc <- data_clusters %>%
     filter(cluster == cl)
   sub_dc <- sub_dc %>%
@@ -366,7 +391,7 @@ cluster_detrend <- function(cl) {
 data_clusters <- bind_rows(
   lapply(
     unique(data_clusters$cluster),
-    FUN = cluster_detrend
+    FUN = detrend_clusterwise
   )
 )
 
@@ -480,7 +505,7 @@ plot(mesh)
 ```
 
 
-### LG3
+### LG3 {#sec-lg3}
 
 - LG3
 - cluster-wise de-trended
@@ -518,7 +543,7 @@ ML criterion at convergence: 89966.454
 ```
 
 
-### HG3
+### HG3 {#sec-hg3}
 
 - HG3
 - cluster-wise de-trended
@@ -595,11 +620,15 @@ if (reload) {
   diffdata_raw <- read_parquet(raw_diffdata_export_file)
 }
 
-glimpse(diffdata_raw)
+# glimpse(diffdata_raw)
 diffdata_raw %>% count
 ```
 
-TODO query filter depth?
+TODO
+
+- query filter depth?
+- soilclass?
+- distance from water?
 
 
 ```{r raw-data-processing}
@@ -699,7 +728,7 @@ diffdata %>%
 
 
 ```{r plot-data-unbinned}
-#| eval: false
+#| eval: true
 #| label: fig-dw-dx
 #| fig-cap: "Distance-Difference-Plot of cluster-detrended absolute difference in xG3 (m) against distance (${\\Delta x}$)."
 #| layout-ncol: 2
@@ -749,19 +778,6 @@ diffdata_binned <- diffdata %>%
 glimpse(diffdata_binned)
 ```
 
-```{r plot-data-binned}
-#| label: fig-dw-dx-binned
-#| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
-
-diffdata_binned %>%
-  ggplot(aes(x = dx, y = abs(dhg3d))) +
-  geom_point(alpha = 0.8) +
-  geom_smooth(color = "black") +
-  xlab("site distance (m)") +
-  ylab("mean absolute water level difference <|Δw|> (mTAW)") +
-  theme_bw() 
-
-```
 
 
 ## self-made variogram
@@ -782,7 +798,7 @@ diffdata_binned %>%
   geom_point(alpha = 0.2) +
   geom_smooth(color = 'darkblue') +
   xlab("site distance (m), binned") +
-  ylab("semivariance in de-trended LG3: var(lg3)/2 (m)") +
+  ylab("semivariance in de-trended LG3: var(lg3)/2 (m²)") +
   theme_bw() +
   theme(legend.position = "none")
 
@@ -792,8 +808,10 @@ diffdata_binned %>%
   geom_point(alpha = 0.2) +
   geom_smooth(color = 'darkblue') +
   xlab("site distance (m), binned") +
-  ylab("semivariance in de-trended HG3: var(lg3)/2 (m)") +
-  theme_bw()
+  ylab("semivariance in de-trended HG3: var(lg3)/2 (m²)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
 
 ```
 

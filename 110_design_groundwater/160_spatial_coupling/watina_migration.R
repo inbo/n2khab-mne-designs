@@ -258,7 +258,7 @@ get_locs <- function(conn,
   }
 
   # query "peilpunt": site
-  site <- tbl(conn, "DimPeilpunt") %>%
+  site <- tbl(conn, "dimPeilpunt") %>%
     filter(
       PeilpuntStatusCode %in% c("VLD", "ENT", "CLD"),
       OpenbaarheidWID == 4

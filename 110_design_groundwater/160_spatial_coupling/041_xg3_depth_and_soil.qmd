@@ -1,0 +1,447 @@
+---
+title: "Water Level Variograms"
+format:
+  html:
+    toc: true
+    html-math-method: katex
+  pdf:
+    fig-pos: 'H'
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+
+# Data
+
+## prep
+```{r setup}
+#| include: false
+library("dplyr") # our favorite data wrangling toolbox
+library("dbplyr") # dplyr + databases
+library("arrow") # writing parquet files
+library("ggplot2") # a visualization toolbox
+library("gstat") # geospatial statistics
+library("sdmTMB") # species distribution models Template Model Builder
+library("mapview") # viewing maps
+
+
+source("./watina_migration.R")
+
+# option to work offline; requires previous data download
+work_offline <- FALSE
+
+# connect watina 
+if (!work_offline && !exists("watina_dwh")) {
+  watina_dwh <- connect_watina()
+}
+
+# create a data folder (if not present)
+dir.create("./data", showWarnings = FALSE)
+
+# options(browser = "librewolf") # a rather personal thing
+
+# the user may choose to reload raw data
+force_database_download <- TRUE
+
+if ("" == getOption("browser")) options(browser = "librewolf")
+
+```
+
+
+```{r data-settings}
+
+extent <- 1024 # m
+n_bins <- 128
+
+# result of previous analysis
+cluster_dist <- 3400 # m # parameter for clustering
+min_cluster_size <- 16 # minimal cluster member count; fewer memeber clusters are removed
+
+
+data_export_file <- paste0("data/xg3_data_cl",cluster_dist, ".parquet") # where data is stored
+```
+
+## query
+```{r raw-data-query-xg3}
+#| eval: true
+
+query_xg3 <- function (){
+  tbl(watina_dwh, "factBRPeilMetingJaar") %>%
+    filter(
+      IsHydroJaar == 1,
+      ParameterSetWID == 1
+    ) %>% 
+    select(
+      MeetpuntWID,
+      Jaar,
+      HGmTAWValue,
+      LGmTAWValue,
+      VGmTAWValue
+    ) %>%
+    filter_at(
+      vars(HGmTAWValue, LGmTAWValue),
+      all_vars(!is.na(.))
+    ) %>% 
+    left_join(
+      tbl(watina_dwh, "dimMeetpunt"),
+      by = join_by(MeetpuntWID == MeetpuntWID),
+      relationship = "many-to-many"
+    ) %>%
+    filter(MeetpuntStatusCode == "VLD") %>%
+    select(
+      MeetpuntWID,
+      # FilterLengte,
+      # MeetpuntStatusCode,
+      MeetpuntCode,
+      Jaar,
+      MeetpuntXCoordinaat,
+      MeetpuntYCoordinaat,
+      HGmTAWValue,
+      LGmTAWValue,
+    ) %>%
+    rename(
+      idx = MeetpuntWID,
+      code = MeetpuntCode,
+      hyear = Jaar,
+      x = MeetpuntXCoordinaat,
+      y = MeetpuntYCoordinaat,
+      hw = HGmTAWValue,
+      lw = LGmTAWValue
+    ) %>%
+   filter_at(
+    vars(code, hyear, hw, lw),
+    all_vars(!is.na(.))
+  )
+
+}
+
+```
+
+
+```{r query-data}
+#| eval: true
+reload <- force_database_download || !file.exists(data_export_file)
+
+if ((!work_offline) && reload) {
+  data_raw <- query_xg3() %>%
+    select(idx, code, hyear, x, y, hw, lw) %>% 
+    filter_at(
+      vars(x, y, hw, lw),
+      all_vars(!is.na(.))
+    ) %>% 
+    collect %>%
+    mutate(
+      region = substring(code, first = 1, last = 3)
+    ) %>%
+    filter(region != "VBS") # remove 
+
+  glimpse(data_raw)
+}
+```
+
+
+
+## filter depth
+```{r query-filter-depth}
+#| eval: true
+if ((!work_offline) && reload) {
+pp <- tbl(watina_dwh, "dimPeilpunt") %>%
+  filter(
+    OpenbaarheidWID == 4
+  ) %>%
+  mutate(
+    yr = sql("YEAR(CAST(PeilpuntPlaatsing AS date))"),
+    month = sql("YEAR(CAST(PeilpuntPlaatsing AS date))"),
+    start_hyear = yr + (if (month >= 10) 1 else 0),
+    yr = sql("YEAR(CAST(PeilpuntStopzetting AS date))"),
+    month = sql("YEAR(CAST(PeilpuntStopzetting AS date))"),
+    stop_hyear = yr + (if (month >= 10) 1 else 0),
+    ref = ReferentieNiveauTAW,
+    z = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)
+  ) %>%
+  select(MeetpuntWID, start_hyear, stop_hyear, z, ref) %>%
+  collect %>%
+  group_by(MeetpuntWID, start_hyear, stop_hyear) %>%
+  slice(which.min(z)) 
+
+# 15964 -> 10389 row
+
+glimpse(pp)
+}
+```
+
+
+```{r}
+#| eval: true
+if ((!work_offline) && reload) {
+data_raw <- data_raw %>%
+  left_join(pp,
+    by = join_by(
+      idx == MeetpuntWID,
+    ),
+    # relationship = "many-to-many"
+    relationship = "many-to-many"
+  ) %>% filter(
+    hyear >= start_hyear,
+    (is.na(stop_hyear) | (hyear < stop_hyear))
+  ) %>%
+  select(-start_hyear, -stop_hyear)
+data_raw  
+
+# 28k -> 21k rows
+}
+```
+
+
+
+## soilclass
+
+```{r check-existing-soilclass}
+#| eval: true
+soilclass_export_file <- "data/soilclass_perlocation.parquet"
+reload_soil <- force_database_download || !file.exists(soilclass_export_file)
+```
+
+
+```{r load-soilclass}
+#| eval: true
+if ((!work_offline) && reload) {
+if (reload_soil) {
+  source("./zenodo_helper.R")
+  soilmap_raw <- load_zenodo_data("soilmap")
+  
+  soilmap <- soilmap_raw %>%
+    transmute(
+      soilclass = case_when(
+        stringr::str_detect(bsm_mo_tex, "V") ~ "peat",
+        stringr::str_detect(bsm_mo_tex, "^U") ~ "heavy",
+        stringr::str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+        stringr::str_detect(bsm_mo_tex, ".+") ~ "heavy",
+        .default = "unknown"
+      ) %>%
+        factor()
+    )
+
+  # soilmap %>% 
+  # mapview(
+  #   map.types = c("OpenTopoMap"),
+  #   zcol = "soilclass"
+  # )
+
+  soil_locations <- data_raw %>%
+    select(code, x, y) %>% 
+    rename(loc = code) %>% 
+    distinct(.keep_all = TRUE) %>%
+    sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+  lookup_soil <- sf::st_join(
+    soil_locations, soilmap
+  ) %>%
+  mutate(soilclass = tidyr::replace_na(soilclass, "unknown")) %>%
+  sf::st_drop_geometry()
+  
+  # lookup_soil %>% arrange(desc(loc))
+
+  write_parquet(lookup_soil, sink = soilclass_export_file)
+} else {
+  lookup_soil <- read_parquet(soilclass_export_file)
+}
+
+
+# remove cluster column if already present
+if ("soilclass" %in% colnames(data_raw)) {
+  data_raw <- data_raw %>%
+    select(-soilclass)
+}
+data_raw <- data_raw %>%
+  left_join(
+    lookup_soil,
+    by = join_by(code == loc),
+    relationship = "many-to-one"
+  )
+
+# data_raw %>% arrange(desc(code))
+}
+```
+
+
+## clusters
+```{r cluster-function}
+#| eval: true
+cluster_locs <- function (
+    input,
+    xvar = "x",
+    yvar = "y",
+    max_dist = 1,
+    output_var = "cluster_id"
+  ) {
+  coords <- input[, c(xvar, yvar)]
+  cluster_data <- coords %>%
+    dist %>%
+    fastcluster::hclust(method = "complete") %>%
+    stats::cutree(h = max_dist) %>%
+    tibble::enframe(name = NULL, value = output_var) %>%
+    bind_cols(input, .)
+}
+```
+
+
+```{r perform-clustering}
+#| eval: true
+if ((!work_offline) && reload) {
+
+locs <- data_raw %>% 
+  distinct(x, y)
+
+# basic clustering
+locs_clustered <- cluster_locs(
+  input = locs,
+  max_dist = cluster_dist, # m 
+  output_var = "cluster",
+  xvar = "x",
+  yvar = "y"
+) 
+
+
+# remove cluster column if already present
+if ("cluster" %in% colnames(data_raw)) {
+  data_raw <- data_raw %>%
+    select(-cluster)
+}
+
+# join the cluster number to the data_raw
+data_raw <- data_raw %>% 
+  left_join(
+    locs_clustered,
+    by = join_by(x == x, y == y),
+    relationship = "many-to-one"
+  )
+  
+# plot number of cluster members
+locs_clustered  %>%
+  ggplot(aes(x = cluster)) +
+  geom_histogram(bins = max(data_raw$cluster))
+
+
+tiny_clusters <- data_raw %>%
+  group_by(cluster) %>%
+  summarize(count = n()) %>% 
+  filter(count < min_cluster_size) %>%
+  pull(cluster)
+
+data_raw <- data_raw %>%  
+  filter(!cluster %in% tiny_clusters)  
+
+}
+```
+
+
+```{r cluster-wise-detrend}
+#| eval: true
+
+detrend_clusterwise <- function(cl) {
+  sub_dc <- data_raw %>%
+    filter(cluster == cl)
+  sub_dc <- sub_dc %>%
+    mutate(
+      hwd2_cl = lm(hw ~ x + y, sub_dc)$residual,
+      lwd2_cl = lm(lw ~ x + y, sub_dc)$residual
+    )
+  return(sub_dc)
+}
+
+if ((!work_offline) && reload) {
+data_raw <- bind_rows(
+  lapply(
+    unique(data_raw$cluster),
+    FUN = detrend_clusterwise
+  )
+)
+}
+
+```
+
+
+
+## finalize data loading
+
+```{r re-load-data}
+if ((!work_offline) && reload) {
+  data_raw <- data_raw %>% 
+    mutate(
+      region = substring(code, 1, 3)
+    )
+  write_parquet(data_raw, sink = data_export_file)
+}
+data <- read_parquet(data_export_file)
+
+data <- data %>%
+  mutate_at(
+    vars(
+      idx, code, region, hyear, soilclass, cluster
+    ), as.factor)
+```
+
+
+
+# Archive
+
+
+```{r map-clusters}
+#| eval: false
+data %>%
+  # filter(region == "KAL") %>% 
+  select(x, y, cluster, z, ref, soilclass ) %>% 
+  distinct(.keep_all = TRUE) %>%
+  sf::st_as_sf(coords = c("x", "y"),
+    crs = 31370
+  ) %>% 
+  mapview(
+    map.types = c("OpenTopoMap"),
+    zcol = c("cluster", "z", "ref", "soilclass")
+  )
+
+```
+
+
+```{r disconnect-watina, eval=FALSE}
+#| include: true
+if (!work_offline) {
+  DBI::dbDisconnect(watina_dwh)
+}
+```
+
+
+```{r watina-columnlist}
+#| eval: false
+query <- function(query_string) {
+  rs <- DBI::dbGetQuery(watina_dwh, query_string)
+  return(rs)
+}
+
+get_tablecolumns <- function(tbl_name) {
+  my_columns <- query(paste0(
+    "SELECT OBJECT_NAME(object_id), name, column_id, TYPE_NAME(system_type_id)
+     FROM sys.columns
+     WHERE (object_id = OBJECT_ID('",
+    tbl_name, "')) ;")
+  )
+  return(my_columns)
+}
+
+
+col_list <- get_tablecolumns("dimPeilpunt")
+col_list
+```
+
+
+```{r get-tablecols}
+#| eval: false
+get_tablecolumns("dimParameterSet")
+head(tbl(watina_dwh, "dimParameterSet"))
+get_tablecolumns("factBRPeilMetingJaar")
+head(tbl(watina_dwh, "factBRPeilMetingJaar"))
+factBRPeilMetingJaar
+```
