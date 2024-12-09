@@ -1770,7 +1770,7 @@ Currently this is customized to cater for a specific revisit approach in the `pa
 
 ```{r}
 set.seed(20241206)
-scheme_moco_ps_stratum_sppost_panelmemship <- 
+scheme_moco_ps_stratum_sppost_genericpanelmemship <- 
   scheme_moco_ps_stratum_sppost_spsamples %>% 
   unnest(sp_poststr_samples) %>% 
   select(-sample_status) %>% 
@@ -1778,13 +1778,9 @@ scheme_moco_ps_stratum_sppost_panelmemship <-
   inner_join(
     scheme_moco_ps_spsubset_fas_panelcount %>% 
       distinct(scheme, module_combo_code, panel_split, panel_count) %>% 
-      mutate(
-        max_panelcount = max(panel_count),
-        .by = c(scheme, module_combo_code, panel_split)
-      ) %>%
       nest(panel_counts = panel_count),
     join_by(scheme, module_combo_code, panel_split),
-    relationship = "many-to-many",
+    relationship = "many-to-one",
     unmatched = "error"
   ) %>% 
   mutate(
