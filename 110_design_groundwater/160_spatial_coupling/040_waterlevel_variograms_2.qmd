@@ -480,7 +480,7 @@ plot(mesh)
 - cluster-wise de-trended
 
 ```{r sdmTMB-model-lg3}
-#| eval: true
+#| eval: false
 fit_lg3 <- sdmTMB(
   lwd2_cl ~ 1,
   data = data_clusters,
@@ -501,7 +501,7 @@ fit_lg3
 
 
 ```{r sdmTMB-model-hg3}
-#| eval: true
+#| eval: false
 fit_hg3 <- sdmTMB(
   hwd2_cl ~ 1,
   data = data_clusters,
@@ -656,15 +656,24 @@ diffdata %>%
 
 
 ```{r plot-data-unbinned}
+#| eval: false
 #| label: fig-dw-dx
-#| fig-cap: "Distance-Difference-Plot of absolute difference in water level (hg3) against distance (${\\Delta x}$)."
+#| fig-cap: "Distance-Difference-Plot of cluster-detrended absolute difference in xG3 (m) against distance (${\\Delta x}$)."
+#| layout-ncol: 2
+#| fig-subcap: 
+#|   - "LG3."
+#|   - "HG3."
+
+diffdata %>%
+  ggplot(aes(x = dx, y = abs(dlwd))) +
+  geom_point(alpha = 0.05) +
+  xlab("distance (m)") +
+  ylab("de-trended hg3 difference (m)") +
+  theme_bw()
 
 diffdata %>%
   ggplot(aes(x = dx, y = abs(dhwd))) +
   geom_point(alpha = 0.05) +
-  # geom_smooth() +
-  # xlim(0, 100) +
-  # ylim(0,  25) +
   xlab("distance (m)") +
   ylab("de-trended hg3 difference (m)") +
   theme_bw()
@@ -680,7 +689,7 @@ diffdata %>%
 nanmean <- function (val) mean(val, na.rm = TRUE)
 nanvar <- function (val) var(val, na.rm = TRUE)
 # nansem <- function (val) sd(val, na.rm = TRUE)/sqrt(sum(!is.na(val)))
-data_binned <- diffdata %>%
+diffdata_binned <- diffdata %>%
   group_by(distance_bin) %>% 
   summarize(
     vlg3 = 0.5 * nanvar(dlw),
@@ -694,14 +703,14 @@ data_binned <- diffdata %>%
     dhg3d = nanmean(dhwd),
     cnt = n()
   ) %>% ungroup %>% arrange(dx)
-glimpse(data_binned)
+glimpse(diffdata_binned)
 ```
 
 ```{r plot-data-binned}
 #| label: fig-dw-dx-binned
 #| fig-cap: "Distance-Difference-Plot of difference in water level (mTAW) against binned distance ($\\Delta x$)."
 
-data_binned %>%
+diffdata_binned %>%
   ggplot(aes(x = dx, y = abs(dhg3d))) +
   geom_point(alpha = 0.8) +
   geom_smooth(color = "black") +
@@ -725,22 +734,22 @@ data_binned %>%
 trafo <- function(x) x
 # trafo <- function(x) log(x)
 
-data_binned %>%
+diffdata_binned %>%
   ggplot(aes(x = dx, y = trafo(vlg3d))) +
   geom_point(alpha = 0.2) +
-  geom_smooth() +
+  geom_smooth(color = 'darkblue') +
   xlab("site distance (m), binned") +
-  ylab("log semivariance in de-trended LG3: var(lg3)/2 (m)") +
+  ylab("semivariance in de-trended LG3: var(lg3)/2 (m)") +
   theme_bw() +
   theme(legend.position = "none")
 
 
-data_binned %>%
+diffdata_binned %>%
   ggplot(aes(x = dx, y = trafo(vhg3d))) +
   geom_point(alpha = 0.2) +
-  geom_smooth() +
+  geom_smooth(color = 'darkblue') +
   xlab("site distance (m), binned") +
-  ylab("log semivariance in de-trended HG3: var(lg3)/2 (m)") +
+  ylab("semivariance in de-trended HG3: var(lg3)/2 (m)") +
   theme_bw()
 
 ```
