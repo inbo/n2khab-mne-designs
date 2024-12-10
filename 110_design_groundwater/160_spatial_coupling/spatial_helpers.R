@@ -3,6 +3,48 @@
 #----------------
 
 
+#' Find center and radius of an `sf` point set.
+#'
+#' Calculates the center point of a set of points and
+#' the radius of a circle enclosing all of them.
+#'
+#' @param sf_df an sf data.frame with defined coordinates
+#'
+#' @return list with `center` and `radius`
+#'
+#' @examples
+#' \dontrun{
+#' cr <- find_center_and_radius(
+#'   st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
+#' )
+#' center_pt <- cr$center
+#' radius <- cr$radius
+#' }
+#'
+find_center_and_radius <- function (sf_df) {
+
+  assertthat::assert_that(inherits(sf_df, "data.frame") && inherits(sf_df, "sf"),
+    msg = paste0("Input data must be an sf data.frame (received: ",
+                 paste(class(sf_df), collapse = "/"),
+                 ")"))
+
+  # extract coordinates
+  xy <- sf::st_coordinates(sf_df)
+
+  # get the center point as their average
+  center_pt <- as.vector(colMeans(xy))
+
+  # calculate the max distance as radius
+  radius <- max(sqrt(rowSums(
+    sapply(1:length(center_pt), FUN = function (i) (xy[,i] - center_pt[i])^2)
+  )))
+
+  # return center and radius
+  return(list("center" = center_pt, "radius" = radius))
+
+}
+
+
 #' Filter geometry objects within a radius.
 #'
 #' Selects all elements from a geometry collection of which are within a given
@@ -31,6 +73,7 @@ geometry_within_radius <- function(center, radius, collection) {
   # make sure `sf` is loaded
   stopifnot(sf = require("sf"))
   stopifnot(watina = require("watina"))
+
 
   # ensure center is a point
   if (!inherits(center, "POINT")) {

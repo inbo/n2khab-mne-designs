@@ -143,6 +143,11 @@ load_all_water_sources <- function( ) {
 #'
 narrow_sources_radius <- function(data_sources, reference_point, radius) {
 
+  if (!exists("geometry_within_radius")) {
+    source("./spatial_helpers.R")
+  }
+
+
   # select only water bodies within a radius
   narrowed_collection <- lapply(
     data_sources,
