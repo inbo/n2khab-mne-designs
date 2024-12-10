@@ -60,8 +60,9 @@ cluster_dist <- 3400 # m # parameter for clustering
 min_cluster_size <- 16 # minimal cluster member count; fewer memeber clusters are removed
 
 
-data_export_file <- paste0("data/xg3_data_cl",cluster_dist, ".parquet") # where data is stored
+data_export_file <- paste0("data/xg3_data_cl", cluster_dist, ".parquet") # where data is stored
 ```
+
 
 ## query
 ```{r raw-data-query-xg3}
@@ -166,7 +167,8 @@ pp <- tbl(watina_dwh, "dimPeilpunt") %>%
   group_by(MeetpuntWID, start_hyear, stop_hyear) %>%
   slice(which.min(z)) 
 
-# 15964 -> 10389 row
+# TODO 15964 -> 10389 row??
+# TODO filter depth z duplicates removed by `slice`
 
 glimpse(pp)
 }
@@ -176,6 +178,14 @@ glimpse(pp)
 ```{r}
 #| eval: true
 if ((!work_offline) && reload) {
+
+for (col in c("z", "ref")) {
+  if (col %in% colnames(data_raw)) {
+    data_raw <- data_raw %>%
+      select(-one_of(col))
+  }
+}
+
 data_raw <- data_raw %>%
   left_join(pp,
     by = join_by(
@@ -210,7 +220,7 @@ reload_soil <- force_database_download || !file.exists(soilclass_export_file)
 if ((!work_offline) && reload) {
 if (reload_soil) {
   source("./zenodo_helper.R")
-  soilmap_raw <- load_zenodo_data("soilmap")
+  soilmap_raw <- load_zenodo_data("soilmap_simple")
   
   soilmap <- soilmap_raw %>%
     transmute(
@@ -363,6 +373,131 @@ data_raw <- bind_rows(
 
 ```
 
+
+## distance to water
+
+
+```{r load-water-sources}
+#| eval: true
+source("./water_sources.R")
+
+all_wata <- load_all_water_sources()
+```
+
+
+```{r test-water-distance}
+test_data <- data_raw %>%
+  filter(region == "WES") %>%
+  select(cluster, region, idx, code, x, y) %>% 
+  distinct(.keep_all = TRUE) 
+test_sf <- st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
+
+cr <- find_center_and_radius(test_sf)
+
+test_wata <- narrow_sources_radius(
+  all_wata,
+  cr$center,
+  radius = cr$radius * 1.01 + 100 # add 100m safety
+)
+
+water_distances <- collect_combined_distances(test_sf, test_wata, point_index_col = "code")
+min_water_distances <- minimum_cross_distance(water_distances)
+
+
+test_sf <- test_sf %>% left_join(
+  min_water_distances,
+  by = join_by(code == idx),
+  relationship = "one-to-one"
+  )
+
+glimpse(test_sf)
+```
+
+
+```{r map-water-sources}
+#| eval: false
+st_geometry(test_wata$surfaces) <- "geometry"
+
+m1 <- test_wata$surfaces %>%
+    select(polygon_id) %>% 
+  mapview(
+    map.types = c("OpenTopoMap"),
+    zcol = c()
+  )
+
+m2 <- test_wata$courses %>%
+    select(polygon_id) %>% 
+  mapview(
+    map.types = c("OpenTopoMap"),
+    zcol = c()
+  )
+
+m3 <- test_sf %>% 
+  mapview(
+    map.types = c("OpenTopoMap"),
+    zcol = c("min_dist", "code", "cluster")
+  )
+
+m1 + m2 + m3
+
+```
+
+
+```{r apply-water-distance}
+
+query_min_water_distances_clusterwise <- function (cluster_idx) {
+  sub_data <- data_raw %>%
+    filter(cluster == cluster_idx) %>%
+    select(cluster, code, x, y) %>% 
+    distinct(.keep_all = TRUE) 
+  sub_data <- st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
+  
+  cr <- find_center_and_radius(test_sf)
+  
+  sub_wata <- narrow_sources_radius(
+    all_wata,
+    cr$center,
+    radius = cr$radius * 1.01 + 100 # add 100m safety
+  )
+  
+  water_distances <- collect_combined_distances(
+    sub_data,
+    sub_wata,
+    point_index_col = "code"
+  )
+  min_water_distances <- minimum_cross_distance(water_distances)
+  
+  return(min_water_distances)
+
+}
+
+waterdistance_export_file <- "data/waterdistance_perlocation.parquet"
+reload_water <- force_database_download || !file.exists(waterdistance_export_file)
+
+if ((!work_offline) && reload_water) {
+  lookup_waterdistance <- bind_rows(lapply(
+    unique(data_raw$cluster),
+    FUN = query_min_water_distances_clusterwise
+  ))
+  write_parquet(lookup_waterdistance, sink = waterdistance_export_file)
+} else {
+  lookup_waterdistance <- read_parquet(waterdistance_export_file)
+}
+
+data_raw <- data_raw %>% 
+  left_join(
+    lookup_waterdistance,
+    by = join_by(code == idx),
+    relationship = "many-to-one"
+  )
+
+
+```
+
+
+
+## TODO Height TAW 
+(wcs query; should match `ref`)
 
 
 ## finalize data loading

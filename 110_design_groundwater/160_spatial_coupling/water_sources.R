@@ -168,14 +168,22 @@ narrow_sources_radius <- function(data_sources, reference_point, radius) {
 #' For each data source available, compute de cross distance
 #' with the focus points (e.g. observation wells).
 #' All data in Belgian Lambert 72 (EPSG-code 31370) crs.
+#' This can easily become data-intensive, and it is reccomended to
+#' narrow down the water sources prior to computation.
 #'
-#' @param points sf::Points
+#' @param points sf::Points with `rownames` which are used as index
 #' @param data_sources the water data to which distance is computed
+#' @param point_index_col optionally provide a column name string
+#'        which is used as point (i.e. column) index of the outcome
 #'
 #' @return A data frame with distances of water (rows) to points (cols),
 #'         in meters.
 #'
-collect_combined_distances <- function(points, data_sources) {
+collect_combined_distances <- function(
+                                points,
+                                data_sources,
+                                point_index_col = NA
+                              ) {
 
   # initiate empty distance collection
   distance_collection <- NULL
@@ -198,7 +206,11 @@ collect_combined_distances <- function(points, data_sources) {
     # }
 
     # point id's as column names
-    colnames(dist_matrix) <- points$id
+    if (is.na(point_index_col)) {
+      colnames(dist_matrix) <- rownames(points)# $id
+    } else {
+      colnames(dist_matrix) <- points[[point_index_col]]
+    }
 
     # append information
     dist_matrix$source <- names(data_sources)[[idx]] # water data source

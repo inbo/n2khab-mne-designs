@@ -27,7 +27,7 @@ get_zenodo_library <- function() {
   habitatmap_stdized <- c(TRUE, "10.5281/zenodo.3355192")
   habitatmap_terr <- c(TRUE, "10.5281/zenodo.3468948")
   habitatsprings <- c(TRUE, "10.5281/zenodo.3550994")
-  habitatstreams <- c(FALSE, "10.5281/zenodo.3386245")
+  habitatstreams <- c(FALSE, "10.5281/zenodo.3386245") # type 3260
   habitatquarries <- c(FALSE, "10.5281/zenodo.4072967")
 
   watersurfaces <- c(FALSE, "10.5281/zenodo.3386857")
