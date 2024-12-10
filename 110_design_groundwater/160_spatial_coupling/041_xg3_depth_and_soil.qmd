@@ -25,6 +25,7 @@ library("ggplot2") # a visualization toolbox
 library("gstat") # geospatial statistics
 library("sdmTMB") # species distribution models Template Model Builder
 library("mapview") # viewing maps
+library("inbospatial") # elevation WCS
 
 
 source("./watina_migration.R")
@@ -379,6 +380,7 @@ data_raw <- bind_rows(
 
 ```{r load-water-sources}
 #| eval: true
+source("./spatial_helpers.R")
 source("./water_sources.R")
 
 all_wata <- load_all_water_sources()
@@ -392,7 +394,7 @@ test_data <- data_raw %>%
   distinct(.keep_all = TRUE) 
 test_sf <- st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
 
-cr <- find_center_and_radius(test_sf)
+cr <- find_center_and_radius(sf::st_coordinates(test_sf))
 
 test_wata <- narrow_sources_radius(
   all_wata,
@@ -446,27 +448,43 @@ m1 + m2 + m3
 ```{r apply-water-distance}
 
 query_min_water_distances_clusterwise <- function (cluster_idx) {
+
+  # subset of the data
   sub_data <- data_raw %>%
     filter(cluster == cluster_idx) %>%
-    select(cluster, code, x, y) %>% 
+    select(code, x, y) %>% 
     distinct(.keep_all = TRUE) 
-  sub_data <- st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
+  sub_data <- st_as_sf(sub_data, coords = c("x", "y"), crs = 31370)
   
-  cr <- find_center_and_radius(test_sf)
+  # center and radius
+  cr <- find_center_and_radius(sf::st_coordinates(sub_data))
+
+  # minimum radius
+  cr$radius <- max(1000., cr$radius)
   
+  # find adjacent water...
   sub_wata <- narrow_sources_radius(
     all_wata,
     cr$center,
-    radius = cr$radius * 1.01 + 100 # add 100m safety
+    radius = cr$radius * 1.01 + 5000 # add safety margin
   )
   
+
+  # ... or not. 
+  if (sum(unlist(lapply(sub_wata, FUN = nrow))) <= 0) {
+    # print(paste0("!!! NULL !!! ", cluster_idx))
+    return(invisible(NULL))
+  }
+  
+  # calculate water distances
   water_distances <- collect_combined_distances(
-    sub_data,
-    sub_wata,
-    point_index_col = "code"
+    sub_data, sub_wata, point_index_col = "code"
   )
+
+  # get the minimum water distance
   min_water_distances <- minimum_cross_distance(water_distances)
-  
+
+  colnames(min_water_distances) <- c("code", "wata_min_dist", "wata_min_src", "wata_min_idx")
   return(min_water_distances)
 
 }
@@ -475,29 +493,73 @@ waterdistance_export_file <- "data/waterdistance_perlocation.parquet"
 reload_water <- force_database_download || !file.exists(waterdistance_export_file)
 
 if ((!work_offline) && reload_water) {
-  lookup_waterdistance <- bind_rows(lapply(
+  lookup_waterdistance <- lapply(
     unique(data_raw$cluster),
     FUN = query_min_water_distances_clusterwise
-  ))
+    )
+
+  lookup_waterdistance <- bind_rows(lookup_waterdistance) %>% 
+    distinct(.keep_all = TRUE) 
   write_parquet(lookup_waterdistance, sink = waterdistance_export_file)
 } else {
   lookup_waterdistance <- read_parquet(waterdistance_export_file)
 }
 
+
+for (col in c("wata_min_dist")) {
+  if (col %in% colnames(data_raw)) {
+    data_raw <- data_raw %>%
+      select(-one_of(col))
+  }
+}
+
 data_raw <- data_raw %>% 
   left_join(
-    lookup_waterdistance,
-    by = join_by(code == idx),
+    lookup_waterdistance %>%
+      select(code, wata_min_dist),
+    by = join_by(code == code),
     relationship = "many-to-one"
   )
 
-
+# glimpse(data_raw %>% filter(is.na(wata_min_dist)))
+# lookup_waterdistance  %>%
+#   filter(code == "MSBP003")
 ```
 
 
 
 ## TODO Height TAW 
 (wcs query; should match `ref`)
+
+
+
+```{r elevation-test-region}
+source("./spatial_helpers.R")
+
+
+test_data <- data_raw %>%
+  filter(region == "WES") %>%
+  select(cluster, region, idx, code, x, y) %>% 
+  distinct(.keep_all = TRUE) 
+
+# xy <- test_data
+# as.matrix(xy[c("x", "y")])
+
+
+bbox <- find_bbox_for_points(xy = test_data)
+
+test_elevation <- inbospatial::get_coverage_wcs(
+  wcs = "dhmv",
+  bbox = bbox,
+  layername = "DHMVII_DTM_1",
+  resolution = 1,
+  version = "1.0.0",
+  wcs_csr="EPSG:31370"
+  )
+
+```
+TODO: 404 error!
+
 
 
 ## finalize data loading

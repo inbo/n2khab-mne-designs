@@ -3,46 +3,100 @@
 #----------------
 
 
-#' Find center and radius of an `sf` point set.
+#' Find center and radius of a coordinate point set.
 #'
-#' Calculates the center point of a set of points and
-#' the radius of a circle enclosing all of them.
+#' Calculates the center of a set of points, given by coordinate values,
+#' and the radius of a circle enclosing all of them.
 #'
-#' @param sf_df an sf data.frame with defined coordinates
+#' @param xy a data.frame containing only coordinates
 #'
 #' @return list with `center` and `radius`
 #'
 #' @examples
 #' \dontrun{
-#' cr <- find_center_and_radius(
-#'   st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
-#' )
+#' points <- st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
+#' xy <- sf::st_coordinates(points)
+#' cr <- find_center_and_radius(xy)
 #' center_pt <- cr$center
 #' radius <- cr$radius
 #' }
 #'
-find_center_and_radius <- function (sf_df) {
+find_center_and_radius <- function (coords) {
 
-  assertthat::assert_that(inherits(sf_df, "data.frame") && inherits(sf_df, "sf"),
-    msg = paste0("Input data must be an sf data.frame (received: ",
-                 paste(class(sf_df), collapse = "/"),
+  assertthat::assert_that(inherits(coords, "matrix"),
+    msg = paste0("Input data must be a matrix of coordinates (received: ",
+                 paste(class(coords), collapse = "/"),
                  ")"))
 
-  # extract coordinates
-  xy <- sf::st_coordinates(sf_df)
 
   # get the center point as their average
-  center_pt <- as.vector(colMeans(xy))
+  center_pt <- as.vector(colMeans(coords))
 
   # calculate the max distance as radius
   radius <- max(sqrt(rowSums(
-    sapply(1:length(center_pt), FUN = function (i) (xy[,i] - center_pt[i])^2)
+    sapply(1:length(center_pt), FUN = function (i) (coords[,i] - center_pt[i])^2)
   )))
 
   # return center and radius
   return(list("center" = center_pt, "radius" = radius))
 
 }
+
+
+
+#' Find the bounding box for a set of points.
+#'
+#' Provides the bounding box based on point coordinates.
+#'
+#' @param xy a matrix or data.frame containing the coordinates
+#' @param cols the data.frame columns with coordinates;
+#'             ignored for matrix input.
+#' @param margin extra margin (in m).
+#'
+#' @return sf::st_bbox with the bounding box.
+#'
+#' @examples
+#' \dontrun{
+#' points <- st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
+#' xy <- sf::st_coordinates(points)
+#' bbox <- find_bbox_for_points(xy)
+#' }
+#'
+find_bbox_for_points <- function(xy, cols = NULL, margin = 0) {
+
+  if (inherits(xy, "data.frame")) {
+    if (is.null(cols)){
+      cols <- c("x", "y")
+    }
+    for (col in cols) {
+      assertthat::assert_that(col %in% colnames(xy),
+        msg = paste0(
+          "column", col, "not found, ",
+          "data frame input requires columns: ", cols))
+    }
+
+    xy <- as.matrix(xy[cols])
+  }
+
+  assertthat::assert_that(inherits(xy, "matrix"),
+    msg = paste0("Input data must be a matrix of coordinates (received: ",
+                 paste(class(xy), collapse = "/"),
+                 ")")
+  )
+
+  # generate bbox
+  bbox <- sf::st_bbox(
+    c(xmin = min(xy[, 1]),
+      xmax = max(xy[, 1]),
+      ymin = min(xy[, 2]),
+      ymax = max(xy[, 2])
+      ),
+    crs = sf::st_crs(31370)
+  )
+
+  return(bbox)
+}
+
 
 
 #' Filter geometry objects within a radius.
