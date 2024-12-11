@@ -528,7 +528,7 @@ data_raw <- data_raw %>%
 
 
 
-## TODO Height TAW 
+## Height TAW 
 (wcs query; should match `ref`)
 
 ```{r}
@@ -582,6 +582,8 @@ print(paste(h, slope))
 ```{r elevation-test-region}
 #| eval: true
 
+normed <- function(vec) vec / norm(vec, type = "2")
+
 get_elevation <- function (xy) {
 
   margin <- 2.5
@@ -606,7 +608,7 @@ get_elevation <- function (xy) {
   y <- rep(1:(2*margin), times = 2*margin)-margin-0.5 # the geographical y -> rows
   ea <- prcomp(cbind(x, y, z))
   # get the x, y component of the third eigenvector
-  slope <- norm(ea$rotation[1:2,3], type = "2")
+  slope <- norm(normed(ea$rotation[,3])[1:2], type = "2")
 
   return(list("h" = h, "slope" = slope))
 }
@@ -619,7 +621,7 @@ bind_rows(lapply(1:nrow(test_data), FUN=ele))
 ```{r}
 
 elevation_export_file <- "data/elevation_perlocation.parquet"
-reload_water <- force_database_download || !file.exists(elevation_export_file)
+reload_elevation <- force_database_download || !file.exists(elevation_export_file)
 
 if ((!work_offline) && reload_elevation) {
 
@@ -628,10 +630,19 @@ if ((!work_offline) && reload_elevation) {
     select(code, x, y) %>% 
     distinct(.keep_all = TRUE) 
 
+  pb <- txtProgressBar(
+    min = 0, max = nrow(distinct_locations),
+    initial = 0, style = 3) 
+  elevation_progress <- function(i) {
+    setTxtProgressBar(pb,i)
+    return(get_elevation(as.vector(as.matrix(distinct_locations[i, c("x", "y")]))))
+  }
   all_elevations <- lapply(
     1:nrow(distinct_locations),
-    FUN = function (i) get_elevation(as.vector(as.matrix(distinct_locations[i, c("x", "y")])))
+    FUN = elevation_progress
     )
+
+  close(pb)
 
   lookup_elevations <- cbind(distinct_locations, bind_rows(all_elevations))
   write_parquet(lookup_elevations, sink = elevation_export_file)
@@ -649,14 +660,59 @@ for (col in c("h", "slope")) {
 
 data_raw <- data_raw %>% 
   left_join(
-    lookup_elevation %>%
+    lookup_elevations %>%
       select(code, h, slope),
     by = join_by(code == code),
     relationship = "many-to-one"
   )
 
+
 ```
 
+
+```{r plot-elevation-vs-ref}
+#| eval: true
+data_raw %>%
+  ggplot(aes(x = ref, y = h)) +
+  geom_point(alpha = 0.1)
+```
+
+
+```{r map-elevation-vs-ref}
+#| eval: false
+
+ref_check <- data_raw %>%
+  filter(abs(ref - h) > 4) %>% 
+  select(region, idx, code, x, y, ref, h ) %>% 
+  distinct(.keep_all = TRUE)  %>% 
+  arrange(desc(abs(ref-h))) %>% 
+  rename(ReferentieNiveauTAW = ref, dhmv_elevation = h, MeetpuntWID = idx) 
+
+write.csv(ref_check,"data/elevation_reference_discrepancy.csv")
+
+ref_check %>% 
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370) %>% 
+  mapview(
+    map.types = c("OpenTopoMap"),
+    zcol = c("dhmv_elevation", "ReferentieNiveauTAW")
+  )
+```
+
+
+
+```{r map-elevation}
+#| eval: false
+data_raw %>%
+  # filter(region == "KAL") %>% 
+  select(code, x, y, h, slope ) %>% 
+  distinct(.keep_all = TRUE) %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370) %>% 
+  mapview(
+    map.types = c("OpenTopoMap"),
+    zcol = c("h", "slope")
+  )
+
+```
 
 ## finalize data loading
 
