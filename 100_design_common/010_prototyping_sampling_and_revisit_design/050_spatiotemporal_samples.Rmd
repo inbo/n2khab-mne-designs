@@ -1362,12 +1362,12 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
       ),
       revisit_subpattern == "pure_panel" ~ pmin(
         as.integer(panel_period_main / panel_subperiod),
-        limit_n_subcycles,
+        limit_n_subperiods,
         na.rm = TRUE
       ),
       .default = 1L
     ),
-    n_subcycles_per_main_period = ifelse(
+    n_subperiods_per_main_period = ifelse(
       is.na(panel_subperiod),
       1L,
       as.integer(panel_period_main / panel_subperiod)
@@ -1432,8 +1432,8 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
         ""
       ),
       ifelse(
-        !is.na(limit_n_subcycles), 
-        str_c(limit_n_subcycles, "subcycle"),
+        !is.na(limit_n_subperiods), 
+        str_c(limit_n_subperiods, "subperiod"),
         ""
       )
     ) %>% 
@@ -1457,8 +1457,8 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     panel_enddate_addition,
     panel_dateshift,
     panel_count,
-    n_subcycles_per_main_period,
-    limit_n_subcycles,
+    n_subperiods_per_main_period,
+    limit_n_subperiods,
     panel_group_size,
     panel_group_repetitions,
     notation_paneldesign
@@ -1602,7 +1602,7 @@ scheme_moco_ps_spsubset_panel_calendar <-
   nest(
     revisit = c(
       matches("^year|^limit_"), 
-      n_subcycles_per_main_period,
+      n_subperiods_per_main_period,
       panel_period,
       panel_enddate_addition,
       panel_dateshift,
@@ -1655,8 +1655,8 @@ scheme_moco_ps_spsubset_panel_calendar <-
     panel_date_assignment = map2(revisit, panels, function(revis, pan) {
       group_size <- revis$panel_group_size[1]
       group_repetitions <- revis$panel_group_repetitions[1]
-      n_subcycles <- revis$n_subcycles_per_main_period[1]
-      n_subcycles_limit <- revis$limit_n_subcycles[1]
+      n_subperiods <- revis$n_subperiods_per_main_period[1]
+      n_subperiods_limit <- revis$limit_n_subperiods[1]
       # set the panel order of one cycle according to group_size &
       # group_repetitions
       if (group_size == 1 && group_repetitions == 1) {
@@ -1670,21 +1670,21 @@ scheme_moco_ps_spsubset_panel_calendar <-
           unname()
         pan2 <- pan[indexes_grouped, ]
       }
-      # subset revis periodically to meet the n_subcycles_limit requirement
-      if (is.na(n_subcycles_limit)) {
+      # subset revis periodically to meet the n_subperiods_limit requirement
+      if (is.na(n_subperiods_limit)) {
         revis2 <- revis
       } else {
-        indexes_limitsubcycle <- 
+        indexes_limitsubperiod <- 
           seq_len(nrow(revis)) %>% 
-          # split the periods according to the number of subcycles in one main
+          # split the periods according to the number of subperiods in one main
           # period of the cycle
           split(rep(
-            seq_len(ceiling(nrow(revis) / (n_subcycles))), 
-            each = n_subcycles
+            seq_len(ceiling(nrow(revis) / (n_subperiods))), 
+            each = n_subperiods
           )) %>% 
-          map_int(~ .[n_subcycles_limit]) %>% 
+          map_int(~ .[n_subperiods_limit]) %>% 
           unname()
-        revis2 <- revis[indexes_limitsubcycle, ]
+        revis2 <- revis[indexes_limitsubperiod, ]
       }
       # determine indexes to recycle rows of pan2
       indexes <- rep(seq_len(nrow(pan2)), nrow(revis2) %/% nrow(pan2) + 1) %>%
