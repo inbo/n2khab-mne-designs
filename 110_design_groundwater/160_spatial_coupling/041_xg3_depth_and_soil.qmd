@@ -492,7 +492,7 @@ query_min_water_distances_clusterwise <- function (cluster_idx) {
 waterdistance_export_file <- "data/waterdistance_perlocation.parquet"
 reload_water <- force_database_download || !file.exists(waterdistance_export_file)
 
-if ((!work_offline) && reload_water) {
+if (FALSE && (!work_offline) && reload_water) {
   lookup_waterdistance <- lapply(
     unique(data_raw$cluster),
     FUN = query_min_water_distances_clusterwise
@@ -531,11 +531,16 @@ data_raw <- data_raw %>%
 ## TODO Height TAW 
 (wcs query; should match `ref`)
 
-
-
-```{r elevation-test-region}
+```{r}
+#| eval: true
+library("terra")
 source("./spatial_helpers.R")
 
+```
+
+
+```{r elevation-test-single}
+#| eval: true
 
 test_data <- data_raw %>%
   filter(region == "WES") %>%
@@ -545,21 +550,112 @@ test_data <- data_raw %>%
 # xy <- test_data
 # as.matrix(xy[c("x", "y")])
 
-
-bbox <- find_bbox_for_points(xy = test_data)
-
+m <- 12.5
 test_elevation <- inbospatial::get_coverage_wcs(
   wcs = "dhmv",
-  bbox = bbox,
-  layername = "DHMVII_DTM_1m",
+  bbox = find_bbox_for_points(xy = test_data[27,], margin = m),
+  layername = "dhmvii_dtm_1m",
   version = "2.0.1",
+  #version = "1.0.0",
   wcs_crs = "EPSG:31370",
   resolution = 1
   )
+# note: version 1.0.0 seems much faster
+
+plot(test_elevation, col = gray.colors(256))
+
+mat <- as.matrix(test_elevation, wide = TRUE)
+i <- as.integer(m+0.5)
+h <- mat[i,i] # elevation!
+z <- as.vector(mat)
+x <- rep(1:(2*m), each = 2*m)-m-0.5 # the geographical x -> columns
+y <- rep(1:(2*m), times = 2*m)-m-0.5 # the geographical y -> rows
+# print(cbind(x, y, z))
+
+ea <- prcomp(cbind(x, y, z))
+# attributes(ea)
+slope <- norm(ea$rotation[1:2,3], type = "2")
+
+print(paste(h, slope))
+```
+
+```{r elevation-test-region}
+#| eval: true
+
+get_elevation <- function (xy) {
+
+  margin <- 2.5
+  elevation <- inbospatial::get_coverage_wcs(
+    wcs = "dhmv",
+    bbox = sf::st_bbox(
+      c(xmin = xy[1]-margin, xmax = xy[1]+margin,
+        ymin = xy[2]-margin, ymax = xy[2]+margin
+        ), crs = sf::st_crs(31370)),
+    layername = "DHMVII_DTM_1m",
+    version = "1.0.0",
+    wcs_crs = "EPSG:31370",
+    resolution = 1
+    )
+
+  mat <- as.matrix(elevation, wide = TRUE)
+  i <- as.integer(margin+0.5)
+  h <- mat[i,i] # elevation!
+
+  z <- as.vector(mat)
+  x <- rep(1:(2*margin), each = 2*margin)-margin-0.5 # the geographical x -> columns
+  y <- rep(1:(2*margin), times = 2*margin)-margin-0.5 # the geographical y -> rows
+  ea <- prcomp(cbind(x, y, z))
+  # get the x, y component of the third eigenvector
+  slope <- norm(ea$rotation[1:2,3], type = "2")
+
+  return(list("h" = h, "slope" = slope))
+}
+
+ele <- function (i) get_elevation(as.vector(as.matrix(test_data[i, c("x", "y")])))
+bind_rows(lapply(1:nrow(test_data), FUN=ele))
+```
+
+
+```{r}
+
+elevation_export_file <- "data/elevation_perlocation.parquet"
+reload_water <- force_database_download || !file.exists(elevation_export_file)
+
+if ((!work_offline) && reload_elevation) {
+
+  distinct_locations <- data_raw %>%
+    # filter(cluster == 16) %>%
+    select(code, x, y) %>% 
+    distinct(.keep_all = TRUE) 
+
+  all_elevations <- lapply(
+    1:nrow(distinct_locations),
+    FUN = function (i) get_elevation(as.vector(as.matrix(distinct_locations[i, c("x", "y")])))
+    )
+
+  lookup_elevations <- cbind(distinct_locations, bind_rows(all_elevations))
+  write_parquet(lookup_elevations, sink = elevation_export_file)
+} else {
+  lookup_elevations <- read_parquet(elevation_export_file)
+}
+
+
+for (col in c("h", "slope")) {
+  if (col %in% colnames(data_raw)) {
+    data_raw <- data_raw %>%
+      select(-one_of(col))
+  }
+}
+
+data_raw <- data_raw %>% 
+  left_join(
+    lookup_elevation %>%
+      select(code, h, slope),
+    by = join_by(code == code),
+    relationship = "many-to-one"
+  )
 
 ```
-TODO: 404 error!
-
 
 
 ## finalize data loading

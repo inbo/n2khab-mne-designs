@@ -59,7 +59,7 @@ find_center_and_radius <- function (coords) {
 #' \dontrun{
 #' points <- st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
 #' xy <- sf::st_coordinates(points)
-#' bbox <- find_bbox_for_points(xy)
+#' bbox <- find_bbox_for_points(xy, margin = 5)
 #' }
 #'
 find_bbox_for_points <- function(xy, cols = NULL, margin = 0) {
@@ -86,10 +86,10 @@ find_bbox_for_points <- function(xy, cols = NULL, margin = 0) {
 
   # generate bbox
   bbox <- sf::st_bbox(
-    c(xmin = min(xy[, 1]),
-      xmax = max(xy[, 1]),
-      ymin = min(xy[, 2]),
-      ymax = max(xy[, 2])
+    c(xmin = min(xy[, 1]-margin),
+      xmax = max(xy[, 1]+margin),
+      ymin = min(xy[, 2]-margin),
+      ymax = max(xy[, 2]+margin)
       ),
     crs = sf::st_crs(31370)
   )
