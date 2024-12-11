@@ -12,6 +12,24 @@ knitr:
 ---
 
 
+# Intro
+## goal
+The purpose of this notebook is twofold.
+
+- First, it can be used to query country-wide watina locations with all kind of relevant data.
+- Second, this will be used for variogram modeling with `sdmTMB`.
+
+The measurements of choice are "xG3", per hydrological year.
+
+
+## assumptions
+To get installation specificities per hydroyear joined onto the measurements (which are "per location"), some heuristic choices are made.
+Namely, I take attributes of the newer installation in replacement years, except for filter depth, where the shallower value is used.
+
+
+Furthermore, there are some settings below determining how sites are clustered (`cluster_dist`) 
+and what range is used for elevation slope calculation (`margin <- 2.5`).
+
 
 # Data
 
@@ -137,7 +155,7 @@ if ((!work_offline) && reload) {
     mutate(
       region = substring(code, first = 1, last = 3)
     ) %>%
-    filter(region != "VBS") # remove 
+    filter(region != "VBS") # remove Luxemburg
 
   glimpse(data_raw)
 }
@@ -149,29 +167,40 @@ if ((!work_offline) && reload) {
 ```{r query-filter-depth}
 #| eval: true
 if ((!work_offline) && reload) {
-pp <- tbl(watina_dwh, "dimPeilpunt") %>%
-  filter(
-    OpenbaarheidWID == 4
-  ) %>%
-  mutate(
-    yr = sql("YEAR(CAST(PeilpuntPlaatsing AS date))"),
-    month = sql("YEAR(CAST(PeilpuntPlaatsing AS date))"),
-    start_hyear = yr + (if (month >= 10) 1 else 0),
-    yr = sql("YEAR(CAST(PeilpuntStopzetting AS date))"),
-    month = sql("YEAR(CAST(PeilpuntStopzetting AS date))"),
-    stop_hyear = yr + (if (month >= 10) 1 else 0),
-    ref = ReferentieNiveauTAW,
-    z = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)
-  ) %>%
-  select(MeetpuntWID, start_hyear, stop_hyear, z, ref) %>%
-  collect %>%
-  group_by(MeetpuntWID, start_hyear, stop_hyear) %>%
-  slice(which.min(z)) 
-
-# TODO 15964 -> 10389 row??
-# TODO filter depth z duplicates removed by `slice`
-
-glimpse(pp)
+  pp <- tbl(watina_dwh, "dimPeilpunt") %>%
+    filter(
+      OpenbaarheidWID == 4 # note: about O(150) locs are non-public
+    ) %>%
+    mutate(
+      yr = sql("YEAR(CAST(PeilpuntPlaatsing AS date))"),
+      month = sql("YEAR(CAST(PeilpuntPlaatsing AS date))"),
+      start_hyear = yr + (if (month >= 10) 1 else 0),
+      yr = sql("YEAR(CAST(PeilpuntStopzetting AS date))"),
+      month = sql("YEAR(CAST(PeilpuntStopzetting AS date))"),
+      stop_hyear = yr + (if (month >= 10) 1 else 0),
+      ref = ReferentieNiveauTAW,
+      z = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)
+    ) %>%
+    rename(
+      code = PeilpuntCode,
+      idx = MeetpuntWID
+    ) %>%
+    select(idx, code, start_hyear, stop_hyear, z, ref) %>%
+    collect %>%
+    mutate(
+      region = substring(code, first = 1, last = 3) 
+    ) %>% 
+    filter(region != "VBS") %>%  # remove Luxemburg
+    group_by(idx, start_hyear, stop_hyear) %>%
+    slice(which.min(z)) 
+  
+  # Note: 15964 -> 10389 rows??
+  #       filter depth z duplicates removed by `slice`
+  #       replacement "by date" is hard to cover in this analysis
+  #       because we work on xG3 and they are not associated with a date
+  #       decided to just take the shallower value per location/year
+  
+  glimpse(pp)
 }
 ```
 
@@ -187,6 +216,22 @@ for (col in c("z", "ref")) {
   }
 }
 
+if (FALSE) {
+  # some locations are not in the dim
+
+  pp %>%
+    filter(region == "WES")
+  data_raw %>%
+    filter(region == "WES")
+
+  pp %>%
+    filter(!(idx %in% unique(data_raw$idx))) %>%
+    arrange(idx)
+  data_raw  %>%
+    filter(!(idx %in% unique(pp$idx))) %>% 
+    arrange(idx)
+}
+
 data_raw <- data_raw %>%
   left_join(pp,
     by = join_by(
@@ -195,13 +240,13 @@ data_raw <- data_raw %>%
     # relationship = "many-to-many"
     relationship = "many-to-many"
   ) %>% filter(
-    hyear >= start_hyear,
-    (is.na(stop_hyear) | (hyear < stop_hyear))
+    hyear >= start_hyear, # the observation must be after loc startup
+    (is.na(stop_hyear) | (hyear < stop_hyear)) # ... or loc is up and running
   ) %>%
   select(-start_hyear, -stop_hyear)
-data_raw  
+glimpse(data_raw )
 
-# 28k -> 21k rows
+# 28k -> 22k rows
 }
 ```
 
@@ -500,7 +545,7 @@ reload_water <- force_database_download || !file.exists(waterdistance_export_fil
 if ((!work_offline) && reload_water) {
 
 
-  pb <- txtProgressBar(min = 0, max = max(data_raw$cluster), initial = 0)
+  pb <- txtProgressBar(min = 0, max = max(data_raw$cluster), initial = 0, style = 1)
   waterdist_query_pb <- function (cluster_idx) {
     setTxtProgressBar(pb,cluster_idx)
     return(query_min_water_distances_clusterwise(cluster_idx))
@@ -634,7 +679,7 @@ bind_rows(lapply(1:nrow(test_data), FUN=ele))
 ```
 
 
-```{r join-elevation}
+```{r query-and-join-elevation}
 
 elevation_export_file <- "data/elevation_perlocation.parquet"
 reload_elevation <- force_database_download || !file.exists(elevation_export_file)
@@ -648,7 +693,7 @@ if ((!work_offline) && reload_elevation) {
 
   pb <- txtProgressBar(
     min = 0, max = nrow(distinct_locations),
-    initial = 0, style = 3) 
+    initial = 0, style = 1) 
   elevation_progress <- function(i) {
     setTxtProgressBar(pb,i)
     return(get_elevation(as.vector(as.matrix(distinct_locations[i, c("x", "y")]))))
@@ -749,9 +794,18 @@ data <- data %>%
   mutate_at(
     vars(
       idx, code, region, hyear, soilclass, cluster
-    ), as.factor)
+    ), as.factor) %>%
+  mutate_at(
+    vars(
+      x, y, hw, hwd2_cl, lw, lwd2_cl, z, ref, h, slope
+    ), function (col) units::set_units(col, "m"))
 ```
 
+
+# Analysis
+```{r inspect-data}
+glimpse(data)
+```
 
 
 # Archive
@@ -812,4 +866,41 @@ head(tbl(watina_dwh, "dimParameterSet"))
 get_tablecolumns("factBRPeilMetingJaar")
 head(tbl(watina_dwh, "factBRPeilMetingJaar"))
 factBRPeilMetingJaar
+```
+
+
+```{r find-missing-peilpunten}
+#| eval: false
+wesp_pp <- tbl(watina_dwh, "dimPeilpunt") %>%
+  filter(PeilpuntCode %like% "WESP*")
+wesp_pp
+```
+
+```{r match-meetpunten-peilpunten}
+#| eval: false
+pp_check <- tbl(watina_dwh, "dimPeilpunt") %>%
+  pull("MeetpuntWID")
+mp_check <- tbl(watina_dwh, "dimMeetpunt") %>%
+  pull("MeetpuntWID")
+
+
+DBI::dbGetQuery(watina_dwh,
+  paste0("
+SELECT * FROM (
+    SELECT DISTINCT
+        MP.MeetpuntWID AS mp_idx,
+        PP.MeetpuntWID AS pp_idx
+    FROM dimMeetpunt AS MP
+    FULL OUTER JOIN (
+        SELECT DISTINCT MeetpuntWID
+        FROM dimPeilpunt 
+    GROUP BY MeetpuntWID
+    ) AS PP ON MP.MeetpuntWID = PP.MeetpuntWID
+    GROUP BY MP.MeetpuntWID, PP.MeetpuntWID
+) AS Locations
+WHERE (mp_idx IS NULL) OR (pp_idx IS NULL)
+ORDER BY mp_idx ASC
+;")
+)
+
 ```
