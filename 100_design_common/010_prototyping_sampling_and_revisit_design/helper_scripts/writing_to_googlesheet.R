@@ -241,7 +241,17 @@ mhq_mod_dom_type_no_sample %>%
 
 
 # Below code requires availability of:
+# - mod_scheme_actseq_fag
 # - compartment_paneldesign_fags
+
+mod_scheme_actseq_fag %>%
+  mutate(dummy = "X") %>%
+  pivot_wider(names_from = module, values_from = dummy) %>%
+  arrange(scheme, is_core_scheme, activity_sequence, rank) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "mod_scheme_actseq_fag"
+  )
 
 compartment_paneldesign_fags %>%
   write_sheet(
