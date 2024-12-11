@@ -807,7 +807,12 @@ data <- data %>%
   mutate_at(
     vars(
       x, y, hw, hwd2_cl, lw, lwd2_cl, z, ref, h, slope, wata_min_dist
-    ), function (col) units::set_units(col, NULL))
+    ), function (col) units::set_units(col, NULL)) %>%
+  mutate(
+    filterdepth = z,
+    elevation = h
+  )
+
 ```
 
 
@@ -889,6 +894,9 @@ diffdata <- diffdata %>%
   mutate_at(vars(region), as.factor) 
 glimpse(diffdata)
 ```
+
+
+- **TODO**: include differences in filter depth, elevation, water distance 
 
 
 ## sample size
@@ -1031,10 +1039,7 @@ plot(test_mesh)
 ```{r sdmTMB-model-test}
 #| eval: true
 test_fit <- sdmTMB(
-  hwd2_cl ~ h + z + soilclass + wata_min_dist,
-  # hwd2_cl ~ h,
-  # hwd2_cl ~ z,
-  # hwd2_cl ~ soilclass,
+  hwd2_cl ~ filterdepth + elevation + soilclass + wata_min_dist,
   data = test_data,
   mesh = test_mesh,
   family = gaussian(link = "identity"),
@@ -1046,6 +1051,7 @@ test_fiti <- run_extra_optimization(test_fit)
 sanity(test_fiti)
 test_fiti
 ```
+
 
 ## full data set
 
@@ -1061,13 +1067,15 @@ plot(vlaanderen_mesh)
 
 ### LG3 {#sec-lg3}
 
+`lwd2_cl` means:
+
 - LG3
 - cluster-wise de-trended
 
 ```{r sdmTMB-model-lg3}
 #| eval: true
 fit_lg3 <- sdmTMB(
-  lwd2_cl ~ h + z + soilclass + wata_min_dist,
+  lwd2_cl ~ filterdepth + elevation + soilclass + wata_min_dist,
   data = data,
   mesh = vlaanderen_mesh,
   family = gaussian(link = "identity"),
@@ -1091,6 +1099,8 @@ knitr::kable(tidy(fit_lg3i, "ran_pars"))
 
 ### HG3 {#sec-hg3}
 
+`hwd2_cl` means:
+
 - HG3
 - cluster-wise de-trended
 
@@ -1098,7 +1108,7 @@ knitr::kable(tidy(fit_lg3i, "ran_pars"))
 ```{r sdmTMB-model-hg3}
 #| eval: true
 fit_hg3 <- sdmTMB(
-  hwd2_cl ~ h + z + soilclass + wata_min_dist,
+  hwd2_cl ~ filterdepth + elevation + soilclass + wata_min_dist,
   data = data,
   mesh = vlaanderen_mesh,
   family = gaussian(link = "identity"),
