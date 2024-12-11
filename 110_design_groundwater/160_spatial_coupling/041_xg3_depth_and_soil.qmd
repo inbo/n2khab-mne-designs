@@ -233,20 +233,24 @@ if (FALSE) {
 }
 
 data_raw <- data_raw %>%
-  left_join(pp,
+  inner_join(pp,
     by = join_by(
-      idx == MeetpuntWID,
+      idx == idx,
     ),
     # relationship = "many-to-many"
-    relationship = "many-to-many"
-  ) %>% filter(
+    # unmatched = c("drop", "drop"),
+    relationship = "many-to-many",
+    suffix = c("", ".duplicates")
+  ) %>%
+  select(-ends_with(".duplicates")) %>% 
+  filter(
     hyear >= start_hyear, # the observation must be after loc startup
     (is.na(stop_hyear) | (hyear < stop_hyear)) # ... or loc is up and running
   ) %>%
   select(-start_hyear, -stop_hyear)
 glimpse(data_raw )
 
-# 28k -> 22k rows
+# 28k -> 22k rows due to unmatched
 }
 ```
 
@@ -603,41 +607,43 @@ source("./spatial_helpers.R")
 ```{r elevation-test-single}
 #| eval: true
 
-test_data <- data_raw %>%
-  filter(region == "WES") %>%
-  select(cluster, region, idx, code, x, y) %>% 
-  distinct(.keep_all = TRUE) 
+if ((!work_offline) && reload) {
+  test_data <- data_raw %>%
+    filter(region == "WES") %>%
+    select(cluster, region, idx, code, x, y) %>% 
+    distinct(.keep_all = TRUE) 
 
-# xy <- test_data
-# as.matrix(xy[c("x", "y")])
-
-m <- 12.5
-test_elevation <- inbospatial::get_coverage_wcs(
-  wcs = "dhmv",
-  bbox = find_bbox_for_points(xy = test_data[27,], margin = m),
-  layername = "dhmvii_dtm_1m",
-  version = "2.0.1",
-  #version = "1.0.0",
-  wcs_crs = "EPSG:31370",
-  resolution = 1
-  )
-# note: version 1.0.0 seems much faster
-
-plot(test_elevation, col = gray.colors(256))
-
-mat <- as.matrix(test_elevation, wide = TRUE)
-i <- as.integer(m+0.5)
-h <- mat[i,i] # elevation!
-z <- as.vector(mat)
-x <- rep(1:(2*m), each = 2*m)-m-0.5 # the geographical x -> columns
-y <- rep(1:(2*m), times = 2*m)-m-0.5 # the geographical y -> rows
-# print(cbind(x, y, z))
-
-ea <- prcomp(cbind(x, y, z))
-# attributes(ea)
-slope <- norm(ea$rotation[1:2,3], type = "2")
-
-print(paste(h, slope))
+  # xy <- test_data
+  # as.matrix(xy[c("x", "y")])
+  
+  m <- 12.5
+  test_elevation <- inbospatial::get_coverage_wcs(
+    wcs = "dhmv",
+    bbox = find_bbox_for_points(xy = test_data[27,], margin = m),
+    layername = "dhmvii_dtm_1m",
+    version = "2.0.1",
+    #version = "1.0.0",
+    wcs_crs = "EPSG:31370",
+    resolution = 1
+    )
+  # note: version 1.0.0 seems much faster
+  
+  plot(test_elevation, col = gray.colors(256))
+  
+  mat <- as.matrix(test_elevation, wide = TRUE)
+  i <- as.integer(m+0.5)
+  h <- mat[i,i] # elevation!
+  z <- as.vector(mat)
+  x <- rep(1:(2*m), each = 2*m)-m-0.5 # the geographical x -> columns
+  y <- rep(1:(2*m), times = 2*m)-m-0.5 # the geographical y -> rows
+  # print(cbind(x, y, z))
+  
+  ea <- prcomp(cbind(x, y, z))
+  # attributes(ea)
+  slope <- norm(ea$rotation[1:2,3], type = "2")
+  
+  print(paste(h, slope))
+}
 ```
 
 ```{r elevation-test-region}
@@ -674,8 +680,10 @@ get_elevation <- function (xy) {
   return(list("h" = h, "slope" = slope))
 }
 
-ele <- function (i) get_elevation(as.vector(as.matrix(test_data[i, c("x", "y")])))
-bind_rows(lapply(1:nrow(test_data), FUN=ele))
+if ((!work_offline) && reload) {
+  ele <- function (i) get_elevation(as.vector(as.matrix(test_data[i, c("x", "y")])))
+  bind_rows(lapply(1:nrow(test_data), FUN=ele))
+}
 ```
 
 
