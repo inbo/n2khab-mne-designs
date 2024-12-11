@@ -31,7 +31,7 @@ library("inbospatial") # elevation WCS
 source("./watina_migration.R")
 
 # option to work offline; requires previous data download
-work_offline <- FALSE
+work_offline <- TRUE
 
 # connect watina 
 if (!work_offline && !exists("watina_dwh")) {
@@ -44,7 +44,7 @@ dir.create("./data", showWarnings = FALSE)
 # options(browser = "librewolf") # a rather personal thing
 
 # the user may choose to reload raw data
-force_database_download <- TRUE
+force_database_download <- FALSE
 
 if ("" == getOption("browser")) options(browser = "librewolf")
 
@@ -383,36 +383,41 @@ data_raw <- bind_rows(
 source("./spatial_helpers.R")
 source("./water_sources.R")
 
-all_wata <- load_all_water_sources()
+if ((!work_offline) && reload) {
+  all_wata <- load_all_water_sources()
+}
 ```
 
 
 ```{r test-water-distance}
-test_data <- data_raw %>%
-  filter(region == "WES") %>%
-  select(cluster, region, idx, code, x, y) %>% 
-  distinct(.keep_all = TRUE) 
-test_sf <- st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
-
-cr <- find_center_and_radius(sf::st_coordinates(test_sf))
-
-test_wata <- narrow_sources_radius(
-  all_wata,
-  cr$center,
-  radius = cr$radius * 1.01 + 100 # add 100m safety
-)
-
-water_distances <- collect_combined_distances(test_sf, test_wata, point_index_col = "code")
-min_water_distances <- minimum_cross_distance(water_distances)
-
-
-test_sf <- test_sf %>% left_join(
-  min_water_distances,
-  by = join_by(code == idx),
-  relationship = "one-to-one"
+#| eval: true
+if ((!work_offline) && reload) {
+  test_data <- data_raw %>%
+    filter(region == "WES") %>%
+    select(cluster, region, idx, code, x, y) %>% 
+    distinct(.keep_all = TRUE) 
+  test_sf <- st_as_sf(test_data, coords = c("x", "y"), crs = 31370)
+  
+  cr <- find_center_and_radius(sf::st_coordinates(test_sf))
+  
+  test_wata <- narrow_sources_radius(
+    all_wata,
+    cr$center,
+    radius = cr$radius * 1.01 + 100 # add 100m safety
   )
-
-glimpse(test_sf)
+  
+  water_distances <- collect_combined_distances(test_sf, test_wata, point_index_col = "code")
+  min_water_distances <- minimum_cross_distance(water_distances)
+  
+  
+  test_sf <- test_sf %>% left_join(
+    min_water_distances,
+    by = join_by(code == idx),
+    relationship = "one-to-one"
+    )
+  
+  glimpse(test_sf)
+}
 ```
 
 
@@ -492,11 +497,20 @@ query_min_water_distances_clusterwise <- function (cluster_idx) {
 waterdistance_export_file <- "data/waterdistance_perlocation.parquet"
 reload_water <- force_database_download || !file.exists(waterdistance_export_file)
 
-if (FALSE && (!work_offline) && reload_water) {
+if ((!work_offline) && reload_water) {
+
+
+  pb <- txtProgressBar(min = 0, max = max(data_raw$cluster), initial = 0)
+  waterdist_query_pb <- function (cluster_idx) {
+    setTxtProgressBar(pb,cluster_idx)
+    return(query_min_water_distances_clusterwise(cluster_idx))
+  }
+
   lookup_waterdistance <- lapply(
-    unique(data_raw$cluster),
-    FUN = query_min_water_distances_clusterwise
+    sort(unique(data_raw$cluster)),
+    FUN = waterdist_query_pb
     )
+  close(pb)
 
   lookup_waterdistance <- bind_rows(lookup_waterdistance) %>% 
     distinct(.keep_all = TRUE) 
@@ -506,20 +520,22 @@ if (FALSE && (!work_offline) && reload_water) {
 }
 
 
-for (col in c("wata_min_dist")) {
-  if (col %in% colnames(data_raw)) {
-    data_raw <- data_raw %>%
-      select(-one_of(col))
+if ((!work_offline) && reload) {
+  for (col in c("wata_min_dist")) {
+    if (col %in% colnames(data_raw)) {
+      data_raw <- data_raw %>%
+        select(-one_of(col))
+    }
   }
+  
+  data_raw <- data_raw %>% 
+    left_join(
+      lookup_waterdistance %>%
+        select(code, wata_min_dist),
+      by = join_by(code == code),
+      relationship = "many-to-one"
+    )
 }
-
-data_raw <- data_raw %>% 
-  left_join(
-    lookup_waterdistance %>%
-      select(code, wata_min_dist),
-    by = join_by(code == code),
-    relationship = "many-to-one"
-  )
 
 # glimpse(data_raw %>% filter(is.na(wata_min_dist)))
 # lookup_waterdistance  %>%
@@ -651,30 +667,33 @@ if ((!work_offline) && reload_elevation) {
 }
 
 
-for (col in c("h", "slope")) {
-  if (col %in% colnames(data_raw)) {
-    data_raw <- data_raw %>%
-      select(-one_of(col))
+if ((!work_offline) && reload) {
+  for (col in c("h", "slope")) {
+    if (col %in% colnames(data_raw)) {
+      data_raw <- data_raw %>%
+        select(-one_of(col))
+    }
   }
+  
+  data_raw <- data_raw %>% 
+    left_join(
+      lookup_elevations %>%
+        select(code, h, slope),
+      by = join_by(code == code),
+      relationship = "many-to-one"
+    )
 }
-
-data_raw <- data_raw %>% 
-  left_join(
-    lookup_elevations %>%
-      select(code, h, slope),
-    by = join_by(code == code),
-    relationship = "many-to-one"
-  )
-
 
 ```
 
 
 ```{r plot-elevation-vs-ref}
 #| eval: true
-data_raw %>%
-  ggplot(aes(x = ref, y = h)) +
-  geom_point(alpha = 0.1)
+if ((!work_offline) && reload) {
+  data_raw %>%
+    ggplot(aes(x = ref, y = h)) +
+    geom_point(alpha = 0.1)
+}
 ```
 
 
