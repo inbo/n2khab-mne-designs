@@ -1,5 +1,6 @@
 ---
-title: "Water Level Variograms"
+title: "Water Level Variograms and Models"
+bibliography: references.bib
 format:
   html:
     toc: true
@@ -1063,7 +1064,7 @@ plot(vlaanderen_mesh)
 - LG3
 - cluster-wise de-trended
 
-```{r sdmTMB-model-lg3, eval=FALSE}
+```{r sdmTMB-model-lg3}
 #| eval: true
 fit_lg3 <- sdmTMB(
   lwd2_cl ~ h + z + soilclass + wata_min_dist,
@@ -1077,6 +1078,16 @@ sanity(fit_lg3i)
 fit_lg3i
 ```
 
+```{r extract-lg3-parameters}
+#| eval: true
+knitr::kable(tidy(fit_lg3i))
+```
+
+```{r extract-lg3-spatial}
+#| eval: true
+knitr::kable(tidy(fit_lg3i, "ran_pars"))
+```
+
 
 ### HG3 {#sec-hg3}
 
@@ -1084,7 +1095,7 @@ fit_lg3i
 - cluster-wise de-trended
 
 
-```{r sdmTMB-model-hg3, eval=FALSE}
+```{r sdmTMB-model-hg3}
 #| eval: true
 fit_hg3 <- sdmTMB(
   hwd2_cl ~ h + z + soilclass + wata_min_dist,
@@ -1098,9 +1109,50 @@ sanity(fit_hg3i)
 fit_hg3i
 ```
 
+```{r extract-hg3-parameters}
+#| eval: true
+knitr::kable(tidy(fit_hg3i))
+```
+
+```{r extract-hg3-spatial}
+#| eval: true
+knitr::kable(tidy(fit_hg3i, "ran_pars"))
+```
+
+# Documentation
+
+## Matérn parameterization
+
+[(source)](https://pbs-assess.github.io/sdmTMB/articles/model-description.html#gaussian-random-fields)
+
+The Matérn defines the covariance $\Phi\left( s_j, s_k\right)$ between spatial locations $s_j$ and $s_k$ as
+
+$$\Phi\left( s_j, s_k\right) = \tau^2 / \Gamma\left(\nu\right) 2^{\nu -1} \left(\kappa d_{jk}\right)^\nu K_\nu\left(\kappa d_{jk}\right)$$,
+<!-- Φ(sj,sk)=τ2/Γ(ν)2ν−1(κdjk)νKν(κdjk),-->
+
+where $\tau_2$ controls the spatial variance, 
+$\nu$ controls the smoothness, 
+$\Gamma$ represents the Gamma function, 
+$d_{jk}$ represents the distance between locations $s_j$ and $s_k$, 
+$K_\nu$ represents the modified Bessel function of the second kind, 
+and $\kappa$ represents the decorrelation rate.
+The parameter $\nu$ is set to $1$ to take advantage of the Stochastic Partial Differential Equation (SPDE) approximation to the GRF 
+to greatly increase computational efficiency [@Lindgren2011].
+Internally, the parameters $\kappa$ and $\tau$ are converted to range and marginal standard deviation $\sigma$ as 
+$$range=\frac{8}{\kappa}$$
+and 
+$$\sigma=\left(4\pi e^{2log(\tau )+2log(\kappa)}\right)^{-\frac{1}{2}}$$
+.
+
+
+# References
+
+::: {#refs}
+:::
+
+
 
 # Archive
-
 
 ```{r map-clusters}
 #| eval: false
