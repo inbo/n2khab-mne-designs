@@ -60,11 +60,11 @@ if (!work_offline && !exists("watina_dwh")) {
 # create a data folder (if not present)
 dir.create("./data", showWarnings = FALSE)
 
-# options(browser = "librewolf") # a rather personal thing
 
 # the user may choose to reload raw data
 force_database_download <- FALSE
 
+# browser choice, a rather personal thing
 if ("" == getOption("browser")) options(browser = "librewolf")
 
 ```
@@ -674,8 +674,9 @@ get_elevation <- function (xy) {
   z <- as.vector(mat)
   x <- rep(1:(2*margin), each = 2*margin)-margin-0.5 # the geographical x -> columns
   y <- rep(1:(2*margin), times = 2*margin)-margin-0.5 # the geographical y -> rows
-  ea <- prcomp(cbind(x, y, z))
+
   # get the x, y component of the third eigenvector
+  ea <- prcomp(cbind(x, y, z)) # PCA of x, y, z
   slope <- norm(normed(ea$rotation[,3])[1:2], type = "2")
 
   return(list("h" = h, "slope" = slope))
@@ -831,7 +832,8 @@ if (reload) {
         cluster == cluster, # from the same cluster
         hyear == hyear # in the same year
       ),
-      suffix = c("1", "2")
+      suffix = c("1", "2"),
+      relationship = "many-to-many"
     ) %>% mutate(
       dx = sqrt((x2-x1)^2 + (y2-y1)^2),
       dlg3 = abs(lw2 - lw1),
