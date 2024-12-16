@@ -1,0 +1,744 @@
+#!/usr/bin/Rscript
+
+# This script is a collection of queries of information about spatial locations.
+# All the `query_*`-functions below require a data frame with columns
+# `[idx, x, y]`. They return a data frame with the index (`idx`) and extra info.
+# Coordinates are expected to be in the `BD72 / Belgian Lambert 72` reference
+# system (https://epsg.org/crs_31370/BD72-Belgian-Lambert-72.html)
+
+
+#_______________________________________________________________________________
+# Example Data
+#_______________________________________________________________________________
+
+
+#' Provide example data for testing the functions below.
+#'
+#' Test data consists of data frame with an index column (derived from
+#' the `PeilpuntWID` in watina) and x/y coordinates in BD72 CRS.
+#' Well locations are arbitrarily chosen from some peer locations around the
+#' country.
+#'
+#' @return data frame with test data
+#'
+#' @examples
+#' \dontrun{
+#'   test_data <- get_example_data()
+#' }
+#'
+get_example_data <- function() {
+
+  # peilpunten %>% filter(region == "KAL") %>% select(PeilpuntWID, x, y)
+
+  test_data <- read.table(text = "
+    2567, 184915, 179471
+    8329, 182965, 169191
+    7611, 169642, 167381
+    12222,  22835, 198080
+    4025, 203178, 170295
+    15255, 154265, 234791
+    14295, 148608, 208916
+    12542, 215044, 197330",
+    sep = ",")
+  colnames(test_data) <- c("idx", "x", "y")
+  return(test_data)
+}
+
+
+
+#_______________________________________________________________________________
+# general helpers
+#_______________________________________________________________________________
+
+#' Common assertions about the data, and the index and coordinate columns
+#'
+#' Those assertions are:
+#'   - `data` is a data frame
+#'   - `index_column` is a string
+#'   - `index_column` is a column in `data`
+#'   - `coordinate_columns` are a column in `data`
+#'
+#' @keywords internal
+#'
+check_common_assertions <- function (data, index_column, coordinate_columns) {
+
+  stopifnot(assertthat = require('assertthat'))
+
+  # data type
+  assertthat::assert_that(
+    inherits(data, "data.frame"),
+    msg = paste0("Input data must be a data.frame-like object.")
+  )
+
+  assertthat::assert_that(is.character(index_column),
+    msg = paste0("The `index_column` must be of type `character`.")
+  )
+
+  assertthat::assert_that(
+    index_column %in% colnames(data),
+    msg = paste0(
+      "The index column `", index_column,
+      "` is not in the data columns:",
+      paste(colnames(data), collapse = ",")
+    )
+  )
+
+}
+
+
+#' A generic function to join extra information to data.
+#'
+#' Join the `lookup` to `data` based on an `index_column`.
+#' By default, matching columns will be deleted from the `data`.
+#'
+#' @param data the data, in data frame format
+#' @param lookup the new data to be appended, also in data frame format
+#' @param index_column the column holding a row identifier, e.g. `idx`
+#' @param delete_existing boolean to enable prior removal of matching columns.
+#'
+#' @return the data, joined by the lookup
+#'
+#' @examples
+#' \dontrun{
+#'    join_lookup(
+#'      test_data,
+#'      query_clusters(test_data),
+#'      delete_existing = TRUE
+#'      )
+#' }
+#'
+join_lookup <- function(
+    data,
+    lookup,
+    index_column = "idx",
+    delete_existing = TRUE
+  ) {
+
+  if (delete_existing) {
+    for (col in colnames(lookup)) {
+      if (!(col == index_column) && (col %in% colnames(data))) {
+        data <- data %>%
+          dplyr::select(-dplyr::one_of(col))
+      }
+    }
+
+    # join, after deleting existing cols
+    data <- data %>%
+      dplyr::left_join(
+        lookup,
+        by = index_column,
+        relationship = "many-to-one"
+      )
+  } else {
+    data <- data %>%
+      dplyr::left_join(
+        lookup,
+        by = index_column,
+        relationship = "many-to-one",
+        suffix = c("", "_")
+      )
+  }
+
+
+  return(data)
+}
+
+
+#_______________________________________________________________________________
+# clusters
+#_______________________________________________________________________________
+
+#' Group a set of locations in clusters.
+#'
+#' This will compute the cross distance of locations in a data set based on
+#' `x, y` coordinates, and cluster the locations
+#'  based on a `characteristic_distance`.
+#'
+#' @param data the data, in data frame format
+#' @param index_column the column holding a row identifier, e.g. `idx`
+#' @param coordinate_columns columns in which the coordinates are stored,
+#'        e.g. `c(x, y)`
+#' @param characteristic_distance distance used to determine clusters
+#'        (equivalent to tree cut height in `stats::cutree`).
+#'
+#' @return cluster_lookup a data frame with the index column and cluster nummer.
+#'        the `cluster` column is converted to a factor
+#'        with the clusters as levels.
+#'
+#' @examples
+#' \dontrun{
+#'    query_clusters(test_data, characteristic_distance = 32000)
+#'    # note: `characteristic_distance` should usually be much smaller.
+#' }
+#'
+query_clusters <- function (
+    data,
+    index_column = "idx",
+    coordinate_columns = NULL,
+    characteristic_distance = 1
+    ) {
+
+  if (is.null(coordinate_columns)) {
+    coordinate_columns <- c("x", "y")
+  }
+
+  stopifnot(
+    assertthat = require("assertthat"),
+    dplyr = require("dplyr")
+  )
+
+  check_common_assertions(data, index_column, coordinate_columns)
+
+  # because this produces a lookup, we will work on distinct rows.
+  data_distinct <- data[, c(index_column, coordinate_columns)] %>%
+    dplyr::distinct(.keep_all = TRUE)
+
+  # TODO: there is a `fastcluster::hclust` alternative which
+  #       might have selective advantage on large data sets
+
+  cluster_lookup <- data_distinct[, coordinate_columns] %>%
+    stats::dist() %>%
+    stats::hclust(method = "complete") %>%
+    stats::cutree(h = characteristic_distance) %>%
+    dplyr::as_tibble() %>%
+    dplyr::rename(cluster = value) %>%
+    dplyr::bind_cols(
+      as_tibble(data_distinct[, index_column]),
+      .,
+      .name_repair = "unique") %>%
+    setNames(c(index_column, "cluster")) %>%
+    dplyr::mutate_at(dplyr::vars(cluster), as.factor)
+
+  return(cluster_lookup)
+}
+
+
+#' Group a set of locations in clusters and join cluster info.
+#'
+#' @inherit query_clusters
+#'
+join_clusters <- function(data, ...) {
+  join_lookup(
+    data,
+    suppressMessages(query_clusters(data, ...)),
+    delete_existing = TRUE
+  )
+}
+
+
+
+#_______________________________________________________________________________
+# DHMV Elevation
+#_______________________________________________________________________________
+
+#' Return the normed vector.
+#'
+#' i.e. `v/|v|`
+#'
+#' @param vec a vector
+#'
+#' @return the vector scaled to unit length
+#'
+#' @examples
+#' \dontrun{
+#'   normed(c(1, 1)) # == c(0.7071068, 0.7071068)
+#' }
+#'
+get_normed <- function(vec) vec / norm(vec, type = "2")
+
+
+
+#' Query the elevation of a point.
+#'
+#' Given an xy tuple of `c("x" = ?, "y" = ?)`, this function
+#' will query and return the elevation data from DHMV Vlaanderen DTM WCS.
+#' The function requires an index, to make sure data gets associated correctly,
+#' and it will also return the slope calculated from points within 2.5m range.
+#'
+#' @param idx an identifier, such as a value from an index column
+#' @param xy a vector of coordinates, `c(x, y)`
+#'
+#' @return list("idx" = idx, "elevation_dhmv" = h, "slope_r2.5m" = slope)
+#'     the elevation and slope at the given point,
+#'     interpolated from a `1m` resolution raster with +/-0.05m accuracy.
+#'     Returns `NA` if the web query fails.
+#'
+#' @examples
+#' \dontrun{
+#'   xy <- c(178379, 209418)
+#'   get_single_point_elevation("test", xy)$elevation # == 9.6m
+#' }
+#'
+get_single_point_elevation <- function (idx, xy) {
+
+  margin <- 2.5 # query an area around the focus point
+
+  outcome <- NULL # required to identify failure in the tryCatch
+  # occasionally, the query fails with a `404`; this is caught.
+  tryCatch({
+    outcome <- inbospatial::get_coverage_wcs(
+      wcs = "dhmv",
+      bbox = sf::st_bbox(
+        c(xmin = xy[1]-margin, xmax = xy[1]+margin,
+          ymin = xy[2]-margin, ymax = xy[2]+margin
+          ), crs = sf::st_crs(31370)),
+      layername = "DHMVII_DTM_1m",
+      version = "1.0.0",
+      wcs_crs = "EPSG:31370",
+      resolution = 1
+      )
+  },
+  error = function(cond) {
+    message(paste0("Error on DHMV query for xy = {", paste(xy, collapse = ", "), "}."))
+    message(paste0(">\t", cond, "\n"))
+  }
+  )
+
+  # in case the query was unsuccesful, return NA
+  if (is.null(outcome)) {
+    return(NA)
+  }
+
+  # otherwise, extract and return the elevation value.
+  i <- as.integer(floor(length(as.matrix(outcome))/2+1))
+  h <- as.numeric(outcome[i]) # elevation!
+
+  mat <- as.matrix(outcome, wide = TRUE)
+
+  z <- as.vector(mat)
+  x <- rep(1:(2*margin), each = 2*margin)-margin-0.5 # the geographical x -> columns
+  y <- rep(1:(2*margin), times = 2*margin)-margin-0.5 # the geographical y -> rows
+
+  # get the x, y component of the third eigenvector (= surface normal)
+  ea <- prcomp(cbind(x, y, z)) # PCA of x, y, z
+  # the longer the x,y component, the more tilted the surface
+  slope <- norm(get_normed(ea$rotation[,3])[1:2], type = "2")
+
+  return(list("idx" = idx, "elevation_dhmv" = h, "slope_r2.5m" = slope))
+
+}
+
+
+
+
+#' Query the elevation of many locations.
+#'
+#' This will iterate over all data rows and return the elevation
+#' from a DHMV query.
+#'
+#' @param data the data, in data frame format
+#' @param index_column the column holding a row identifier, e.g. `idx`
+#' @param coordinate_columns columns in which the coordinates are stored
+#'        e.g. `c(x, y)`
+#'
+#' @return elevation_lookup a data frame with the index column and elevation
+#'     info. Elevation info are the `elevation_dhmv`, and a `slope_XXXm`.
+#'     The range for the slope is hardcoded above.
+#'
+#' @examples
+#' \dontrun{
+#'    query_elevation(test_data)
+#' }
+#'
+query_elevation <- function(
+    data,
+    index_column = "idx",
+    coordinate_columns = NULL
+    ) {
+
+  if (is.null(coordinate_columns)) {
+    coordinate_columns <- c("x", "y")
+  }
+
+  stopifnot(
+    assertthat = require("assertthat"),
+    dplyr = require("dplyr"),
+    sf = require("sf")
+  )
+
+  check_common_assertions(data, index_column, coordinate_columns)
+
+  # because this produces a lookup, we will work on distinct rows.
+  data_distinct <- data[, c(index_column, coordinate_columns)] %>%
+    dplyr::distinct(.keep_all = TRUE)
+
+  pb <- txtProgressBar(min = 0, max = nrow(data_distinct),
+                       initial = 0, style = 1)
+
+  # helper function to query multiple positions
+  rowwise_elevation <- function(i){
+    # update the progress bar
+    setTxtProgressBar(pb,i)
+
+    idx <- data_distinct[i, index_column]
+
+    # ensure format of the xy tuple
+    xy <- as.vector(as.matrix(
+        data_distinct[i, coordinate_columns]
+      ))
+
+    # query and return the elevation
+    return(get_single_point_elevation(idx, xy))
+
+  }
+
+  # this will execute the row-wise data query from DHMV
+  # [!] takes a long time: start execution, grab a coffee and a good book.
+  elevation_lookup <- dplyr::bind_rows(
+    lapply(
+      1:nrow(data_distinct),
+      FUN = rowwise_elevation
+    )
+  )
+
+  close(pb) # close the progress bar
+
+  return(elevation_lookup)
+
+}
+
+
+#' Query and join the elevation of many locations.
+#'
+#' @inherit query_elevation
+#'
+join_elevation <- function(data, ...) {
+  join_lookup(
+    data,
+    suppressMessages(query_elevation(data, ...)),
+    delete_existing = TRUE
+  )
+}
+
+
+
+#_______________________________________________________________________________
+# soilclass
+#_______________________________________________________________________________
+
+#' Query the soilclass of many locations.
+#'
+#' This will iterate over all data rows and return the soilclass
+#' inferred from the `soilmap_simple` data set on zenodo
+#' (see DOI 10.5281/zenodo.3732903).
+#'
+#' @param data the data, in data frame format
+#' @param index_column the column holding a row identifier, e.g. `idx`
+#' @param coordinate_columns columns in which the coordinates are stored,
+#'        e.g. `c(x, y)`
+#'
+#' @return soilclass_lookup a data frame with the index column and soilclass.
+#'     the `soilclass` column is converted to a factor with the levels
+#'     `light`, `heavy`, `peat`, and `unknown`.
+#'
+#' @examples
+#' \dontrun{
+#'    query_soilclass(test_data)
+#' }
+#'
+query_soilclass <- function(
+    data,
+    index_column = "idx",
+    coordinate_columns = NULL
+    ) {
+
+  if (is.null(coordinate_columns)) {
+    coordinate_columns <- c("x", "y")
+  }
+
+  stopifnot(
+    assertthat = require("assertthat"),
+    dplyr = require("dplyr"),
+    sf = require("sf")
+  )
+
+  check_common_assertions(data, index_column, coordinate_columns)
+
+  # because this produces a lookup, we will work on distinct rows.
+  data_distinct <- data[, c(index_column, coordinate_columns)] %>%
+    dplyr::distinct(.keep_all = TRUE)
+
+  source("./zenodo_helper.R")
+  soilmap_raw <- load_zenodo_data("soilmap_simple")
+
+  soilmap <- soilmap_raw %>%
+    dplyr::transmute(
+      soilclass = dplyr::case_when(
+        stringr::str_detect(bsm_mo_tex, "V") ~ "peat",
+        stringr::str_detect(bsm_mo_tex, "^U") ~ "heavy",
+        stringr::str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+        stringr::str_detect(bsm_mo_tex, ".+") ~ "heavy",
+        .default = "unknown"
+      ) %>%
+        factor()
+    )
+
+
+  soil_locations <- data_distinct %>%
+    sf::st_as_sf(coords = coordinate_columns, crs = 31370)
+
+  soilclass_lookup <- sf::st_join(
+      soil_locations, soilmap
+    ) %>%
+    dplyr::mutate(soilclass = tidyr::replace_na(soilclass, "unknown")) %>%
+    sf::st_drop_geometry() %>%
+    dplyr::mutate_at(dplyr::vars(soilclass), as.factor)
+
+  return(soilclass_lookup)
+}
+
+
+#' Query and join the soilclass of many locations.
+#'
+#' @inherit query_soilclass
+#'
+join_soilclass <- function(data, ...) {
+  join_lookup(
+    data,
+    suppressMessages(query_soilclass(data, ...)),
+    delete_existing = TRUE
+  )
+}
+
+
+
+#_______________________________________________________________________________
+# distance from water body
+#_______________________________________________________________________________
+
+#' Query the minimum water distance of many locations, per cluster (SLOW!).
+#'
+#' This will iterate over all data clusters and return the water distances
+#' of all points to their respective closest water body.
+#' water sources are:
+#'   - watersurfaces ("10.5281/zenodo.3386857")
+#'   - habitatstreams ("10.5281/zenodo.3386245") # type 3260
+#'   - watercourses ("10.5281/zenodo.4420905")
+#' WARNING: the performance of this function strongly depends on clustering.
+#'   It is desirable to get as few clusters as possible, yet not exceeding
+#'   a range of ~5km per cluster.
+#'   Default values for `cluster_dist` should work reasonably well.
+#'
+#' @param data the data, in data frame format
+#' @param index_column the column holding a row identifier, e.g. `idx`
+#' @param coordinate_columns columns in which the coordinates are stored,
+#'        e.g. `c(x, y)`
+#' @param cluster_column column with clusters if the data is already clustered
+#'
+#' @return water_lookup a data frame with the index column and water distance
+#'        information:
+#'        - `wata_min_dist`: distance to closest water, in meters
+#'        - `wata_min_src`: which of the data sources was close
+#'          (surfaces, courses, or streams)
+#'        - `wata_min_idx`: index of the closest water in its data source
+#'
+#' @examples
+#' \dontrun{
+#'    query_waterdistance(test_data)
+#' }
+#'
+query_waterdistance <- function (
+    data,
+    index_column = "idx",
+    coordinate_columns = NULL,
+    cluster_column = NA
+    ) {
+
+  if (is.null(coordinate_columns)) {
+    coordinate_columns <- c("x", "y")
+  }
+
+  stopifnot(
+    assertthat = require("assertthat"),
+    dplyr = require("dplyr"),
+    sf = require("sf")
+  )
+
+  check_common_assertions(data, index_column, coordinate_columns)
+
+
+  if (is.na(cluster_column)) {
+    # assuming that the data has not been clustered
+    # (because the user did not provide a cluster column)
+
+    data_distinct <- data[, c(index_column, coordinate_columns)] %>%
+      dplyr::distinct(.keep_all = TRUE)
+
+    # cluster range default
+    cluster_dist <- 3400 # this cutoff distance seemed good for other purposes
+    clusters <- query_clusters(
+      data_distinct,
+      index_column,
+      coordinate_columns,
+      characteristic_distance = cluster_dist
+    )
+
+    # join cluster index
+    data_distinct <- data_distinct %>%
+      dplyr::left_join(clusters,
+        by = index_column,
+        relationship = "one-to-one"
+      )
+    cluster_column <- "cluster"
+
+  } else {
+    # in case the data is already clustered
+    data_distinct <-
+      data[, c(index_column, coordinate_columns, cluster_column)] %>%
+      dplyr::distinct(.keep_all = TRUE)
+
+    # below, the cluster column must have the name "cluster"
+    data_distinct$cluster <- data_distinct[, cluster_column]
+  }
+
+  # factors won't work here
+  data_distinct$cluster <- as.integer(data_distinct$cluster)
+
+  # load more helpers
+  source("./spatial_helpers.R")
+  source("./water_sources.R")
+
+  # query water resources
+  all_wata <- load_all_water_sources()
+
+  # search range parameters
+  min_searchradius <- 1000. # minimum radius around a cluster center
+  # extra safety margin around location clusters, should be > min_searchradius
+  safety_margin <- min_searchradius + 500.
+
+  # single cluster processing
+  get_min_water_distances_clusterwise <- function (cluster_data) {
+
+    # convert data subset to `sf`
+    cluster_data <- sf::st_as_sf(
+      cluster_data,
+      coords = c("x", "y"),
+      crs = 31370
+    )
+
+    if (nrow(cluster_data) == 1) {
+      cr <- list()
+      cr$center <- as.vector(sf::st_coordinates(cluster_data)[1,])
+      cr$radius <- min_searchradius
+    } else {
+
+      # center and radius
+      cr <- find_center_and_radius(sf::st_coordinates(cluster_data))
+
+      # minimum radius
+      cr$radius <- max(min_searchradius, cr$radius)
+    }
+
+    # find adjacent water...
+    sub_wata <- narrow_sources_radius(
+      all_wata,
+      cr$center,
+      radius = cr$radius * 1.01 + safety_margin
+    )
+
+    # ... or not.
+    if (sum(unlist(lapply(sub_wata, FUN = nrow))) <= 0) {
+      return(invisible(NULL))
+    }
+
+    # calculate water distances
+    water_distances <- collect_combined_distances(
+      cluster_data, sub_wata, point_index_col = index_column
+    )
+
+    # get the minimum water distance
+    min_water_distance <- minimum_cross_distance(water_distances)
+
+    # rename the columns
+    colnames(min_water_distance) <-
+      c(index_column, "wata_min_dist", "wata_min_src", "wata_min_idx")
+
+    # return water distances for this cluster
+    return(min_water_distance)
+  } # cluster-wise water distances
+
+
+  # progress bar
+  pb <- txtProgressBar(
+    min = 0,
+    max = max(data_distinct[, cluster_column]),
+    initial = 0, style = 1)
+
+  # wrapping a progress bar around the above procedure
+  waterdist_query_pb <- function (cluster_idx) {
+    setTxtProgressBar(pb, cluster_idx)
+    sub_data <- data_distinct %>%
+      dplyr::filter(cluster == cluster_idx)
+    return(get_min_water_distances_clusterwise(sub_data))
+  }
+
+  # cluster-wise application of the water search
+  water_lookup <- lapply(
+    sort(unique(data_distinct[, cluster_column])),
+    FUN = waterdist_query_pb
+    )
+  close(pb)
+
+  # combine and return the output data
+  water_lookup <- dplyr::bind_rows(water_lookup)
+
+  # restore index column
+  water_lookup[, index_column] <-
+    water_lookup[, index_column] %>%
+    mutate_at(as.integer, .vars = index_column)
+
+  return(water_lookup)
+}
+
+
+#' Query and join the minimum water distance of many locations.
+#'
+#' @inherit query_waterdistance
+#'
+join_waterdistance <- function(data, ...) {
+  join_lookup(
+    data,
+    suppressMessages(query_waterdistance(data, ...)),
+    delete_existing = TRUE
+  )
+}
+
+
+
+#_______________________________________________________________________________
+# testing
+#_______________________________________________________________________________
+
+#' Test all the queries and joins above.
+#'
+#' Above are functions of the type `query_*` and `join_*`.
+#' (The latter are a pipe-able wrapper for the first.)
+#' This procedure will test all of them, and query the following information
+#' for test locations:
+#'   - clusters
+#'   - elevation (from DHMV)
+#'   - soilclass
+#'   - distance to water
+#'
+#' @examples
+#' \dontrun{
+#'    source("./data_queries.R")
+#'    test_all_lookups()
+#' }
+#'
+test_all_lookups <- function(){
+  little_data <- get_example_data()
+  much_data <- little_data %>%
+    join_clusters(characteristic_distance = 32000) %>%
+    join_elevation() %>%
+    join_soilclass() %>%
+    join_waterdistance(cluster_column = "idx")
+
+  dplyr::glimpse(much_data)
+
+}
+
+
+
+
+
