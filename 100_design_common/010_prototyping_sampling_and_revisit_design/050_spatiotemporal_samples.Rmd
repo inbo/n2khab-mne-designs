@@ -1779,12 +1779,16 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
         auto_continuous_meas, 
         panel_count
       ) %>% 
+      # guessing the grouping pattern to use in the revisit panel design for
+      # FAGs with automated measurements
       mutate(
         max_panel_group_repetitions = max(panel_group_repetitions),
         .by = c(scheme, module_combo_code, panel_split),
         .keep = "unused"
       ) %>% 
       distinct() %>% 
+      # using auto_continuous_meas as attribute next to panel count, since it
+      # triggers a different panel membership approach
       nest(panel_counts = c(
         panel_count, 
         auto_continuous_meas
@@ -1794,9 +1798,14 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
     unmatched = "error"
   ) %>% 
   mutate(
+    # generate data frame with the relation between generic panel numbers of
+    # different panel setup (panel count & automated measurements) in a scheme x
+    # moco x panel split. The rows of this data frame will be used for
+    # partitioning spatial samples in GRTS order.
     generic_panels = map2(panel_counts, max_panel_group_repetitions, function(pc, mpgr) {
       pcs <- pc$panel_count
       max_panel_count <- max(pcs)
+      # currently only panel counts are supported that are a divisor of the maximum
       divisors_cond <- all(pcs %in% numbers::divisors(max_panel_count))
       if (!divisors_cond) {
         stop("A number of panels occurs that is not a divisor of ", max_panel_count)
@@ -1812,9 +1821,11 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
         nr <- pcs[i]
         auto <- pc$auto_continuous_meas[i]
         df[, i] <- if (auto) {
+          # automated measurements get a special pattern
           rep(seq_len(nr), each = mpgr) %>% 
             rep(max_panel_count / (nr * mpgr))
         } else {
+          # usual FAGs get a monotonically increasing panel number attribution
           rep(seq_len(nr), each = max_panel_count / nr)
         }
       }
@@ -1822,6 +1833,9 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
         mutate(id = row_number()) %>% 
         relocate(id)
     }),
+    # distribute the spatial samples over the rows of foregoing data frame,
+    # and rearrange the data so it will be possible to join with 
+    # scheme_moco_ps_spsubset_fas_panels
     panel_membership = map2(spsample, generic_panels, function(sps, gen) {
       distribute_sample_over_panels(sps, gen) %>% 
         inner_join(
