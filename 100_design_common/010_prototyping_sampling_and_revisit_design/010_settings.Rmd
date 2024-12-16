@@ -1198,8 +1198,13 @@ mod_scheme_fag_paneldesign <-
     # (negative shift = backward in time), relative to the default panel start
     # and end dates that would normally emerge
     panel_dateshift = case_when(
+      # evaluate locations one year beforehand:
       str_detect(field_activity_group, "LOCEVAL") & 
-        !str_detect(scheme, "^HQ") ~ years(-1)
+        !str_detect(scheme, "^HQ") ~ years(-1),
+      # postpone the start of groundwater sampling & diver reading (to align
+      # location visits)
+      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") ~ months(6),
+      str_detect(field_activity_group, "READDIVER") ~ months(6)
     ),
     # optionally limit the number of subperiods in a main period; this causes
     # uneven coverage of the main period since only the first subperiod(s)
