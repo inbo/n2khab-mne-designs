@@ -1729,9 +1729,6 @@ scheme_moco_ps_spsubset_panel_calendar %>%
   View("calendar")
 ```
 
-
-<!-- to do: take into account year_first and month_first_default, after panel membership -->
-
 ### Panel membership of spatial sampling units
 
 Panel membership is randomized by following the GRTS address sequence at the stratum level.
@@ -1748,15 +1745,6 @@ To achieve this, the panel memberships for panel designs with different panel co
 This avoids repeating local pivotal sampling more than necessary, which would lead to unneeded mismatches.
 
 Next, this is translated to the actual panels created before.
-
-**Missing functionality**: defining and taking into account temporal dependencies between field activity groups.
-An example is that a piezometer must be installed before a water sample can be taken from it.
-
-**Missing functionality**: provide a gradual increase, during the first cycle, of the number of installed groundwater and surfacewater observation wells.
-This has consequences for the READ and the SAMP activities in these compartments during the first cycle.
-
-**Missing functionality**: apply more generic coding approach to prepare and create the panel memberships.
-Currently this is customized to cater for a specific revisit approach in the `pan_effectmon_flanders` module.
 
 #### Membership of generic panels
 
@@ -1956,7 +1944,7 @@ Generating a sampling unit calendar, i.e. with timing per FAG, stratum and spati
 Note that the spatial subset is a mere attribute, as is already expressed by stratum and also FAG (in case of 7220).
 
 ```{r}
-scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <- 
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_gross <- 
   scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>% 
   unnest(panel_membership) %>% 
   unnest(fas) %>% 
@@ -1965,7 +1953,228 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     join_by(scheme, module_combo_code, panel_split, in_aquatic_subset, panel),
     relationship = "many-to-many",
     unmatched = c("error", "drop")
+  ) %>% 
+  relocate(
+    sp_poststratum,
+    panel,
+    starts_with("date"),
+    .after = notation_paneldesign
+  ) %>% 
+  arrange(
+    scheme,
+    module_combo_code,
+    panel_split,
+    in_aquatic_subset,
+    actseqs,
+    rank,
+    field_activity_group,
+    notation_paneldesign,
+    sp_poststratum,
+    date_start,
+    panel,
+    stratum,
+    grts_address
   )
+```
+
+Cleaning is required with regard to the startup period:
+
+- wind up panels outside the period considered to implement schemes in specific modules.
+In this process, take care to actually _postpone_ certain panel X FAG combinations within a year if these represent a FAG needed to execute other FAGs happening in the same year within the considered period of implementation.
+This should also take into account (positive) timeshift properties of certain panel designs (i.e. needed delays).
+Also, for now neglect LOCEVAL FAGs as they will need more special consideration, e.g. they may need to be postponed a whole year, but only in the first year;
+- SURFINSTGAUGE activities in groundwater schemes (3-year periodicity) must require the presence of a corresponding GWINST activity (6-year periodicity) in the same or a preceding period in order to be relevant.
+This will drop about half of the SURFINSTGAUGE activities in groundwater schemes during the first 3-year cycle.
+- drop FAGs that miss their foregoing FAGs with a lower rank.
+
+```{r}
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_gross %>% 
+  # adding some properties of the revisit design
+  inner_join(
+    scheme_moco_ps_spsubset_fas_panelcount %>% 
+      select(
+        scheme, 
+        module_combo_code, 
+        panel_split, 
+        in_aquatic_subset, 
+        year_first,
+        year_last,
+        limit_n_subperiods,
+        notation_paneldesign
+      ),
+    join_by(scheme, module_combo_code, panel_split, in_aquatic_subset, notation_paneldesign),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  # don't include inapplicable years, except when a dateshift was applied
+  filter(
+    (year(date_start) >= year_first & year(date_start) <= year_last) |
+      str_detect(notation_paneldesign, "shift")
+  ) %>% 
+  # implement a delay for FAGs with a panel design with one subperiod if
+  # month(date_start) < month_first_default in the first year
+  mutate(
+    delay = if_else(
+      limit_n_subperiods == 1 & 
+        year(date_start) == year_first & 
+        month(date_start) < month_first_default,
+      months(month_first_default - month(date_start)),
+      months(0),
+      # limit_n_subperiods can be NA, hence condition can be NA
+      months(0)
+    ),
+    date_start = if_else(delay > months(0), date_start + delay, date_start),
+    date_end = if_else(
+      delay > months(0),
+      date_end + days(1) + delay - days(1),
+      date_end
+    ),
+    date_interval = if_else(
+      delay > months(0),
+      interval(
+        force_tz(date_start, "Europe/Brussels"), 
+        force_tz(date_end, "Europe/Brussels")
+      ),
+      date_interval
+    )
+  ) %>% 
+  select(-delay) %>% 
+  # drop inapplicable panels in the startup period based on month_first_default,
+  # except for LOCEVAL
+  filter(
+    month(date_end) >= month_first_default | 
+      year(date_end) > year_first |
+      str_detect(field_activity_group, "LOCEVAL")
+  ) %>% 
+  # if a panel period overlaps month_first_default but starts earlier, then
+  # wind up the start date
+  mutate(
+    delay = if_else(
+      month(date_start) < month_first_default & 
+      year(date_start) == year_first &
+      !str_detect(field_activity_group, "LOCEVAL"),
+      months(month_first_default - month(date_start)),
+      months(0)
+    ),
+    date_start = if_else(delay > months(0), date_start + delay, date_start),
+    date_interval = if_else(
+      delay > months(0),
+      interval(
+        force_tz(date_start, "Europe/Brussels"), 
+        force_tz(date_end, "Europe/Brussels")
+      ),
+      date_interval
+    )
+  ) %>% 
+  select(-delay, -limit_n_subperiods)
+```
+
+Generating a temporary, long variant of this intermediate sampling unit calendar result, with a column `activity_sequence`.
+
+```{r}
+spsamples_calendar_actseqs_long <- 
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+  select(-actseqs) %>% 
+  unnest_longer(actseqs_vec, values_to = "activity_sequence")
+```
+
+Updating the sampling unit calendar by dropping FAGs that miss their preceding FAGs.
+
+```{r}
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <- 
+  spsamples_calendar_actseqs_long %>% 
+  distinct(
+    stratum,
+    field_activity_group, 
+    rank,
+    max_rank, 
+    activity_sequence,
+    grts_address,
+    pick(starts_with("date"))
+  ) %>% 
+  mutate(
+    date_start_first_rank1 = if (length(date_start[rank == 1L]) == 0L) {
+      ymd("21000101")
+    } else {
+      min(date_start[rank == 1L])
+    },
+    date_start_first_rank2 = if (length(date_start[rank == 2L]) == 0L) {
+      ymd("21000101")
+    } else {
+      min(date_start[rank == 2L])
+    },
+    date_start_first_rank3 = if (length(date_start[rank == 3L]) == 0L) {
+      ymd("21000101")
+    } else {
+      min(date_start[rank == 3L])
+    },
+    date_start_first_rank4 = if (length(date_start[rank == 4L]) == 0L) {
+      ymd("21000101")
+    } else {
+      min(date_start[rank == 4L])
+    },
+    .by = c(stratum, activity_sequence, grts_address)
+  ) %>% 
+  filter(
+    rank == 1L |
+      (rank == 2L & 
+         date_end > date_start_first_rank1 ) |
+      (rank == 3L & 
+         date_end > date_start_first_rank1 & 
+         date_end > date_start_first_rank2) |
+      (rank == 4L & 
+         date_end > date_start_first_rank1 & 
+         date_end > date_start_first_rank2 & 
+         date_end > date_start_first_rank3) |
+      (rank == 5L & 
+         date_end > date_start_first_rank1 & 
+         date_end > date_start_first_rank2 & 
+         date_end > date_start_first_rank3 & 
+         date_end > date_start_first_rank4),
+    .by = c(stratum, activity_sequence, grts_address)
+  ) %>% 
+  semi_join(
+    spsamples_calendar_actseqs_long,
+    .,
+    join_by(
+      stratum,
+      field_activity_group, 
+      rank,
+      max_rank,
+      activity_sequence,
+      grts_address,
+      date_start,
+      date_end
+    )
+  ) %>% 
+  select(-year_first, -year_last) %>% 
+  nest(actseqs = activity_sequence) %>% 
+  nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>% 
+  relocate(fags, .after = in_aquatic_subset) %>% 
+  relocate(
+    sp_poststratum,
+    panel,
+    starts_with("date"),
+    .after = notation_paneldesign
+  ) %>% 
+  arrange(
+    scheme,
+    module_combo_code,
+    panel_split,
+    in_aquatic_subset,
+    notation_paneldesign,
+    sp_poststratum,
+    date_start,
+    panel,
+    stratum,
+    grts_address
+  )
+```
+
+```{r}
+rm(spsamples_calendar_actseqs_long)
+gc()
 ```
 
 ### Spatiotemporal samples
