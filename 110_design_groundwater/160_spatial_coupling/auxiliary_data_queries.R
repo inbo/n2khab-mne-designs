@@ -756,7 +756,7 @@ join_waterdistance <- wrap_query_to_join(query_waterdistance)
 #'
 #' @examples
 #' \dontrun{
-#'    source("./data_queries.R")
+#'    source("./auxiliary_data_queries.R")
 #'    test_all_lookups()
 #' }
 #'

@@ -1,0 +1,238 @@
+---
+title: "Grand Data Aggregation"
+format:
+  html:
+    toc: true
+    html-math-method: katex
+  pdf:
+    fig-pos: 'H'
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+This notebook automates the procedure of loading data from various sources.
+
+It starts at the `watina` locations, and then joins the following information:
+
+- clusters (based on location)
+- elevation (via `inbospatial`, from DHMV WCS)
+- soilclass (from `n2khab::soilmap_simple`)
+- distance from water (various `n2khab` data sources)
+
+
+
+```{r setup}
+#| include: false
+library("dplyr") # our favorite data wrangling toolbox
+library("dbplyr") # dplyr + databases
+library("arrow") # writing parquet files
+
+source("./watina_migration.R")
+source("./auxiliary_data_queries.R")
+
+# connect watina 
+watina_dwh <- connect_watina()
+
+# create a data folder (if not present)
+dir.create("./data", showWarnings = FALSE)
+
+# browser choice, a rather personal thing
+if (!is.function(getOption("browser"))) options(browser = "librewolf")
+
+```
+
+
+```{r user-settings}
+
+cluster_dist <- 3400 # m # parameter for clustering
+min_cluster_size <- 16 # minimal cluster member count; fewer memeber clusters are removed
+
+
+# where data is stored
+data_export_file <- paste0("data/analysis_data_cl", cluster_dist, ".parquet")
+
+```
+
+
+# Watina Locations
+
+## raw locations
+
+First, query the main data per location from `watina` database.
+
+Here, we focus on `xG3` data.
+
+
+This query is wrapped in a function for re-use here and portability elsewhere:
+```{r raw-data-query-xg3}
+#| eval: true
+
+query_xg3 <- function (){
+  tbl(watina_dwh, "factBRPeilMetingJaar") %>%
+    filter(
+      IsHydroJaar == 1,
+      ParameterSetWID == 1
+    ) %>% 
+    select(
+      MeetpuntWID,
+      Jaar,
+      HGmTAWValue,
+      LGmTAWValue,
+      VGmTAWValue
+    ) %>%
+    filter_at(
+      vars(HGmTAWValue, LGmTAWValue),
+      all_vars(!is.na(.))
+    ) %>% 
+    left_join(
+      tbl(watina_dwh, "dimMeetpunt"),
+      by = join_by(MeetpuntWID == MeetpuntWID),
+      relationship = "many-to-many"
+    ) %>%
+    filter(MeetpuntStatusCode == "VLD") %>%
+    select(
+      MeetpuntWID,
+      MeetpuntCode,
+      Jaar,
+      MeetpuntXCoordinaat,
+      MeetpuntYCoordinaat,
+      HGmTAWValue,
+      LGmTAWValue,
+    ) %>%
+    rename(
+      idx = MeetpuntWID,
+      code = MeetpuntCode,
+      hyear = Jaar,
+      x = MeetpuntXCoordinaat,
+      y = MeetpuntYCoordinaat,
+      hw = HGmTAWValue,
+      lw = LGmTAWValue
+    ) %>%
+   filter_at(
+    vars(code, hyear, hw, lw),
+    all_vars(!is.na(.))
+  )
+
+}
+
+```
+
+
+Raw data is collected by executing the function:
+
+```{r query-data}
+#| eval: true
+data_raw <- query_xg3() %>%
+  select(idx, code, hyear, x, y, hw, lw) %>% 
+  filter_at(
+    vars(x, y, hw, lw),
+    all_vars(!is.na(.))
+  ) %>% 
+  collect %>%
+  mutate(
+    region = substring(code, first = 1, last = 3)
+  ) %>%
+  filter(region != "VBS") # remove Luxemburg
+
+glimpse(data_raw)
+```
+
+
+## observation wells
+
+Some information is stored in the `dimPeilpunt` table, e.g. filter depth.
+It is queried and joined manually.
+
+```{r query-filter-depth}
+#| eval: true
+pp <- tbl(watina_dwh, "dimPeilpunt") %>%
+  filter(
+    OpenbaarheidWID == 4 # note: about O(150) locs are non-public
+  ) %>%
+  mutate(
+    yr = sql("YEAR(CAST(PeilpuntPlaatsing AS date))"),
+    month = sql("YEAR(CAST(PeilpuntPlaatsing AS date))"),
+    start_hyear = yr + (if (month >= 10) 1 else 0),
+    yr = sql("YEAR(CAST(PeilpuntStopzetting AS date))"),
+    month = sql("YEAR(CAST(PeilpuntStopzetting AS date))"),
+    stop_hyear = yr + (if (month >= 10) 1 else 0),
+    ref = ReferentieNiveauTAW,
+    z = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)
+  ) %>%
+  rename(
+    code = PeilpuntCode,
+    idx = MeetpuntWID
+  ) %>%
+  select(idx, code, start_hyear, stop_hyear, z, ref) %>%
+  collect %>%
+  mutate(
+    region = substring(code, first = 1, last = 3) 
+  ) %>% 
+  filter(region != "VBS") %>%  # remove Luxemburg
+  group_by(idx, start_hyear, stop_hyear) %>%
+  slice(which.min(z)) 
+
+# Note: 15964 -> 10389 rows??
+#       filter depth z duplicates removed by `slice`
+#       replacement "by date" is hard to cover in this analysis
+#       because we work on xG3 and they are not associated with a date
+#       decided to just take the shallower value per location/year
+
+glimpse(pp)
+```
+
+
+
+```{r join-peilpunt}
+#| eval: true
+
+for (col in c("z", "ref")) {
+  if (col %in% colnames(data_raw)) {
+    data_raw <- data_raw %>%
+      select(-one_of(col))
+  }
+}
+
+
+data_raw <- data_raw %>%
+  inner_join(pp,
+    by = join_by(
+      idx == idx,
+    ),
+    # relationship = "many-to-many"
+    # unmatched = c("drop", "drop"),
+    relationship = "many-to-many",
+    suffix = c("", ".duplicates")
+  ) %>%
+  select(-ends_with(".duplicates")) %>% 
+  filter(
+    hyear >= start_hyear, # the observation must be after loc startup
+    (is.na(stop_hyear) | (hyear < stop_hyear)) # ... or loc is up and running
+  ) %>%
+  select(-start_hyear, -stop_hyear)
+
+# 28k -> 22k rows due to unmatched
+glimpse(data_raw )
+```
+
+
+# Auxiliary Data
+
+All the other required data can be appended easily, thanks to the auxiliary data query scripts.
+
+```{r join-auxiliary-data}
+data <- data_raw %>%
+  join_clusters(characteristic_distance = cluster_dist) %>%
+  join_elevation() %>%
+  join_soilclass() %>%
+  join_waterdistance(cluster_column = "idx")
+
+write_parquet(data, sink = data_export_file)
+dplyr::glimpse(data)
+```
+
+
+After this, data is stored in the file "`{r} data_export_file`" and can be loaded with: `data <- read_parquet("data/analysis_data_cl3400.parquet")`.
+
