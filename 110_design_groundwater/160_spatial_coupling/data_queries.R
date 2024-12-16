@@ -1,14 +1,25 @@
 #!/usr/bin/Rscript
 
+
 # This script is a collection of queries of information about spatial locations.
 # All the `query_*`-functions below require a data frame with columns
 # `[idx, x, y]`. They return a data frame with the index (`idx`) and extra info.
 # Coordinates are expected to be in the `BD72 / Belgian Lambert 72` reference
 # system (https://epsg.org/crs_31370/BD72-Belgian-Lambert-72.html)
 
+# Table of Content:
+#  - example data
+#  - general helpers
+#  - queries:
+#    - clusters
+#    - dhmv elevation
+#    - soilclass
+#    - distance from water body
+#  - testing
+
 
 #_______________________________________________________________________________
-# Example Data
+# example data
 #_______________________________________________________________________________
 
 
@@ -25,6 +36,8 @@
 #' \dontrun{
 #'   test_data <- get_example_data()
 #' }
+#'
+#' @export
 #'
 get_example_data <- function() {
 
@@ -107,6 +120,8 @@ check_common_assertions <- function (data, index_column, coordinate_columns) {
 #'      )
 #' }
 #'
+#' @keywords internal
+#'
 join_lookup <- function(
     data,
     lookup,
@@ -144,6 +159,31 @@ join_lookup <- function(
 }
 
 
+#' A wrapper to enable piped join of extra info.
+#'
+#' Modifies a `query_*` function to be directly joined to the data
+#' by wrapping it in a `join_lookup` (see above).
+#' For examples, see the application in this script.
+#'
+#' @param query_function a function that queries extra info for a given dataset
+#'
+#' @return join_function a function which directly joins the info to the data.
+#'
+#' @keywords internal
+#'
+wrap_query_to_join <- function (query_function) {
+  join_function <- function(data, ...) {
+    join_lookup(
+      data,
+      suppressMessages(query_function(data, ...)),
+      delete_existing = TRUE
+    )
+  }
+
+  return(join_function)
+}
+
+
 #_______________________________________________________________________________
 # clusters
 #_______________________________________________________________________________
@@ -170,6 +210,8 @@ join_lookup <- function(
 #'    query_clusters(test_data, characteristic_distance = 32000)
 #'    # note: `characteristic_distance` should usually be much smaller.
 #' }
+#'
+#' @export
 #'
 query_clusters <- function (
     data,
@@ -217,18 +259,14 @@ query_clusters <- function (
 #'
 #' @inherit query_clusters
 #'
-join_clusters <- function(data, ...) {
-  join_lookup(
-    data,
-    suppressMessages(query_clusters(data, ...)),
-    delete_existing = TRUE
-  )
-}
+#' @export
+#'
+join_clusters <- wrap_query_to_join(query_clusters)
 
 
 
 #_______________________________________________________________________________
-# DHMV Elevation
+# dhmv elevation
 #_______________________________________________________________________________
 
 #' Return the normed vector.
@@ -268,6 +306,8 @@ get_normed <- function(vec) vec / norm(vec, type = "2")
 #'   xy <- c(178379, 209418)
 #'   get_single_point_elevation("test", xy)$elevation # == 9.6m
 #' }
+#'
+#' @export
 #'
 get_single_point_elevation <- function (idx, xy) {
 
@@ -340,6 +380,8 @@ get_single_point_elevation <- function (idx, xy) {
 #'    query_elevation(test_data)
 #' }
 #'
+#' @export
+#'
 query_elevation <- function(
     data,
     index_column = "idx",
@@ -402,13 +444,9 @@ query_elevation <- function(
 #'
 #' @inherit query_elevation
 #'
-join_elevation <- function(data, ...) {
-  join_lookup(
-    data,
-    suppressMessages(query_elevation(data, ...)),
-    delete_existing = TRUE
-  )
-}
+#' @export
+#'
+join_elevation <- wrap_query_to_join(query_elevation)
 
 
 
@@ -435,6 +473,8 @@ join_elevation <- function(data, ...) {
 #' \dontrun{
 #'    query_soilclass(test_data)
 #' }
+#'
+#' @export
 #'
 query_soilclass <- function(
     data,
@@ -492,13 +532,9 @@ query_soilclass <- function(
 #'
 #' @inherit query_soilclass
 #'
-join_soilclass <- function(data, ...) {
-  join_lookup(
-    data,
-    suppressMessages(query_soilclass(data, ...)),
-    delete_existing = TRUE
-  )
-}
+#' @export
+#'
+join_soilclass <- wrap_query_to_join(query_soilclass)
 
 
 
@@ -536,6 +572,8 @@ join_soilclass <- function(data, ...) {
 #' \dontrun{
 #'    query_waterdistance(test_data)
 #' }
+#'
+#' @export
 #'
 query_waterdistance <- function (
     data,
@@ -695,13 +733,9 @@ query_waterdistance <- function (
 #'
 #' @inherit query_waterdistance
 #'
-join_waterdistance <- function(data, ...) {
-  join_lookup(
-    data,
-    suppressMessages(query_waterdistance(data, ...)),
-    delete_existing = TRUE
-  )
-}
+#' @export
+#'
+join_waterdistance <- wrap_query_to_join(query_waterdistance)
 
 
 
@@ -726,8 +760,13 @@ join_waterdistance <- function(data, ...) {
 #'    test_all_lookups()
 #' }
 #'
+#' @export
+#'
 test_all_lookups <- function(){
   little_data <- get_example_data()
+
+  stopifnot(dplyr = require('dplyr')) # required for the `%>%` pipe
+
   much_data <- little_data %>%
     join_clusters(characteristic_distance = 32000) %>%
     join_elevation() %>%
@@ -739,6 +778,5 @@ test_all_lookups <- function(){
 }
 
 
-
-
-
+#_______________________________________________________________________________
+# end of file.
