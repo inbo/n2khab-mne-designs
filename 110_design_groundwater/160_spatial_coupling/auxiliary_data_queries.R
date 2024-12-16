@@ -83,6 +83,7 @@ check_common_assertions <- function (data, index_column, coordinate_columns) {
     msg = paste0("Input data must be a data.frame-like object.")
   )
 
+  # index column
   assertthat::assert_that(is.character(index_column),
     msg = paste0("The `index_column` must be of type `character`.")
   )
@@ -91,10 +92,34 @@ check_common_assertions <- function (data, index_column, coordinate_columns) {
     index_column %in% colnames(data),
     msg = paste0(
       "The index column `", index_column,
-      "` is not in the data columns:",
+      "` is not in the data columns: ",
       paste(colnames(data), collapse = ",")
     )
   )
+
+
+  # coordinate columns
+  assertthat::assert_that(
+    length(coordinate_columns) == 2,
+    msg = paste0(
+      "In this package, spatial data is two-dimensional ",
+      "for all practical purposes. ",
+      'Please provide two `coordinate_columns`, e.g. `c("x", "y")`.'
+    )
+  )
+
+
+  for (col in coordinate_columns) {
+    assertthat::assert_that(
+      col %in% colnames(data),
+      msg = paste0(
+        "The coordinate column `", col,
+        "` is not in the data columns: ",
+        paste(colnames(data), collapse = ",")
+      )
+    )
+  }
+
 
 }
 
@@ -198,7 +223,7 @@ wrap_query_to_join <- function (query_function) {
 #' @param index_column the column holding a row identifier, e.g. `idx`
 #' @param coordinate_columns columns in which the coordinates are stored,
 #'        e.g. `c(x, y)`
-#' @param characteristic_distance distance used to determine clusters
+#' @param characteristic_distance distance (m) used to determine clusters
 #'        (equivalent to tree cut height in `stats::cutree`).
 #'
 #' @return cluster_lookup a data frame with the index column and cluster nummer.
@@ -217,7 +242,7 @@ query_clusters <- function (
     data,
     index_column = "idx",
     coordinate_columns = NULL,
-    characteristic_distance = 1
+    characteristic_distance = 1 # m
     ) {
 
   if (is.null(coordinate_columns)) {
@@ -262,6 +287,65 @@ query_clusters <- function (
 #' @export
 #'
 join_clusters <- wrap_query_to_join(query_clusters)
+
+
+#' Remove clusters with too few members.
+#'
+#' This will filter the data to only retain locations in clusters with
+#' a minimum count of members.
+#'
+#' @param data the data, in data frame format
+#' @param cluster_column the column holding a cluster, e.g. `cluster`
+#' @param minimum_cluster_member_count as the name suggests.
+#'
+#' @return subset of the data which exceeds cluster size threshold.
+#'
+#' @examples
+#' \dontrun{
+#'   get_example_data() %>%
+#'     join_clusters(characteristic_distance = 32000) %>%
+#'     remove_underpopulated_clusters(minimum_cluster_member_count = 2)
+#' }
+#'
+remove_underpopulated_clusters <- function(
+    data,
+    cluster_column = "cluster",
+    minimum_cluster_member_count = 1
+    ) {
+
+  stopifnot(
+    assertthat = require("assertthat"),
+    dplyr = require("dplyr")
+  )
+
+  # data
+  assertthat::assert_that(
+    inherits(data, "data.frame"),
+    msg = paste0("Input data must be a data.frame-like object.")
+  )
+
+  assertthat::assert_that(
+    cluster_column %in% colnames(data),
+    msg = paste0(
+      "The cluster column `", cluster_column,
+      "` is not in the data columns: ",
+      paste(colnames(data), collapse = ",")
+    )
+  )
+
+
+  # find clusters with few members
+  list_of_excluded_clusters <- (data %>%
+    group_by(!!!dplyr::syms(cluster_column)) %>%
+    summarize(count = n()) %>%
+    filter(count < minimum_cluster_member_count)
+    )[, cluster_column] # I miss pandas.
+
+  # remove irrelevant clusters
+  data <- data[!(data[, cluster_column] %in% list_of_excluded_clusters), ]
+
+  return(data)
+}
 
 
 
@@ -769,6 +853,7 @@ test_all_lookups <- function(){
 
   much_data <- little_data %>%
     join_clusters(characteristic_distance = 32000) %>%
+    remove_underpopulated_clusters(minimum_cluster_member_count = 2) %>%
     join_elevation() %>%
     join_soilclass() %>%
     join_waterdistance(cluster_column = "idx")
