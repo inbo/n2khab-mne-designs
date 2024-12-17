@@ -1,0 +1,172 @@
+---
+title: "Water Level Variograms and Models"
+bibliography: references.bib
+format:
+  html:
+    toc: true
+    html-math-method: katex
+  pdf:
+    fig-pos: 'H'
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+This script loads previously stored data and performs variogram analysis.
+
+
+```{r setup}
+#| include: false
+library("dplyr") # our favorite data wrangling toolbox
+library("dbplyr") # dplyr + databases
+library("arrow") # writing parquet files
+library("ggplot2") # a visualization toolbox
+library("gstat") # geospatial statistics
+library("sdmTMB") # species distribution models Template Model Builder
+library("mapview") # viewing maps
+library("inbospatial") # elevation WCS
+
+
+source("./watina_migration.R")
+source("./auxiliary_data_queries.R")
+
+# browser choice, a rather personal thing
+if (!is.function(getOption("browser"))) options(browser = "librewolf")
+
+```
+
+
+Some parameters can be chosen by the user.
+
+```{r data-settings}
+#| eval: true
+
+extent <- 1024 # m
+n_bins <- 128
+
+# result of previous analysis
+cluster_dist <- 3400 # m # parameter for clustering
+data_storage_file <- paste0("data/analysis_data_cl", cluster_dist, ".parquet") # where data is stored
+```
+
+# Data Preparation
+## load data
+
+The data was stored in a parquet file by the script `050_load_all_data.qmd`.
+
+```{r load-data}
+#| eval: true
+data <- read_parquet(data_storage_file)
+knitr::kable(head(data, 5))
+```
+
+
+## recipe
+
+::: {.callout-note}
+A variogram is defined as a quantification of the semivariance of a difference measure depending on the (binned) spatial distance of points.
+:::
+
+
+We define the **semivariance** $\gamma$ [@Matheron1962]:
+
+$\gamma\left(h\right) = \frac{1}{2N} \sum\limits_{N(h)} \left(z_j - z_i\right)^2 \quad \forall \left{i, j\right}: \mid s_j-s_i \mid = h$
+
+Containing the following parameters:
+
+- $N$ is the number of observation pairs $\{i, j\}$
+- with spatial positions $s_\cdot = \left(x_\cdot , y_\cdot\right)$
+- and measured values $z_\cdot$
+- grouped (binned) to distance groups $h$; $h$ is also called the "lag vector magnitude", effectively the Euclidean distance
+- $\gamma\left(h\right)$ is the semivariance (because $2\gamma$ is the variance)
+
+
+Usually, the first step is to visualize the data in a difference-distance plot, further deriving a "semivariance-binned distance" plot.
+To the latter, one can fit a Matérn-class function for parametrization and comparison.
+Or one can apply more complex models.
+
+
+Our raw data of choice are `xG3` values 
+TODO: reference
+<https://www.wur.nl/nl/onderzoek-resultaten/onderzoeksinstituten/environmental-research/faciliteiten-producten/software-en-modellen/grondwaterdynamiek.htm>
+
+
+## de-trending
+The semivariance is anisotropically biased by any linear trends in the data, which is why we optionally "de-trend" the raw measurement.
+"De-trending" is just a fancy word for working on the residuals of a linear regression against spatial co-ordinates, e.g. $z \sim x + y$.
+
+
+In preparing the data, we have identified clusters by a distance of $`{r} cluster_dist` m$.
+This distance is larger than the variogram range found below.
+Hence, it is opportune to perform the de-trending somewhat more locally, i.e. in a clusterwise iteration.
+
+
+```{r clusterwise-detrend}
+#| eval: true
+
+detrend_clusterwise <- function(cluster_idx) {
+  sub_data <- data %>%
+    filter(cluster == cluster_idx)
+  sub_data <- sub_data %>%
+    mutate(
+      hwd = lm(hw ~ x + y, sub_data)$residual,
+      lwd = lm(lw ~ x + y, sub_data)$residual
+    )
+  return(sub_data)
+}
+
+data <- bind_rows(
+  lapply(
+    unique(data$cluster),
+    FUN = detrend_clusterwise
+  )
+)
+
+```
+
+
+## difference data
+To efficiently calculate variogram, we first require difference data.
+This means we have to combine a set of measurements with itself.
+
+::: {.callout-note}
+For notation, I heavily abbreviate, but try to keep the abbreviations consistent.
+
+- Measurements `lw` and `hw` (`l` for "low", `h` for "high", `w` for "water") cover the `lg3` and `xg3` values queried from the watina database.
+- Clusterwise de-trending is indicated by a suffix `d`: we get `lwd` and `hwd`
+- In contrast, a **prefix `d`** identifies the difference: e.g. `ds` for a difference in position, or `dlwd` for a difference in clusterwise de-trended `lg3`.
+
+
+
+:::
+
+```{r raw-data-join-dbplyr}
+#| eval: true
+diffdata_raw <- data %>%
+  left_join(data,
+    by = join_by(
+      idx > idx, # only different locations
+      cluster == cluster, # from the same cluster
+      hyear == hyear # in the same year
+    ),
+    suffix = c("1", "2"),
+    relationship = "many-to-many"
+  ) %>% mutate(
+    ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+    dlw = abs(lw2 - lw1),
+    dlwd = abs(lwd2 - lwd1),
+    dhw = abs(hw2 - hw1),
+    dhwd = abs(hwd2 - hwd1)
+  ) %>%
+  filter(
+    dx < extent
+    ) 
+
+# glimpse(diffdata_raw)
+diffdata_raw %>% count
+```
+
+# References
+
+::: {#refs}
+:::
