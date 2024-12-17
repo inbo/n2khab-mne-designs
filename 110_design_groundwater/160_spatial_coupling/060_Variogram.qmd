@@ -1,12 +1,10 @@
 ---
 title: "Water Level Variograms and Models"
-bibliography: references.bib
+bibliography: references_csl.json
 format:
   html:
     toc: true
     html-math-method: katex
-  pdf:
-    fig-pos: 'H'
 knitr:
   opts_chunk:
     echo: true
@@ -42,7 +40,7 @@ Some parameters can be chosen by the user.
 #| eval: true
 
 extent <- 1024 # m
-n_bins <- 128
+n_bins <- 256
 
 # result of previous analysis
 cluster_dist <- 3400 # m # parameter for clustering
@@ -68,16 +66,17 @@ A variogram is defined as a quantification of the semivariance of a difference m
 :::
 
 
-We define the **semivariance** $\gamma$ [@Matheron1962]:
+We define the **semivariance** $\gamma$ [@Matheron1962, modified]:
 
-$\gamma\left(h\right) = \frac{1}{2N} \sum\limits_{N(h)} \left(z_j - z_i\right)^2 \quad \forall \left{i, j\right}: \mid s_j-s_i \mid = h$
+$$ \gamma\left( h\right) = \frac{1}{2} \underset{h}{\mathrm{Var}} \left(z_j - z_i\right) \quad \forall \left\lbrace i, j\right\rbrace :\ \mid s_j-s_i \mid \approx h $$
 
 Containing the following parameters:
 
 - $N$ is the number of observation pairs $\{i, j\}$
-- with spatial positions $s_\cdot = \left(x_\cdot , y_\cdot\right)$
-- and measured values $z_\cdot$
+- with spatial positions $s_{(\cdot)} = \left(x_{(\cdot)} , y_{(\cdot)}\right)$
+- and measured values $z_{(\cdot)}$
 - grouped (binned) to distance groups $h$; $h$ is also called the "lag vector magnitude", effectively the Euclidean distance
+- $Var$ being the variance within bins of similar $h$
 - $\gamma\left(h\right)$ is the semivariance (because $2\gamma$ is the variance)
 
 
@@ -86,9 +85,14 @@ To the latter, one can fit a Matérn-class function for parametrization and comp
 Or one can apply more complex models.
 
 
-Our raw data of choice are `xG3` values 
-TODO: reference
-<https://www.wur.nl/nl/onderzoek-resultaten/onderzoeksinstituten/environmental-research/faciliteiten-producten/software-en-modellen/grondwaterdynamiek.htm>
+Our raw data of choice are `xG3` values, which are `LG3` for a lower- and `HG3` for an upper reference of water levels [@ritzema2012].
+<!-- see also /data/R/quickanalyses/HG3_timeseries.org -->
+
+They are defined as follwos:
+
+> Gemiddelde van de drie laagste|hoogste grondwaterstanden in een hydrologisch jaar (1 april t/m 31 maart) bij een meetfrequentie van tweemaal per maand (rond de 14e en 28e).
+
+This is literally how they are calculated.
 
 
 ## de-trending
@@ -135,10 +139,20 @@ For notation, I heavily abbreviate, but try to keep the abbreviations consistent
 - Measurements `lw` and `hw` (`l` for "low", `h` for "high", `w` for "water") cover the `lg3` and `xg3` values queried from the watina database.
 - Clusterwise de-trending is indicated by a suffix `d`: we get `lwd` and `hwd`
 - In contrast, a **prefix `d`** identifies the difference: e.g. `ds` for a difference in position, or `dlwd` for a difference in clusterwise de-trended `lg3`.
-
-
+- There is the **prefix `v`**, indicating a variance calculation (e.g. `vhgd`, variance in clusterwise de-trended HG3).
 
 :::
+
+
+::: {.callout-warning}
+I only join locations which are categorized under the same
+
+- region and cluster
+- soilclass
+- hydroyear
+
+:::
+
 
 ```{r raw-data-join-dbplyr}
 #| eval: true
@@ -146,7 +160,9 @@ diffdata_raw <- data %>%
   left_join(data,
     by = join_by(
       idx > idx, # only different locations
+      region == region, # from the same region
       cluster == cluster, # from the same cluster
+      soilclass == soilclass, # from the same soilclass
       hyear == hyear # in the same year
     ),
     suffix = c("1", "2"),
@@ -159,12 +175,456 @@ diffdata_raw <- data %>%
     dhwd = abs(hwd2 - hwd1)
   ) %>%
   filter(
-    dx < extent
+    ds < extent
     ) 
 
 # glimpse(diffdata_raw)
 diffdata_raw %>% count
 ```
+
+
+Further processing is required:
+
+- remove `NA`
+- binning by distance 
+- calculation of difference values
+- optional log/logp1 transformation
+
+
+```{r raw-data-processing}
+diffdata <- diffdata_raw %>%
+  filter_at(
+    vars(
+    idx1, code1, x1, y1, 
+    lw1, lwd1, hw1, hwd1,
+    idx2, code2, x2, y2, 
+    lw2, lwd2, hw2, hwd2,
+    hyear, ds
+    ),
+    all_vars(!is.na(.))
+  )
+
+diffdata <- diffdata %>%
+  mutate(
+    distance_bin = cut(ds,
+      breaks = seq(
+        -extent/n_bins,
+        extent,
+        length.out = n_bins+2
+      ) # cut to "meters" bin
+    ),
+    dlw = lw2-lw1,
+    dhw = hw2-hw1,
+    dlwd = lwd2 - lwd1, # cluster-wise de-trended difference
+    dhwd = hwd2 - hwd1, # cluster-wise de-trended difference
+    dh = elevation_dhmv2 - elevation_dhmv1,
+    dslope = slope_r2.5m2 - slope_r2.5m1,
+    dw = wata_min_dist2 - wata_min_dist1,
+    dz = z2 - z1,
+    ds_log = log10(ds + 1)
+  ) %>% 
+  arrange(idx1, idx2) %>% 
+  mutate_at(vars(
+    region, code1, code2,
+    wata_min_src1, wata_min_src2
+  ), as.factor) 
+# glimpse(diffdata)
+```
+
+
+## sample size
+
+```{r plot-data-unbinned}
+#| eval: true
+#| label: fig-dw-ds
+#| fig-cap: "Distance-Difference-Plot of cluster-detrended absolute difference in xG3 (m) against distance (${\\Delta s}$)."
+#| layout-ncol: 2
+#| fig-subcap: 
+#|   - "LG3."
+#|   - "HG3."
+
+diffdata %>%
+  ggplot(aes(x = ds, y = abs(dlwd))) +
+  geom_point(alpha = 0.05) +
+  xlab("distance (m)") +
+  ylab("de-trended hg3 difference (m)") +
+  theme_bw()
+
+diffdata %>%
+  ggplot(aes(x = ds, y = abs(dhwd))) +
+  geom_point(alpha = 0.05) +
+  xlab("distance (m)") +
+  ylab("de-trended hg3 difference (m)") +
+  theme_bw()
+
+```
+
+## binning and semivariance
+
+Bins are defined above, but it makes sense to define how gins are compiled in terms of value fields.
+
+
+::: {.callout-warning}
+This is also where semivariance gets calculated.
+:::
+
+
+```{r bin-data}
+nanmean <- function (val) mean(val, na.rm = TRUE)
+nanvar <- function (val) var(val, na.rm = TRUE)
+
+# a convenience function for calculated measures
+summarize_groupeddata <- function(data) {
+  data %>% 
+    summarize(
+      vlg = nanvar(dlw),
+      vhg = nanvar(dhw),
+      vlgd = nanvar(dlwd),
+      vhgd = nanvar(dhwd),
+      ds = nanmean(abs(ds)), 
+      dh = nanmean(abs(dh)), 
+      dslope = nanmean(abs(dslope)), 
+      dw = nanmean(abs(dw)), 
+      dz = nanmean(abs(dz)), 
+      dlg  = nanmean(dlw),
+      dhg  = nanmean(dhw),
+      dlgd = nanmean(dlwd),
+      dhgd = nanmean(dhwd),
+      cnt = n()
+    ) %>% ungroup %>% arrange(ds)
+}
+
+
+diffdata_binned <- diffdata %>%
+  group_by(distance_bin) %>%
+  summarize_groupeddata()
+
+diffdata_binned_soilclass <- diffdata %>%
+  group_by(soilclass, distance_bin) %>%
+  summarize_groupeddata()
+
+knitr::kable(head(diffdata_binned_soilclass, 5))
+```
+
+
+We can plot the sample size per bin:
+
+```{r bin-samplesize}
+#| label: fig-soilclass-samplesize
+#| code-fold: true
+#| fig-cap: "Sample size per soilclass and distance difference."
+
+diffdata_binned_soilclass %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step() +
+  theme_bw() 
+  
+```
+
+
+
+Final detail: there will be transformations.
+
+```{r variogram-transformations}
+semi <- function(x) 0.5 * x
+# trafo <- function(x) log(x)
+```
+  
+
+# Variogram
+
+## visualization
+
+The first step is to visualize how data changes in bins.
+With the data at hand, this is rather straight forward.
+
+::: {.panel-tabset}
+### LG3
+```{r variogram-lg3}
+#| label: fig-variogram-lg3
+#| code-fold: true
+#| fig-cap: "Variogram of difference in LG3 against binned distance ($\\Delta s$)."
+
+
+diffdata_binned %>%
+  ggplot(aes(x = ds, y = semi(vlgd))) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(color = 'darkblue') +
+  xlab("site distance (m), binned") +
+  ylab("semivariance in de-trended LG3: var(lg3)/2 (m²)") +
+  theme_bw() +
+  theme(legend.position = "none") 
+```
+
+
+### LG3
+```{r variogram-hg3}
+#| label: fig-variogram-hg3
+#| code-fold: true
+#| fig-cap: "Variogram of difference in LG3 against binned distance ($\\Delta s$)."
+diffdata_binned %>%
+  ggplot(aes(x = ds, y = semi(vhgd))) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(color = 'darkblue') +
+  xlab("site distance (m), binned") +
+  ylab("semivariance in de-trended HG3: var(lg3)/2 (m²)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+
+```
+:::
+
+As can be seen, the `smooth` interpolation is not too accurate.
+We should do better.
+
+
+## Regression
+
+### strategy
+More specifically, we should regress with functions which are
+
+- less sensitive to outliers
+- optionally forced through zero (no distance, no difference)
+- of different function class, e.g. Matérn or linear breakpoint
+
+
+To understand the tools we have, start with linear.
+Of course, I want a nice and [[https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim][slender optimizer, yet universal regression]] toolkit.
+
+
+### implementation
+
+There are some general convenience wrappers for classical regression.
+
+- https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim
+
+
+```{r regression-tools}
+
+wrap_target_function <- function(x, y, regressor, params) {
+  predictions <- regressor(x, params)
+  differences <- y - predictions
+  return(sum(differences^2))
+}
+
+create_prediction_function <- function(regressor, results) {
+  fcn <- function (x) {
+    regressor(x, results$par)
+  }
+
+  return(fcn)
+}
+
+print_regression_results <- function(orsl, label = "") {
+  par <- paste(round(orsl$par, 2), collapse = ", ")
+  conv <- orsl$convergence
+  eps <- orsl$value
+  print(sprintf("conv %i at (%s): eps %.1f %s", conv, par, eps, label))
+}
+```
+
+
+To test this, behold the non-sensical linear regression!
+
+```{r regression-test}
+
+x <- diffdata_binned$ds
+y <- semi(diffdata_binned$vhgd)
+
+linear_function <- function(x, params) {
+  return(params[1] + params[2]*x)
+}
+
+optimizer_results <- optim(
+  par = c(0, 1),
+  fn = function(params) {
+    wrap_target_function(x, y, linear_function, params)
+  }, method = "L-BFGS-B"
+)
+
+print_regression_results(optimizer_results, label = "linear")
+
+predictor_function <- create_prediction_function(linear_function, optimizer_results)
+
+ggplot(NULL, aes(x = x, y = y)) +
+  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
+  geom_line(aes(x = x, y = predictor_function(x))) +
+  theme_minimal()
+
+```
+
+
+### application
+
+#### ramp function
+
+A piecewise linear-to-constant function ("ramp") might be useful!
+
+
+```{r regression-ramp}
+
+x <- diffdata_binned$ds
+y <- semi(diffdata_binned$vhgd)
+
+ramp_function <- function(x, params) {
+  pre <- x<=params[1]
+  post <- !pre
+  return(0 +
+         params[2] * x * as.integer(pre) +
+         params[2] * params[1] * as.integer(post))
+}
+
+optimizer_results <- optim(
+  par = c(250, mean(y)),
+  lower = c(0, 0),
+  upper = c(max(x), +Inf),
+  fn = function(params) {
+    wrap_target_function(x, y, ramp_function, params)
+  }, method = "L-BFGS-B"
+)
+
+print_regression_results(optimizer_results, label = "ramp-plateau")
+
+predictor_function <- create_prediction_function(ramp_function, optimizer_results)
+
+ggplot(NULL, aes(x = x, y = y)) +
+  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
+  geom_line(aes(x = x, y = predictor_function(x))) +
+  theme_minimal()
+
+```
+
+This did not converge well.
+
+
+#### log-ramp
+Yet we could use transformations:
+
+
+```{r regression-logramp}
+
+x <- diffdata_binned$ds
+y <- log(1.+semi(diffdata_binned$vhgd))
+
+logramp_function <- function(x, params) {
+  pre <- x<=params[1]
+  post <- !pre
+  return(0 +
+         params[2] * x * as.integer(pre) +
+         params[2] * params[1] * as.integer(post))
+}
+
+optimizer_results <- optim(
+  par = c(350, mean(y)),
+  # lower = c(0, 0),
+  # upper = c(max(x), +Inf),
+  fn = function(params) {
+    wrap_target_function(x, y, logramp_function, params)
+  }, method = "Nelder-Mead" # "L-BFGS-B"
+)
+
+print_regression_results(optimizer_results, label = "ramp-plateau")
+
+predictor_function <- create_prediction_function(logramp_function, optimizer_results)
+
+ggplot(NULL, aes(x = x, y = y)) +
+  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
+  geom_line(aes(x = x, y = predictor_function(x))) +
+  theme_minimal()
+
+```
+
+Not *too* bad, but still bad.
+
+
+#### Matérn-like function
+
+Let's mimic what the pro's do!
+What follows is an exact quote [(source)](https://pbs-assess.github.io/sdmTMB/articles/model-description.html#gaussian-random-fields).
+
+The Matérn defines the covariance $\Phi\left( s_j, s_k\right)$ between spatial locations $s_j$ and $s_k$ as
+
+$$\Phi\left( s_j, s_k\right) = \tau^2 / \Gamma\left(\nu\right) 2^{\nu -1} \left(\kappa d_{jk}\right)^\nu K_\nu\left(\kappa d_{jk}\right)$$,
+<!-- Φ(sj,sk)=τ2/Γ(ν)2ν−1(κdjk)νKν(κdjk),-->
+
+where $\tau^2$ controls the spatial variance, 
+$\nu$ controls the smoothness, 
+$\Gamma$ represents the Gamma function, 
+$d_{jk}$ represents the distance between locations $s_j$ and $s_k$, 
+$K_\nu$ represents the modified Bessel function of the second kind, 
+and $\kappa$ represents the decorrelation rate.
+The parameter $\nu$ is set to $1$ to take advantage of the Stochastic Partial Differential Equation (SPDE) approximation to the GRF 
+to greatly increase computational efficiency [@Lindgren2011].
+Internally, the parameters $\kappa$ and $\tau$ are converted to range and marginal standard deviation $\sigma$ as 
+$$range=\frac{8}{\kappa}$$
+and 
+$$\sigma=\left(4\pi e^{2log(\tau )+2log(\kappa)}\right)^{-\frac{1}{2}}$$
+.
+
+See also: https://stats.stackexchange.com/questions/611908/how-to-properly-implement-a-mat%C3%A9rn-kernel-function-in-r 
+
+
+Should be fun to implement!
+
+
+```{r regression-matérn}
+
+x <- diffdata_binned$ds
+y <- semi(diffdata_binned$vhgd)
+
+# ## standardization helps function comprehension
+# x <- x/max(x)
+# y <- y / mean(y)
+
+matern_function <- function(d, params) {
+  phi <- params[1] # related to range; turning point
+  sill <- params[2]^2
+  nu <- 1. #params[3]
+  d <- d
+  z <- sqrt(2*nu)*d/phi
+  result <- sill - sill * (z)^nu * besselK(z, nu) / (2^(nu-1)*gamma(nu))
+  result[is.na(result)] <- 0
+  return(result)
+}
+
+
+# for exploration:
+# start_values <- c("tau" = mean(y), "kappa" = sqrt(8)/250)
+# start_values <- c("phi" = 0.3, "sill" = 10) # , "nu" = 1. 
+# params <- start_values
+# d <- x
+# plot(x, matern_function(x, start_values), type = "l") 
+
+start_values <- c("phi" = mean(x), "sill" = mean(y)) # , "nu" = 1. 
+optimizer_results <- optim(
+  par = start_values,
+  # lower = c(0.05, 0.01),
+  # upper = c(max(x), max(y)),
+  fn = function(params) {
+    wrap_target_function(x, y, matern_function, params)
+  }, method = "Nelder-Mead" # "L-BFGS-B"
+)
+
+print_regression_results(optimizer_results, label = "Matérn")
+
+predictor_function <- create_prediction_function(matern_function, optimizer_results)
+
+ggplot(NULL, aes(x = x, y = y)) +
+  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
+  geom_line(aes(x = x, y = predictor_function(x))) +
+  labs(title = "Matérn regression") +
+  theme_minimal()
+
+```
+
+
+The regression results are `{r} paste(round(optimizer_results$par, 4), collapse = ", ")`.
+
+This can be converted to range and sill.
+
+
+
 
 # References
 
