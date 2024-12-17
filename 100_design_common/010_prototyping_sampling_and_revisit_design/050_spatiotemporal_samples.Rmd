@@ -2177,6 +2177,78 @@ rm(spsamples_calendar_actseqs_long)
 gc()
 ```
 
+#### Checking the spatial sampling unit calendar
+
+<!-- - check consistency (join completeness) with earlier objects -->
+
+```{r include=FALSE}
+# to check if this runs without error
+scheme_moco_ps_spsubset_fas_panels %>% 
+  inner_join(
+    scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar,
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset,
+      notation_paneldesign,
+      panel
+    ),
+    relationship = "one-to-many",
+    # "drop" is allowed because some panels disappear due to the cleaning or
+    # to small sample sizes
+    unmatched = c("drop", "error")
+  ) %>% 
+  invisible()
+```
+
+<!-- Check which panels have been dropped: -->
+
+```{r eval=FALSE, include=FALSE}
+scheme_moco_ps_spsubset_fas_panels %>% 
+  select(scheme:in_aquatic_subset, notation_paneldesign, panel) %>% 
+  anti_join(
+    scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar,
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset,
+      notation_paneldesign,
+      panel
+    )
+  )
+```
+
+Checking that the same panel designs are present in each stratum and spatial poststratum, in the spatial sample calendar and in the panel membership object.
+
+```{r}
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+  # this leaves out the panels and the spatial sampling units:
+  distinct(pick(scheme:sp_poststratum), stratum) %>% 
+  inner_join(
+    scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>% 
+      select(-panel_membership),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset,
+      notation_paneldesign,
+      stratum,
+      sp_poststratum
+    ),
+    # in the calendar, we get panels of the same panel design and FAGs but with
+    # different activity sequences because of the cleaning on FAG X actseq.
+    # Hency we get "many-to-one"
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  invisible()
+```
+
+
+
 ### Spatiotemporal samples
 
 Since quite a few FAGs are applied at the same location, it is also useful to derive the subset of FAGs ('target FAGs') that represent the main field method of the target variable(s) in each scheme.
