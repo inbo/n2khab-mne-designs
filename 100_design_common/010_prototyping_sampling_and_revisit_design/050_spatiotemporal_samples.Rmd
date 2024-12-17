@@ -2012,11 +2012,13 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     (year(date_start) >= year_first & year(date_start) <= year_last) |
       str_detect(notation_paneldesign, "shift")
   ) %>% 
-  # implement a delay for FAGs with a panel design with one subperiod if
+  # implement a delay for FAGs with a panel design with one subperiod and for
+  # FAGs where permanent equipment is installed and spatially positioned, if
   # month(date_start) < month_first_default in the first year
   mutate(
     delay = if_else(
-      limit_n_subperiods == 1 & 
+      (limit_n_subperiods == 1 | 
+         str_detect(field_activity_group, "INST|SPATPOSIT")) & 
         year(date_start) == year_first & 
         month(date_start) < month_first_default,
       months(month_first_default - month(date_start)),
@@ -2219,6 +2221,8 @@ scheme_moco_ps_spsubset_fas_panels %>%
     )
   )
 ```
+
+<!-- The dropped panels are all because of small sample sizes in all involved strata in the specific scheme x module_combo, leading to occasional panels with no sampling units at all. -->
 
 Checking that the same panel designs are present in each stratum and spatial poststratum, in the spatial sample calendar and in the panel membership object.
 
