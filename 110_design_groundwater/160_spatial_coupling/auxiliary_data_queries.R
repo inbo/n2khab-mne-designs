@@ -154,7 +154,29 @@ join_lookup <- function(
     delete_existing = TRUE
   ) {
 
+  # type_dataidx <- typeof(data[, index_column])
+  # type_lookupidx <- typeof(lookup[, index_column])
+
+  # if (!(type_dataidx == type_lookupidx)) {
+  #   message(paste0("data (", type_dataidx,
+  #       ") and lookup (", type_lookupidx,") are not of the same type. ",
+  #       "attempting to convert lookup index."))
+  # data[, index_column]
+  # }
+
+  # this circumvents occasional type mismatch of <integer> and <tbl_df:integer>
+  data <- as.data.frame(data)
+  lookup <- as.data.frame(lookup)
+
+  # data <- data[!is.na(data[, index_column]), ]
+  # lookup <- lookup[!is.na(lookup[, index_column]), ]
+
+  # data[, index_column] <- type.convert(data[, index_column], as.is = TRUE)
+  # lookup[, index_column] <- type.convert(lookup[, index_column], as.is = TRUE)
+
+
   if (delete_existing) {
+    # remove overlapping columns before join
     for (col in colnames(lookup)) {
       if (!(col == index_column) && (col %in% colnames(data))) {
         data <- data %>%
@@ -170,6 +192,7 @@ join_lookup <- function(
         relationship = "many-to-one"
       )
   } else {
+    # solve column overlap by a suffix
     data <- data %>%
       dplyr::left_join(
         lookup,
@@ -859,6 +882,7 @@ test_all_lookups <- function(){
     join_waterdistance(cluster_column = "idx")
 
   dplyr::glimpse(much_data)
+
 
 }
 
