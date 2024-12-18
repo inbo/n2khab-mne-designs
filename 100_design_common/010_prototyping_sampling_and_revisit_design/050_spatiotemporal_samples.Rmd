@@ -2285,6 +2285,17 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     } else {
       min(date_start[rank == 4L])
     },
+    # A tricky thing below is that we again look at the activity_sequence level,
+    # which would be logical, but we already lumped activity sequence per FAG
+    # when making mod_scheme_fag (on which all the rest is based). This is
+    # intensified by lumping in_aquatic_subset at the FAG level, not at the FAG
+    # x activity_sequence level, when creating mod_scheme_actseq_fag, on which
+    # mod_scheme_fag is based. This activity sequence agnostic approach works as
+    # long as FAG ranks are the same across activity sequences, which we already
+    # tested above. When this is no longer the case, we should not do the
+    # lumping in mod_scheme_actseq_fag and mod_scheme_fag. A good example to
+    # look at is FAG 'GWINSTPIEZWELL' in GW_03.3, which happens in 4 activity
+    # sequences, 2 terrestrial and 2 aquatic.
     .by = c(stratum, activity_sequence, grts_address)
   ) %>% 
   filter(
@@ -2303,6 +2314,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
          date_end > date_start_first_rank2 & 
          date_end > date_start_first_rank3 & 
          date_end > date_start_first_rank4),
+    # similar comment about activity_sequence as above
     .by = c(stratum, activity_sequence, grts_address)
   ) %>% 
   semi_join(
