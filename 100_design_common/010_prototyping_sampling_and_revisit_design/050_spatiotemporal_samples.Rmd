@@ -2420,6 +2420,120 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
   invisible()
 ```
 
+```{r}
+# this entire chunk is about test_right %>% anti_join(test_left2) returning
+# things (GWINSTPIEZWELL and SPATPOSITPIPE in GW_03.3, with different activity
+# sequences). The outcomes may depend on which modules are active. Delete the
+# chunk when done with all tests.
+test_left <- 
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+  # this leaves out the panels and the spatial sampling units:
+  distinct(pick(scheme:sp_poststratum), stratum) %>% 
+  unnest(fags) %>% 
+  unnest(actseqs) %>% 
+  distinct()
+test_left2 <- 
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>% 
+  # this leaves out the panels and the spatial sampling units:
+  distinct(pick(scheme:sp_poststratum, stratum, -actseqs)) %>% 
+  unnest_longer(actseqs_vec, values_to = "activity_sequence")
+
+# with the intermediate calendar:
+# test_left3 <-
+#   scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+#   # this leaves out the panels and the spatial sampling units:
+#   distinct(pick(scheme:sp_poststratum, stratum, -actseqs)) %>% 
+#   unnest_longer(actseqs_vec, values_to = "activity_sequence")
+
+test_right <- 
+  scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>% 
+  select(-panel_membership) %>% 
+  unnest(fas) %>% 
+  select(-actseqs) %>% 
+  unnest_longer(actseqs_vec, values_to = "activity_sequence")
+
+test_right %>%
+  # filter(field_activity_group == "GWINSTPIEZWELL", scheme == "GW_03.3") %>% 
+  # distinct(pick(c(stratum, sp_poststratum))) %>% 
+  left_join(
+    test_left %>% mutate(cal = TRUE)
+      # filter(field_activity_group == "GWINSTPIEZWELL", scheme == "GW_03.3") %>% 
+      # distinct(pick(c(stratum, sp_poststratum)))
+    
+  ) %>% 
+  filter(field_activity_group == "GWINSTPIEZWELL", scheme == "GW_03.3", stratum == "3130_aom_0_1") %>% 
+  count(module_combo_code, in_aquatic_subset, activity_sequence, cal)
+  View
+test_right %>% 
+  anti_join(test_left) %>% 
+  count(scheme, field_activity_group, activity_sequence)
+test_right %>% anti_join(test_left2)
+# test_right %>% anti_join(test_left3)
+test_left %>% anti_join(test_right)
+
+test_left %>%
+  filter(field_activity_group == "GWINSTPIEZWELL")
+test_right %>% 
+  filter(field_activity_group == "GWINSTPIEZWELL")
+
+test_right %>% left_join(test_left)
+
+# in_aquatic_subset is always NA here, with 4 actseqs:
+mod_scheme_fag %>% 
+  filter(field_activity_group == "GWINSTPIEZWELL", scheme == "GW_03.3")
+scheme_moco_ps_spsubset_fas_paneldesign %>% 
+  mutate(has_gwinstpiezwell = map_lgl(fas, ~ "GWINSTPIEZWELL" %in% .$field_activity_group)) %>% 
+  filter(has_gwinstpiezwell, scheme == "GW_03.3") %>% 
+  count(in_aquatic_subset, fas)
+scheme_moco_ps_spsubset_fas_panels %>% 
+  mutate(has_gwinstpiezwell = map_lgl(fas, ~ "GWINSTPIEZWELL" %in% .$field_activity_group)) %>% 
+  filter(has_gwinstpiezwell, scheme == "GW_03.3") %>% 
+  count(in_aquatic_subset, fas)
+scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>% 
+  mutate(has_gwinstpiezwell = map_lgl(fas, ~ "GWINSTPIEZWELL" %in% .$field_activity_group)) %>% 
+  filter(has_gwinstpiezwell, scheme == "GW_03.3") %>% 
+  count(in_aquatic_subset, fas)
+
+# in_aquatic_subset is always NA here, but with 3 different possibilities for actseqs due to cleanup:
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+  distinct(pick(scheme:sp_poststratum), stratum) %>% 
+  mutate(has_gwinstpiezwell = map_lgl(fags, ~ "GWINSTPIEZWELL" %in% .$field_activity_group)) %>% 
+  filter(has_gwinstpiezwell, scheme == "GW_03.3") %>% 
+  count(in_aquatic_subset, fags) %>% 
+  pull(fags) %>% map(~ pull(., actseqs))
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>% 
+  # this leaves out the panels and the spatial sampling units:
+  distinct(pick(scheme:sp_poststratum, stratum, -actseqs)) %>% 
+  unnest_longer(actseqs_vec, values_to = "activity_sequence") %>% 
+  filter(field_activity_group == "GWINSTPIEZWELL", scheme == "GW_03.3") %>% 
+  count(in_aquatic_subset, field_activity_group, activity_sequence)
+
+# having a look at the actseqs pattern of
+# scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar:
+test <- 
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+  distinct(pick(scheme:sp_poststratum, stratum, panel, starts_with("date"))) %>% 
+  unnest(fags) %>% 
+  filter(field_activity_group == "GWINSTPIEZWELL", scheme == "GW_03.3") %>% 
+  mutate(actseqs = map_chr(actseqs, ~ str_c(.$activity_sequence, collapse = ", ")))
+test %>% 
+  count(actseqs)
+test %>% 
+  filter(actseqs == "gw_lev_piezwell, gwsurf_lev_piezwell, gw_samp_gw_readman, gw_samp_gwsurf_readman") %>% View
+
+# here the aquatic subsets x actseqs are still separated:
+mod_scheme_field_activity %>% 
+  select(-field_activity) %>% 
+  distinct() %>% 
+  filter(field_activity_group == "GWINSTPIEZWELL", scheme == "GW_03.3") %>% 
+  count(in_aquatic_subset, field_activity_group, activity_sequence)
+
+# and here not anymore. Since it's the same FAG
+mod_scheme_actseq_fag %>% 
+  filter(field_activity_group == "GWINSTPIEZWELL", scheme == "GW_03.3") %>% 
+  count(in_aquatic_subset, field_activity_group, activity_sequence)
+```
+
 
 
 ### Spatiotemporal samples
