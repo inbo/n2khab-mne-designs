@@ -2043,6 +2043,34 @@ Note that it's irrelevant to verify the number of panels, since smaller sample s
 
 <!-- - check consistency with spatial & spatiotemporal sample sizes -->
 
+Since quite a few FAGs are applied at the same location, it is useful to derive the subset of FAGs ('target FAGs') that represent the main field method of the target variable(s) in each scheme, in order to use this for further selections.
+
+```{r}
+scheme_moco_ps_spsubset_targetfag <- 
+  mod_scheme_field_activity %>% 
+  semi_join(
+    mod_scheme_targetfieldmethod,
+    join_by(module, scheme, field_activity == main_field_method)
+  ) %>% 
+  distinct(module, scheme, in_aquatic_subset, field_activity_group) %>% 
+  # join module combos:
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  distinct(
+    scheme, 
+    module_combo_code, 
+    panel_split, 
+    in_aquatic_subset, 
+    field_activity_group
+  )
+```
+
 
 #### Deriving spatial sampling unit calendar
 
@@ -2323,34 +2351,6 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
 
 
 ### Spatiotemporal samples
-
-Since quite a few FAGs are applied at the same location, it is also useful to derive the subset of FAGs ('target FAGs') that represent the main field method of the target variable(s) in each scheme.
-
-```{r}
-scheme_moco_ps_spsubset_targetfag <- 
-  mod_scheme_field_activity %>% 
-  semi_join(
-    mod_scheme_targetfieldmethod,
-    join_by(module, scheme, field_activity == main_field_method)
-  ) %>% 
-  distinct(module, scheme, in_aquatic_subset, field_activity_group) %>% 
-  # join module combos:
-  inner_join(
-    scheme_target_paneldesign %>% 
-      select(scheme, module_combo_code, module_combo, panel_split) %>% 
-      unnest(module_combo),
-    join_by(module, scheme),
-    relationship = "many-to-one",
-    unmatched = "error"
-  ) %>% 
-  distinct(
-    scheme, 
-    module_combo_code, 
-    panel_split, 
-    in_aquatic_subset, 
-    field_activity_group
-  )
-```
 
 Subsetting the sampling unit calendar to the occasions with a target FAG.
 This object comes closest to the notion of **spatiotemporal sample**.
