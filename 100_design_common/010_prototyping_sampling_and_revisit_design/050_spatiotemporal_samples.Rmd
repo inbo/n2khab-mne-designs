@@ -2041,8 +2041,6 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
 
 Note that it's irrelevant to verify the number of panels, since smaller sample sizes have led to dropping panels.
 
-<!-- - check consistency with spatial & spatiotemporal sample sizes -->
-
 Since quite a few FAGs are applied at the same location, it is useful to derive the subset of FAGs ('target FAGs') that represent the main field method of the target variable(s) in each scheme, in order to use this for further selections.
 
 ```{r}
@@ -2093,6 +2091,58 @@ scheme_moco_ps_spsubset_targetfag <-
   )
 ```
 
+Checking the stratum spatial sample sizes for _target_ FAGs in the calendar against the spatial sample sizes from `scheme_moco_ps_stratum_sppost_spsamples`, for each scheme x module combo x panel split.
+
+```{r}
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>% 
+  distinct(
+    scheme,
+    module_combo_code,
+    panel_split,
+    in_aquatic_subset,
+    field_activity_group,
+    stratum,
+    grts_address
+  ) %>% 
+  semi_join(
+    scheme_moco_ps_spsubset_targetfag,
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset, # this one doesn't matter actually
+      field_activity_group
+    )
+  ) %>% 
+  count(
+    scheme,
+    module_combo_code,
+    panel_split,
+    field_activity_group,
+    stratum,
+    name = "sample_size_fag"
+  ) %>% 
+  inner_join(
+    scheme_moco_ps_stratum_sppost_spsamples %>% 
+      mutate(
+        total_sample_size = map_int(sp_poststr_samples, nrow),
+        .keep = "unused"
+      ),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      stratum,
+      sample_size_fag == total_sample_size
+    ),
+    # lhs has duplication due to > 1 target FAG per scheme in some cases
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  invisible()
+```
+
+<!-- check temporal spread of sample size -->
 
 #### Deriving spatial sampling unit calendar
 
