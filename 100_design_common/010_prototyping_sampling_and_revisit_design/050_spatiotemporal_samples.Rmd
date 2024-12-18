@@ -297,9 +297,19 @@ This choice is also because it's better to generate thresholds further apart tha
 Defining the GRTS partition number, based on the module combo rank and panel split, for each domain and stratum, hence across schemes.
 
 ```{r}
-moco_dom_stratum_grtspart <- 
+# below object is created separately for checking purposes (see further:
+# reclassified spatial samples object (without spare units))
+scheme_moco_ps_dom_stratum_sample_size <- 
   module_domain_scheme_stratum_sample_size %>%
-  select(module, domain, scheme, sampling_frame_id, stratum, sp_sample_size_all_panels_stratum, nunits) %>%
+  select(
+    module,
+    domain,
+    scheme,
+    sampling_frame_id,
+    stratum,
+    sp_sample_size_all_panels_stratum,
+    nunits
+  ) %>%
   # for MNE, non-core schemes are dropped, except for specifically added types
   # for those non-core-schemes.
   filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
@@ -320,8 +330,10 @@ moco_dom_stratum_grtspart <-
       sum(sp_sample_size_all_panels_stratum),
       max(nunits)
     ),
-    .by = c(module_combo_code, scheme, panel_split, domain, stratum)
-  ) %>% 
+    .by = c(scheme, module_combo_code, panel_split, domain, stratum, nunits)
+  )
+moco_dom_stratum_grtspart <- 
+  scheme_moco_ps_dom_stratum_sample_size %>% 
   # use maximum sample sizes across schemes for common panel designs, domain and
   # stratum, since these should drive GRTS series partitioning:
   summarize(
@@ -936,6 +948,46 @@ scheme_moco_ps_stratum_sppost_spsamples <-
     })
   ) %>% 
   rename(sp_poststr_samples = sp_poststr_samples_spareunits)
+```
+
+Checking that all schemes x module combos x panel splits x strata are still in the running.
+Listing the cases where the planned sample size is different than the one after GRTS series partitioning and reclassification (smaller: possible because of phab-corrections applied in the planned sample size but not (yet) in the samples; larger: possible because of the difference between domain 'Flanders' & spatial poststratum 'Flanders_remainder' (many; not shown), and sometimes also due to minor misfits in 3260 (popsize vs available GRTS addresses per domain)).
+
+<!-- Perhaps look into this 3260 difference; not looked in to further now since it's very limited (2 SACs where the sample has 1 location less). Also, this may depend on the active modules. -->
+
+```{r}
+scheme_moco_ps_dom_stratum_sample_size_positive <- 
+  scheme_moco_ps_dom_stratum_sample_size %>% 
+  filter(total_sample_size_all_panels > 0)
+scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned <- 
+  scheme_moco_ps_dom_stratum_sample_size_positive %>% 
+  rename(total_sample_size_planned = total_sample_size_all_panels) %>% 
+  inner_join(
+    scheme_moco_ps_stratum_sppost_spsamples %>% 
+      mutate(
+        ss_by_sppost = map(sp_poststr_samples, ~count(., sp_poststratum, name = "total_sample_size_after_partitioning")),
+        .keep = "unused"
+      ) %>% 
+      unnest(ss_by_sppost),
+    join_by(scheme, module_combo_code, panel_split, stratum),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>% 
+  filter(
+    as.character(domain) == as.character(sp_poststratum) | 
+      (sp_poststratum == "Flanders_remainder" & domain == "Flanders")
+  )
+stopifnot(
+  nrow(scheme_moco_ps_dom_stratum_sample_size_positive) == 
+    nrow(scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned)
+)
+scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned %>% 
+  filter(
+    total_sample_size_planned != total_sample_size_after_partitioning,
+    sp_poststratum != "Flanders_remainder"
+  ) %>% 
+  relocate(stratum) %>% 
+  arrange(stratum, scheme, module_combo_code, panel_split)
 ```
 
 We can see that identical spatial samples ('identical' includes the sample size) across schemes, panel splits and module combos only occur for smaller strata:
