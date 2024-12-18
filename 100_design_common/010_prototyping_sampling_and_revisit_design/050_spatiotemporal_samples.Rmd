@@ -2047,12 +2047,34 @@ Since quite a few FAGs are applied at the same location, it is useful to derive 
 
 ```{r}
 scheme_moco_ps_spsubset_targetfag <- 
-  mod_scheme_field_activity %>% 
-  semi_join(
-    mod_scheme_targetfieldmethod,
-    join_by(module, scheme, field_activity == main_field_method)
+  mod_scheme_targetfieldmethod %>% 
+  # joining FAGs
+  inner_join(
+    mod_scheme_field_activity %>% 
+      distinct(
+        module,
+        scheme,
+        in_aquatic_subset,
+        field_activity,
+        field_activity_group
+      ),
+    join_by(module, scheme, main_field_method == field_activity),
+    # in_aquatic_subset gives duplication:
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
   ) %>% 
   distinct(module, scheme, in_aquatic_subset, field_activity_group) %>% 
+  rename(in_aq = in_aquatic_subset) %>% 
+  # joining simplified values of 'in_aquatic_subset'
+  inner_join(
+    mod_scheme_fag,
+    join_by(module, scheme, field_activity_group),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # following filter appears to be superfluous:
+  filter(in_aq == in_aquatic_subset | is.na(in_aquatic_subset)) %>% 
+  select(module, scheme, in_aquatic_subset, field_activity_group) %>% 
   # join module combos:
   inner_join(
     scheme_target_paneldesign %>% 
