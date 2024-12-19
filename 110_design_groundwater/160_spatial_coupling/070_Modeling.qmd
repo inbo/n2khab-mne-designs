@@ -76,10 +76,10 @@ For notation, I heavily abbreviate, but try to keep the abbreviations consistent
 - Clusterwise de-trending is indicated by a suffix `d`: we get `lwd` and `hwd`
 - `filterdepth` was stored as `z`
 - further parameters: 
-  - `elevation`, the elevation from DHMV
-  - `slope`, the local slope
-  - `soilclass`, 
-  - `wata_min_dist`
+  - `elevation`, the elevation from DHMV and `slope`, the local slope
+  - `soilclass` ("unknown" category will be disregarded), 
+  - `wata_min_dist`,
+  - TODO: add `ecoregio` (watina-gebied | ecoregio | n2khab-types)
 :::
 
 ```{r parameter-rename}
@@ -89,7 +89,8 @@ data <- data %>%
     elevation = elevation_dhmv,
     slope = slope_r2.5m,
     water_distance = wata_min_dist
-)  
+  ) #%>%
+  # filter(soilclass != "unknown")
 
 ```
 
@@ -150,7 +151,7 @@ plot(vlaanderen_mesh)
 ```{r sdmTMB-model-lg3}
 #| eval: true
 fit_lg3 <- sdmTMB(
-  lwd ~ filterdepth + elevation + soilclass + water_distance,
+  lwd ~ filterdepth + elevation + soilclass + water_distance, #+ slope
   data = data,
   mesh = vlaanderen_mesh,
   family = gaussian(link = "identity"),
@@ -177,7 +178,7 @@ knitr::kable(tidy(fit_lg3, "ran_pars"))
 ```{r sdmTMB-model-hg3}
 #| eval: true
 fit_hg3 <- sdmTMB(
-  hwd ~ filterdepth + elevation + soilclass + water_distance,
+  hwd ~ filterdepth + elevation + soilclass + water_distance, # + slope
   data = data,
   mesh = vlaanderen_mesh,
   family = gaussian(link = "identity"),
@@ -199,3 +200,5 @@ knitr::kable(tidy(fit_lg3, "ran_pars"))
 ```
 
 :::
+
+
