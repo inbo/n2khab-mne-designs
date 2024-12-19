@@ -1,5 +1,5 @@
 ---
-title: "Water Level Variograms and Models"
+title: "Water Level Variograms and Regression"
 bibliography: references_csl.json
 format:
   html:
@@ -39,8 +39,10 @@ Some parameters can be chosen by the user.
 ```{r data-settings}
 #| eval: true
 
-extent <- 1024 # m
-n_bins <- 256
+# extent <- 1024 # m
+# n_bins <- 128
+extent <- 1024*2 # m
+n_bins <- 256*2
 
 # result of previous analysis
 cluster_dist <- 3400 # m # parameter for clustering
@@ -68,15 +70,15 @@ A variogram is defined as a quantification of the semivariance of a difference m
 
 We define the **semivariance** $\gamma$ [@Matheron1962, modified]:
 
-$$ \gamma\left( h\right) = \frac{1}{2} \underset{h}{\mathrm{Var}} \left(z_j - z_i\right) \quad \forall \left\lbrace i, j\right\rbrace :\ \mid s_j-s_i \mid \approx h $$
+$$ \gamma\left( h\right) = \frac{1}{2} \underset{N(h)}{\mathrm{Var}} \left(z_j - z_i\right) \quad \forall \left\lbrace i, j\right\rbrace :\ \mid s_j-s_i \mid \approx h $$
 
 Containing the following parameters:
 
-- $N$ is the number of observation pairs $\{i, j\}$
-- with spatial positions $s_{(\cdot)} = \left(x_{(\cdot)} , y_{(\cdot)}\right)$
-- and measured values $z_{(\cdot)}$
+- $N$ is the number of observation pairs $\{i, j\}$ in a given distance bin
 - grouped (binned) to distance groups $h$; $h$ is also called the "lag vector magnitude", effectively the Euclidean distance
-- $Var$ being the variance within bins of similar $h$
+- with spatial position vectors $s_{(\cdot)} = \left(x_{(\cdot)} , y_{(\cdot)}\right)$
+- and measured values $z_{(\cdot)}$ at a given position $s_{(\cdot)}$
+- $Var$ being the variance within bins of approximately similar $h$
 - $\gamma\left(h\right)$ is the semivariance (because $2\gamma$ is the variance)
 
 
@@ -149,9 +151,12 @@ I only join locations which are categorized under the same
 
 - region and cluster
 - soilclass
-- hydroyear
+- hydroyear ("water year", [see here](https://en.wikipedia.org/wiki/Water_year))
+
+If the same pair of locations is measured in different hydrological years, this is treated as independent observations (simplifying assumption, implying that we are more certain about repeatedly observed co-variation).
 
 :::
+
 
 
 ```{r raw-data-join-dbplyr}
@@ -234,6 +239,10 @@ diffdata <- diffdata %>%
 
 ## sample size
 
+The database holds quite a number of locations, and if these are paired, an enormous data set emerges.
+It is crucial to keep track of the sample size, as a function of distance.
+
+
 ```{r plot-data-unbinned}
 #| eval: true
 #| label: fig-dw-ds
@@ -259,12 +268,15 @@ diffdata %>%
 
 ```
 
+This overview is concretized below, after binning.
+
+
 ## binning and semivariance
 
-Bins are defined above, but it makes sense to define how gins are compiled in terms of value fields.
+Bins are defined above (bins of `{r} extent / n_bins` meters), but it makes sense to define how bins are compiled in terms of value fields (averaging!).
 
 
-::: {.callout-warning}
+::: {.callout-note}
 This is also where semivariance gets calculated.
 :::
 
@@ -303,11 +315,24 @@ diffdata_binned_soilclass <- diffdata %>%
   group_by(soilclass, distance_bin) %>%
   summarize_groupeddata()
 
-knitr::kable(head(diffdata_binned_soilclass, 5))
+knitr::kable(tail(diffdata_binned_soilclass, 10))
 ```
 
 
-We can plot the sample size per bin:
+We can plot the sample size per bin.
+
+::: { .callout-tip }
+The relevance of binwise samplesize is not to be underestimated:
+
+- sufficient bin size is relevant for variance calculation (e.g. too small bins will have lower/too low variance)
+- bin width affects the degree of outlier averaging (there are "outliers", but we currently have no logical reason to exclude them)
+- the number of bins is the number of data points for regression (below); the more, the better
+
+Note in particular how we have many observations from "heavy" soil at low distance (dense sampling of heavy soil regions?), whereas "light" soil data ramps up; both curves are zero-inflated.
+On the other end, sample size diminishes above a kilometer distance.
+
+:::
+
 
 ```{r bin-samplesize}
 #| label: fig-soilclass-samplesize
@@ -322,12 +347,12 @@ diffdata_binned_soilclass %>%
 ```
 
 
-
 Final detail: there will be transformations.
+Yet I focus on the trivial step from "variance" to "semivariance".
 
 ```{r variogram-transformations}
 semi <- function(x) 0.5 * x
-# trafo <- function(x) log(x)
+# log_trafo <- function(x) log(x)
 ```
   
 
@@ -357,7 +382,7 @@ diffdata_binned %>%
 ```
 
 
-### LG3
+### HG3
 ```{r variogram-hg3}
 #| label: fig-variogram-hg3
 #| code-fold: true
@@ -375,8 +400,15 @@ diffdata_binned %>%
 ```
 :::
 
-As can be seen, the `smooth` interpolation is not too accurate.
-We should do better.
+
+::: { .callout-note }
+Insights:
+
+- Variation of variance is surprisingly large: it is hard to see clear patterns, despite the considerable sample size.
+- Another take-home message: differences between `LG3` and `HG3` values seem subtle.
+- As can be seen, the `smooth` interpolation is not too accurate. We should do better (regression).
+
+:::
 
 
 ## Regression
@@ -389,25 +421,29 @@ More specifically, we should regress with functions which are
 - of different function class, e.g. Matérn or linear breakpoint
 
 
-To understand the tools we have, start with linear.
-Of course, I want a nice and [[https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim][slender optimizer, yet universal regression]] toolkit.
+To understand the tools we have, I will start "linear", then increase complexity.
 
 
 ### implementation
 
 There are some general convenience wrappers for classical regression.
+However, [base-r `optim` does all we need](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim).
 
-- https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim
+We choose between well-known "Nelder-Mead" optimization algorithm [@nelder1965], or the more versatile ["L-BFGS-B"](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html) [@zhu1997, @byrd1995].
+They are interchangeable, for all practical purposes, except that the latter allows to define logical parameter boundaries to facilitate optimization convergence.
 
 
 ```{r regression-tools}
 
+# wrap a regression function to generate residuals
+# the result is the parameter to be minimized.
 wrap_target_function <- function(x, y, regressor, params) {
   predictions <- regressor(x, params)
   differences <- y - predictions
-  return(sum(differences^2))
+  return(sum(sqrt(differences^2)))
 }
 
+# this can turn regression output into a usable function.
 create_prediction_function <- function(regressor, results) {
   fcn <- function (x) {
     regressor(x, results$par)
@@ -416,12 +452,27 @@ create_prediction_function <- function(regressor, results) {
   return(fcn)
 }
 
+# a uniform way to print results
 print_regression_results <- function(orsl, label = "") {
-  par <- paste(round(orsl$par, 2), collapse = ", ")
+  par <- paste(round(orsl$par, 4), collapse = ", ")
   conv <- orsl$convergence
   eps <- orsl$value
-  print(sprintf("conv %i at (%s): eps %.1f %s", conv, par, eps, label))
+  print(sprintf("%s regression: conv %i at (%s), mse %.1f", label, conv, par, eps))
 }
+
+# note: the `epsilon` can be calculated manually with the formula:
+#   sum((predictor_function(x) - y)^2)
+
+
+# Finally, a quick histogram plot of residuals.
+plot_residuals_histogram <- function (x, y, predictor_function, ...) {
+  residuals <- predictor_function(x) - y
+  ggplot(NULL, aes(x = residuals)) +
+    geom_histogram(...) +
+    theme_bw()
+}
+
+
 ```
 
 
@@ -455,6 +506,16 @@ ggplot(NULL, aes(x = x, y = y)) +
 ```
 
 
+Observations:
+
+- The regression fits the data more or less well, quantified by the mean square error (`mse`).
+- Optimizer did converge (`conv 0`, [see "convergence" here](https://stat.ethz.ch/R-manual/R-devel/library/stats/html/optim.html)), which should not be overrated (the regression might still be irrelevant).
+- Parameters can be measured, in this case intercept (`{r} round(optimizer_results$par[1], 2)`) and slope (`{r} round(optimizer_results$par[2], 4)`).
+
+We can still do better.
+
+
+
 ### application
 
 #### ramp function
@@ -468,7 +529,7 @@ x <- diffdata_binned$ds
 y <- semi(diffdata_binned$vhgd)
 
 ramp_function <- function(x, params) {
-  pre <- x<=params[1]
+  pre <- x <= params[1]
   post <- !pre
   return(0 +
          params[2] * x * as.integer(pre) +
@@ -495,7 +556,11 @@ ggplot(NULL, aes(x = x, y = y)) +
 
 ```
 
-This did not converge well.
+This did converge, though values are practically zero.
+Switch point is approximately `{r} round(optimizer_results$par[1], 0)`, and slope in the first section is `{r} round(optimizer_results$par[2], 4)`.
+
+Note that, with other settings for `extent` and `n_bins`, this one was much more useful.
+As it is now, with a local optimum at `(0, 0)`, the ramp function is a mere null reference for `mse`.
 
 
 #### log-ramp
@@ -510,13 +575,13 @@ y <- log(1.+semi(diffdata_binned$vhgd))
 logramp_function <- function(x, params) {
   pre <- x<=params[1]
   post <- !pre
-  return(0 +
+  return(params[3] +
          params[2] * x * as.integer(pre) +
          params[2] * params[1] * as.integer(post))
 }
 
 optimizer_results <- optim(
-  par = c(350, mean(y)),
+  par = c(350, mean(y), 1),
   # lower = c(0, 0),
   # upper = c(max(x), +Inf),
   fn = function(params) {
@@ -524,7 +589,7 @@ optimizer_results <- optim(
   }, method = "Nelder-Mead" # "L-BFGS-B"
 )
 
-print_regression_results(optimizer_results, label = "ramp-plateau")
+print_regression_results(optimizer_results, label = "log ramp-plateau")
 
 predictor_function <- create_prediction_function(logramp_function, optimizer_results)
 
@@ -536,16 +601,27 @@ ggplot(NULL, aes(x = x, y = y)) +
 ```
 
 Not *too* bad, but still bad.
+For example, the zero intercept made no sense, but introducing an intercept leaves the first section rather overmodeled with the limited number of bins.
+
+Crucial limitation is that the data lacks a consistent pattern, even in log-space.
 
 
 #### Matérn-like function
 
 Let's mimic what the pro's do!
+
+::: {.callout-tip}
+There are logical reasons for choosing Matérn, namely the assumption of Gaussian interdependence.
+:::
+
+
 What follows is an exact quote [(source)](https://pbs-assess.github.io/sdmTMB/articles/model-description.html#gaussian-random-fields).
+
+`<quote>`
 
 The Matérn defines the covariance $\Phi\left( s_j, s_k\right)$ between spatial locations $s_j$ and $s_k$ as
 
-$$\Phi\left( s_j, s_k\right) = \tau^2 / \Gamma\left(\nu\right) 2^{\nu -1} \left(\kappa d_{jk}\right)^\nu K_\nu\left(\kappa d_{jk}\right)$$,
+$$\Phi\left( s_j, s_k\right) = \tau^2 / \Gamma\left(\nu\right) 2^{\nu -1} \left(\kappa d_{jk}\right)^\nu K_\nu\left(\kappa d_{jk}\right)$$
 <!-- Φ(sj,sk)=τ2/Γ(ν)2ν−1(κdjk)νKν(κdjk),-->
 
 where $\tau^2$ controls the spatial variance, 
@@ -560,15 +636,48 @@ Internally, the parameters $\kappa$ and $\tau$ are converted to range and margin
 $$range=\frac{8}{\kappa}$$
 and 
 $$\sigma=\left(4\pi e^{2log(\tau )+2log(\kappa)}\right)^{-\frac{1}{2}}$$
-.
 
-See also: https://stats.stackexchange.com/questions/611908/how-to-properly-implement-a-mat%C3%A9rn-kernel-function-in-r 
+
+`</quote>`
+
+In code, this means:
+
+```{r matern-definition}
+
+matern_function <- function(d, params) {
+  kappa <- 1/params[1] # related to range; turning point
+  tau2 <- params[2]^2 # related to semivariance
+  nu <- 1. #params[3]
+  d <- d
+  z <- sqrt(2 * nu) * d * kappa
+  K <- suppressWarnings(besselK(z, nu))
+  result <- tau2 - tau2 * (z)^nu * K / (2^(nu - 1) * gamma(nu))
+  result[is.na(result)] <- 0
+  return(result)
+}
+
+
+```
+
+
+(See also some experience [of another user](https://stats.stackexchange.com/questions/611908/how-to-properly-implement-a-mat%C3%A9rn-kernel-function-in-r).)
 
 
 Should be fun to implement!
+(First, for HG3, then for LG3.)
+
+# Variogram Regression Models
+
+## Constraints
+
+- We use the Matérn function for regression.
+- Algorithm of choice is `L-BFGS-B`.
+- The range parameter will be maximum-limited at the data extent (`{r} extent` m). It is *the* parameter of interest for spatial coupling.
 
 
-```{r regression-matérn}
+## HG3 
+
+```{r regression-matérn-hg3}
 
 x <- diffdata_binned$ds
 y <- semi(diffdata_binned$vhgd)
@@ -577,54 +686,359 @@ y <- semi(diffdata_binned$vhgd)
 # x <- x/max(x)
 # y <- y / mean(y)
 
-matern_function <- function(d, params) {
-  phi <- params[1] # related to range; turning point
-  sill <- params[2]^2
-  nu <- 1. #params[3]
-  d <- d
-  z <- sqrt(2*nu)*d/phi
-  K <- suppressWarnings(besselK(z, nu))
-  result <- sill - sill * (z)^nu * K / (2^(nu-1)*gamma(nu))
-  result[is.na(result)] <- 0
-  return(result)
-}
-
-
-# for exploration:
+# ## for exploration:
 # start_values <- c("tau" = mean(y), "kappa" = sqrt(8)/250)
 # start_values <- c("phi" = 0.3, "sill" = 10) # , "nu" = 1. 
 # params <- start_values
 # d <- x
 # plot(x, matern_function(x, start_values), type = "l") 
 
-start_values <- c("phi" = mean(x), "sill" = mean(y)) # , "nu" = 1. 
+start_values <- c(mean(x), mean(y)) # , "nu" = 1. 
 optimizer_results <- optim(
   par = start_values,
-  # lower = c(0.05, 0.01),
-  # upper = c(max(x), max(y)),
+  lower = c(0.0, 0.0),
+  upper = c(extent/8, max(y)),
   fn = function(params) {
     wrap_target_function(x, y, matern_function, params)
-  }, method = "Nelder-Mead" # "L-BFGS-B"
+  }, method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
 )
 
-print_regression_results(optimizer_results, label = "Matérn")
+print_regression_results(optimizer_results, label = "Matérn (HG3)")
 
-predictor_function <- create_prediction_function(matern_function, optimizer_results)
+predictor_function <- create_prediction_function(
+  matern_function,
+  optimizer_results
+)
 
-ggplot(NULL, aes(x = x, y = y)) +
-  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
-  geom_line(aes(x = x, y = predictor_function(x))) +
-  labs(title = "Matérn regression") +
-  theme_minimal()
+```
 
+
+Inspecting the residual pattern:
+```{r regression-residuals-histogram-hg3}
+plot_residuals_histogram(x, y, predictor_function,
+  bins = 128, fill = "lightgray", color = "black")
 ```
 
 
 The regression results are `{r} paste(round(optimizer_results$par, 4), collapse = ", ")`.
 
-This can be converted to range and sill.
+These are related to, and can be converted to range and sill, respectively:
+
+```{r range-sill-conversion-hg3}
+kappa <- 1/optimizer_results$par[1]
+tau <- optimizer_results$par[2]
+
+range <- 8/kappa
+sigma <- 1/sqrt(4*pi*exp(2*log(tau)+2*log(kappa)))
+
+predx <- seq(0, extent, length.out = extent + 1)
+
+ggplot(NULL, aes(x = x, y = y)) +
+  geom_vline(xintercept = range, color = "darkgrey") +
+  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
+  geom_line(aes(x = predx, y = predictor_function(predx))) +
+  labs(title = "Matérn regression of HG3, with range indicated (vertical line)") +
+  theme_minimal()
+
+```
+
+This computes a **range of `{r} round(range, 1)`.**
 
 
+## LG3 
+
+Repeat for LG3:
+
+```{r regression-matérn-lg3}
+
+x <- diffdata_binned$ds
+y <- semi(diffdata_binned$vlgd)
+
+start_values <- c(mean(x), mean(y)) # , "nu" = 1. 
+optimizer_results <- optim(
+  par = start_values,
+  lower = c(0.0, 0.0),
+  upper = c(extent/8, max(y)),
+  fn = function(params) {
+    wrap_target_function(x, y, matern_function, params)
+  }, method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
+)
+
+print_regression_results(optimizer_results, label = "Matérn (LG3)")
+
+predictor_function <- create_prediction_function(
+  matern_function,
+  optimizer_results
+)
+
+```
+
+
+Inspecting the residual pattern:
+```{r regression-residuals-histogram-lg3}
+plot_residuals_histogram(x, y, predictor_function,
+  bins = 128, fill = "lightgray", color = "black")
+```
+
+
+The regression results are `{r} paste(round(optimizer_results$par, 4), collapse = ", ")`.
+
+Conversion to meaningful parameters:
+
+```{r range-sill-conversion-lg3}
+kappa <- 1/optimizer_results$par[1]
+tau <- optimizer_results$par[2]
+
+range <- 8/kappa
+sigma <- 1/sqrt(4*pi*exp(2*log(tau)+2*log(kappa)))
+
+predx <- seq(0, extent, length.out = extent + 1)
+
+ggplot(NULL, aes(x = x, y = y)) +
+  geom_vline(xintercept = range, color = "darkgrey") +
+  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
+  geom_line(aes(x = predx, y = predictor_function(predx))) +
+  labs(title = "Matérn regression, with range indicated (vertical line)") +
+  theme_minimal()
+
+```
+
+This computes a **range of `{r} round(range, 1)`.**
+
+
+## General Observations
+
+::: { .callout-important }
+
+- The range of `~350 m` is not our final coupling threshold. The $1/\kappa$ (`~42m`, always a good answer) might be more relevant.
+- The `mse` is not better than with the linear regression.
+- The plot of the residuals is cut on the right (due to variance being greater than zero; peak of residuals is above zero).
+- Despite sufficient sample size, the data-situation seems not ideal (variability across bin variance, distribution of $\gamma$ values, number and influence of outliers).
+- Another symptom: regression outcome strongly depends on binning parameters (`extent`, `n_bins`). 
+
+:::
+
+
+# Soilclass
+
+## recap
+
+To recall: we initially joined difference data by soilclass, i.e. two measurement locations are only considered if they reside on the same type of soil.
+However, for the regression, soil class mixed.
+
+Furthermore, we saw contradicting bin size patterns in the sample size ([@fig-soilclass-samplesize]).
+
+
+It might be instructive to repeat the regression separately.
+
+```{r glimpse-soilclass-binned}
+knitr::kable(
+  diffdata_binned_soilclass %>%
+  group_by(soilclass)  %>%
+  summarize(count = n())
+)
+```
+
+
+- I will focus on `LG3`.
+- I nonchalantly filter outliers above a certain semivariance, just to see whether technically the regression benefits from it.
+
+
+::: {.panel-tabset}
+### light
+
+```{r regression-matérn-light}
+#| eval: true
+#| code-fold: true
+
+sc_selection <- "light"
+sub_data <- diffdata_binned_soilclass %>%
+  filter(
+    vlgd < 100,
+    soilclass == sc_selection
+  )
+x <- sub_data$ds
+y <- semi(sub_data$vlgd)
+
+
+start_values <- c(mean(x), mean(y)) # , "nu" = 1. 
+optimizer_results <- optim(
+  par = start_values,
+  lower = c(0.0, 0.0),
+  upper = c(extent/8, max(y)),
+  fn = function(params) {
+    wrap_target_function(x, y, matern_function, params)
+  }, method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
+)
+
+print_regression_results(optimizer_results, label = "Matérn (LG3, light soil)")
+
+predictor_function <- create_prediction_function(
+  matern_function,
+  optimizer_results
+)
+
+```
+
+The regression results are `{r} paste(round(optimizer_results$par, 4), collapse = ", ")`.
+
+
+```{r range-sill-conversion-light}
+#| eval: true
+#| code-fold: true
+
+kappa <- 1/optimizer_results$par[1]
+tau <- optimizer_results$par[2]
+
+range <- 8/kappa
+sigma <- 1/sqrt(4*pi*exp(2*log(tau)+2*log(kappa)))
+
+predx <- seq(0, extent, length.out = extent + 1)
+
+ggplot(NULL, aes(x = x, y = y)) +
+  geom_vline(xintercept = range, color = "darkgrey") +
+  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
+  geom_line(aes(x = predx, y = predictor_function(predx))) +
+  labs(title = "Matérn regression (LG3, light soil), with range indicated (vertical line)") +
+  theme_minimal()
+
+```
+
+**Range is `{r} round(range, 1)`.**
+
+### heavy
+
+```{r regression-matérn-heavy}
+#| eval: true
+#| code-fold: true
+
+sc_selection <- "heavy"
+sub_data <- diffdata_binned_soilclass %>%
+  filter(
+    vlgd < 100,
+    soilclass == sc_selection
+  )
+x <- sub_data$ds
+y <- semi(sub_data$vlgd)
+
+
+start_values <- c(mean(x), mean(y)) # , "nu" = 1. 
+optimizer_results <- optim(
+  par = start_values,
+  lower = c(0.0, 0.0),
+  upper = c(extent/8, max(y)),
+  fn = function(params) {
+    wrap_target_function(x, y, matern_function, params)
+  }, method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
+)
+
+print_regression_results(optimizer_results, label = "Matérn (LG3, heavy soil)")
+
+predictor_function <- create_prediction_function(
+  matern_function,
+  optimizer_results
+)
+
+```
+
+The regression results are `{r} paste(round(optimizer_results$par, 4), collapse = ", ")`.
+
+
+```{r range-sill-conversion-heavy}
+#| eval: true
+#| code-fold: true
+
+kappa <- 1/optimizer_results$par[1]
+tau <- optimizer_results$par[2]
+
+range <- 8/kappa
+sigma <- 1/sqrt(4*pi*exp(2*log(tau)+2*log(kappa)))
+
+predx <- seq(0, extent, length.out = extent + 1)
+
+ggplot(NULL, aes(x = x, y = y)) +
+  geom_vline(xintercept = range, color = "darkgrey") +
+  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
+  geom_line(aes(x = predx, y = predictor_function(predx))) +
+  labs(title = "Matérn regression (LG3, heavy soil), with range indicated (vertical line)") +
+  theme_minimal()
+
+```
+
+**Range is `{r} round(range, 1)`.**
+
+### peat
+
+```{r regression-matérn-peat}
+#| eval: true
+#| code-fold: true
+
+sc_selection <- "peat"
+sub_data <- diffdata_binned_soilclass %>%
+  filter(
+    vlgd < 100,
+    soilclass == sc_selection
+  )
+x <- sub_data$ds
+y <- semi(sub_data$vlgd)
+
+
+start_values <- c(mean(x), mean(y)) # , "nu" = 1. 
+optimizer_results <- optim(
+  par = start_values,
+  lower = c(0.0, 0.0),
+  upper = c(extent/8, max(y)),
+  fn = function(params) {
+    wrap_target_function(x, y, matern_function, params)
+  }, method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
+)
+
+print_regression_results(optimizer_results, label = "Matérn (LG3, peat)")
+
+predictor_function <- create_prediction_function(
+  matern_function,
+  optimizer_results
+)
+
+```
+
+The regression results are `{r} paste(round(optimizer_results$par, 4), collapse = ", ")`.
+
+
+```{r range-sill-conversion-peat}
+#| eval: true
+#| code-fold: true
+
+kappa <- 1/optimizer_results$par[1]
+tau <- optimizer_results$par[2]
+
+range <- 8/kappa
+sigma <- 1/sqrt(4*pi*exp(2*log(tau)+2*log(kappa)))
+
+predx <- seq(0, extent, length.out = extent + 1)
+
+ggplot(NULL, aes(x = x, y = y)) +
+  geom_vline(xintercept = range, color = "darkgrey") +
+  geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.4) +
+  geom_line(aes(x = predx, y = predictor_function(predx))) +
+  labs(title = "Matérn regression (LG3, peat), with range indicated (vertical line)") +
+  theme_minimal()
+
+```
+
+**Range is `{r} round(range, 1)`.**
+
+:::
+
+
+## Soilclass Observations
+::: { .callout-important }
+
+- On heavy soil, variance diminishes. This is visible on the scale of the y-axis. Heavy soil implies increased spatial covariance.
+- Data is much more scattered if filtering for soil classes. Regression is much less representative of the data, e.g. range maxes out.
+- In fact, semivariance is not regularly distributed: there are many "low semivariance" bins and some high-$\gamma$ outliers.
+
+:::
 
 
 # References
