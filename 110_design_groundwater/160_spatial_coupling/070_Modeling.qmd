@@ -1,0 +1,201 @@
+
+---
+title: "Water Level Models"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+This script loads previously stored data and performs multivariate modeling with `sdmTMB`.
+
+
+```{r setup}
+#| include: false
+library("dplyr") # our favorite data wrangling toolbox
+library("dbplyr") # dplyr + databases
+library("arrow") # writing parquet files
+library("ggplot2") # a visualization toolbox
+library("gstat") # geospatial statistics
+library("sdmTMB") # species distribution models Template Model Builder
+library("mapview") # viewing maps
+library("inbospatial") # elevation WCS
+
+
+source("./watina_migration.R")
+source("./auxiliary_data_queries.R")
+
+# browser choice, a rather personal thing
+if (!is.function(getOption("browser"))) options(browser = "librewolf")
+
+```
+
+
+Some parameters below are subject to selective variation.
+
+```{r data-settings}
+#| eval: true
+
+# extent <- 1024 # m
+# n_bins <- 128
+extent <- 1024*2 # m
+n_bins <- 256*2
+
+
+mesh_cutoff <- as.integer(extent / n_bins)
+```
+
+
+
+# Data Preparation
+## load data
+
+
+The data was stored in a parquet file by the script `050_load_all_data.qmd`.
+
+```{r load-data}
+#| eval: true
+cluster_dist <- 3400 # m # parameter for clustering
+data_storage_file <- paste0("data/analysis_data_cl", cluster_dist, ".parquet") # where data is stored
+
+data <- read_parquet(data_storage_file)
+knitr::kable(head(data, 5))
+```
+
+
+## recipe
+
+::: {.callout-note}
+For notation, I heavily abbreviate, but try to keep the abbreviations consistent.
+
+- Measurements `lw` and `hw` (`l` for "low", `h` for "high", `w` for "water") cover the `lg3` and `xg3` values queried from the watina database.
+- Clusterwise de-trending is indicated by a suffix `d`: we get `lwd` and `hwd`
+- `filterdepth` was stored as `z`
+- further parameters: 
+  - `elevation`, the elevation from DHMV
+  - `slope`, the local slope
+  - `soilclass`, 
+  - `wata_min_dist`
+:::
+
+```{r parameter-rename}
+data <- data %>%
+  rename(
+    filterdepth = z,
+    elevation = elevation_dhmv,
+    slope = slope_r2.5m,
+    water_distance = wata_min_dist
+)  
+
+```
+
+## de-trending
+The semivariance is anisotropically biased by any linear trends in the data, which is why we optionally "de-trend" the raw measurement.
+"De-trending" is just a fancy word for working on the residuals of a linear regression against spatial co-ordinates, e.g. $z \sim x + y$.
+
+
+In preparing the data, we have identified clusters by a distance of $`{r} cluster_dist` m$.
+This distance is larger than the variogram range found below.
+Hence, it is opportune to perform the de-trending somewhat more locally, i.e. in a clusterwise iteration.
+
+
+```{r clusterwise-detrend}
+#| eval: true
+
+detrend_clusterwise <- function(cluster_idx) {
+  sub_data <- data %>%
+    filter(cluster == cluster_idx)
+  sub_data <- sub_data %>%
+    mutate(
+      hwd = lm(hw ~ x + y, sub_data)$residual,
+      lwd = lm(lw ~ x + y, sub_data)$residual
+    )
+  return(sub_data)
+}
+
+data <- bind_rows(
+  lapply(
+    unique(data$cluster),
+    FUN = detrend_clusterwise
+  )
+)
+
+```
+
+
+# Meshing Flanders
+
+The spatial models require a mesh of the country.
+
+Even more, the outcome crucially depends on mesh characteristics.
+
+
+```{r sdmTMB-mesh-full}
+#| eval: true
+vlaanderen_mesh <- make_mesh(data, xy_cols = c("x", "y"), cutoff = mesh_cutoff)
+print(vlaanderen_mesh$mesh$n)
+plot(vlaanderen_mesh)
+```
+
+
+# Modeling
+
+::: {.panel-tabset}
+## LG3 {#sec-lg3}
+
+```{r sdmTMB-model-lg3}
+#| eval: true
+fit_lg3 <- sdmTMB(
+  lwd ~ filterdepth + elevation + soilclass + water_distance,
+  data = data,
+  mesh = vlaanderen_mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+fit_lg3 <- run_extra_optimization(fit_lg3)
+sanity(fit_lg3)
+fit_lg3
+```
+
+```{r extract-lg3-parameters}
+#| eval: true
+knitr::kable(tidy(fit_lg3))
+```
+
+```{r extract-lg3-spatial}
+#| eval: true
+knitr::kable(tidy(fit_lg3, "ran_pars"))
+```
+
+
+## HG3 {#sec-hg3}
+
+```{r sdmTMB-model-hg3}
+#| eval: true
+fit_hg3 <- sdmTMB(
+  hwd ~ filterdepth + elevation + soilclass + water_distance,
+  data = data,
+  mesh = vlaanderen_mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+fit_hg3 <- run_extra_optimization(fit_hg3)
+sanity(fit_hg3)
+fit_hg3
+```
+
+```{r extract-hg3-parameters}
+#| eval: true
+knitr::kable(tidy(fit_lg3))
+```
+
+```{r extract-hg3-spatial}
+#| eval: true
+knitr::kable(tidy(fit_lg3, "ran_pars"))
+```
+
+:::
