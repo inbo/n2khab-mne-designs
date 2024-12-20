@@ -31,6 +31,9 @@ source("./auxiliary_data_queries.R")
 # browser choice, a rather personal thing
 if (!is.function(getOption("browser"))) options(browser = "librewolf")
 
+# re-run models
+rerun_models <- FALSE
+
 ```
 
 
@@ -137,7 +140,7 @@ Even more, the outcome crucially depends on mesh characteristics.
 ```{r sdmTMB-mesh-full}
 #| eval: true
 flanders_mesh <- make_mesh(data, xy_cols = c("x", "y"), cutoff = mesh_cutoff)
-print(vlaanderen_mesh$mesh$n)
+print(flanders_mesh$mesh$n)
 plot(flanders_mesh)
 ```
 
@@ -201,6 +204,32 @@ knitr::kable(tidy(fit_hg3, "ran_pars"))
 
 :::
 
+## residuals
+
+There are residuals.
+It is not entirely clear what they mean.
+
+```{r residuals-hg3}
+
+res <- residuals(fit_hg3, type = 'mle-mvn')
+
+length(res) == nrow(data)
+
+res <- res[!is.na(res)]
+res <- res[res != Inf]
+res <- res[res != -Inf]
+sqrt(sum(res^2))
+
+ggplot(NULL, aes(x = res)) +
+  geom_histogram(bins = 256, color = "black", fill = "lightgray") +
+  theme_bw()
+
+```
+
+Great, those are as one would expect.
+Note that there are `NA` and `Inf` in there (minority) to be removed.
+
+
 
 # generalize: many models
 
@@ -260,35 +289,105 @@ compute_model <- function(model_formula) {
 
 
 ```{r model-list}
-model_formulas <- c(
-  "hwd ~ filterdepth + elevation + soilclass + water_distance",
-  "hwd ~               elevation + soilclass + water_distance",
-  "hwd ~ filterdepth             + soilclass + water_distance",
-  "hwd ~ filterdepth + elevation             + water_distance",
-  "hwd ~ filterdepth + elevation + soilclass                 ",
-  "lwd ~ filterdepth + elevation + soilclass + water_distance",
-  "lwd ~               elevation + soilclass + water_distance",
-  "lwd ~ filterdepth             + soilclass + water_distance",
-  "lwd ~ filterdepth + elevation             + water_distance",
-  "lwd ~ filterdepth + elevation + soilclass                 ",
-  "hw  ~ filterdepth + elevation + soilclass + water_distance",
-  "hw  ~               elevation + soilclass + water_distance",
-  "hw  ~ filterdepth             + soilclass + water_distance",
-  "hw  ~ filterdepth + elevation             + water_distance",
-  "hw  ~ filterdepth + elevation + soilclass                 ",
-  "lw  ~ filterdepth + elevation + soilclass + water_distance",
-  "lw  ~               elevation + soilclass + water_distance",
-  "lw  ~ filterdepth             + soilclass + water_distance",
-  "lw  ~ filterdepth + elevation             + water_distance",
-  "lw  ~ filterdepth + elevation + soilclass                 ",
-  "hwd ~ 1",
-  "hw  ~ 1",
-  "lwd ~ 1",
-  "lw  ~ 1"
+#| eval: false
+
+if (rerun_models){
+  model_formulas <- c(
+    "hwd ~ filterdepth + elevation + soilclass + water_distance",
+    "hwd ~               elevation + soilclass + water_distance",
+    "hwd ~ filterdepth             + soilclass + water_distance",
+    "hwd ~ filterdepth + elevation             + water_distance",
+    "hwd ~ filterdepth + elevation + soilclass                 ",
+    "lwd ~ filterdepth + elevation + soilclass + water_distance",
+    "lwd ~               elevation + soilclass + water_distance",
+    "lwd ~ filterdepth             + soilclass + water_distance",
+    "lwd ~ filterdepth + elevation             + water_distance",
+    "lwd ~ filterdepth + elevation + soilclass                 ",
+    "hw  ~ filterdepth + elevation + soilclass + water_distance",
+    "hw  ~               elevation + soilclass + water_distance",
+    "hw  ~ filterdepth             + soilclass + water_distance",
+    "hw  ~ filterdepth + elevation             + water_distance",
+    "hw  ~ filterdepth + elevation + soilclass                 ",
+    "lw  ~ filterdepth + elevation + soilclass + water_distance",
+    "lw  ~               elevation + soilclass + water_distance",
+    "lw  ~ filterdepth             + soilclass + water_distance",
+    "lw  ~ filterdepth + elevation             + water_distance",
+    "lw  ~ filterdepth + elevation + soilclass                 ",
+    "hwd ~ 1",
+    "hw  ~ 1",
+    "lwd ~ 1",
+    "lw  ~ 1"
+    )
+
+  results <- lapply(model_formulas, FUN = compute_model)
+  results <- bind_rows(results)
+  
+  write_parquet(results, sink = "data/sdmTMB_results.parquet")
+
+}
+```
+
+
+```{r modelcomparison-residuals}
+
+results <- read_parquet("data/sdmTMB_results.parquet") %>%
+  mutate_at(vars(term, name, model_formula), as.factor)
+
+knitr::kable(results %>%
+  filter(term == "residuals", name == "estimate") %>%
+  select(model_formula, value) %>%
+  rename(rms_residual = value ) %>%
+  arrange(substring(model_formula, 1, 4), rms_residual))
+
+```
+
+```{r modelcomparison-residuals}
+
+extract <- function (df, selection) {
+  df <- df %>%
+    filter(name == selection) %>%
+    select(model_formula, value)
+  colnames(df) <- c("model_formula", selection) 
+  return(df)
+}
+
+join_extract <- function(df, raw, selection) {
+  extra <- df %>% 
+    left_join(
+      extract(raw, selection),
+      by = join_by(model_formula),
+      relationship = "one-to-one"
+    )
+  return(extra)
+}
+
+extract_term <- function(select_term){
+  term_data <- results %>%
+    filter(term == select_term) %>%
+    select(model_formula, name, value)  
+
+  term_data <- term_data %>% 
+    extract("estimate" ) %>%
+    join_extract(term_data, "conf.low") %>%
+    join_extract(term_data, "conf.high")
+
+  term_overview <- term_data %>% mutate(
+    sig. = (sign(conf.low) * sign(conf.high)) > 0
   )
 
-results <- lapply(model_formulas, FUN = compute_model)
-results <- bind_rows(results)
+  return(term_overview)
+}
 
-write_parquet(results, sink = "data/sdmTMB_results.parquet")
+print(levels(results$term))
+
+extract_term("(Intercept)")
+extract_term("filterdepth")
+extract_term("elevation")
+extract_term("soilclasslight")
+extract_term("soilclasspeat")
+extract_term("water_distance")
+
 ```
+
+
+# TODO split by soilclass
