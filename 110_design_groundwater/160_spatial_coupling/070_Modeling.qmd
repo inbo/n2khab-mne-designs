@@ -1,4 +1,3 @@
-
 ---
 title: "Water Level Models"
 bibliography: references_csl.json
@@ -137,9 +136,9 @@ Even more, the outcome crucially depends on mesh characteristics.
 
 ```{r sdmTMB-mesh-full}
 #| eval: true
-vlaanderen_mesh <- make_mesh(data, xy_cols = c("x", "y"), cutoff = mesh_cutoff)
+flanders_mesh <- make_mesh(data, xy_cols = c("x", "y"), cutoff = mesh_cutoff)
 print(vlaanderen_mesh$mesh$n)
-plot(vlaanderen_mesh)
+plot(flanders_mesh)
 ```
 
 
@@ -153,7 +152,7 @@ plot(vlaanderen_mesh)
 fit_lg3 <- sdmTMB(
   lwd ~ filterdepth + elevation + soilclass + water_distance, #+ slope
   data = data,
-  mesh = vlaanderen_mesh,
+  mesh = flanders_mesh,
   family = gaussian(link = "identity"),
   spatial = "on"
 )
@@ -175,12 +174,13 @@ knitr::kable(tidy(fit_lg3, "ran_pars"))
 
 ## HG3 {#sec-hg3}
 
+
 ```{r sdmTMB-model-hg3}
 #| eval: true
 fit_hg3 <- sdmTMB(
   hwd ~ filterdepth + elevation + soilclass + water_distance, # + slope
   data = data,
-  mesh = vlaanderen_mesh,
+  mesh = flanders_mesh,
   family = gaussian(link = "identity"),
   spatial = "on"
 )
@@ -191,14 +191,104 @@ fit_hg3
 
 ```{r extract-hg3-parameters}
 #| eval: true
-knitr::kable(tidy(fit_lg3))
+knitr::kable(tidy(fit_hg3))
 ```
 
 ```{r extract-hg3-spatial}
 #| eval: true
-knitr::kable(tidy(fit_lg3, "ran_pars"))
+knitr::kable(tidy(fit_hg3, "ran_pars"))
 ```
 
 :::
 
 
+# generalize: many models
+
+- http://www.cookbook-r.com/Formulas/Creating_a_formula_from_a_string/
+- https://stackoverflow.com/questions/46310123/r-dplyr-operate-on-a-column-known-only-by-its-string-name
+- https://cran.r-project.org/web/packages/sdmTMB/sdmTMB.pdf ?sanity
+
+```{r sdmTMB-model-general}
+#| eval: true
+compute_model <- function(model_formula) {
+  message("______________________________________________________________________________\n")  
+  message(model_formula)
+    
+  # model_formula <- "hwd ~ filterdepth + elevation + soilclass + water_distance"
+  fit <- sdmTMB(
+    as.formula(model_formula),
+    data = data,
+    mesh = flanders_mesh,
+    family = gaussian(link = "identity"),
+    spatial = "on"
+  ) %>% run_extra_optimization()
+  san <- sanity(fit, silent = TRUE)
+  res <- tidy(fit)
+  spa <- tidy(fit, "ran_pars")
+    
+  outcome <- bind_rows(res, spa)
+
+  for (i in 1:length(san)) {
+    check <- names(san)[[i]]
+    outcome[nrow(outcome)+1, "term"] <- check
+    outcome[nrow(outcome), "estimate"] <- as.integer(san[[i]])
+  }
+
+  res <- residuals(fit, type = 'mle-mvn')
+  res <- res[!is.na(res)]
+  res <- res[res != Inf]
+  res <- res[res != -Inf]
+  outcome[nrow(outcome)+1, "term"] <- "residuals"
+  outcome[nrow(outcome), "estimate"] <- sqrt(sum(res^2))
+
+  outcome <- tidyr::pivot_longer(
+    outcome, 
+    cols = c("estimate", "std.error", "conf.low", "conf.high")
+    ) %>% filter(!is.na(value))
+
+  outcome$model_formula <- model_formula
+
+  return(outcome)
+
+  message("______________________________________________________________________________\n")  
+}
+
+
+# result <- compute_model("hwd ~ filterdepth + elevation + soilclass + water_distance")
+```
+
+
+
+```{r model-list}
+model_formulas <- c(
+  "hwd ~ filterdepth + elevation + soilclass + water_distance",
+  "hwd ~               elevation + soilclass + water_distance",
+  "hwd ~ filterdepth             + soilclass + water_distance",
+  "hwd ~ filterdepth + elevation             + water_distance",
+  "hwd ~ filterdepth + elevation + soilclass                 ",
+  "lwd ~ filterdepth + elevation + soilclass + water_distance",
+  "lwd ~               elevation + soilclass + water_distance",
+  "lwd ~ filterdepth             + soilclass + water_distance",
+  "lwd ~ filterdepth + elevation             + water_distance",
+  "lwd ~ filterdepth + elevation + soilclass                 ",
+  "hw  ~ filterdepth + elevation + soilclass + water_distance",
+  "hw  ~               elevation + soilclass + water_distance",
+  "hw  ~ filterdepth             + soilclass + water_distance",
+  "hw  ~ filterdepth + elevation             + water_distance",
+  "hw  ~ filterdepth + elevation + soilclass                 ",
+  "lw  ~ filterdepth + elevation + soilclass + water_distance",
+  "lw  ~               elevation + soilclass + water_distance",
+  "lw  ~ filterdepth             + soilclass + water_distance",
+  "lw  ~ filterdepth + elevation             + water_distance",
+  "lw  ~ filterdepth + elevation + soilclass                 ",
+  "hwd ~ 1",
+  "hw  ~ 1",
+  "lwd ~ 1",
+  "lw  ~ 1"
+  )
+
+results <- lapply(model_formulas, FUN = compute_model)
+results <- bind_rows(results)
+
+write_parquet(results, sink = "data/sdmTMB_results.parquet")
+```
