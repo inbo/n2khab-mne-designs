@@ -341,7 +341,7 @@ knitr::kable(results %>%
 
 ```
 
-```{r modelcomparison-residuals}
+```{r modelcomparison-effect-extract}
 
 extract <- function (df, selection) {
   df <- df %>%
@@ -390,4 +390,258 @@ extract_term("water_distance")
 ```
 
 
-# TODO split by soilclass
+::: { .callout-note }
+
+- Residuals / RMSE do not favor any model; likely caused by substantial residual variation (as with the variograms). 
+- When including `soilclass` in the model, the **`intercept`** receives a completely different meaning: it is then the average `xG3` on **heavy** soil.
+- In **`soilclass == light`**, compared to `heavy`, `xG3`s are about $0.37 m$ higher (both `LG3` and `HG3`). In contrast, `xG3` on **`soilclass == peat`** are indifferent from `heavy`.
+- **`filterdepth`** does influence `xG3`s in every possible model (confidence excludes zero). The effect is about $-0.013 m$ per meter filterdepth after de-trending, or $-0.014 m/m$ if not de-trending.
+- An effect of **`elevation`** of approximately $1.0 m$ per meter elevation (1:1 coupling) is only detected when not detrending. Spatial detrending removes it entirely.
+- There are no effects of **`water_distance`**: magnitudes are generally small and include zero, which might be a result of limitations in the data source accuracy.
+- Interaction terms (e.g. `(filterdepth|soilclass)`) were not regarded.
+- TODO Convergence checks were recorded, but not inspected, except for the "all in" model (all lights "green").
+
+:::
+
+
+
+# Split by Soilclass
+
+Re-do the analysis, per soil class.
+
+
+## Heavy
+### data
+```{r data-filter-heavy}
+sc_selection <- "heavy"
+
+data_sc <- data %>%
+  filter(soilclass == sc_selection)
+
+```
+
+```{r clusterwise-detrend-heavy}
+#| eval: true
+#| code-fold: true
+
+detrend_clusterwise <- function(cluster_idx) {
+  sub_data <- data_sc %>%
+    filter(cluster == cluster_idx)
+  sub_data <- sub_data %>%
+    mutate(
+      hwd = lm(hw ~ x + y, sub_data)$residual,
+      lwd = lm(lw ~ x + y, sub_data)$residual
+    )
+  return(sub_data)
+}
+
+data_sc <- bind_rows(
+  lapply(
+    unique(data_sc$cluster),
+    FUN = detrend_clusterwise
+  )
+)
+
+```
+
+
+```{r sdmTMB-mesh-heavy}
+#| eval: true
+flanders_mesh <- make_mesh(data_sc, xy_cols = c("x", "y"), cutoff = mesh_cutoff)
+print(flanders_mesh$mesh$n)
+# plot(flanders_mesh)
+```
+
+
+
+### Models 
+
+```{r sdmTMB-model-lg3-heavy}
+#| eval: true
+fit_lg3 <- sdmTMB(
+  lwd ~ filterdepth + water_distance, 
+  data = data_sc,
+  mesh = flanders_mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+fit_lg3 <- run_extra_optimization(fit_lg3)
+sanity(fit_lg3)
+fit_lg3
+```
+
+
+
+```{r sdmTMB-model-hg3-heavy}
+#| eval: true
+fit_hg3 <- sdmTMB(
+  hwd ~ filterdepth + water_distance, # + slope
+  data = data_sc,
+  mesh = flanders_mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+fit_hg3 <- run_extra_optimization(fit_hg3)
+sanity(fit_hg3)
+fit_hg3
+```
+
+## Results: Heavy Soil
+
+::: {.panel-tabset}
+### LG3
+```{r extract-lg3-parameters-heavy}
+#| eval: true
+knitr::kable(tidy(fit_lg3))
+```
+
+```{r extract-lg3-spatial-heavy}
+#| eval: true
+knitr::kable(tidy(fit_lg3, "ran_pars"))
+```
+
+### HG3
+```{r extract-hg3-parameters-heavy}
+#| eval: true
+knitr::kable(tidy(fit_hg3))
+```
+
+```{r extract-hg3-spatial-heavy}
+#| eval: true
+knitr::kable(tidy(fit_hg3, "ran_pars"))
+```
+
+:::
+
+## Light
+### data
+```{r data-filter-light}
+sc_selection <- "light"
+
+data_sc <- data %>%
+  filter(soilclass == sc_selection)
+
+```
+
+```{r clusterwise-detrend-light}
+#| eval: true
+#| code-fold: true
+
+detrend_clusterwise <- function(cluster_idx) {
+  sub_data <- data_sc %>%
+    filter(cluster == cluster_idx)
+  sub_data <- sub_data %>%
+    mutate(
+      hwd = lm(hw ~ x + y, sub_data)$residual,
+      lwd = lm(lw ~ x + y, sub_data)$residual
+    )
+  return(sub_data)
+}
+
+data_sc <- bind_rows(
+  lapply(
+    unique(data_sc$cluster),
+    FUN = detrend_clusterwise
+  )
+)
+
+```
+
+
+```{r sdmTMB-mesh-light}
+#| eval: true
+flanders_mesh <- make_mesh(data_sc, xy_cols = c("x", "y"), cutoff = mesh_cutoff)
+print(flanders_mesh$mesh$n)
+# plot(flanders_mesh)
+```
+
+
+
+### Models 
+
+```{r sdmTMB-model-lg3-light}
+#| eval: true
+fit_lg3 <- sdmTMB(
+  lwd ~ filterdepth + water_distance, 
+  data = data_sc,
+  mesh = flanders_mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+fit_lg3 <- run_extra_optimization(fit_lg3)
+sanity(fit_lg3)
+fit_lg3
+```
+
+
+```{r sdmTMB-model-hg3-light}
+#| eval: true
+fit_hg3 <- sdmTMB(
+  hwd ~ filterdepth + water_distance, # + slope
+  data = data_sc,
+  mesh = flanders_mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+fit_hg3 <- run_extra_optimization(fit_hg3)
+sanity(fit_hg3)
+fit_hg3
+```
+
+
+
+## Results: Light Soil
+
+::: {.panel-tabset}
+### LG3
+```{r extract-lg3-parameters-light}
+#| eval: true
+knitr::kable(tidy(fit_lg3))
+```
+
+```{r extract-lg3-spatial-light}
+#| eval: true
+knitr::kable(tidy(fit_lg3, "ran_pars"))
+```
+
+
+### HG3
+```{r extract-hg3-parameters-light}
+#| eval: true
+knitr::kable(tidy(fit_hg3))
+```
+
+```{r extract-hg3-spatial-light}
+#| eval: true
+knitr::kable(tidy(fit_hg3, "ran_pars"))
+```
+
+:::
+
+
+## Summary: Soilclass
+
+Note: elevation showed no effect on de-trended data, and was removed.
+
+::: { .callout-note }
+
+When performing the analysis only on **heavy soil**:
+
+- Water distance has an effect $O(0.002 m/m)$.
+- The effect of `filterdepth` disappears.
+- Matérn range plummets ($0.11 m$). 
+
+:::
+
+
+::: { .callout-note }
+
+In contrast, on **light soil**:
+
+- Matérn range remains high ($> 200 m$). 
+- Water distance has no effect.
+- The effect of `filterdepth` is quantified to about $-0.011 m / m$.
+
+:::
+
+
