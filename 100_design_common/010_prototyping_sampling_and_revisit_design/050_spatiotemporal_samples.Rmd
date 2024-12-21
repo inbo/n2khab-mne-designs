@@ -1823,6 +1823,7 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
         panel_split, 
         panel_group_repetitions,
         auto_continuous_meas, 
+        memship_alignfastest,
         panel_count
       ) %>% 
       # guessing the grouping pattern to use in the revisit panel design for
@@ -1833,11 +1834,12 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
         .keep = "unused"
       ) %>% 
       distinct() %>% 
-      # using auto_continuous_meas as attribute next to panel count, since it
-      # triggers a different panel membership approach
+      # using auto_continuous_meas and memship_alignfastest as attributes next
+      # to panel count, since they trigger a different panel membership approach
       nest(panel_counts = c(
         panel_count, 
-        auto_continuous_meas
+        auto_continuous_meas,
+        memship_alignfastest
       )),
     join_by(scheme, module_combo_code, panel_split),
     relationship = "many-to-one",
@@ -1859,17 +1861,25 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
       mat <- matrix(0L, nrow = max_panel_count, ncol = length(pcs))
       pclabels <- str_c(
         pc$panel_count,
-        ifelse(pc$auto_continuous_meas, "auto", "")
+        case_when(
+          pc$auto_continuous_meas ~ "auto", 
+          pc$memship_alignfastest ~ "fastalign",
+          .default = ""
+        )
       )
       colnames(mat) <- str_c("generic", pclabels, ifelse(pcs == 1, "panel", "panels"))
       df <- as_tibble(mat)
       for (i in seq_along(pcs)) {
         nr <- pcs[i]
         auto <- pc$auto_continuous_meas[i]
+        fastalign <- pc$memship_alignfastest[i]
         df[, i] <- if (auto) {
           # automated measurements get a special pattern
           rep(seq_len(nr), each = mpgr) %>% 
             rep(max_panel_count / (nr * mpgr))
+        } else if (fastalign) {
+          # fast-aligned memberships
+          rep(seq_len(nr), max_panel_count / nr)
         } else {
           # usual FAGs get a monotonically increasing panel number attribution
           rep(seq_len(nr), each = max_panel_count / nr)
@@ -1900,9 +1910,10 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
         ) %>% 
         mutate(
           auto_continuous_meas = str_detect(panel_count, "auto"),
+          memship_alignfastest = str_detect(panel_count, "fastalign"),
           panel_count = str_extract(panel_count, "\\d+") %>% as.integer()
         ) %>% 
-        relocate(auto_continuous_meas, .after = panel_count)
+        relocate(auto_continuous_meas, memship_alignfastest, .after = panel_count)
     })
   ) %>% 
   select(
@@ -1944,6 +1955,7 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
     in_aquatic_subset, 
     fas, 
     auto_continuous_meas,
+    memship_alignfastest,
     notation_paneldesign, 
     panel
   ) %>% 
@@ -1952,14 +1964,22 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
     panels = map(panels, ~ mutate(., panel_id = row_number())),
     panel_count = map_int(panels, nrow)
   ) %>% 
-  # join the generic panel memberships to the panels based on panel count and
-  # whether the panel design is for automated continuous measurements:
+  # join the generic panel memberships to the panels based on panel count, on
+  # whether the panel design is for automated continuous measurements, and on
+  # whether the panel membership uses fast alignment:
   inner_join(
     scheme_moco_ps_stratum_sppost_genericpanelmemship %>% 
       rename(stratum_in_aquatic_subset = in_aquatic_subset) %>% 
       unnest(panel_membership) %>% 
       nest(panel_membership = c(grts_address, panel_id)),
-    join_by(scheme, module_combo_code, panel_split, panel_count, auto_continuous_meas),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      panel_count,
+      auto_continuous_meas,
+      memship_alignfastest
+    ),
     relationship = "many-to-many",
     unmatched = "error"
   ) %>% 
@@ -1968,7 +1988,12 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
   filter(
     in_aquatic_subset == stratum_in_aquatic_subset | is.na(in_aquatic_subset)
   ) %>% 
-  select(-panel_count, -auto_continuous_meas, -stratum_in_aquatic_subset) %>% 
+  select(
+    -panel_count,
+    -auto_continuous_meas,
+    -memship_alignfastest,
+    -stratum_in_aquatic_subset
+  ) %>% 
   # XXXXXXXXXXXX
   # following distinct() only matters for 7220, as long as it isn't divided into
   # strata (the sample duplication will only remain for FASs that distinguish
@@ -2234,7 +2259,8 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
         year_first,
         year_last,
         limit_n_subperiods,
-        notation_paneldesign
+        notation_paneldesign,
+        memship_alignfastest
       ),
     join_by(scheme, module_combo_code, panel_split, in_aquatic_subset, notation_paneldesign),
     relationship = "many-to-one",
@@ -2302,7 +2328,33 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
       date_interval
     )
   ) %>% 
-  select(-delay, -limit_n_subperiods)
+  select(-delay) %>% 
+  # drop SURFINSTGAUGE & SPATPOSITGAUGE activities in groundwater schemes that
+  # take place earlier than the first corresponding GWINST FAG. Below code
+  # assumes that the cases under consideration are represented by the
+  # memship_alignfastest variable. Note that we can't use the FAG rank to
+  # accomplish this, since SURFINSTGAUGE & GWINST share the same rank (i.e. they
+  # are preferably carried out in the same date interval).
+  mutate(
+    first_date_gwinst = min(
+      date_start[str_detect(field_activity_group, "GWINST")],
+      ymd("21000101"),
+      na.rm = TRUE
+    ),
+    .by = c(
+      scheme,
+      module_combo_code,
+      panel_split,
+      stratum,
+      sp_poststratum,
+      grts_address
+    )
+  ) %>%
+  filter(
+    (memship_alignfastest & date_start >= first_date_gwinst) |
+      !memship_alignfastest
+  ) %>% 
+  select(-first_date_gwinst, -memship_alignfastest, -limit_n_subperiods)
 ```
 
 Generating a temporary, long variant of this intermediate sampling unit calendar result, with a column `activity_sequence`.
