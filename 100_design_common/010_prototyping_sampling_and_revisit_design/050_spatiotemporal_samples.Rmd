@@ -2309,12 +2309,13 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
       str_detect(field_activity_group, "LOCEVAL")
   ) %>% 
   # if a panel period overlaps month_first_default but starts earlier, then
-  # wind up the start date
+  # wind up the start date, but not for LOCEVAL and HQ schemes
   mutate(
     delay = if_else(
       month(date_start) < month_first_default & 
-      year(date_start) == year_first &
-      !str_detect(field_activity_group, "LOCEVAL"),
+        year(date_start) == year_first &
+        !str_detect(field_activity_group, "LOCEVAL") &
+        !str_detect(scheme, "^HQ"),
       months(month_first_default - month(date_start)),
       months(0)
     ),
