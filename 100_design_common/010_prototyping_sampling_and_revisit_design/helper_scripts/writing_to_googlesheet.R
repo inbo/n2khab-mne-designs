@@ -293,3 +293,43 @@ scheme_domain_fag_stratum_spsamples_calendar %>%
     ss = gs_id,
     sheet = "dom_spsunitgroup_calendar_PAN_PHASE_1_FLANDERS"
   )
+
+
+
+
+
+# Below code requires availability of:
+# - scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar
+
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+  # don't include ADHOC FAGs:
+  filter(notation_paneldesign != "1panelof1m(PUR)") %>%
+  count(
+    scheme,
+    module_combo_code,
+    panel_split,
+    in_aquatic_subset,
+    notation_paneldesign,
+    panel,
+    date_start,
+    date_end,
+    date_interval
+  ) %>%
+  mutate(panel_n = str_c("(", n, ") ", panel)) %>%
+  summarize(
+    panels_n = str_c(panel_n, collapse = "\n"),
+    .by = c(
+      notation_paneldesign,
+      date_start,
+      date_end,
+      date_interval
+    )
+  ) %>%
+  pivot_wider(names_from = notation_paneldesign, values_from = panels_n) %>%
+  arrange(date_start, date_end) %>%
+  select(-date_start, -date_end) %>%
+  mutate(date_interval = as.character(date_interval)) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "panel_calendar"
+  )
