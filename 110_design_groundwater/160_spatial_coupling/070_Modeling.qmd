@@ -618,6 +618,117 @@ knitr::kable(tidy(fit_hg3, "ran_pars"))
 :::
 
 
+## Peat
+### data
+```{r data-filter-peat}
+sc_selection <- "peat"
+
+data_sc <- data %>%
+  filter(soilclass == sc_selection)
+
+```
+
+```{r clusterwise-detrend-peat}
+#| eval: true
+#| code-fold: true
+
+detrend_clusterwise <- function(cluster_idx) {
+  sub_data <- data_sc %>%
+    filter(cluster == cluster_idx)
+  sub_data <- sub_data %>%
+    mutate(
+      hwd = lm(hw ~ x + y, sub_data)$residual,
+      lwd = lm(lw ~ x + y, sub_data)$residual
+    )
+  return(sub_data)
+}
+
+data_sc <- bind_rows(
+  lapply(
+    unique(data_sc$cluster),
+    FUN = detrend_clusterwise
+  )
+)
+
+data_sc <- data_sc %>% 
+  filter_at(
+    vars(lwd, hwd, filterdepth, water_distance),
+    all_vars(!is.na(.))
+  )  
+
+```
+
+
+```{r sdmTMB-mesh-peat}
+#| eval: true
+flanders_mesh <- make_mesh(data_sc, xy_cols = c("x", "y"), cutoff = mesh_cutoff)
+print(flanders_mesh$mesh$n)
+# plot(flanders_mesh)
+```
+
+
+### Models 
+
+```{r sdmTMB-model-lg3-peat}
+#| eval: true
+fit_lg3 <- sdmTMB(
+  lwd ~ filterdepth + water_distance, 
+  data = data_sc,
+  mesh = flanders_mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+fit_lg3 <- run_extra_optimization(fit_lg3)
+sanity(fit_lg3)
+fit_lg3
+```
+
+
+
+```{r sdmTMB-model-hg3-peat}
+#| eval: true
+fit_hg3 <- sdmTMB(
+  hwd ~ filterdepth + water_distance, # + slope,
+  data = data_sc,
+  mesh = flanders_mesh,
+  family = gaussian(link = "identity"),
+  spatial = "on"
+)
+fit_hg3 <- run_extra_optimization(fit_hg3)
+sanity(fit_hg3)
+fit_hg3
+```
+
+## Results: Peat
+
+::: {.panel-tabset}
+### LG3
+```{r extract-lg3-parameters-peat}
+#| eval: true
+knitr::kable(tidy(fit_lg3))
+```
+
+```{r extract-lg3-spatial-peat}
+#| eval: true
+knitr::kable(tidy(fit_lg3, "ran_pars"))
+```
+
+### HG3
+```{r extract-hg3-parameters-peat}
+#| eval: true
+knitr::kable(tidy(fit_hg3))
+```
+
+```{r extract-hg3-spatial-peat}
+#| eval: true
+knitr::kable(tidy(fit_hg3, "ran_pars"))
+```
+
+:::
+
+
+
+
 ## Summary: Soilclass
 
 Note: elevation showed no effect on de-trended data, and was removed.
@@ -642,5 +753,200 @@ In contrast, on **light soil**:
 - The effect of `filterdepth` is quantified to about $-0.011 m / m$.
 
 :::
+
+
+::: { .callout-note }
+
+Finally **peat**:
+
+- Modeling issues with the variogram component.
+- Matérn range not determinable. 
+- tendency: like "light" (filter depth yes; water distance no)
+
+
+:::
+
+# quick Matérn inspection
+
+finding the threshold of $1 cm$ on a non-arbitrary Matérn.
+
+```{r matern-estimate}
+
+matern_function <- function(d, parameters) {
+  scale <- parameters[1] # related to semivariance
+  sigma <- parameters[2] # related to actual range; turning point
+  nugget <- parameters[3]
+  nu <- parameters[4]
+
+  sill <- scale + nugget
+  z <- sqrt(2 * nu) * d / sigma
+  K <- suppressWarnings(besselK(z, nu))
+  matern <- (z)^nu * K / (2^(nu - 1) * gamma(nu))
+  result <- sill - scale * matern
+  
+  result[is.na(result)] <- 0
+  return(result)
+}
+
+parameters <- c(1., 230., 0., 1.)
+x <- seq(0., 1*230., length.out=1*2300+1)
+y <- matern_function(x, parameters)
+threshold <- x[min(which(y > 0.01))]
+print(threshold)
+
+plot(x, y)
+abline(h = 0.01)
+abline(v = threshold)
+```
+
+
+# Overall Summary / Recommendation
+
+Distance:
+
+- Matérn range of $230m$ implies a threshold of $13 m$ to stay below $1 cm$ difference.
+- Rule: **recommendation: $d \le 10m$**
+
+
+Soil class:
+
+- Should be the same (rough classes). @FV how about sub-classes?
+- probably covered by distance.
+- Rule: **same soil class**.
+
+
+Filter depth:
+
+- difficult to implement rules: should *all* be equal relative to reduction line
+- relevant effect ($-1 cm/m$) only on "light" soil -> influence of surface seepage?
+- Rule: **target depth $\pm 1 m$**
+
+
+Water distance:
+
+- Water distance is unclear $\Rightarrow$ limit $5 m$ range (from slope on heavy soil).
+- May be looser on light soil.
+- Rule: **water distance $\pm 5m$**
+
+
+Elevation:
+
+- A threshold of $\pm 1cm$ would be below measurement accuracy.
+- There is indication that water level "tov. maaiveld" is relatively constant (see detrending and elevation effect).
+- Rule: **Stick with $\Delta h \le 0.3m$** (expert suggestion Toon)
+
+
+# Questions Floris (20250108)
+## across
+
+> `mutate_at()`, `vars()`: 'superseded' volgens hun documentatie, zie hoger
+
+I find `across()` very confusing and the syntax non-intuitive; in particular [fliter(if_*())](https://dplyr.tidyverse.org/articles/colwise.html#filter) reads horribly does not cover what I need.
+
+-> I will attempt to adjust in future applications.
+
+## fairly large mesh
+
+> *Warning: The x or y column values are fairly large*: genegeerd, maar kan reëel effect betreffen?
+
+As I understand it ("the spatial range is dependent on the scale of coordinates") this is only a problem if values "from zero to fairly large" are included.
+
+- I could center, yet there should be no difference (range stays the same).
+- Scaling to kilometers is no option: effects in the order of millimeters are already problem for regression.
+
+-> should be fine.
+
+
+## cluster-based random intercept
+
+> spatial detrending ofwel alternatief: cluster-based random intercept ?
+
+Random intercepts "steal" the variability of a model, i.e. they remove effects and sample size from other estimators. 
+Should be used with care.
+Detrending here has a different function; and I use it optionally to compare (e.g. elevation).
+
+## correlation soilclass/elevation 
+
+> "In soilclass == light, compared to heavy, xG3s are about 0.37m higher": 
+
+> vermelden dat dit specifiek voor de detrended data is. 
+
+Correct, thanks!
+
+
+> Komt mogelijks omdat de soilclasses gecorreleerd kunnen zijn met elevation (die niet meer verklarend is in deze modellen)
+
+Yes, if I remember correctly, a majority of light soils are close to the coast.
+
+
+## explanation filterdepth effect
+
+> "filterdepth does influence xG3s in every possible model": kan dit verklaard worden?
+
+Yes!
+Water level depends on filter depth: the deeper we drill, the lower the water level ($\approx -1 \frac{cm}{m}$).
+Note that further down, this can be associated with soilclass "light".
+
+I would speculate that this has to do with the balance of (i) capilarity and chemical water/soil interactions and (ii) hydrostatic pressure.
+Vague working hypothesis: in light soil, where i presume water is more mobile, interactions with the soil matrix partially counteract hydrostatics; in the tube (absence of soil), full water weight presses down and can even push water outside (the image of a "net capillary pull" seems to attract my thoughts).
+
+The deeper, the more hydrostatics inside; hydrostatics outside increases slower because capillarity adds up.
+In heavy soil, water is unable to penetrate filter surrounding.
+
+
+Again: just guessing.
+
+## collinearity of water distance
+> "no effects of water_distance": misschien is er sprake van collineariteit?
+
+Indeed!
+
+I would not expect filterdepth and soilclass to be waterdistance-related.
+
+However, waterdistance could be related to elevation in some clusters (therefore killed by de-trending). 
+
+But then a rule on elevation should cover it as well.
+
+-> do we have to care about co-linearity at all, using an `or`-combination of exclusion rules?
+
+
+## Split by Soilclass:
+
+> heavy: inderdaad binnen verwachting dat er minder spatiale relatie is
+
+My earlier statement on this was wrong!
+
+It appeared from the updated variograms that the spatial relation is not all that different in heavy soil (range of >200m is still plausible, if the data would show any pattern). 
+The difference is the magnitude of variance: there seems to be much less variance overall.
+
+To be discussed.
+
+## Modeling best practices
+> algemeen ivm modellering: normaal doen we in functie van modellering ook:
+
+1. data-exploratie
+  - outliers covariaten & respons?
+  - collineariteit covariaten?
+  - datahoeveelheid vlgs categorieën & interacties?
+  - zie verder bv/Zuur A.F., Ieno E.N. & Elphick C.S. (2010). A protocol for data exploration to avoid common statistical problems: Data exploration. Methods in Ecology and Evolution 1 (1): 3–14. https://doi.org/10.1111/j.2041-210X.2009.00001.x./
+
+2. modeldiagnose (checking violations against model assumptions ~ reliability of estimates & p-values)
+3. modelevaluatie (predictive accuracy measures, k-fold cross validation ...)
+
+Ad 1. 
+Yes, there are outliers. Yes, there is collinearity. Yes, some categories might be small (there is a lot of data; this is less concern). 
+And generally I absolutely agree, these things need to be in order.
+Data exploration happens, to a certain extent, in script `060_Variogram`.
+
+Assume that all these data problems apply.
+What would be the consequence for our present analysis?
+
+In the present case, I would personally tend to just accept the data as we have it.
+
+
+Some options to give us more confidence:
+
+- return to daily water levels (larger -> more robust data set)
+- return to water chemistry (independent, but smaller data set; might not work)
 
 
