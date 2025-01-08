@@ -655,15 +655,16 @@ In code, this means:
 ```{r matern-definition}
 
 matern_function <- function(d, parameters) {
-  sill <- parameters[1] # related to semivariance
+  scale <- parameters[1] # related to semivariance
   sigma <- parameters[2] # related to actual range; turning point
   nugget <- parameters[3]
   nu <- parameters[4]
 
+  sill <- scale + nugget
   z <- sqrt(2 * nu) * d / sigma
   K <- suppressWarnings(besselK(z, nu))
   matern <- (z)^nu * K / (2^(nu - 1) * gamma(nu))
-  result <- sill - (sill - nugget) * matern
+  result <- sill - scale * matern
   
   result[is.na(result)] <- 0
   return(result)
@@ -732,10 +733,11 @@ plot_matern <- function(optimizer_results) {
   predict <- optimizer_results$predict
 
   # extract parameters
-  sill <- optimizer_results$par[1]
+  scale <- optimizer_results$par[1]
   sigma <- optimizer_results$par[2]
-  range <- 2*optimizer_results$par[2]
+  range <- 2*sigma
   nugget <- optimizer_results$par[3]
+  sill <- scale + nugget
 
 
   # plotting
@@ -750,6 +752,7 @@ plot_matern <- function(optimizer_results) {
     geom_line(aes(x = plotx, y = predict(plotx))) +
     labs(title = paste0("Matérn regression: ",
       paste(round(optimizer_results$par, 4), collapse = ", "))) +
+    xlab("distance (m)") + ylab("semivariance (m²)") +
     theme_minimal()
 
   return(g)
@@ -774,7 +777,7 @@ x <- x[firsthalf]
 matern_hg3 <- fit_matern(x, y,
   par = c(25, 250, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.001),
-  upper = c(50, 500, 100, 100),
+  upper = c(50, 500, 100, 64),
   # control = list("fnscale" = 1e-4),
   method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
 )
@@ -816,9 +819,9 @@ x <- x[firsthalf]
 
 
 matern_lg3 <- fit_matern(x, y,
-  par = c(25, 250, 0., 1.),
+  par = c(6, 225, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.001),
-  upper = c(50, 500, 100, 100),
+  upper = c(50, 500, 100, 64),
   # control = list("fnscale" = 1e-4),
   method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
 )
@@ -886,6 +889,12 @@ knitr::kable(
 - I nonchalantly filter outliers above a certain semivariance, just to see whether technically the regression benefits from it.
 
 
+## soilclass-wise analysis
+
+::: {.callout-warning}
+Note the y-axis! (data filtered: $<=40$; plot scale capped on "heavy" soil)
+:::
+
 ::: {.panel-tabset}
 ### light
 
@@ -908,8 +917,8 @@ x <- x[firsthalf]
 
 matern_light_lg3 <- fit_matern(x, y,
   par = c(25, 250, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(10, 500, 0.01, 1.01),
+  lower = c(0.0, 0.0, 0., 0.01),
+  upper = c(50, 500, 10, 10),
   # control = list("fnscale" = 1e-8),
   method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
 )
@@ -948,9 +957,9 @@ y <- y[firsthalf]
 x <- x[firsthalf]
 
 matern_heavy_lg3 <- fit_matern(x, y,
-  par = c(0.01, 250, 0., 1.),
+  par = c(5.01, 1., 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(10, 500, 0.01, 1.01),
+  upper = c(10, 500, 10, 10),
   # control = list("fnscale" = 1e-8),
   method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
 )
@@ -966,9 +975,11 @@ print_regression_results(matern_heavy_lg3, label = "Matérn (LG3, heavy soil)")
 #| eval: true
 #| code-fold: true
 
-plot_matern(matern_heavy_lg3)
+g <- plot_matern(matern_heavy_lg3)
+g + ylim(0, 1)
 
 ```
+
 
 
 ### peat
