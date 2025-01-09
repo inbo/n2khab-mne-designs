@@ -1,0 +1,152 @@
+---
+title: "Water Level Models"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+(from `030_waterlevel_variograms.qmd`)
+
+```{r setup}
+#| include: false
+library("dplyr") # our favorite data wrangling toolbox
+library("dbplyr") # dplyr + databases
+library("arrow") # writing parquet files
+library("ggplot2") # a visualization toolbox
+library("gstat") # geospatial statistics
+library("sdmTMB") # species distribution models Template Model Builder
+
+
+source("./watina_migration.R")
+source("./auxiliary_data_queries.R")
+
+# connect watina 
+watina_dwh <- connect_watina()
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+```
+
+
+# Raw Data
+
+```{r data-settings}
+max_filterdepth <- 3 # (m) # choice to focus on shallow gw (ecologically relevant for GW_03.3 and GW_05.1)
+```
+
+
+```{r raw-data-query-dbplyr}
+
+query_measurement <- function (){
+  tbl(watina_dwh, "FactPeilMeting") %>%
+    left_join(
+      tbl(watina_dwh, "dimPeilpunt"),
+      by = join_by(PeilpuntWID == PeilpuntWID),
+      relationship = "many-to-many"
+    ) %>%
+    filter(PeilmetingStatusCode == "VLD") %>% 
+    select(
+      PeilMetingWID,
+      PeilbuisLengte,
+      ReferentieNiveauMaaiveld,
+      ReferentieNiveauTAW,
+      FilterLengte,
+      PeilpuntStatusCode,
+      PeilpuntCode,
+      MeetpuntWID.x,
+      DatumWID,
+      PeilpuntXCoordinaat,
+      PeilpuntYCoordinaat,
+      mTAW
+    ) %>%
+    mutate(
+      filterdepth = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)
+    ) %>%
+    filter(filterdepth <= max_filterdepth) %>% 
+    rename(
+      idx = PeilMetingWID,
+      pblen = PeilbuisLengte,
+      ref_mv = ReferentieNiveauMaaiveld,
+      ref_taw = ReferentieNiveauTAW,
+      flen = FilterLengte,
+      fdepth = filterdepth,
+      pp_code = PeilpuntCode,
+      status = PeilpuntStatusCode,
+      mp_idx = MeetpuntWID.x,
+      date = DatumWID,
+      x = PeilpuntXCoordinaat,
+      y = PeilpuntYCoordinaat,
+      w = mTAW
+    ) %>%
+   filter_at(
+    vars(flen, fdepth, pp_code, w),
+    all_vars(!is.na(.))
+  )
+
+}
+
+data_db <- query_measurement()
+
+glimpse(data_db)
+data_db %>% count
+# unique(fpm1 %>% pull(status))
+
+```
+
+
+# find traces
+
+```{r sort-sample-size}
+top100 <- data_db %>%
+  count(pp_code) %>%
+  arrange(desc(n)) %>%
+  head(100) %>%
+  collect %>% 
+  pull(pp_code)
+
+
+data <- data_db %>%
+  filter(pp_code %in% top100) %>%
+  collect
+
+```
+
+# soilclass
+
+```{r join-soilclass}
+locations <- data %>% 
+  distinct(mp_idx, pp_code, x, y) %>% 
+  rename(c("idx" = mp_idx)) %>% 
+  join_soilclass()
+```
+
+# plot trace
+
+```{r plot-function}
+
+plot_location <- function(pp_selection) {
+  trace <- data %>%
+    filter(pp_code == pp_selection) %>%
+    select(date, w) %>%
+    mutate(across(date, lubridate::ymd))
+  glimpse(trace)
+
+  g <- trace %>%
+    ggplot(aes(x = date, y = w)) +
+    geom_line()
+  return(g)
+}
+
+# plot_location("DULP002X")
+```
+
+```{r plot-all}
+
+
+
+```
