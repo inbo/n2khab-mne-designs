@@ -111,7 +111,8 @@ top100 <- data_db %>%
 
 
 data <- data_db %>%
-  filter(pp_code %in% top100) %>%
+  filter(pp_code %in% top100,
+         date > 20100000) %>%
   collect
 
 ```
@@ -128,25 +129,64 @@ locations <- data %>%
 # plot trace
 
 ```{r plot-function}
+colors <- c("light" = "lightblue",
+           "heavy" = "darkblue",
+           "peat" = "brown",
+           "unknown" = "purple")
 
-plot_location <- function(pp_selection) {
+plot_location <- function(pp_selection, h = NULL) {
   trace <- data %>%
     filter(pp_code == pp_selection) %>%
     select(date, w) %>%
     mutate(across(date, lubridate::ymd))
-  glimpse(trace)
+  # glimpse(trace)
 
-  g <- trace %>%
-    ggplot(aes(x = date, y = w)) +
-    geom_line()
+  sc <- locations %>%
+    filter(pp_code == pp_selection) %>%
+    pull("soilclass")
+
+
+  x <- trace$date
+  y <- trace$w
+  y <- y - mean(y)
+  shift <- 1.5
+  pos <- grep(sc, names(colors))
+  y <- y + shift * pos
+
+  if (is.null(h)) {
+    h <- ggplot(NULL)
+  }
+
+
+  g <- h +
+    geom_line(aes(x = x, y = y),
+              color = colors[sc],
+              alpha = 0.2)
   return(g)
 }
 
-# plot_location("DULP002X")
+# 
 ```
 
+```{r plot-some}
+# light
+h <- plot_location("DULP002X")
+plot_location("VIJP116X")
+
+# heavy
+h <- plot_location("LEIP023X", h)
+plot_location("DYLP028B")
+
+h + theme_bw()
+```
+
+
 ```{r plot-all}
+h <- ggplot(NULL)
 
+for (pp in unique(locations$pp_code)) {
+  h <- plot_location(pp, h)
+}
 
-
+h + theme_bw() 
 ```
