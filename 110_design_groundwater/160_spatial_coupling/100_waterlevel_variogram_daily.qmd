@@ -120,7 +120,6 @@ peilpunten %>%
 ## Clustering
 
 ```{r cluster-join}
-source("./auxiliary_data_queries.R")
 
 cluster_dist <- 3400 # m # parameter for clustering
 min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
@@ -164,3 +163,33 @@ mapview(st_clust,
 )
 
 ```
+
+## soilclass
+
+```{r soilclass-join}
+source("./auxiliary_data_queries.R")
+
+pp_soilclass <- pp_clusters %>%
+    join_soilclass(
+        index_column = "mp_idx"
+    )
+
+st_soil <- pp_soilclass %>%
+  group_by(soilclass, region, cluster) %>%
+  summarize(x = mean(x), y = mean(y), count = n()) %>% 
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+mapview(st_soil,
+  map.types = c("CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap", "OpenTopoMap"),
+  zcol = "soilclass",
+  cex = "count",
+  legend = FALSE
+)
+
+```
+
+## pairing
+
+retrieving all pairs of observation wells
+which are below a certain distance,
+

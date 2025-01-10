@@ -634,6 +634,7 @@ query_soilclass <- function(
     ) %>%
     dplyr::mutate(soilclass = tidyr::replace_na(soilclass, "unknown")) %>%
     sf::st_drop_geometry() %>%
+    distinct(.keep_all = TRUE) %>%
     dplyr::mutate_at(dplyr::vars(soilclass), as.factor)
 
   return(soilclass_lookup)
