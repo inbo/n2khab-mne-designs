@@ -220,10 +220,11 @@ join_lookup <- function(
 #' @keywords internal
 #'
 wrap_query_to_join <- function (query_function) {
-  join_function <- function(data, ...) {
+  join_function <- function(data, index_column = "idx", ...) {
     join_lookup(
       data,
-      suppressMessages(query_function(data, ...)),
+      suppressMessages(query_function(data, index_column = index_column, ...)),
+      index_column = index_column,
       delete_existing = TRUE
     )
   }
@@ -297,6 +298,7 @@ query_clusters <- function (
       .,
       .name_repair = "unique") %>%
     setNames(c(index_column, "cluster")) %>%
+    distinct(.keep_all = TRUE) %>%
     dplyr::mutate_at(dplyr::vars(cluster), as.factor)
 
   return(cluster_lookup)
@@ -358,14 +360,16 @@ remove_underpopulated_clusters <- function(
 
 
   # find clusters with few members
-  list_of_excluded_clusters <- (data %>%
+  list_of_excluded_clusters <- sapply((data %>%
     group_by(!!!dplyr::syms(cluster_column)) %>%
     summarize(count = n()) %>%
     filter(count < minimum_cluster_member_count)
-    )[, cluster_column] # I miss pandas.
+    )[, cluster_column], FUN = as.character)
+  # I miss pandas.
 
   # remove irrelevant clusters
-  data <- data[!(data[, cluster_column] %in% list_of_excluded_clusters), ]
+  data <- data[!(as.character(data[, cluster_column]) %in% list_of_excluded_clusters), ]
+  # I desparately miss pandas.
 
   return(data)
 }

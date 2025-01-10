@@ -1,0 +1,141 @@
+---
+title: "Water Level Models"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Introduction 
+
+```{r setup}
+#| include: false
+library("dplyr") # our favorite data wrangling toolbox
+library("dbplyr") # dplyr + databases
+library("arrow") # writing parquet files
+library("ggplot2") # a visualization toolbox
+library("gstat") # geospatial statistics
+library("sdmTMB") # species distribution models Template Model Builder
+
+
+source("./watina_migration.R")
+source("./auxiliary_data_queries.R")
+
+# option to work offline; requires previous data download
+work_offline <- FALSE
+
+# connect watina 
+if (!work_offline && !exists("watina_dwh")) {
+  watina_dwh <- connect_watina()
+}
+
+# create a data folder (if not present)
+dir.create("./data", showWarnings = FALSE)
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# the user may choose to reload raw data
+force_database_download <- FALSE
+```
+
+
+# Clustered Peilpunt Data
+
+## Strategy
+
+- getting the peilpunt locations
+- clustering
+- pairing
+- soilclass, distance, etc.
+
+
+## Loading
+
+```{r raw-data-query-dbplyr}
+
+max_filterdepth <- 5.8 # 3 # (m) # choice to focus on shallow gw (ecologically relevant for GW_03.3 and GW_05.1)
+
+peilpunten <- tbl(watina_dwh, "dimPeilpunt") %>%
+  filter(PeilpuntStatusCode == "VLD") %>% 
+  filter(LandCode == "BE") %>%
+    mutate(
+      filterdepth = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)
+    ) %>% 
+  filter(filterdepth <= max_filterdepth, filterdepth > 0) %>% 
+  left_join(
+    tbl(watina_dwh, "dimMeetpunt"),
+    by = join_by(MeetpuntWID == MeetpuntWID),
+    relationship = "many-to-many"
+  ) %>%
+  filter(!is.na(PeilpuntWID)) %>% 
+  select(
+    PeilpuntWID,
+    PeilbuisLengte,
+    ReferentieNiveauMaaiveld,
+    ReferentieNiveauTAW,
+    FilterLengte,
+    filterdepth,
+    PeilpuntStatusCode,
+    PeilpuntCode,
+    MeetpuntWID,
+    PeilpuntXCoordinaat,
+    PeilpuntYCoordinaat
+  ) %>%
+  rename(
+    mp_idx = MeetpuntWID,
+    pp_idx = PeilpuntWID,
+    pblen = PeilbuisLengte,
+    ref_mv = ReferentieNiveauMaaiveld,
+    ref_taw = ReferentieNiveauTAW,
+    flength = FilterLengte,
+    fdepth = filterdepth,
+    pp_code = PeilpuntCode,
+    status = PeilpuntStatusCode,
+    x = PeilpuntXCoordinaat,
+    y = PeilpuntYCoordinaat,
+  ) %>%
+  collect
+
+print(colnames(peilpunten))
+nrow(peilpunten)
+
+peilpunten %>%
+  ggplot(aes(x = fdepth)) +
+  geom_histogram(bins = 128, fill = "lightgray", color = "black") +
+  theme_bw()
+```
+
+
+## Clustering
+
+```{r cluster-join}
+source("./auxiliary_data_queries.R")
+
+cluster_dist <- 3400 # m # parameter for clustering
+min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
+
+pp_clusters <- peilpunten %>%
+  join_clusters(index_column = "mp_idx", characteristic_distance = cluster_dist) %>%
+  remove_underpopulated_clusters(
+    minimum_cluster_member_count = min_cluster_size
+  ) 
+
+head(pp_clusters)
+```
+
+
+```{r cluster-join}
+
+pp_clusters %>%
+  count(cluster) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x = n)) +
+  geom_histogram(bins = 128, fill = "lightgray", color = "black") +
+  theme_bw()
+
+```
