@@ -15,12 +15,14 @@ knitr:
 
 ```{r setup}
 #| include: false
-library("dplyr") # our favorite data wrangling toolbox
-library("dbplyr") # dplyr + databases
-library("arrow") # writing parquet files
-library("ggplot2") # a visualization toolbox
-library("gstat") # geospatial statistics
-library("sdmTMB") # species distribution models Template Model Builder
+void <- suppressPackageStartupMessages
+library("dplyr")   |> void() # our favorite data wrangling toolbox
+library("dbplyr")  |> void() # dplyr + databases
+library("arrow")   |> void() # writing parquet files
+library("ggplot2") |> void() # a visualization toolbox
+library("mapview") |> void() # map visualization
+# library("gstat") # geospatial statistics
+# library("sdmTMB") # species distribution models Template Model Builder
 
 
 source("./watina_migration.R")
@@ -84,7 +86,7 @@ peilpunten <- tbl(watina_dwh, "dimPeilpunt") %>%
     PeilpuntCode,
     MeetpuntWID,
     PeilpuntXCoordinaat,
-    PeilpuntYCoordinaat
+    PeilpuntYCoordinaat,
   ) %>%
   rename(
     mp_idx = MeetpuntWID,
@@ -99,9 +101,13 @@ peilpunten <- tbl(watina_dwh, "dimPeilpunt") %>%
     x = PeilpuntXCoordinaat,
     y = PeilpuntYCoordinaat,
   ) %>%
-  collect
+  collect %>% 
+  mutate(
+    region = substring(pp_code, first = 1, last = 3)
+  ) %>%
+    filter(region != "VBS") # remove Luxemburg
 
-print(colnames(peilpunten))
+# print(colnames(peilpunten))
 nrow(peilpunten)
 
 peilpunten %>%
@@ -125,11 +131,12 @@ pp_clusters <- peilpunten %>%
     minimum_cluster_member_count = min_cluster_size
   ) 
 
-head(pp_clusters)
+knitr::kable(head(pp_clusters))
 ```
 
 
-```{r cluster-join}
+Cluster size:
+```{r cluster-size}
 
 pp_clusters %>%
   count(cluster) %>%
@@ -137,5 +144,23 @@ pp_clusters %>%
   ggplot(aes(x = n)) +
   geom_histogram(bins = 128, fill = "lightgray", color = "black") +
   theme_bw()
+
+# levels(pp_clusters$cluster)
+```
+
+
+```{r cluster-location}
+
+st_clust <- pp_clusters %>%
+  group_by(region, cluster) %>%
+  summarize(x = mean(x), y = mean(y), count = n()) %>% 
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+mapview(st_clust,
+  map.types = c("CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap", "OpenTopoMap"),
+  zcol = "region",
+  cex = "count",
+  legend = FALSE
+)
 
 ```

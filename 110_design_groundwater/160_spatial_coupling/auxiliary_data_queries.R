@@ -369,6 +369,7 @@ remove_underpopulated_clusters <- function(
 
   # remove irrelevant clusters
   data <- data[!(as.character(data[, cluster_column]) %in% list_of_excluded_clusters), ]
+  data[, cluster_column] <- droplevels(data[, cluster_column])
   # I desparately miss pandas.
 
   return(data)
