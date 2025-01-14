@@ -585,7 +585,12 @@ Determining which types in a module x compartment (GW, SURF, SOIL) are covered b
 ```{r}
 non_core_types_per_module_and_compartment <-
   modules %>%
-  select(-year_firstdefinition, -contains("name_"), -code_short) %>% 
+  select(
+    -year_firstdefinition,
+    -contains("name_"),
+    -code_short,
+    -contains("postpone_")
+  ) %>% 
   semi_join(
     module_domains %>% filter(domain == "Flanders"),
     by = "module"
@@ -750,8 +755,9 @@ module_domain_scheme_designattr <-
   mutate(
     year_first = case_match(
       attribute_1,
-      "SURF" ~ year_first_default + 1L,
-      "SOIL" ~ year_first_default + 2L,
+      "GW" ~ year_first_default + yr_postpone_gw,
+      "SURF" ~ year_first_default + yr_postpone_surf,
+      "SOIL" ~ year_first_default + yr_postpone_soil,
       .default = year_first_default
     )
   ) %>%
@@ -796,7 +802,14 @@ module_domain_scheme_designattr <-
       .default = NA_real_
     )
   ) %>%
-  select(-attribute_1, -tag_1, -category, -starts_with("prop"), -type_count_mhq_sampling) %>%
+  select(
+    -attribute_1,
+    -tag_1,
+    -category,
+    -starts_with("prop"),
+    -type_count_mhq_sampling,
+    -contains("postpone_")
+  ) %>%
   mutate(
     sp_sample_size_all_panels_type = ifelse(
       is.na(sp_sample_size_all_panels),

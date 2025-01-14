@@ -42,8 +42,9 @@ However, large shifts in the membership designs when a module in a module combo 
 Since the actual end years of modules are highly uncertain, we simply ignore this and assume that the maximum end year is most useful at the module combo level.
 We do the same for the start years, using the minimum year per scheme x module combo.
 If this situation is present, then consequences must be considered with care and some restrictions may need to be applied post-hoc to the spatiotemporal samples.
+See also the _missing functionality_ in section \@ref(moco).
 
-## Module combinations (module combos) per scheme based on common panel design of target variables
+## Module combinations (module combos) per scheme based on common panel design of target variables {#moco}
 
 Determining module combos per scheme based on common panel design characteristics _of target variables_.
 The target variables limit the main field methods of a module x scheme to a great extent, since the latter also comprise variables for explanation & quality control.
@@ -205,6 +206,12 @@ if (nrow(mod_scheme_ps_different_1styr) > 0L) {
 ```
 
 We ignore differing last years (assuming the maximum last year for the module combo; see section \@ref(considerations)), but we must pay attention to additional remedies in case of conflicting first years.
+
+**Missing functionality**: we currently don't correct the spatial sampling unit calendar for '`year_first` mismatches' between modules in the same module combo, if those occur.
+Handling this comes down to filtering sampling units in the first panel(s) of the first cycle where such mismatches occur, hence where not all modules have started yet.
+This requires calculation of module-level spatial sample sizes in poststrata.
+More generally, we should add support for temporal variation in which modules are active inside a module combo, and take (semi-automated) decisions to either filter sampling units (post-hoc, based on full panels) and accept the resulting gaps in the GRTS series, or rearrange the panel membership using a single sampled GRTS series (this seems more appropriate if reductions are for the longer term).
+Expansion with new, unplanned modules will always lead to rearranging the panel membership.
 
 From inspection of `scheme_target_paneldesign`, we decide to use the following order to prioritize module combos in the GRTS sampling.
 
@@ -1372,9 +1379,11 @@ Also the spare units are considered per spatial poststratum, so that replacement
 ```{r}
 scheme_moco_ps_spsubset_fas_panelcount_full <-
   mod_scheme_yrs_moco_ps %>% 
-  # year_first has been set module-agnostic and scheme-specific, while year_last
-  # is module-dependent; however let's just assume year_first may become also
-  # module dependent in the future, so we keep it in
+  # year_first has been set module and scheme specific, while year_last is just
+  # module specific. However for year_first do note that we currently don't
+  # correct the spatial sampling unit calendar for 'year_first mismatches'
+  # between modules in the same module combo. See the earlier object
+  # 'mod_scheme_ps_different_1styr' and associated missing functionality!
   summarize(
     year_first = min(year_first),
     year_last = max(year_last),
@@ -2241,7 +2250,10 @@ Cleaning is required with regard to the startup period:
     - We also apply this to INST & SPATPOSIT FAGs, even though this puts much more work into the period where this is moved into.
     In practice, it is expected that this work can be organized during a somewhat longer period than the one in the calendar.
     This may need reconsideration depending on evolving circumstances.
-  - Also, for now neglect LOCEVAL FAGs as they will need more special consideration, e.g. they may need to be postponed a whole year, but only in the first year;
+  - Also, for now neglect LOCEVAL FAGs as they will need more special consideration, e.g. they may need to be postponed a whole year, but only in the first year.
+  - Note that we currently don't correct '`year_first` mismatches' between modules in the same module combo (see `mod_scheme_ps_different_1styr` object).
+It requires calculation of module-level spatial sample sizes in poststrata.
+See the _missing functionality_ in section \@ref(moco).
 - SURFINSTGAUGE and SPATPOSITGAUGE activities in groundwater schemes (3-year periodicity) must require the presence of a corresponding GWINST activity (6-year periodicity) in the same or a preceding period in order to be relevant.
 This will drop about half of the SURFINSTGAUGE activities in groundwater schemes during the first 3-year cycle.
 - drop FAGs that miss their foregoing FAGs with a lower rank.
