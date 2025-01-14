@@ -171,8 +171,8 @@ join_lookup <- function(
   # data <- data[!is.na(data[, index_column]), ]
   # lookup <- lookup[!is.na(lookup[, index_column]), ]
 
-  # data[, index_column] <- type.convert(data[, index_column], as.is = TRUE)
-  # lookup[, index_column] <- type.convert(lookup[, index_column], as.is = TRUE)
+  data[, index_column] <- type.convert(data[, index_column], as.is = TRUE)
+  lookup[, index_column] <- type.convert(lookup[, index_column], as.is = TRUE)
 
 
   if (delete_existing) {
@@ -547,6 +547,23 @@ query_elevation <- function(
 
   close(pb) # close the progress bar
 
+  colnames(elevation_lookup) <-
+    c(index_column, "elevation_dhmv", "slope_r2.5m")
+
+
+  # there can still be duplicates,
+  #   if "distinct" above returned multiple coords
+  elevation_lookup <- elevation_lookup %>%
+    dplyr::summarize(
+      dplyr::across(
+        dplyr::everything(),
+        ~ mean(.x, na.rm = TRUE)
+      ),
+      .by = !!index_column
+    )
+  # elevation_lookup <- elevation_lookup %>%
+  #   dplyr::distinct(.keep_all = TRUE)
+
   return(elevation_lookup)
 
 }
@@ -833,10 +850,23 @@ query_waterdistance <- function (
   # combine and return the output data
   water_lookup <- dplyr::bind_rows(water_lookup)
 
-  # restore index column
-  water_lookup[, index_column] <-
-    water_lookup[, index_column] %>%
-    mutate_at(as.integer, .vars = index_column)
+  # # restore index column
+  # water_lookup[, index_column] <-
+  #   water_lookup[, index_column] %>%
+  #   mutate_at(as.integer, .vars = index_column)
+
+  # bonus: a simple water distance class
+  meters <- function(x) units::set_units(x, "m")
+  water_lookup <- water_lookup %>%
+    mutate(
+      wata_dist_class = factor(
+        dplyr::case_when(
+          wata_min_dist <= meters(50) ~ "mid",
+          wata_min_dist <= meters(5) ~ "close",
+          .default = "far"
+        )
+      )
+    )
 
   return(water_lookup)
 }

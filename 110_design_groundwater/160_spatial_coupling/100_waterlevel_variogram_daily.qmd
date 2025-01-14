@@ -16,11 +16,12 @@ knitr:
 ```{r setup}
 #| include: false
 void <- suppressPackageStartupMessages
-library("dplyr")   |> void() # our favorite data wrangling toolbox
-library("dbplyr")  |> void() # dplyr + databases
-library("arrow")   |> void() # writing parquet files
-library("ggplot2") |> void() # a visualization toolbox
-library("mapview") |> void() # map visualization
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("gridExtra") |> void() # panels with ggplot
+library("mapview")   |> void() # map visualization
 # library("gstat") # geospatial statistics
 # library("sdmTMB") # species distribution models Template Model Builder
 
@@ -41,8 +42,14 @@ dir.create("./data", showWarnings = FALSE)
 
 if (getOption("browser") == "") options(browser = "librewolf") 
 
+# user-set parameters
+cluster_dist <- 3400 # m # parameter for clustering
+min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
+data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
+
 # the user may choose to reload raw data
-force_database_download <- FALSE
+force_data_reassembly <- FALSE
+reload <- force_data_reassembly || !file.exists(data_export_file)
 ```
 
 
@@ -119,38 +126,39 @@ peilpunten %>%
 
 ## Clustering
 
+Clustering the data with a cluster range of `{r} cluster_dist` m,
+removing all clusters which contain only one location.
+
 ```{r cluster-join}
 
-cluster_dist <- 3400 # m # parameter for clustering
-min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
-
-pp_clusters <- peilpunten %>%
-  join_clusters(index_column = "mp_idx", characteristic_distance = cluster_dist) %>%
+pp_data <- peilpunten %>%
+  join_clusters(index_column = "pp_idx", characteristic_distance = cluster_dist) %>%
   remove_underpopulated_clusters(
     minimum_cluster_member_count = min_cluster_size
   ) 
 
-knitr::kable(head(pp_clusters))
+knitr::kable(head(pp_data))
 ```
 
 
 Cluster size:
+
 ```{r cluster-size}
 
-pp_clusters %>%
+pp_data %>%
   count(cluster) %>%
   arrange(desc(n)) %>%
   ggplot(aes(x = n)) +
-  geom_histogram(bins = 128, fill = "lightgray", color = "black") +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
   theme_bw()
 
-# levels(pp_clusters$cluster)
+# levels(pp_data$cluster)
 ```
 
 
 ```{r cluster-location}
 
-st_clust <- pp_clusters %>%
+st_clust <- pp_data %>%
   group_by(region, cluster) %>%
   summarize(x = mean(x), y = mean(y), count = n()) %>% 
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
@@ -164,17 +172,27 @@ mapview(st_clust,
 
 ```
 
+## duplicates
+
+Mental note: some locations have ambiguous co-ordinates
+
+```{r location-duplicates}
+duplicates <- pp_data[, c("mp_idx", "pp_idx", "x", "y")]
+duplicates <- duplicates %>% 
+  filter(mp_idx %in% (duplicates %>% count(mp_idx) %>% filter(n>1) %>% pull(mp_idx))) %>%
+  arrange(mp_idx)
+knitr::kable(duplicates)
+```
+
 ## soilclass
 
 ```{r soilclass-join}
 source("./auxiliary_data_queries.R")
 
-pp_soilclass <- pp_clusters %>%
-    join_soilclass(
-        index_column = "mp_idx"
-    )
+pp_data <- pp_data %>%
+    join_soilclass(index_column = "pp_idx")
 
-st_soil <- pp_soilclass %>%
+st_soil <- pp_data %>%
   group_by(soilclass, region, cluster) %>%
   summarize(x = mean(x), y = mean(y), count = n()) %>% 
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
@@ -182,14 +200,283 @@ st_soil <- pp_soilclass %>%
 mapview(st_soil,
   map.types = c("CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap", "OpenTopoMap"),
   zcol = "soilclass",
-  cex = "count",
-  legend = FALSE
+  cex = "count"
+  # legend = FALSE
 )
 
 ```
 
-## pairing
+## elevation
 
-retrieving all pairs of observation wells
+... once we're at it.
+
+```{r elevation-join}
+
+if (reload) {
+  pp_data <- pp_data %>%
+    join_elevation(index_column = "pp_idx")
+  
+  ## "Oh No!", there were duplicates.
+  # data <- pp_data
+  # index_column = "mp_idx"
+  # coordinate_columns <- c("x", "y")
+  # elevation_lookup <- query_elevation(data, index_column = "mp_idx")
+  # elevation_grouped <- elevation_lookup %>% 
+  #   filter(mp_idx %in% (elevation_lookup %>% count(mp_idx) %>% filter(n>1) %>% pull(mp_idx)))
+  # elevation_lookup %>% summarize(across(everything(), ~ mean(.x, na.rm = TRUE)), .by = !!index_column)
+  # data <- data %>%
+  #   dplyr::left_join(
+  #     elevation_lookup,
+  #     by = index_column,
+  #     relationship = "many-to-one"
+  #   )
+
+  write_parquet(pp_data, sink = data_export_file)
+}
+pp_data <- read_parquet(data_export_file)
+```
+
+
+```{r elevation-map}
+st_elevation <- pp_data %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+mapview(st_elevation,
+  map.types = c("OpenTopoMap", "CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap" ),
+  zcol = "elevation_dhmv"
+  # legend = FALSE
+)
+
+```
+
+
+## waterdistance
+
+```{r elevation-join}
+if (reload) {
+  pp_data <- pp_data %>%
+    join_waterdistance(index_column = "pp_idx")
+
+  ## today, nothing works as supposed.
+  # source("./auxiliary_data_queries.R")
+  # pp_test <- pp_data %>%
+  #   head(100) %>% 
+  #   join_waterdistance(index_column = "pp_idx")
+  # wd_lookup <- query_waterdistance(pp_data, index_column = "pp_idx")
+
+  # water_lookup <- wd_lookup
+  # meters <- function(x) units::set_units(x, "m")
+  # water_lookup <- water_lookup %>%
+  #   mutate(
+  #     wata_dist_class = factor(dplyr::case_when(
+  #       wata_min_dist <= meters(50) ~ "mid",
+  #       wata_min_dist <= meters(5) ~ "close",
+  #       .default = "far"
+  #   )))
+
+  write_parquet(pp_data, sink = data_export_file)
+}
+pp_data <- read_parquet(data_export_file)
+```
+
+# amplitude
+
+## purpose
+Some water levels oscillate a lot,
+others are effectively flat.
+We seem to miss a relevant co-variate which can explain the pronounced differences in amplitude.
+
+
+Here, I extract the "momentary amplitude" of the water level measurements.
+Then, I will measure their relation to water distance, elevation, *et cetera*. 
+
+
+## EMD implementation
+
+From <https://github.com/inbo/tutorials/tree/emd>.
+
+```{r r-firstmode-function}
+#' extracts from a signal (with an optional timeline vector)
+#'
+#' extra arguments will propagate to `findpeaks`
+#'
+#' @returns a list with
+#'   - first empirical mode: mean of envelope
+#'   - envelope: the upper and lower peak amplitude envelope
+#'   - select: boolean vector of time subset
+#'   - extrema: peaks and troughs
+#'
+#' 
+#' usage:
+#' > emd <- extract_firstmode(y, t = x, threshold = 0.4, minpeakdistance = 20)
+extract_firstmode <- function (signal, t = NULL, ...) {
+
+  # general purpose time vector
+  if (is.null(t)) {
+    t <- seq(0., 1., length.out = length(signal))
+  }
+
+  ## 1. find peaks
+  peaks <- sort(pracma::findpeaks(signal, ...)[, 2])
+  troughs <- sort(pracma::findpeaks(-signal, ...)[, 2])
+  extrema <- sort(c(peaks, troughs))
+  
+  # if (peaks[1] < troughs[1]) {
+  #   peaks <- c(peaks, length(signal))
+  #   troughs = c(1, troughs)
+  # } else if (peaks[1] > troughs[1]) {
+  #   peaks = c(1, peaks)
+  #   troughs = c(troughs, length(signal))
+  # }
+
+  ## 2. interpolate -> envelope
+  select <- t >= t[max(c(peaks[1], troughs[1]))] & t <= t[min(c(peaks[length(peaks)], troughs[length(troughs)]))]  
+  select <- function (pt) t >= t[pt[1]] & t <= t[tail(pt, 1)]
+  
+  # ti <- as.numeric(t[select])
+  # yi <- as.numeric(signal[select])
+  # py <- interpolators::evalInterpolator(interpolators::iprPCHIP(t[peaks], as.numeric(signal[peaks])), ti)
+  # ty <- interpolators::evalInterpolator(interpolators::iprPCHIP(t[troughs], as.numeric(signal[troughs])), ti)
+  py <- interpolators::evalInterpolator(interpolators::iprPCHIP(
+    t[peaks],
+    as.numeric(signal[peaks])),
+    t[select(peaks)]
+  )
+  if (peaks[1] > 1) py <- c(rep(py[1], peaks[1]), py[2:length(py)])
+  if (tail(peaks, 1) < length(t)) py <- c(py, rep(tail(py, 1), length(t)-tail(peaks, 1)))
+  # plot(t, py)
+
+  ty <- interpolators::evalInterpolator(interpolators::iprPCHIP(
+    t[troughs],
+    as.numeric(signal[troughs])),
+    t[select(troughs)]
+  )
+  if (troughs[1] > 1) ty <- c(rep(ty[1], troughs[1]), ty[2:length(ty)])
+  if (tail(troughs, 1) < length(t)) ty <- c(ty, rep(tail(ty, 1), length(t)-tail(troughs, 1)))
+  # plot(t, ty)
+
+  ## 3. empirical mode
+  envelope <- cbind("upper" = py, "lower" = ty)
+  rownames(envelope) <- t
+  firstmode <- rowMeans(envelope)
+  residual <- signal - firstmode
+  amplitude <- abs(py-ty)/2
+
+  return(list(
+    "time" = t,
+    "signal" = signal,
+    "firstmode" = firstmode,
+    "envelope" = envelope,
+    "select" = select,
+    "extrema" = extrema,
+    "residual" = residual,
+    "amplitude" = amplitude
+  ))
+}
+
+
+plot_emd <- function(emd, raw_trace = NULL) {
+
+
+  ti <- emd[["time"]]
+  signal <- emd[["signal"]]
+  firstmode <- emd[["firstmode"]]
+  envelope <- emd[["envelope"]]
+  residual <- emd[["residual"]]
+  amplitude <- emd[["amplitude"]]
+
+  if (!is.null(raw_trace)) {
+    x <- raw_trace[["t"]]
+    y <- raw_trace[["y"]]
+  } else {
+    x <- ti
+    y <- signal
+  }
+
+  h0 <- ggplot(NULL, aes(x = x, y = y)) +
+    geom_point() +
+    geom_step(alpha = 0.3, color = "darkgray")+
+    theme_bw() +
+    theme(legend.position = "none")
+
+  h1 <- ggplot(NULL, aes(x = ti, y = firstmode)) +
+    geom_line(color = "black") +
+    geom_point(aes(x = ti, y = signal)) +
+    geom_line(aes(x = ti, y = signal), color = "darkgray", alpha = 0.4) +
+    geom_line(aes(x = ti, y = envelope[,1]), color = "orange", alpha = 0.4) +
+    geom_line(aes(x = ti, y = envelope[,2]), color = "orange", alpha = 0.4) +
+    theme_bw() +
+    labs(y = "first mode") +
+    theme(legend.position = "none")
+  
+  h2 <- ggplot(NULL, aes(x = ti, y = residual)) +
+    geom_line(color = "black") +
+    geom_line(aes(x = ti, y = amplitude), color = "darkred", alpha = 0.8) +
+    geom_line(aes(x = ti, y = -amplitude), color = "darkred", alpha = 0.8) +
+    theme_bw() +
+    labs(x = "time (arb. units)", y = "residual") +
+    theme(legend.position = "none")
+
+  grid.arrange(h0, h1, h2, ncol = 1) # gridExtra
+}
+
+```
+
+
+## explore
+
+```{r explore-emd}
+
+get_trace <- function(pp_idx, show_plot = FALSE) {
+  # pp_idx = 24
+
+  peilmeting <- tbl(watina_dwh, "FactPeilMeting") %>%
+    filter(PeilpuntWID == pp_idx) %>%
+    select(DatumWID, mTAW) %>%
+    arrange(DatumWID) %>%
+    collect
+  
+  peilmeting <- peilmeting %>%
+    mutate(date = as.Date(as.character(DatumWID), format = "%Y%m%d"))
+
+  if (show_plot){
+    h <- peilmeting %>%
+      ggplot(aes(x = date, y = mTAW)) +
+        geom_point() +
+        geom_step(alpha = 0.3, color = "darkgray")
+    print(h)
+  }
+
+  t <- peilmeting %>% pull(date) 
+  t <- difftime(t, t[1], units = "days")
+  y <- peilmeting %>% pull(mTAW) 
+    
+  return(list("t" = as.numeric(t), "y" = y))
+}
+
+get_emd_trace <- function(tr) extract_firstmode(tr[["y"]], t = tr[["t"]])
+get_firstmode <- function(emd) list("t" = emd[["time"]], "y" = emd[["firstmode"]])
+mean_amplitude <- function(emd) mean(emd[["amplitude"]])
+
+# example
+trace <- get_trace(24, show_plot = FALSE)
+emd <- get_emd_trace(trace)
+# plot_emd(emd)
+emd2 <- get_emd_trace(get_firstmode(emd))
+plot_emd(emd2, raw_trace = trace)
+var(2*trace$y)
+mean_amplitude(emd) + mean_amplitude(emd2)
+
+t <- emd2[["time"]]
+amp <- emd2[["amplitude"]] + emd[["amplitude"]][emd2[["select"]]]
+plot(t, amp, type = "l", col = "orange", ylim = c(0, max(amp)))
+lines(trace[["t"]], abs(trace[["y"]] - mean(trace[["y"]])))
+
+```
+
+
+# pairing
+
+Retrieving all pairs of observation wells
 which are below a certain distance,
 
