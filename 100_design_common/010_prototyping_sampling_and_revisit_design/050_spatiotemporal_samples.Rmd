@@ -1838,10 +1838,21 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
       # guessing the grouping pattern to use in the revisit design for
       # FAGs with automated measurements
       mutate(
+        compartment = str_extract(scheme, "^[A-Z]+") %>% 
+          factor() %>% 
+          fct_relevel("SOIL", "HQ", after = Inf)
+        ) %>% 
+      mutate(
         max_panel_group_repetitions = max(panel_group_repetitions),
-        .by = c(scheme, module_combo_code, panel_split),
-        .keep = "unused"
+        # XXXXXXXXXXXXXXXX disabling grouping by scheme x moco x ps here and
+        # replacing it with grouping by compartment is an
+        # attempt to increase synergy across schemes in the revisit design for
+        # FAGs with automated measurements. It poses some risks for flexibility
+        # and may need revisiting.
+        # .by = c(scheme, module_combo_code, panel_split),
+        .by = compartment,
       ) %>% 
+      select(-panel_group_repetitions, -compartment) %>% 
       distinct() %>% 
       # using auto_continuous_meas and memship_alignfastest as attributes next
       # to panel count, since they trigger a different panel membership approach
