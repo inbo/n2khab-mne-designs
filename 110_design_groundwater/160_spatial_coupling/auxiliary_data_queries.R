@@ -755,12 +755,12 @@ query_waterdistance <- function (
       data[, c(index_column, coordinate_columns, cluster_column)] %>%
       dplyr::distinct(.keep_all = TRUE)
 
-    # below, the cluster column must have the name "cluster"
-    data_distinct$cluster <- data_distinct[, cluster_column]
+    # # below, the cluster column must NOT NECESSARILY have the name "cluster"
+    # data_distinct$cluster <- data_distinct[, cluster_column]
   }
 
   # factors won't work here
-  data_distinct$cluster <- as.integer(data_distinct$cluster)
+  data_distinct[[cluster_column]] <- as.integer(data_distinct[[cluster_column]])
 
   # load more helpers
   source("./spatial_helpers.R")
@@ -780,7 +780,7 @@ query_waterdistance <- function (
     # convert data subset to `sf`
     cluster_data <- sf::st_as_sf(
       cluster_data,
-      coords = c("x", "y"),
+      coords = coordinate_columns,
       crs = 31370
     )
 
@@ -835,14 +835,14 @@ query_waterdistance <- function (
   # wrapping a progress bar around the above procedure
   waterdist_query_pb <- function (cluster_idx) {
     setTxtProgressBar(pb, cluster_idx)
-    sub_data <- data_distinct %>%
-      dplyr::filter(cluster == cluster_idx)
+    print(cluster_idx)
+    sub_data <- data_distinct[data_distinct[[cluster_column]] == cluster_idx, ]
     return(get_min_water_distances_clusterwise(sub_data))
   }
 
   # cluster-wise application of the water search
   water_lookup <- lapply(
-    sort(unique(data_distinct[, cluster_column])),
+    sort(unique(data_distinct[[cluster_column]])),
     FUN = waterdist_query_pb
     )
   close(pb)
@@ -861,8 +861,8 @@ query_waterdistance <- function (
     mutate(
       wata_dist_class = factor(
         dplyr::case_when(
-          wata_min_dist <= meters(50) ~ "mid",
           wata_min_dist <= meters(5) ~ "close",
+          wata_min_dist <= meters(50) ~ "mid",
           .default = "far"
         )
       )

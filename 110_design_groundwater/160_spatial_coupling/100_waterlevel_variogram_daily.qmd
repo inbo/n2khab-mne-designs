@@ -46,9 +46,10 @@ if (getOption("browser") == "") options(browser = "librewolf")
 cluster_dist <- 3400 # m # parameter for clustering
 min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
 data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
+diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
 
 # the user may choose to reload raw data
-force_data_reassembly <- FALSE
+force_data_reassembly <- TRUE
 reload <- force_data_reassembly || !file.exists(data_export_file)
 ```
 
@@ -172,22 +173,24 @@ mapview(st_clust,
 
 ```
 
-## duplicates
+## local Belgian plate tectonics
 
 Mental note: some locations have ambiguous co-ordinates
 
 ```{r location-duplicates}
-duplicates <- pp_data[, c("mp_idx", "pp_idx", "x", "y")]
+duplicates <- pp_data[, c("cluster", "mp_idx", "pp_idx", "x", "y")]
 duplicates <- duplicates %>% 
   filter(mp_idx %in% (duplicates %>% count(mp_idx) %>% filter(n>1) %>% pull(mp_idx))) %>%
-  arrange(mp_idx)
+  arrange(cluster, mp_idx)
 knitr::kable(duplicates)
 ```
+
+Some, but not all, might be due to historical coordinate rounding.
+
 
 ## soilclass
 
 ```{r soilclass-join}
-source("./auxiliary_data_queries.R")
 
 pp_data <- pp_data %>%
     join_soilclass(index_column = "pp_idx")
@@ -249,20 +252,24 @@ mapview(st_elevation,
 
 ```
 
+> 'I want to see mountains again, Gandalf, mountains, and then find somewhere where I can rest.'
+
 
 ## waterdistance
 
-```{r elevation-join}
+```{r waterdistance-join}
 if (reload) {
   pp_data <- pp_data %>%
     join_waterdistance(index_column = "pp_idx")
 
-  ## today, nothing works as supposed.
+  ## (Tuesday) today, nothing works as supposed.
+  ## (Wednesday) not better, yet :(
   # source("./auxiliary_data_queries.R")
   # pp_test <- pp_data %>%
-  #   head(100) %>% 
+  #   tail(100)
+  # pp_test %>% 
   #   join_waterdistance(index_column = "pp_idx")
-  # wd_lookup <- query_waterdistance(pp_data, index_column = "pp_idx")
+  # wd_lookup <- query_waterdistance(pp_test, index_column = "pp_idx")
 
   # water_lookup <- wd_lookup
   # meters <- function(x) units::set_units(x, "m")
@@ -278,6 +285,23 @@ if (reload) {
 }
 pp_data <- read_parquet(data_export_file)
 ```
+
+
+Okay, why not, let's map it.
+
+```{r wata-map}
+st_wata <- pp_data %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+mapview(st_wata,
+  map.types = c("OpenTopoMap", "CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap" ),
+  zcol = "wata_dist_class"
+  # legend = FALSE
+)
+
+# TODO this is not correct yet; switched order of `case_when`
+```
+
 
 # amplitude
 
@@ -308,8 +332,8 @@ From <https://github.com/inbo/tutorials/tree/emd>.
 #'
 #' 
 #' usage:
-#' > emd <- extract_firstmode(y, t = x, threshold = 0.4, minpeakdistance = 20)
-extract_firstmode <- function (signal, t = NULL, ...) {
+#' > emd <- calculate_empirical_mode(y, t = x, threshold = 0.4, minpeakdistance = 20)
+calculate_empirical_mode <- function (signal, t = NULL, ...) {
 
   # general purpose time vector
   if (is.null(t)) {
@@ -375,8 +399,7 @@ extract_firstmode <- function (signal, t = NULL, ...) {
 }
 
 
-plot_emd <- function(emd, raw_trace = NULL) {
-
+plot_emd <- function(emd, raw_trace = NULL, show = TRUE, ...) {
 
   ti <- emd[["time"]]
   signal <- emd[["signal"]]
@@ -395,7 +418,13 @@ plot_emd <- function(emd, raw_trace = NULL) {
 
   h0 <- ggplot(NULL, aes(x = x, y = y)) +
     geom_point() +
-    geom_step(alpha = 0.3, color = "darkgray")+
+    geom_step(alpha = 0.3, color = "darkgray") +
+    geom_hline(yintercept = mean(signal),
+      alpha = 0.8, color = "black", linetype = "dashed") +
+    geom_hline(yintercept = mean(signal) - mean(amplitude),
+      alpha = 0.8, color = "darkred", linetype = "dashed") +
+    geom_hline(yintercept = mean(signal) + mean(amplitude),
+      alpha = 0.8, color = "darkred", linetype = "dashed") +
     theme_bw() +
     theme(legend.position = "none")
 
@@ -417,7 +446,12 @@ plot_emd <- function(emd, raw_trace = NULL) {
     labs(x = "time (arb. units)", y = "residual") +
     theme(legend.position = "none")
 
-  grid.arrange(h0, h1, h2, ncol = 1) # gridExtra
+  if (!show) {
+    return(list(h0, h1, h2))
+  }
+
+  h <- grid.arrange(h0, h1, h2, ncol = 1, ...) # gridExtra
+  return(h)
 }
 
 ```
@@ -454,29 +488,219 @@ get_trace <- function(pp_idx, show_plot = FALSE) {
   return(list("t" = as.numeric(t), "y" = y))
 }
 
-get_emd_trace <- function(tr) extract_firstmode(tr[["y"]], t = tr[["t"]])
+get_emd_trace <- function(tr) calculate_empirical_mode(tr[["y"]], t = tr[["t"]])
+try_emd_trace <- function(tr) {
+  tryCatch({
+     emd <- calculate_empirical_mode(tr[["y"]], t = tr[["t"]])
+    }, error = function(cond) {
+        return(NA)
+    }
+  )
+  return(emd)
+}
 get_firstmode <- function(emd) list("t" = emd[["time"]], "y" = emd[["firstmode"]])
 mean_amplitude <- function(emd) mean(emd[["amplitude"]])
+get_info <- function(idx, info) paste0(pp_data %>% filter(pp_idx == idx) %>% pull(!!info), collapse = ", ")
+get_locationcode <- function(idx) get_info(idx, "pp_code")
 
 # example
-trace <- get_trace(24, show_plot = FALSE)
-emd <- get_emd_trace(trace)
+idx <- 24
+label <- get_locationcode(idx)
+trace <- get_trace(idx, show_plot = FALSE)
+emd <- try_emd_trace(trace)
 # plot_emd(emd)
-emd2 <- get_emd_trace(get_firstmode(emd))
-plot_emd(emd2, raw_trace = trace)
+emd2 <- try_emd_trace(get_firstmode(emd))
+# emd2[["signal"]] <- emd[["signal"]]
+h <- plot_emd(emd2, raw_trace = trace, top = label) #,gp=gpar(fontsize=12,font=3)
+ggsave("figures/test.pdf", h)
+# print(h)
 var(2*trace$y)
 mean_amplitude(emd) + mean_amplitude(emd2)
 
-t <- emd2[["time"]]
-amp <- emd2[["amplitude"]] + emd[["amplitude"]][emd2[["select"]]]
-plot(t, amp, type = "l", col = "orange", ylim = c(0, max(amp)))
-lines(trace[["t"]], abs(trace[["y"]] - mean(trace[["y"]])))
+# t <- emd2[["time"]]
+# amp <- emd2[["amplitude"]] + emd[["amplitude"]][emd2[["select"]]]
+# plot(t, amp, type = "l", col = "orange", ylim = c(0, max(amp)))
+# lines(trace[["t"]], abs(trace[["y"]] - mean(trace[["y"]])))
 
 ```
 
 
-# pairing
+TODO: is sampling frequency related? (implicit temporal averaging)
+
+```{r emd-loop-sites}
+if (reload) {
+  indices <- sort(unique(pp_data$pp_idx))
+  pb <- txtProgressBar(
+    min = 0, max = length(indices),
+    initial = 0, style = 1
+  )
+  pp_data$emd_amp1 <- as.numeric(NA)
+  pp_data$emd_amp2 <- as.numeric(NA)
+  for (i in 1:length(indices)) { 
+  
+    setTxtProgressBar(pb, i)
+    idx <- indices[i]
+    label <- get_locationcode(idx)
+    trace <- get_trace(idx, show_plot = FALSE)
+
+    # emd 1
+    emd <- try_emd_trace(trace)
+    if (is.null(emd)) {
+      continue
+    }
+    pp_data[pp_data$pp_idx == idx, "emd_amp1"] <- mean_amplitude(emd)
+
+    # emd 2
+    emd2 <- try_emd_trace(get_firstmode(emd))
+    if (is.null(emd2)) {
+      continue
+    }
+    pp_data[pp_data$pp_idx == idx, "emd_amp2"] <- mean_amplitude(emd2)
+  
+    hlist <- plot_emd(emd2, raw_trace = trace, show = FALSE) 
+  
+    label2 <- paste(
+      get_info(idx, "cluster"),
+      get_info(idx, "pp_code"),
+      as.character(round(as.numeric(get_info(idx, "elevation_dhmv")))),
+      get_info(idx, "soilclass"),
+      get_info(idx, "wata_dist_class"),
+      collapse = " "
+    )
+    h <- grid.arrange(hlist[[1]], hlist[[2]], hlist[[3]],
+                      ncol = 1, top = label2) # gridExtra
+    void2 <- suppressMessages
+    ggsave(paste0("figures/emd/", label, ".png", collapse = ""), h, dpi = 300) |> void2()
+    rm(h)
+  }
+  
+  close(pb) # close the progress bar
+
+  # combine amplitudes
+  pp_data <- pp_data %>% mutate(emd_ampsum = sqrt(emd_amp1^2 + emd_amp2^2))
+
+  write_parquet(pp_data, sink = data_export_file)
+}
+pp_data <- read_parquet(data_export_file)
+```
+
+
+
+```{r amplitude-map}
+st_amp <- pp_data %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+mapview(st_amp,
+  map.types = c("CartoDB.Positron", "OpenTopoMap", "CartoDB.DarkMatter", "OpenStreetMap" ),
+  zcol = "emd_ampsum"
+  # legend = FALSE
+)
+
+```
+
+
+# differential data
+
+## pairing
 
 Retrieving all pairs of observation wells
 which are below a certain distance,
 
+```{r pairing}
+extent <- 512 # m
+
+# pp_data %>% count(cluster)
+
+pair_sites <- function(cluster_idx) {
+  sub_data <- pp_data %>%
+    filter(cluster == cluster_idx) %>%
+    select(mp_idx, pp_idx, x, y, soilclass)
+  
+  sub_data %>% 
+    left_join(sub_data,
+      by = join_by(
+        mp_idx > mp_idx, # only different locations
+        soilclass == soilclass, # from the same soilclass
+      ),
+      suffix = c("1", "2"),
+      relationship = "many-to-many"
+    ) %>% mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+    ) %>%
+    filter(ds >= 1.0/100, ds < extent)
+
+}
+
+pairs <- bind_rows(
+  lapply(
+    sort(unique(as.integer(pp_data$cluster))),
+    FUN = pair_sites
+  )
+) %>% arrange(ds)
+
+pairs %>%
+  ggplot(aes(x = ds)) +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  theme_bw()
+```
+
+It is okay to keep the close range sites for now.
+
+
+## water level query
+
+query: pp1, pp2, date, mTAW1, mTAW2
+
+```{r water-query}
+
+query_measurement <- function (pp1, pp2){
+
+  w1 <- tbl(watina_dwh, "FactPeilMeting") %>%
+    filter(PeilpuntWID == pp1) %>%
+    select(PeilpuntWID, DatumWID, mTAW) %>%
+    rename(pp_idx1 = PeilpuntWID, date1 = DatumWID, w1 = mTAW)
+
+  w2 <- tbl(watina_dwh, "FactPeilMeting") %>%
+    filter(PeilpuntWID == pp2) %>%
+    select(PeilpuntWID, DatumWID, mTAW) %>% 
+    rename(pp_idx2 = PeilpuntWID, date2 = DatumWID, w2 = mTAW)
+
+  pair_diff <- w1 %>%
+    left_join(w2,
+    join_by(date1 == date2),
+    relationship = "many-to-many"
+    ) %>%
+    collect %>%
+    mutate(
+      across(date1, function(x) as.Date(as.character(x), format = "%Y%m%d"))
+    ) %>%
+    rename(date = date1)
+
+  return(pair_diff)
+}
+
+pairs_test <- pairs %>%
+  head(100)
+
+pb <- txtProgressBar(min = 0, max = nrow(pairs),
+                       initial = 0, style = 1)
+rowwise_query <- function(i) {
+  setTxtProgressBar(pb, i)
+  pp1 <- pairs[[i, "pp_idx1"]]
+  pp2 <- pairs[[i, "pp_idx2"]]
+  return(query_measurement(pp1, pp2))
+}
+
+
+diff_data <- bind_rows(
+    lapply(
+      1:nrow(pairs),
+      FUN = rowwise_query
+    )
+  )
+
+close(pb)
+diffdata_export_file
+write_parquet(diff_data, sink = diffdata_export_file)
+
+```
