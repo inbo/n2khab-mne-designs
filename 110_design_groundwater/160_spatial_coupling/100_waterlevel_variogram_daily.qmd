@@ -10,6 +10,7 @@ knitr:
     echo: true
 ---
 
+TODO: better plot (2 emd)
 
 # Introduction 
 
@@ -49,7 +50,7 @@ data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
 diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
 
 # the user may choose to reload raw data
-force_data_reassembly <- TRUE
+force_data_reassembly <- FALSE
 reload <- force_data_reassembly || !file.exists(data_export_file)
 ```
 
@@ -344,6 +345,11 @@ calculate_empirical_mode <- function (signal, t = NULL, ...) {
   peaks <- sort(pracma::findpeaks(signal, ...)[, 2])
   troughs <- sort(pracma::findpeaks(-signal, ...)[, 2])
   extrema <- sort(c(peaks, troughs))
+
+  if ((length(peaks) < 8) || (length(troughs) < 8)) {
+    # message("too few peaks or troughs.")
+    return(NA)
+  }
   
   # if (peaks[1] < troughs[1]) {
   #   peaks <- c(peaks, length(signal))
@@ -354,30 +360,44 @@ calculate_empirical_mode <- function (signal, t = NULL, ...) {
   # }
 
   ## 2. interpolate -> envelope
-  select <- t >= t[max(c(peaks[1], troughs[1]))] & t <= t[min(c(peaks[length(peaks)], troughs[length(troughs)]))]  
-  select <- function (pt) t >= t[pt[1]] & t <= t[tail(pt, 1)]
+  # selection <- t >= t[max(c(peaks[1], troughs[1]))] & t <= t[min(c(peaks[length(peaks)], troughs[length(troughs)]))]  
+  selection <- function (pt) (t >= t[pt[1]]) & (t <= t[tail(pt, 1)])
   
-  # ti <- as.numeric(t[select])
-  # yi <- as.numeric(signal[select])
+
+  if (FALSE) {
+    # debugging
+    peaks <- sort(pracma::findpeaks(signal, zero = "-")[, 2])
+    troughs <- sort(pracma::findpeaks(-signal, zero = "-")[, 2])
+    ggplot(NULL, aes(x = t, y = signal)) +
+      geom_line() +
+      geom_point(aes(t[peaks], signal[peaks])) +
+      geom_point(aes(t[troughs], signal[troughs]))
+  }
+
+  common_selection <- Reduce("&", list(selection(peaks), selection(troughs) ))
+
+  # ti <- as.numeric(t[common_selection])
+  # yi <- as.numeric(signal[common_selection])
   # py <- interpolators::evalInterpolator(interpolators::iprPCHIP(t[peaks], as.numeric(signal[peaks])), ti)
   # ty <- interpolators::evalInterpolator(interpolators::iprPCHIP(t[troughs], as.numeric(signal[troughs])), ti)
   py <- interpolators::evalInterpolator(interpolators::iprPCHIP(
     t[peaks],
     as.numeric(signal[peaks])),
-    t[select(peaks)]
+    t[selection(peaks)]
   )
   if (peaks[1] > 1) py <- c(rep(py[1], peaks[1]), py[2:length(py)])
   if (tail(peaks, 1) < length(t)) py <- c(py, rep(tail(py, 1), length(t)-tail(peaks, 1)))
-  # plot(t, py)
+  py <- py[1:length(t)]
 
   ty <- interpolators::evalInterpolator(interpolators::iprPCHIP(
     t[troughs],
     as.numeric(signal[troughs])),
-    t[select(troughs)]
+    t[selection(troughs)]
   )
   if (troughs[1] > 1) ty <- c(rep(ty[1], troughs[1]), ty[2:length(ty)])
   if (tail(troughs, 1) < length(t)) ty <- c(ty, rep(tail(ty, 1), length(t)-tail(troughs, 1)))
   # plot(t, ty)
+  ty <- ty[1:length(t)]
 
   ## 3. empirical mode
   envelope <- cbind("upper" = py, "lower" = ty)
@@ -391,7 +411,7 @@ calculate_empirical_mode <- function (signal, t = NULL, ...) {
     "signal" = signal,
     "firstmode" = firstmode,
     "envelope" = envelope,
-    "select" = select,
+    "selection" = common_selection,
     "extrema" = extrema,
     "residual" = residual,
     "amplitude" = amplitude
@@ -399,14 +419,14 @@ calculate_empirical_mode <- function (signal, t = NULL, ...) {
 }
 
 
-plot_emd <- function(emd, raw_trace = NULL, show = TRUE, ...) {
+plot_emd <- function(new_emd, raw_trace = NULL, show = TRUE, ...) {
 
-  ti <- emd[["time"]]
-  signal <- emd[["signal"]]
-  firstmode <- emd[["firstmode"]]
-  envelope <- emd[["envelope"]]
-  residual <- emd[["residual"]]
-  amplitude <- emd[["amplitude"]]
+  ti <- new_emd[["time"]]
+  signal <- new_emd[["signal"]]
+  firstmode <- new_emd[["firstmode"]]
+  envelope <- new_emd[["envelope"]]
+  residual <- new_emd[["residual"]]
+  amplitude <- new_emd[["amplitude"]]
 
   if (!is.null(raw_trace)) {
     x <- raw_trace[["t"]]
@@ -419,11 +439,11 @@ plot_emd <- function(emd, raw_trace = NULL, show = TRUE, ...) {
   h0 <- ggplot(NULL, aes(x = x, y = y)) +
     geom_point() +
     geom_step(alpha = 0.3, color = "darkgray") +
-    geom_hline(yintercept = mean(signal),
+    geom_hline(yintercept = mean(y),
       alpha = 0.8, color = "black", linetype = "dashed") +
-    geom_hline(yintercept = mean(signal) - mean(amplitude),
+    geom_hline(yintercept = mean(y) - mean(amplitude),
       alpha = 0.8, color = "darkred", linetype = "dashed") +
-    geom_hline(yintercept = mean(signal) + mean(amplitude),
+    geom_hline(yintercept = mean(y) + mean(amplitude),
       alpha = 0.8, color = "darkred", linetype = "dashed") +
     theme_bw() +
     theme(legend.position = "none")
@@ -455,7 +475,7 @@ plot_emd <- function(emd, raw_trace = NULL, show = TRUE, ...) {
 }
 
 ```
-
+  
 
 ## explore
 
@@ -488,11 +508,15 @@ get_trace <- function(pp_idx, show_plot = FALSE) {
   return(list("t" = as.numeric(t), "y" = y))
 }
 
-get_emd_trace <- function(tr) calculate_empirical_mode(tr[["y"]], t = tr[["t"]])
+get_emd_trace <- function(tr) calculate_empirical_mode(tr[["y"]], t = tr[["t"]], zero = "-")
+count_trace <- function(tr) length(tr[["t"]])
+median_sampling_interval <- function(tr) median(diff(trace[["t"]]))
 try_emd_trace <- function(tr) {
   tryCatch({
-     emd <- calculate_empirical_mode(tr[["y"]], t = tr[["t"]])
+     emd <- calculate_empirical_mode(tr[["y"]], t = tr[["t"]], zero = "-")
     }, error = function(cond) {
+        return(NA)
+    }, warning = function(cond) {
         return(NA)
     }
   )
@@ -504,12 +528,12 @@ get_info <- function(idx, info) paste0(pp_data %>% filter(pp_idx == idx) %>% pul
 get_locationcode <- function(idx) get_info(idx, "pp_code")
 
 # example
-idx <- 24
+idx <- 699 # 24
 label <- get_locationcode(idx)
 trace <- get_trace(idx, show_plot = FALSE)
-emd <- try_emd_trace(trace)
+emd <- get_emd_trace(trace)
 # plot_emd(emd)
-emd2 <- try_emd_trace(get_firstmode(emd))
+emd2 <- get_emd_trace(get_firstmode(emd))
 # emd2[["signal"]] <- emd[["signal"]]
 h <- plot_emd(emd2, raw_trace = trace, top = label) #,gp=gpar(fontsize=12,font=3)
 ggsave("figures/test.pdf", h)
@@ -522,12 +546,63 @@ mean_amplitude(emd) + mean_amplitude(emd2)
 # plot(t, amp, type = "l", col = "orange", ylim = c(0, max(amp)))
 # lines(trace[["t"]], abs(trace[["y"]] - mean(trace[["y"]])))
 
+median_sampling_interval(trace)
+
+
+```
+
+```{r test-splitting}
+split_trace <- function(tr, msi = 30) {
+  # mind the gap
+  if (length(tr[["t"]]) < 9) return(NA)
+  splits <- unique(as.numeric(c(1, 1+which(diff(tr[["t"]]) > 2*msi), length(tr[["t"]]))))
+  sub_traces <- list()
+  for (i in 1:(length(splits)-1)) {
+    t1 <- splits[i]
+    t2 <- splits[i+1]
+    if(is.na(t2)) next
+    # at least nine samples per EMD
+    if (as.integer(t2-t1) < 9) {
+      next
+    }
+    sub_traces <- append(sub_traces,
+      list(list(
+      "t" = tr[["t"]][t1:(t2-1)],
+      "y" = tr[["y"]][t1:(t2-1)]
+    )))
+  }
+  return(sub_traces)
+}
+
+idx <- 699 # 24
+label <- get_locationcode(idx)
+trace <- get_trace(idx, show_plot = FALSE)
+
+msi <- median_sampling_interval(trace)
+tiny_traces <- split_trace(trace, msi = max(c(15, msi)))
+
+for (j in 1:length(tiny_traces)) {
+  tra <- tiny_traces[[j]]
+  emd <- get_emd_trace(tra)
+  if (all(is.na(emd))) {
+    message("skip")
+    next
+  }
+
+  hlist <- plot_emd(emd, show = FALSE)
+  h <- grid.arrange(hlist[[1]], hlist[[2]], hlist[[3]],
+                          ncol = 1) # gridExtra
+  ggsave(paste0("figures/emd/", idx, "_", label, "_", as.character(j), ".png", collapse = ""), h, dpi = 300) |> suppressMessages()
+}
 ```
 
 
 TODO: is sampling frequency related? (implicit temporal averaging)
 
 ```{r emd-loop-sites}
+
+
+
 if (reload) {
   indices <- sort(unique(pp_data$pp_idx))
   pb <- txtProgressBar(
@@ -536,6 +611,8 @@ if (reload) {
   )
   pp_data$emd_amp1 <- as.numeric(NA)
   pp_data$emd_amp2 <- as.numeric(NA)
+  pp_data$emd_n <- as.numeric(NA)
+  pp_data$emd_interval <- as.numeric(NA)
   for (i in 1:length(indices)) { 
   
     setTxtProgressBar(pb, i)
@@ -543,35 +620,66 @@ if (reload) {
     label <- get_locationcode(idx)
     trace <- get_trace(idx, show_plot = FALSE)
 
-    # emd 1
-    emd <- try_emd_trace(trace)
-    if (is.null(emd)) {
-      continue
-    }
-    pp_data[pp_data$pp_idx == idx, "emd_amp1"] <- mean_amplitude(emd)
-
-    # emd 2
-    emd2 <- try_emd_trace(get_firstmode(emd))
-    if (is.null(emd2)) {
-      continue
-    }
-    pp_data[pp_data$pp_idx == idx, "emd_amp2"] <- mean_amplitude(emd2)
-  
-    hlist <- plot_emd(emd2, raw_trace = trace, show = FALSE) 
-  
     label2 <- paste(
-      get_info(idx, "cluster"),
-      get_info(idx, "pp_code"),
-      as.character(round(as.numeric(get_info(idx, "elevation_dhmv")))),
-      get_info(idx, "soilclass"),
-      get_info(idx, "wata_dist_class"),
-      collapse = " "
-    )
-    h <- grid.arrange(hlist[[1]], hlist[[2]], hlist[[3]],
-                      ncol = 1, top = label2) # gridExtra
-    void2 <- suppressMessages
-    ggsave(paste0("figures/emd/", label, ".png", collapse = ""), h, dpi = 300) |> void2()
-    rm(h)
+        as.character(idx),
+        get_info(idx, "cluster"),
+        get_info(idx, "pp_code"),
+        as.character(round(as.numeric(get_info(idx, "elevation_dhmv")))),
+        get_info(idx, "soilclass"),
+        get_info(idx, "wata_dist_class"),
+        collapse = " "
+      )
+
+    print(label2)
+
+    msi <- median_sampling_interval(trace)
+    sub_traces <- split_trace(trace, msi = max(c(15, msi)))
+    if(all(is.na(sub_traces))) next
+    if(length(sub_traces) == 0) next
+
+    #tryCatch({
+    pp_data[pp_data$pp_idx == idx, "emd_n"] <- sum(sapply(sub_traces, FUN = count_trace))
+    pp_data[pp_data$pp_idx == idx, "emd_interval"] <- mean(sapply(sub_traces, FUN = median_sampling_interval))
+    #}, warning = function(x){}, error = function(x){}
+    #)
+
+    amp1 <- c()
+    amp2 <- c()
+    for (j in 1:length(sub_traces)){
+      tr <- sub_traces[[j]]
+
+      emd1 <- get_emd_trace(tr)
+      if (all(is.na(emd1))) {
+        next
+      }
+
+      emd2 <- get_emd_trace(get_firstmode(emd1))
+      if (all(is.na(emd2))) {
+        next
+      }
+
+      amp1 <- append(amp1, mean_amplitude(emd1))
+      amp2 <- append(amp2, mean_amplitude(emd2))
+
+      # store plot
+      hlist <- plot_emd(emd1, show = FALSE) 
+      # hlist <- plot_emd(emd2, raw_trace = tr, show = FALSE) 
+  
+      h <- grid.arrange(hlist[[1]], hlist[[2]], hlist[[3]],
+                        ncol = 1, top = label2) # gridExtra
+      ggsave(paste0("figures/emd/", idx, "_", label, "_", as.character(j), ".png", collapse = ""), h, dpi = 300) |> suppressMessages()
+
+      # tryCatch(
+      # rm("h", "hlist"),
+      # warning = function(x){},
+      # error = function(x){}
+      # )
+
+    }
+
+    pp_data[pp_data$pp_idx == idx, "emd_amp1"] <- suppressWarnings(mean(amp1, na.rm = TRUE))
+    pp_data[pp_data$pp_idx == idx, "emd_amp2"] <- suppressWarnings(mean(amp2, na.rm = TRUE))
+  
   }
   
   close(pb) # close the progress bar
@@ -651,7 +759,7 @@ It is okay to keep the close range sites for now.
 
 query: pp1, pp2, date, mTAW1, mTAW2
 
-```{r water-query}
+```{r level-query}
 
 query_measurement <- function (pp1, pp2){
 
