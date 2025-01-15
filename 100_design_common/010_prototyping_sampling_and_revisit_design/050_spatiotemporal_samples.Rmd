@@ -2643,6 +2643,99 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
   invisible()
 ```
 
+Checking some specific cases.
+Only executed when specific schemes and module combos are active.
+
+- panel membership correspondence between piezometer installation and groundwaterlevel reading in GW_03.3
+
+<!-- XXXXXXX Note that 7220 needs better handling below. -->
+
+```{r eval = scheme_target_paneldesign %>% filter(scheme == "GW_03.3", str_detect(module_combo_code, "panfl_pan5")) %>% nrow() > 0}
+make_obj_a <- function(calobj) {
+  calobj %>% 
+  filter(
+    scheme == "GW_03.3",
+    str_detect(module_combo_code, "panfl_pan5"),
+    notation_paneldesign %in% c(
+      "2panelsof3m(auto|SER)[shift(6m)]",
+      "24panelsof3m(SER)"
+    ),
+    # note that this one can be dropped once 7220 is handled better
+    stratum != "7220"
+  ) %>% 
+  unnest(panel_membership)
+}
+make_obj_b <- function(calobj) {
+  calobj %>% 
+    filter(
+    scheme == "GW_03.3",
+    str_detect(module_combo_code, "panfl_pan5"),
+    notation_paneldesign %in% c(
+      "2panelsof3m(auto|SER)[shift(6m)]",
+      "24panelsof3m(SER)"
+    ),
+    # note that this one can be dropped once 7220 is handled better
+    stratum != "7220"
+  ) %>% 
+  distinct(
+    scheme,
+    module_combo_code,
+    panel_split,
+    in_aquatic_subset,
+    notation_paneldesign,
+    stratum,
+    sp_poststratum,
+    panel,
+    grts_address
+  )
+}
+obj_a <- make_obj_a(scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship)
+obj_b <- make_obj_b(scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar)
+obj_a_n <- obj_a %>% count(notation_paneldesign)
+obj_b_n <- obj_b %>% count(notation_paneldesign)
+
+stopifnot(n_distinct(obj_a_n$n) == 1)
+stopifnot(all.equal(obj_a_n, obj_b_n))
+
+# installation
+obj_b1 <- obj_b %>% 
+  filter(
+    panel %in% c(
+      "GW_03.3_panflpan5mbaa_24panelsof3m(SER)_PANEL01",
+      "GW_03.3_panflpan5mbaa_24panelsof3m(SER)_PANEL02"
+    )
+  )
+# levread
+obj_b2 <- obj_b %>% 
+  filter(
+    panel %in% c(
+      "GW_03.3_TERR_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01",
+      "GW_03.3_AQ_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01"
+    )
+  )
+stopifnot(all(obj_b1$grts_address %in% obj_b2$grts_address))
+# all tests up to here also make sense for the first appearance of the
+# scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar object (which
+# has been updated since)
+
+# levread
+obj_b3 <- 
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+  filter(
+    panel %in% c(
+      "GW_03.3_TERR_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01",
+      "GW_03.3_AQ_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01"
+    ),
+    year(date_start) == 2025L
+  ) %>% 
+  make_obj_b()
+stopifnot(all(obj_b1$grts_address %in% obj_b3$grts_address))
+stopifnot(all(obj_b3$grts_address %in% obj_b1$grts_address))
+
+rm(obj_a, obj_b, obj_a_n, obj_b_n, obj_b1, obj_b2, obj_b3)
+```
+
+
 #### Displaying the (scheme-specific) spatial sampling unit panel calendar
 
 We display some items in a googlesheet for visual exploration and checking.
