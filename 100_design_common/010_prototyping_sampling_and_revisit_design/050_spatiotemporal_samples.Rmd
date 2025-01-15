@@ -2042,7 +2042,7 @@ Note that (in a scheme x panel split x module combo) only the combination of str
 We will join panel memberships with the date intervals per panel to generate the spatiotemporal samples.
 At the same time, each FAS is replaced by its constituting FAGs (field activity groups), which have a common revisit design.
 
-### Calendar per FAG, stratum and spatial sampling unit
+### Calendar per scheme, FAG, stratum and spatial sampling unit
 
 This calendar still distinguishes between scheme x module combo x panel split.
 
@@ -2252,6 +2252,8 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
 
 #### Deriving spatial sampling unit calendar {#cal-cleaning}
 
+Here we still consider the panels, hence cleaning takes place within scheme x module combo x panel split.
+
 Cleaning is required with regard to the startup period:
 
 - wind up panels outside the period considered to implement schemes in specific modules.
@@ -2410,20 +2412,11 @@ spsamples_calendar_actseqs_long <-
 ```
 
 Updating the sampling unit calendar by dropping FAGs (and corresponding activity sequence) that miss their preceding FAGs on location-basis (and stratum-basis, since we still have a sampling frame with many coinciding strata on location-basis while this isn't the reality at least for terrestrial strata).
-This condition is considered across schemes, module combos, panel splits and panels, but within activity sequence (but see code comment).
+This condition is considered within scheme, module combo, panel split and activity sequence (but see code comment).
 
 ```{r}
 scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <- 
   spsamples_calendar_actseqs_long %>% 
-  distinct(
-    stratum,
-    field_activity_group, 
-    rank,
-    max_rank, 
-    activity_sequence,
-    grts_address,
-    pick(starts_with("date"))
-  ) %>% 
   mutate(
     date_start_first_rank1 = if (length(date_start[rank == 1L]) == 0L) {
       ymd("21000101")
@@ -2457,7 +2450,14 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     # look at is FAG 'GWINSTPIEZWELL' in GW_03.3, which happens in 4 activity
     # sequences, 2 terrestrial and 2 aquatic (depending on which modules are
     # active).
-    .by = c(stratum, activity_sequence, grts_address)
+    .by = c(
+      scheme,
+      module_combo_code,
+      panel_split,
+      stratum,
+      activity_sequence,
+      grts_address
+    )
   ) %>% 
   filter(
     rank == 1L |
@@ -2474,25 +2474,9 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
          date_end > date_start_first_rank1 & 
          date_end > date_start_first_rank2 & 
          date_end > date_start_first_rank3 & 
-         date_end > date_start_first_rank4),
-    # similar comment about activity_sequence as above
-    .by = c(stratum, activity_sequence, grts_address)
+         date_end > date_start_first_rank4)
   ) %>% 
-  semi_join(
-    spsamples_calendar_actseqs_long,
-    .,
-    join_by(
-      stratum,
-      field_activity_group, 
-      rank,
-      max_rank,
-      activity_sequence,
-      grts_address,
-      date_start,
-      date_end
-    )
-  ) %>% 
-  select(-year_first, -year_last) %>% 
+  select(-year_first, -year_last, -starts_with("date_start_first_rank")) %>% 
   nest(actseqs = activity_sequence) %>% 
   # since the new FAG sets may be smaller than the original FA supergroups, due
   # to dropping FAGs while cleaning, we just call these sets 'fags' so that
