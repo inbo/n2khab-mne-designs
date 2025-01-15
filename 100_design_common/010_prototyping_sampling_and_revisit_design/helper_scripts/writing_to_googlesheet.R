@@ -299,7 +299,31 @@ scheme_domain_fag_stratum_spsamples_calendar %>%
 
 
 # Below code requires availability of:
+# - scheme_moco_ps_stratum_sppost_genericpanelrelations
 # - scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar
+
+scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
+  distinct(scheme, module_combo_code, panel_split, generic_panels) %>%
+  unnest(generic_panels) %>%
+  rename(location_set = id) %>%
+  rename_with(
+    \(x) str_replace(x, "generic", "panelnr_")
+  ) %>%
+  rename_with(
+    \(x) str_replace(x, "autopanels", "panels_autocontinuous_meas")
+  ) %>%
+  rename_with(
+    \(x) str_replace(x, "fastalignpanels", "panels_gwgaugeinstall")
+  ) %>%
+  pivot_longer(cols = starts_with("panelnr"), names_to = "generic", values_to = "panelnr") %>%
+  mutate(nr = str_extract(generic, "\\d+") %>% as.integer()) %>%
+  arrange(desc(nr)) %>%
+  select(-nr) %>%
+  pivot_wider(names_from = generic, values_from = panelnr) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "generic_panel_relations"
+  )
 
 scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
   # don't include ADHOC FAGs:
