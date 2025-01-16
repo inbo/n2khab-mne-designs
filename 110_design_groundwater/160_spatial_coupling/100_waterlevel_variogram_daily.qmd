@@ -346,7 +346,7 @@ calculate_empirical_mode <- function (signal, t = NULL, ...) {
   troughs <- sort(pracma::findpeaks(-signal, ...)[, 2])
   extrema <- sort(c(peaks, troughs))
 
-  if ((length(peaks) < 8) || (length(troughs) < 8)) {
+  if ((length(peaks) < 4) || (length(troughs) < 4)) {
     # message("too few peaks or troughs.")
     return(NA)
   }
@@ -450,7 +450,7 @@ plot_emd <- function(new_emd, raw_trace = NULL, show = TRUE, ...) {
 
   h1 <- ggplot(NULL, aes(x = ti, y = firstmode)) +
     geom_line(color = "black") +
-    geom_point(aes(x = ti, y = signal)) +
+    # geom_point(aes(x = ti, y = signal)) +
     geom_line(aes(x = ti, y = signal), color = "darkgray", alpha = 0.4) +
     geom_line(aes(x = ti, y = envelope[,1]), color = "orange", alpha = 0.4) +
     geom_line(aes(x = ti, y = envelope[,2]), color = "orange", alpha = 0.4) +
@@ -502,10 +502,11 @@ get_trace <- function(pp_idx, show_plot = FALSE) {
   }
 
   t <- peilmeting %>% pull(date) 
-  t <- difftime(t, t[1], units = "days")
+  t0 <- t[1]
+  t <- difftime(t, t0, units = "days")
   y <- peilmeting %>% pull(mTAW) 
     
-  return(list("t" = as.numeric(t), "y" = y))
+  return(list("t" = as.numeric(t), "y" = y, "t0" = t0))
 }
 
 get_emd_trace <- function(tr) calculate_empirical_mode(tr[["y"]], t = tr[["t"]], zero = "-")
@@ -528,7 +529,7 @@ get_info <- function(idx, info) paste0(pp_data %>% filter(pp_idx == idx) %>% pul
 get_locationcode <- function(idx) get_info(idx, "pp_code")
 
 # example
-idx <- 699 # 24
+idx <- 26 # 24
 label <- get_locationcode(idx)
 trace <- get_trace(idx, show_plot = FALSE)
 emd <- get_emd_trace(trace)
@@ -554,7 +555,7 @@ median_sampling_interval(trace)
 ```{r test-splitting}
 split_trace <- function(tr, msi = 30) {
   # mind the gap
-  if (length(tr[["t"]]) < 9) return(NA)
+  if (length(tr[["t"]]) < 9) return(list(tr))
   splits <- unique(as.numeric(c(1, 1+which(diff(tr[["t"]]) > 2*msi), length(tr[["t"]]))))
   sub_traces <- list()
   for (i in 1:(length(splits)-1)) {
@@ -567,14 +568,16 @@ split_trace <- function(tr, msi = 30) {
     }
     sub_traces <- append(sub_traces,
       list(list(
+      "t0" = tr[["t0"]]+t1,
       "t" = tr[["t"]][t1:(t2-1)],
       "y" = tr[["y"]][t1:(t2-1)]
     )))
   }
+  if (length(sub_traces) == 0) return(list(tr))
   return(sub_traces)
 }
 
-idx <- 699 # 24
+idx <- 26 # 24
 label <- get_locationcode(idx)
 trace <- get_trace(idx, show_plot = FALSE)
 
@@ -592,12 +595,220 @@ for (j in 1:length(tiny_traces)) {
   hlist <- plot_emd(emd, show = FALSE)
   h <- grid.arrange(hlist[[1]], hlist[[2]], hlist[[3]],
                           ncol = 1) # gridExtra
-  ggsave(paste0("figures/emd/", idx, "_", label, "_", as.character(j), ".png", collapse = ""), h, dpi = 300) |> suppressMessages()
+  ggsave(paste0("figures/test_emd_", idx, "_", label, "_", as.character(j), ".png", collapse = ""), h, dpi = 300) |> suppressMessages()
 }
 ```
 
 
+```{r plot-multistep-emd}
+
+trace[["t0"]]
+
+
+join_sig <- function(multi, part) {
+  get_part <- function(mule) t(mule[[part]])
+  if (all(is.na(multi))) return(NA)
+  return(as.matrix(do.call(cbind, lapply(multi, FUN = get_part))))
+}
+
+smooth_sg <- function(tr, days = 15, rectify = TRUE, ...) {
+  msi <- median_sampling_interval(tr)
+
+  fl <- 2*floor(0.5*days/msi)+1
+  fl <- as.integer(max(c(fl, 3)))
+  if (is.na(fl)) return(tr[["y"]])
+  if (((fl %% 2) == 0.)) {
+    fl <- fl + 1
+  }
+
+  sg <- pracma::savgol(
+    tr[["y"]],
+    fl = fl,
+    ...
+    )
+  if (rectify) {
+    outs <- which(abs(sg - tr[["y"]]) > 3*var(tr[["y"]]))
+    sg[outs] <- tr[["y"]][outs]
+  }
+  return(sg)
+}
+
+execute_multistep_emd <- function(trace, apply_savgol = TRUE) {
+
+  # trace parts
+  msi <- median_sampling_interval(trace)
+  parts <- split_trace(trace, msi = max(c(15, msi)))
+
+  # plot(join_sig(parts, "t"), join_sig(parts, "y"))
+  
+  collect_y <- list()
+  collect_emd1 <- list()
+  collect_emd2 <- list()
+
+  for (j in 1:length(parts)) {
+    tr <- parts[[j]]
+    if (all(is.na(tr))) next
+    
+    ## SSGS (Subtle Savitzky-Golay Smoothing)
+    # tr <- parts[[4]]
+    # t <- tr[["t"]]
+    # y <- tr[["y"]]
+    # sg <- smooth_sg(tr, days = 15,
+    #                 rectify = TRUE,
+    #                 forder = 4,
+    #                 dorder = 0)
+    # ggplot(NULL) +
+    #   geom_line(aes(t, y), color = "darkgrey", linewidth = 0.5) +
+    #   geom_line(aes(t, sg), color = "black", linewidth = 1.0) +
+    #   theme_bw()
+    trs <- tr
+    if (apply_savgol) trs[["y"]] <- smooth_sg(tr, days = 31, forder = 8)
+    collect_y <- append(collect_y, list(trs))
+
+    emd1 <- get_emd_trace(trs)
+    if (all(is.na(emd1))) {
+      next
+    }
+    collect_emd1 <- append(collect_emd1, list(emd1))
+
+    emd2 <- get_emd_trace(get_firstmode(emd1))
+    if (all(is.na(emd2))) {
+      next
+    }
+
+    # gather emd's
+    collect_emd2 <- append(collect_emd2, list(emd2))
+
+
+  }
+
+  if (length(collect_emd1) == 0) return(NA)
+
+  # plot(join_sig(collect_emd1, "time"), join_sig(collect_emd1, "amplitude"), type = "l")
+  return(list(
+    "trace" = trace,
+    "parts" = parts,
+    "y_sg" = collect_y,
+    "emd1" = collect_emd1,
+    "emd2" = collect_emd2
+    ))
+}
+
+plot_multistep_emd <- function(multi_emd, show = FALSE) {
+
+  trace <- multi_emd[["trace"]]
+  parts <- multi_emd[["parts"]]
+  collect_y <- multi_emd[["y_sg"]]
+  collect_emd1 <- multi_emd[["emd1"]]
+  collect_emd2 <- multi_emd[["emd2"]]
+
+  ## plot
+  # (i) the signal
+  t <- trace[["t0"]] + as.numeric(join_sig(parts, "t"))
+  y <- as.numeric(join_sig(parts, "y"))
+  tsg <- trace[["t0"]] + as.numeric(join_sig(collect_y, "t"))
+  sg <- as.numeric(join_sig(collect_y, "y"))
+  amp1 <- join_sig(collect_emd1, "amplitude")
+  amp2 <- join_sig(collect_emd2, "amplitude")
+  if(all(is.na(amp1))) amp1 <- 0
+  if(all(is.na(amp2))) amp2 <- 0
+  sel <- join_sig(collect_emd2, "selection")
+  amplitude <- as.numeric(sqrt(amp1[sel]^2 + amp2[sel]^2))
+  h0 <- ggplot(NULL, aes(x = t, y = y)) +
+    geom_point(alpha = 0.6, size = 1) +
+    geom_step(alpha = 0.8, color = "darkgray") +
+    geom_line(aes(tsg, sg), alpha = 0.8, color = "black", linewidth = 0.5) +
+    geom_hline(yintercept = mean(sg),
+      alpha = 0.8, color = "black", linetype = "dashed") +
+    geom_hline(yintercept = mean(sg) - mean(amplitude),
+      alpha = 0.8, color = "darkred", linetype = "dashed") +
+    geom_hline(yintercept = mean(sg) + mean(amplitude),
+      alpha = 0.8, color = "darkred", linetype = "dashed") +
+    labs(x = NULL, y = "raw signal") +
+    theme_bw() +
+    theme(legend.position = "none")
+
+  # (i) emd1
+  if (all(is.na(collect_emd1))) {
+    h1 <- ggplot(NULL)
+    h1r <- ggplot(NULL)
+  } else {
+    ti <- trace[["t0"]] + as.numeric(join_sig(collect_emd1, "time"))
+    firstmode <- as.numeric(join_sig(collect_emd1, "firstmode"))
+    residual <- as.numeric(join_sig(collect_emd1, "residual"))
+    amplitude <- as.numeric(join_sig(collect_emd1, "amplitude"))
+    envelope <- join_sig(collect_emd1, "envelope")
+    h1 <- ggplot(NULL, aes(x = t, y = y)) +
+      geom_line(color = "grey", alpha = 0.5, linewidth = 0.5) +
+      geom_line(aes(x = ti, y = firstmode), color = "black") +
+      geom_line(aes(x = ti, y = as.numeric(envelope["upper",])), color = "orange", alpha = 0.8) +
+      geom_line(aes(x = ti, y = as.numeric(envelope["lower",])), color = "orange", alpha = 0.8) +
+      theme_bw() +
+      labs(x = NULL, y = "first mode") +
+      theme(legend.position = "none")
+
+    h1r <- ggplot(NULL, aes(x = ti, y = residual)) +
+      geom_line(color = "black") +
+      geom_line(aes(x = ti, y = amplitude), color = "darkred", alpha = 0.8) +
+      geom_line(aes(x = ti, y = -amplitude), color = "darkred", alpha = 0.8) +
+      theme_bw() +
+      labs(x = NULL, y = "residual") +
+      theme(legend.position = "none")
+  }
+  
+  if (all(is.na(collect_emd2))) {
+    h2 <- ggplot(NULL)
+    h2r <- ggplot(NULL)
+  } else {
+    ti2 <- trace[["t0"]] + as.numeric(join_sig(collect_emd2, "time"))
+    secondmode <- as.numeric(join_sig(collect_emd2, "firstmode"))
+    residual2 <- as.numeric(join_sig(collect_emd2, "residual"))
+    amplitude2 <- as.numeric(join_sig(collect_emd2, "amplitude"))
+    envelope2 <- join_sig(collect_emd2, "envelope")
+    h2 <- ggplot(NULL, aes(x = t, y = y)) +
+      geom_line(color = "grey", alpha = 0.5, linewidth = 0.5) +
+      geom_line(aes(x = ti2, y = secondmode), color = "black") +
+      geom_line(aes(x = ti2, y = as.numeric(envelope2["upper",])), color = "orange", alpha = 0.8) +
+      geom_line(aes(x = ti2, y = as.numeric(envelope2["lower",])), color = "orange", alpha = 0.8) +
+      theme_bw() +
+      labs(x = NULL, y = "second mode") +
+      theme(legend.position = "none")
+
+    h2r <- ggplot(NULL, aes(x = ti2, y = residual2)) +
+      geom_line(color = "black") +
+      geom_line(aes(x = ti2, y = amplitude2), color = "darkred", alpha = 0.8) +
+      geom_line(aes(x = ti2, y = -amplitude2), color = "darkred", alpha = 0.8) +
+      theme_bw() +
+      labs(x = NULL, y = "residual") +
+      theme(legend.position = "none")
+  }
+  
+
+  if (!show) {
+    return(list(h0, h1, h1r, h2, h2r))
+  }
+
+  h <- grid.arrange(h0, h1, h1r, h2, h2r,
+    widths = c(2, 1),
+    layout_matrix = rbind(c(1, NA),
+                          c(2, 3),
+                          c(4, 5)
+                          )
+   ) # gridExtra
+  return(h)
+
+  
+}
+
+multi_emd <- execute_multistep_emd(trace, apply_savgol = TRUE) 
+
+plot_multistep_emd(multi_emd, show = TRUE)
+```
+
+
+
 TODO: is sampling frequency related? (implicit temporal averaging)
+-> partly compensated by savgol `fl` 
 
 ```{r emd-loop-sites}
 
@@ -612,7 +823,8 @@ if (reload) {
   pp_data$emd_amp1 <- as.numeric(NA)
   pp_data$emd_amp2 <- as.numeric(NA)
   pp_data$emd_n <- as.numeric(NA)
-  pp_data$emd_interval <- as.numeric(NA)
+  pp_data$emd_residual_qdiff <- as.numeric(NA)
+  pp_data$emd_qdiff <- as.numeric(NA)
   for (i in 1:length(indices)) { 
   
     setTxtProgressBar(pb, i)
@@ -630,56 +842,53 @@ if (reload) {
         collapse = " "
       )
 
-    print(label2)
+    # print(label2)
 
-    msi <- median_sampling_interval(trace)
-    sub_traces <- split_trace(trace, msi = max(c(15, msi)))
-    if(all(is.na(sub_traces))) next
-    if(length(sub_traces) == 0) next
+    multi_emd <- execute_multistep_emd(trace, apply_savgol = TRUE) 
+    
+    if (all(is.na(multi_emd))) next
 
-    #tryCatch({
-    pp_data[pp_data$pp_idx == idx, "emd_n"] <- sum(sapply(sub_traces, FUN = count_trace))
-    pp_data[pp_data$pp_idx == idx, "emd_interval"] <- mean(sapply(sub_traces, FUN = median_sampling_interval))
-    #}, warning = function(x){}, error = function(x){}
-    #)
+    parts <- multi_emd[["parts"]]
+    collect_y <- multi_emd[["y_sg"]]
+    collect_emd1 <- multi_emd[["emd1"]]
+    collect_emd2 <- multi_emd[["emd2"]]
 
-    amp1 <- c()
-    amp2 <- c()
-    for (j in 1:length(sub_traces)){
-      tr <- sub_traces[[j]]
+    sg <- as.numeric(join_sig(collect_y, "y"))
+    amp1 <- as.numeric(join_sig(collect_emd1, "amplitude"))
+    amp2 <- as.numeric(join_sig(collect_emd2, "amplitude"))
+    firstmode <- as.numeric(join_sig(collect_emd1, "firstmode"))
+    secondmode <- as.numeric(join_sig(collect_emd2, "firstmode"))
 
-      emd1 <- get_emd_trace(tr)
-      if (all(is.na(emd1))) {
-        next
-      }
-
-      emd2 <- get_emd_trace(get_firstmode(emd1))
-      if (all(is.na(emd2))) {
-        next
-      }
-
-      amp1 <- append(amp1, mean_amplitude(emd1))
-      amp2 <- append(amp2, mean_amplitude(emd2))
-
-      # store plot
-      hlist <- plot_emd(emd1, show = FALSE) 
-      # hlist <- plot_emd(emd2, raw_trace = tr, show = FALSE) 
-  
-      h <- grid.arrange(hlist[[1]], hlist[[2]], hlist[[3]],
-                        ncol = 1, top = label2) # gridExtra
-      ggsave(paste0("figures/emd/", idx, "_", label, "_", as.character(j), ".png", collapse = ""), h, dpi = 300) |> suppressMessages()
-
-      # tryCatch(
-      # rm("h", "hlist"),
-      # warning = function(x){},
-      # error = function(x){}
-      # )
-
-    }
-
+    # collect info
+    pp_data[pp_data$pp_idx == idx, "emd_n"] <- suppressWarnings(length(sg))
     pp_data[pp_data$pp_idx == idx, "emd_amp1"] <- suppressWarnings(mean(amp1, na.rm = TRUE))
     pp_data[pp_data$pp_idx == idx, "emd_amp2"] <- suppressWarnings(mean(amp2, na.rm = TRUE))
-  
+
+    # quantile difference
+    qdiff <- function(mode) suppressWarnings(diff(as.numeric(quantile(mode, c(0.1, 0.9), na.rm = TRUE))))
+    pp_data[pp_data$pp_idx == idx, "emd_qdiff"] <- qdiff(sg)
+    if (!all(is.na(amp2))) {
+      pp_data[pp_data$pp_idx == idx, "emd_residual_qdiff"] <- qdiff(secondmode)
+    } else if (!all(is.na(amp1))) {
+      pp_data[pp_data$pp_idx == idx, "emd_residual_qdiff"] <- qdiff(firstmode)
+    }
+    
+
+    hlist <- plot_multistep_emd(multi_emd, show = FALSE)
+
+    h <- grid.arrange(hlist[[1]], hlist[[2]], hlist[[3]], hlist[[4]], hlist[[5]],
+      widths = c(2, 1),
+      layout_matrix = rbind(c(1, NA),
+                            c(2, 3),
+                            c(4, 5)
+                            ),
+      top = label2
+     ) # gridExtra
+
+    ggsave(paste0("figures/emd/", idx, "_", label, ".png", collapse = ""), h,
+           dpi = 300, height = 16, width = 24, units = "cm") |> suppressMessages()
+
+
   }
   
   close(pb) # close the progress bar
@@ -774,23 +983,27 @@ query_measurement <- function (pp1, pp2){
     rename(pp_idx2 = PeilpuntWID, date2 = DatumWID, w2 = mTAW)
 
   pair_diff <- w1 %>%
-    left_join(w2,
+    inner_join(w2,
     join_by(date1 == date2),
     relationship = "many-to-many"
     ) %>%
     collect %>%
     mutate(
-      across(date1, function(x) as.Date(as.character(x), format = "%Y%m%d"))
+      across(date1, function(x) as.Date(as.character(x), format = "%Y%m%d")),
+      dw = w2 - w1
     ) %>%
-    rename(date = date1)
+    rename(date = date1) %>%
+    select(pp_idx1, pp_idx2, date, dw)
 
   return(pair_diff)
 }
 
-pairs_test <- pairs %>%
-  head(100)
+pairs_test <- pairs
+# pairs_test <- pairs_test %>%
+#   head(100)
+n_rows <- nrow(pairs_test)
 
-pb <- txtProgressBar(min = 0, max = nrow(pairs),
+pb <- txtProgressBar(min = 0, max = n_rows,
                        initial = 0, style = 1)
 rowwise_query <- function(i) {
   setTxtProgressBar(pb, i)
@@ -802,13 +1015,13 @@ rowwise_query <- function(i) {
 
 diff_data <- bind_rows(
     lapply(
-      1:nrow(pairs),
+      1:n_rows,
       FUN = rowwise_query
     )
   )
 
 close(pb)
-diffdata_export_file
+diffdata_export_file <- "data/waterlevel_diffdata_cl3400_real.parquet"
 write_parquet(diff_data, sink = diffdata_export_file)
 
 ```
