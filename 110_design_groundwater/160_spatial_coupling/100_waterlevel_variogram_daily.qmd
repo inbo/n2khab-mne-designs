@@ -410,7 +410,9 @@ calculate_empirical_mode <- function (signal, t = NULL, ...) {
     "time" = t,
     "signal" = signal,
     "firstmode" = firstmode,
-    "envelope" = envelope,
+    # "envelope" = envelope,
+    "envelope_upper" = py,
+    "envelope_lower" = ty,
     "selection" = common_selection,
     "extrema" = extrema,
     "residual" = residual,
@@ -424,7 +426,8 @@ plot_emd <- function(new_emd, raw_trace = NULL, show = TRUE, ...) {
   ti <- new_emd[["time"]]
   signal <- new_emd[["signal"]]
   firstmode <- new_emd[["firstmode"]]
-  envelope <- new_emd[["envelope"]]
+  envelope_upper <- new_emd[["envelope_upper"]]
+  envelope_lower <- new_emd[["envelope_lower"]]
   residual <- new_emd[["residual"]]
   amplitude <- new_emd[["amplitude"]]
 
@@ -452,8 +455,8 @@ plot_emd <- function(new_emd, raw_trace = NULL, show = TRUE, ...) {
     geom_line(color = "black") +
     # geom_point(aes(x = ti, y = signal)) +
     geom_line(aes(x = ti, y = signal), color = "darkgray", alpha = 0.4) +
-    geom_line(aes(x = ti, y = envelope[,1]), color = "orange", alpha = 0.4) +
-    geom_line(aes(x = ti, y = envelope[,2]), color = "orange", alpha = 0.4) +
+    geom_line(aes(x = ti, y = envelope_upper), color = "orange", alpha = 0.4) +
+    geom_line(aes(x = ti, y = envelope_lower), color = "orange", alpha = 0.4) +
     theme_bw() +
     labs(y = "first mode") +
     theme(legend.position = "none")
@@ -605,8 +608,10 @@ for (j in 1:length(tiny_traces)) {
 trace[["t0"]]
 
 
-join_sig <- function(multi, part) {
+join_sig <- function(multi, part, stitch_na = TRUE) {
+  
   get_part <- function(mule) t(mule[[part]])
+  if (stitch_na) get_part <- function(mule) c(NA, t(mule[[part]]), NA)
   if (all(is.na(multi))) return(NA)
   return(as.matrix(do.call(cbind, lapply(multi, FUN = get_part))))
 }
@@ -637,7 +642,7 @@ execute_multistep_emd <- function(trace, apply_savgol = TRUE) {
 
   # trace parts
   msi <- median_sampling_interval(trace)
-  parts <- split_trace(trace, msi = max(c(15, msi)))
+  parts <- split_trace(trace, msi = max(c(64, msi)))
 
   # plot(join_sig(parts, "t"), join_sig(parts, "y"))
   
@@ -716,8 +721,8 @@ plot_multistep_emd <- function(multi_emd, show = FALSE) {
   amplitude <- as.numeric(sqrt(amp1[sel]^2 + amp2[sel]^2))
   h0 <- ggplot(NULL, aes(x = t, y = y)) +
     geom_point(alpha = 0.6, size = 1) +
-    geom_step(alpha = 0.8, color = "darkgray") +
-    geom_line(aes(tsg, sg), alpha = 0.8, color = "black", linewidth = 0.5) +
+    geom_step(na.rm = FALSE, alpha = 0.8, color = "darkgray") +
+    geom_path(aes(tsg, sg), na.rm = FALSE, alpha = 0.8, color = "black", linewidth = 0.5) +
     geom_hline(yintercept = mean(sg),
       alpha = 0.8, color = "black", linetype = "dashed") +
     geom_hline(yintercept = mean(sg) - mean(amplitude),
@@ -737,20 +742,21 @@ plot_multistep_emd <- function(multi_emd, show = FALSE) {
     firstmode <- as.numeric(join_sig(collect_emd1, "firstmode"))
     residual <- as.numeric(join_sig(collect_emd1, "residual"))
     amplitude <- as.numeric(join_sig(collect_emd1, "amplitude"))
-    envelope <- join_sig(collect_emd1, "envelope")
+    envelope_upper <- as.numeric(join_sig(collect_emd1, "envelope_upper"))
+    envelope_lower <- as.numeric(join_sig(collect_emd1, "envelope_lower"))
     h1 <- ggplot(NULL, aes(x = t, y = y)) +
-      geom_line(color = "grey", alpha = 0.5, linewidth = 0.5) +
-      geom_line(aes(x = ti, y = firstmode), color = "black") +
-      geom_line(aes(x = ti, y = as.numeric(envelope["upper",])), color = "orange", alpha = 0.8) +
-      geom_line(aes(x = ti, y = as.numeric(envelope["lower",])), color = "orange", alpha = 0.8) +
+      geom_path(na.rm = FALSE, color = "grey", alpha = 0.5, linewidth = 0.5) +
+      geom_path(aes(x = ti, y = firstmode), na.rm = FALSE, color = "black") +
+      geom_path(aes(x = ti, y = envelope_upper), na.rm = FALSE, color = "orange", alpha = 0.8) +
+      geom_path(aes(x = ti, y = envelope_lower), na.rm = FALSE, color = "orange", alpha = 0.8) +
       theme_bw() +
       labs(x = NULL, y = "first mode") +
       theme(legend.position = "none")
 
     h1r <- ggplot(NULL, aes(x = ti, y = residual)) +
-      geom_line(color = "black") +
-      geom_line(aes(x = ti, y = amplitude), color = "darkred", alpha = 0.8) +
-      geom_line(aes(x = ti, y = -amplitude), color = "darkred", alpha = 0.8) +
+      geom_path(na.rm = FALSE, color = "black") +
+      geom_path(aes(x = ti, y = amplitude), na.rm = FALSE, color = "darkred", alpha = 0.8) +
+      geom_path(aes(x = ti, y = -amplitude), na.rm = FALSE, color = "darkred", alpha = 0.8) +
       theme_bw() +
       labs(x = NULL, y = "residual") +
       theme(legend.position = "none")
@@ -764,20 +770,21 @@ plot_multistep_emd <- function(multi_emd, show = FALSE) {
     secondmode <- as.numeric(join_sig(collect_emd2, "firstmode"))
     residual2 <- as.numeric(join_sig(collect_emd2, "residual"))
     amplitude2 <- as.numeric(join_sig(collect_emd2, "amplitude"))
-    envelope2 <- join_sig(collect_emd2, "envelope")
+    envelope2_upper <- as.numeric(join_sig(collect_emd2, "envelope_upper"))
+    envelope2_lower <- as.numeric(join_sig(collect_emd2, "envelope_lower"))
     h2 <- ggplot(NULL, aes(x = t, y = y)) +
-      geom_line(color = "grey", alpha = 0.5, linewidth = 0.5) +
-      geom_line(aes(x = ti2, y = secondmode), color = "black") +
-      geom_line(aes(x = ti2, y = as.numeric(envelope2["upper",])), color = "orange", alpha = 0.8) +
-      geom_line(aes(x = ti2, y = as.numeric(envelope2["lower",])), color = "orange", alpha = 0.8) +
+      geom_path(na.rm = FALSE, color = "grey", alpha = 0.5, linewidth = 0.5) +
+      geom_path(aes(x = ti2, y = secondmode), na.rm = FALSE, color = "black") +
+      geom_path(aes(x = ti2, y = envelope2_upper), na.rm = FALSE, color = "orange", alpha = 0.8) +
+      geom_path(aes(x = ti2, y = envelope2_lower), na.rm = FALSE, color = "orange", alpha = 0.8) +
       theme_bw() +
       labs(x = NULL, y = "second mode") +
       theme(legend.position = "none")
 
     h2r <- ggplot(NULL, aes(x = ti2, y = residual2)) +
-      geom_line(color = "black") +
-      geom_line(aes(x = ti2, y = amplitude2), color = "darkred", alpha = 0.8) +
-      geom_line(aes(x = ti2, y = -amplitude2), color = "darkred", alpha = 0.8) +
+      geom_path(na.rm = FALSE, color = "black") +
+      geom_path(aes(x = ti2, y = amplitude2), na.rm = FALSE, color = "darkred", alpha = 0.8) +
+      geom_path(aes(x = ti2, y = -amplitude2), na.rm = FALSE, color = "darkred", alpha = 0.8) +
       theme_bw() +
       labs(x = NULL, y = "residual") +
       theme(legend.position = "none")
@@ -814,7 +821,7 @@ TODO: is sampling frequency related? (implicit temporal averaging)
 
 
 
-if (reload) {
+if (TRUE || reload) {
   indices <- sort(unique(pp_data$pp_idx))
   pb <- txtProgressBar(
     min = 0, max = length(indices),
@@ -904,6 +911,9 @@ pp_data <- read_parquet(data_export_file)
 
 
 ```{r amplitude-map}
+
+CRASH
+
 st_amp <- pp_data %>%
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
 
