@@ -1,0 +1,159 @@
+---
+title: "Water Level Variograms"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Introduction 
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("gridExtra") |> void() # panels with ggplot
+library("mapview")   |> void() # map visualization
+# library("gstat") # geospatial statistics
+# library("sdmTMB") # species distribution models Template Model Builder
+
+
+source("./watina_migration.R")
+source("./auxiliary_data_queries.R")
+
+# option to work offline; requires previous data download
+work_offline <- FALSE
+
+# connect watina 
+if (!work_offline && !exists("watina_dwh")) {
+  watina_dwh <- connect_watina()
+}
+
+# create a data folder (if not present)
+dir.create("./data", showWarnings = FALSE)
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# user-set parameters
+cluster_dist <- 3400 # m # parameter for clustering
+min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
+data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
+diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
+
+# the user may choose to reload raw data
+force_data_reassembly <- FALSE
+reload <- force_data_reassembly || !file.exists(data_export_file)
+```
+
+
+
+
+```{r load-data}
+
+pp_data <- read_parquet(data_export_file)
+
+diffdata_export_file <- "data/waterlevel_diffdata_cl3400_real.parquet"
+diff_data <- read_parquet(diffdata_export_file)
+
+pp_join <- pp_data %>%
+  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff
+         )
+
+diff_meta <- diff_data %>%
+  select(pp_idx1, pp_idx2) %>%
+  distinct() %>%
+  left_join(
+    pp_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    pp_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+      dh = elevation_dhmv2-elevation_dhmv1,
+      dz = fdepth2-fdepth1,
+      damp = emd_ampsum2-emd_ampsum1,
+      dqdiff = emd_qdiff2-emd_qdiff1,
+      dwadi = wata_min_dist2-wata_min_dist1,
+      dslope = slope_r2.5m2-slope_r2.5m1,
+  )
+
+```
+
+```{r inspect-data-1}
+
+diff_data %>% 
+  ggplot(aes(x = log(1+abs(dw)))) +
+  geom_histogram(bins = 512, fill = "lightgray", color = "black") +
+  theme_bw()
+
+```
+
+
+```{r inspect-data-2}
+library("ggcorrplot")
+p.mat <- pp_data %>%
+    select(
+         elevation_dhmv, slope_r2.5m,
+         wata_min_dist,
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff
+           ) %>% 
+    cor_pmat()
+ggcorrplot(p.mat, hc.order = TRUE, type = "lower",
+   outline.col = "white",
+   ggtheme = ggplot2::theme_gray,
+   colors = c("#6D9EC1", "white", "#E46726"))
+```
+
+```{r contour-two}
+pp_data %>% 
+  ggplot(aes(x = slope_r2.5m, y = emd_amp2)) +
+  stat_density_2d(aes(fill = after_stat(level)), geom = "polygon") +
+  scale_fill_continuous(low="lavenderblush", high="red") +
+  geom_jitter(alpha=0.05, size = 0.5) +
+  labs(subtitle = "") +
+  facet_grid(soilclass ~ wata_dist_class) + 
+  xlim(c(0, 0.16)) +
+  ylim(c(0, 0.16)) +
+  theme_bw()
+```
+
+
+# variograms
+
+the data:
+```{r glimpse-data}
+diff_meta %>% glimpse
+
+diff_data %>% glimpse
+
+diff_all <- diff_meta %>%
+  select(pp_idx1, pp_idx2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  )
+
+```
