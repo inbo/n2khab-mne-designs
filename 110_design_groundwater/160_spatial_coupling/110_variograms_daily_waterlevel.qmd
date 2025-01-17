@@ -11,7 +11,9 @@ knitr:
 ---
 
 
-# Introduction 
+# Preparation
+
+... the usual.
 
 ```{r setup}
 #| include: false
@@ -22,15 +24,16 @@ library("arrow")     |> void() # writing parquet files
 library("ggplot2")   |> void() # a visualization toolbox
 library("gridExtra") |> void() # panels with ggplot
 library("mapview")   |> void() # map visualization
+library("ggridges")  |> void() # density ridges
 # library("gstat") # geospatial statistics
 # library("sdmTMB") # species distribution models Template Model Builder
 
 
-source("./watina_migration.R")
-source("./auxiliary_data_queries.R")
+# source("./watina_migration.R")
+# source("./auxiliary_data_queries.R")
 
 # option to work offline; requires previous data download
-work_offline <- FALSE
+work_offline <- TRUE
 
 # connect watina 
 if (!work_offline && !exists("watina_dwh")) {
@@ -38,7 +41,7 @@ if (!work_offline && !exists("watina_dwh")) {
 }
 
 # create a data folder (if not present)
-dir.create("./data", showWarnings = FALSE)
+# dir.create("./data", showWarnings = FALSE)
 
 if (getOption("browser") == "") options(browser = "librewolf") 
 
@@ -60,7 +63,6 @@ reload <- force_data_reassembly || !file.exists(data_export_file)
 
 pp_data <- read_parquet(data_export_file)
 
-diffdata_export_file <- "data/waterlevel_diffdata_cl3400_real.parquet"
 diff_data <- read_parquet(diffdata_export_file)
 
 pp_join <- pp_data %>%
@@ -94,19 +96,31 @@ diff_meta <- diff_data %>%
       dqdiff = emd_qdiff2-emd_qdiff1,
       dwadi = wata_min_dist2-wata_min_dist1,
       dslope = slope_r2.5m2-slope_r2.5m1,
+      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+      mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
   )
 
 ```
 
+# data inspection
+
+We can learn a lot about covariates which might influence water level differences.
+
+
+Effect magnitude (log scale):
+
 ```{r inspect-data-1}
 
 diff_data %>% 
-  ggplot(aes(x = log(1+abs(dw)))) +
-  geom_histogram(bins = 512, fill = "lightgray", color = "black") +
+  ggplot(aes(x = log10(1+abs(dw)))) +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  xlim(0, 2) +
   theme_bw()
 
 ```
 
+
+Correlation among covariates:
 
 ```{r inspect-data-2}
 library("ggcorrplot")
@@ -120,9 +134,12 @@ p.mat <- pp_data %>%
     cor_pmat()
 ggcorrplot(p.mat, hc.order = TRUE, type = "lower",
    outline.col = "white",
-   ggtheme = ggplot2::theme_gray,
+   ggtheme = ggplot2::theme_bw,
    colors = c("#6D9EC1", "white", "#E46726"))
 ```
+
+
+More detail about the `slope`/`amp` correlation:
 
 ```{r contour-two}
 pp_data %>% 
@@ -138,22 +155,566 @@ pp_data %>%
 ```
 
 
-# variograms
+# binning
 
-the data:
+binning and joining the data:
+
 ```{r glimpse-data}
-diff_meta %>% glimpse
 
-diff_data %>% glimpse
+# diff_meta %>% glimpse
+# diff_data %>% glimpse
+
+extent <- 512 # m
+n_bins <- 64
 
 diff_all <- diff_meta %>%
-  select(pp_idx1, pp_idx2,
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
       ds, dh, dz, damp,
-      dqdiff, dwadi, dslope
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    ),
+    distance_bin = cut(ds,
+      breaks = seq(
+        -1,
+        extent,
+        length.out = extent+2
+      )
+    ), # cut to "meters" bin
+    distance_bin8 = cut(ds,
+      breaks = seq(
+        -extent/n_bins*2,
+        extent,
+        length.out = n_bins/2+2
+      ) # cut to 8m bins
+    )
   ) %>%
   left_join(diff_data,
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
+  ) %>% 
+  filter(dw <= ds) # remove outliers
+
+# glimpse(diff_all)
+
+diff_grouped8 <- diff_all %>%
+  group_by(pair, distance_bin8) %>%
+  summarize(
+    cnt = n(),
+    #cnt = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*cnt)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(cnt)*sum(abs(dw), na.rm = TRUE),
+    # dw = mean(abs(dw), na.rm = TRUE)
+  ) %>% ungroup %>% arrange(ds)
+
+diff_grouped8 %>%
+  ggplot(aes(x = ds, y = log(1.0+dw),
+         color = soilclass)) +
+  geom_point(aes(cex = sqrt(cnt)), alpha = 0.16) +
+  theme_bw()
+```
+
+Sample size (circle extent) is balanced; none too big.
+
+
+# ridge plots
+
+... as an extra to regular difference-distance plots.
+
+
+```{r diff-ridges-dw}
+diff_grouped8 %>%
+  ggplot(aes(x = dw, y = distance_bin8)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 3,
+    scale = 4.0, bandwidth = 0.05) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean water level difference", y = "pair distance") +
+  xlim(0, pi) +
+  theme_bw()
+```
+
+
+```{r diff-ridges}
+diff_grouped8 %>%
+  ggplot(aes(x = semivar, y = distance_bin8)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 2,
+    scale = 4.0, bandwidth = 0.05) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean water level difference", y = "pair distance") +
+  xlim(0, pi/2) +
+  theme_bw()
+```
+
+
+# grouping
+
+Re-applying the groups with more fine-grained binning
+
+```{r bin-data}
+
+diff_grouped <- diff_all %>%
+  group_by(pair, distance_bin) %>%
+  summarize(
+    cnt = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*cnt)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(cnt)*sum(abs(dw), na.rm = TRUE),
+    # dw = mean(abs(dw), na.rm = TRUE)
+  ) %>% ungroup %>% arrange(ds)
+
+
+combine_grouped <- function (val, cnt) sum(val*cnt, na.rm = TRUE)/sum(cnt, na.rm = TRUE)
+
+# a convenience function for calculated measures
+summarize_groupeddata <- function(data) {
+  data %>% 
+    summarize(
+      ds = mean(ds), 
+      dw_all = combine_grouped(dw, cnt),
+      dw_groups = mean(dw, na.rm = TRUE), 
+      semivar_all = combine_grouped(semivar, cnt),
+      semivar_groups = mean(semivar, na.rm = TRUE),
+      cnt_all = sum(cnt),
+      cnt_groups = mean(cnt),
+    ) %>% ungroup %>% arrange(ds)
+}
+
+
+diff_binned <- diff_grouped %>%
+  group_by(distance_bin, soilclass) %>%
+  summarize_groupeddata()
+
+knitr::kable(rbind(head(diff_binned, 5), tail(diff_binned, 5)))
+```
+
+
+```{r plot_dw}
+diff_binned %>%
+  # filter(semivar < 1) %>% 
+  ggplot(aes(x = ds, y = log(1+dw_groups), color = soilclass)) +
+  geom_point() 
+```
+
+```{r}
+diff_binned %>%
+  # filter(semivar < 1) %>% 
+  ggplot(aes(x = ds, y = log(1+semivar_all), color = soilclass)) +
+  geom_point() 
+```
+
+
+# regression
+
+
+```{r regression-tools}
+
+# wrap a regression function to generate residuals
+# the result is the parameter to be minimized.
+wrap_target_function <- function(x, y, regressor, params) {
+  predictions <- regressor(x, params)
+  differences <- y - predictions
+  return(sqrt(mean(differences^2)))
+}
+
+distweighted_target_function <- function(x, y, regressor, params) {
+  predictions <- regressor(x, params)
+  differences <- y - predictions
+  #differences <- log(1.0+y) - log(1.0+predictions)
+  # differences <- 1000*differences * (1+1/x^2)
+  # return(sqrt( sum(differences^2)/sum((1+1/x^2)) ))
+  differences <- 1000*differences /sqrt(x)
+  return(sqrt( mean(differences^2) ))
+}
+
+# this can turn regression output into a usable function.
+create_prediction_function <- function(regressor, results) {
+  fcn <- function (x) {
+    regressor(x, results$par)
+  }
+
+  return(fcn)
+}
+
+# a uniform way to print results
+print_regression_results <- function(orsl, label = "") {
+  par <- paste(round(orsl$par, 4), collapse = ", ")
+  conv <- orsl$convergence
+  eps <- orsl$value
+  print(
+    sprintf("%s: conv %i at (%s), mse %.1f", label, conv, par, eps)
   )
+}
+
+# note: the `epsilon` can be calculated manually with the formula:
+#   sum((predictor_function(x) - y)^2)
+
+
+# Finally, a quick histogram plot of residuals.
+plot_residuals_histogram <- function (x, y, predictor_function, ...) {
+  residuals <- predictor_function(x) - y
+  ggplot(NULL, aes(x = residuals)) +
+    geom_histogram(...) +
+    geom_vline(xintercept = 0, color = "darkgrey") +
+    theme_bw()
+}
+
 
 ```
+
+
+```{r matern-definition}
+
+matern_function <- function(d, parameters) {
+  scale <- parameters[1] # related to semivariance
+  sigma <- parameters[2] # related to actual range; turning point
+  nugget <- parameters[3]
+  nu <- parameters[4]
+
+  sill <- scale + nugget
+  z <- sqrt(2 * nu) * d / sigma
+  K <- suppressWarnings(besselK(z, nu))
+  matern <- (z)^nu * K / (2^(nu - 1) * gamma(nu))
+  result <- sill - scale * matern
+  
+  result[is.na(result)] <- 0
+  return(result)
+}
+
+
+```
+
+
+```{r regression-matern-helpers}
+
+# ## for exploration:
+# start_values <- c("tau" = mean(y), "kappa" = sqrt(8)/250)
+# start_values <- c("phi" = 0.3, "sill" = 10) # , "nu" = 1. 
+# params <- start_values
+# d <- x
+# plot(x, matern_function(x, start_values), type = "l") 
+
+fit_matern <- function(x, y, distweighted = FALSE, ...) {
+  target_fcn <- wrap_target_function
+  if (distweighted) {
+    target_fcn <- distweighted_target_function
+  }
+  optimizer_results <- optim(
+    fn = function(params) {
+      target_fcn(x, y, matern_function, params)
+    },
+    ...
+  )
+  
+  # store everything in one list;
+  # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$fcn <- matern_function
+  optimizer_results$regx <- x
+  optimizer_results$regy <- y
+
+  # wrap the function with the optimized parameters
+  optimizer_results$predict <- create_prediction_function(
+    matern_function,
+    optimizer_results
+  )
+
+
+  return(optimizer_results)
+}
+
+
+plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
+
+  # retrieve everything 
+  fcn <- optimizer_results$fcn
+  regx <- optimizer_results$regx
+  regy <- optimizer_results$regy
+  predict <- optimizer_results$predict
+
+  # extract parameters
+  scale <- optimizer_results$par[1]
+  range <- optimizer_results$par[2]
+  nugget <- optimizer_results$par[3]
+  sill <- scale + nugget
+
+
+  # plotting
+  plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
+  plotx <- plotx[plotx>0]
+  
+  g <- ggplot(NULL, aes(x = regx, y = regy)) +
+    geom_vline(xintercept = range, color = "darkgrey") +
+    geom_hline(yintercept = nugget, color = "darkgrey") +
+    geom_hline(yintercept = sill, color = "darkgrey") +
+    geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.2) +
+    geom_line(aes(x = plotx, y = predict(plotx))) +
+    labs(title = paste0("Matérn regression: ",
+      paste(round(optimizer_results$par, 4), collapse = ", "))) +
+    xlab("distance (m)") + ylab(y_label) +
+    theme_minimal()
+
+  return(g)
+}
+
+```
+
+
+Finally, one mor not-so-general helper function:
+
+```{r regression-matérn-general}
+# trafo <- function(x) log(1.+x)
+trafo <- function(x) x
+
+regression_by_soilclass <- function(sc, reg_var, maxx = extent, maxy = NULL, ...) {
+  diff_sc <- diff_binned %>% filter(soilclass == sc)
+  
+  x <- diff_sc$ds
+  y <- trafo(diff_sc %>% pull(!!reg_var))
+  # firsthalf <- x <= extent/2
+  # y <- y[firsthalf]
+  # x <- x[firsthalf]
+
+  y <- y[x > 0]
+  x <- x[x > 0]
+  y <- y[x <= maxx]
+  x <- x[x <= maxx]
+
+  if (is.null(maxy)) maxy <- max(y)
+  x <- x[y <= maxy]
+  y <- y[y <= maxy]
+  
+  x <- x[!is.na(y)]
+  y <- y[!is.na(y)]
+  # standardization helps function comprehension
+  # x <- x/max(x)
+  # y <- y / mean(y)
+  
+  
+  matern_fit <- fit_matern(x, y,
+    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
+    ...
+    # control = list("fnscale" = 1e-4),
+  )
+  
+  print_regression_results(matern_fit, label = "grp")
+  ylabel <- "mean water level difference (pair-averaged)"
+  # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
+  g <- plot_matern(matern_fit, y_label = ylabel)
+  return(g)
+}
+
+```
+
+
+# variograms
+
+
+Sample size:
+
+```{r semivar-regression-samplesize}
+diff_binned %>%
+  ggplot(aes(x = ds, y = cnt_groups)) +
+  geom_step(color = "darkblue") +
+  geom_step(aes(x = ds, y = cnt_all/10), color = "lightblue", alpha = 0.6) +
+  theme_bw()
+  #ggplot(aes(x = ds, stat = "count")) +
+  #geom_histogram(bins = 256, fill = "lightgray", color = "black")
+```
+
+Nothing to see here.
+There are some *rather empty* bins; they probably account for the outliers below.
+However, the fine structure seems beneficial for regression.
+
+
+
+## water level difference
+
+Better called: **mean absolute difference** (MAD) in water level.
+
+$$ \langle dw\rangle = \frac{1}{N} \sum\limits_{i,j} \left| z_j - z_i\right| $$
+
+
+
+```{r dw-column}
+column <- "dw_groups"
+# column <- "dw_all"
+```
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-regression-heavy}
+regression_by_soilclass("heavy",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 100, 0.48, 1.01)
+) + ylim(0, 6)
+
+```
+
+
+### light
+
+```{r dw-regression-light}
+regression_by_soilclass("light",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 100, 0.48, 1.01)
+) + ylim(0, 6)
+```
+
+
+### peat
+
+```{r dw-regression-peat}
+regression_by_soilclass("peat",
+  reg_var = column,
+  maxx = 256, maxy = 2,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+```
+
+::: {.callout-warning}
+Capped: $<= 2$
+:::
+
+
+:::
+
+
+
+## semivariance
+
+
+Differences compared to MAD:
+
+- use squared values
+- divide by two, i.e. *semi*-variance
+- NOT the real variance! 
+- Better called: **half mean square difference.**
+
+$$ \gamma = \frac{1}{2N} \sum\limits_{i,j} \left(z_j - z_i\right)^2 $$
+
+
+
+```{r semivar-column}
+column <- "semivar_all"
+# column <- "semivar_groups"
+```
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r semivar-regression-heavy}
+regression_by_soilclass("heavy",
+  reg_var = column,
+  maxx = 256, maxy = 6, 
+  distweighted = TRUE,
+  par = c(8., 100, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(16., 250, 0.08, 1.01)
+) + ylim(0, 6)
+
+```
+
+::: {.callout-warning}
+Capped: $<= 6$
+:::
+
+
+### light
+
+```{r semivar-regression-light}
+regression_by_soilclass("light",
+  reg_var = column,
+  maxx = 256, maxy = 6,
+  distweighted = TRUE,
+  par = c(8., 100, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(16., 250, 0.08, 1.01)
+) + ylim(0, 6)
+```
+
+::: {.callout-warning}
+Capped: $<= 6$
+:::
+
+
+### peat
+
+```{r semivar-regression-peat}
+regression_by_soilclass("peat",
+  reg_var = column,
+  maxx = 256, maxy = 1,
+  distweighted = TRUE,
+  par = c(8., 100, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(16., 250, 0.08, 1.01)
+) + ylim(0, 6)
+```
+
+::: {.callout-warning}
+Capped: $<= \mathbf{1}$
+:::
+
+:::
+
+
+
+
+# Summary
+
+::: {.callout-tip}
+
+- semivariance is calculated differently, i.e. not via R's `var` (see formulas)
+- mean absolute difference might be the more practical choice
+- above are the first convincing Matérn regressions
+
+:::
+
+::: {.callout-tip}
+
+compared to `xG3` analysis:
+
+- no de-trending
+- *light* soil is less variable (range: $\approx 35 m$)
+- *heavy* soil is less flat, but probably still longer range than light (range: $\approx 70 m$)
+- *peat* seems to have a very long range ($\approx 100 m$)
+
+
+:::
+
+
+# Next
+
+close-range variograms of further subsets:
+
+- slope-class
+- elevation (difference)?
+- optional water distance filter
+
+
