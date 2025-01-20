@@ -1,17 +1,59 @@
 ---
-title: "Water Level Variograms"
+title: "Water Level Variograms: Daily Data"
 bibliography: references_csl.json
 format:
   html:
     toc: true
     html-math-method: katex
+    code-fold: true
 knitr:
   opts_chunk:
     echo: true
 ---
 
 
-# Preparation
+# summary (tl;dr)
+
+
+Differences compared to previous `xG3` analysis:
+
+- daily water levels were used (watina `PeilMeting`)
+- no de-trending was applied
+- pooling/averaging ([@sec-pooling]):
+  - observation pairs (as alternative to "random intercept", suggested by Floris)
+  - distance bins
+  - soilclass
+- use of mean absolute difference $\langle dw \rangle$, instead of (semi)variance ($\gamma$, [@sec-parameters])
+- variable bin width to achieve homogeneous sample size ([@sec-equalbins])
+
+
+And in terms of the outcome ([@sec-variograms]):
+
+- *light* soil is more variable, i.e. higher differences are expected to occur at closer distance (range: $\approx 30.6 m$)
+- confirmative evidence that *heavy* soil shows longer range of spatial correlation (range: $\approx 62 m$)
+- the $\langle dw\rangle$ (y-axis) of *heavy* soil ($\approx 1.3 m$) is smaller than on *light* soil ($\approx 1.8 m$), but overall value ranges are more similar (therefore plausible) than for $\gamma$
+- *peat* data fits a rather long range ($> 100 m$) and differences are small ($\approx 0.5 m$), but there are outliers
+
+::: {.callout-tip icon=false}
+## Thresholds
+According to these variogram models, the $1 cm$ threshold would be exceeded at distances of $1.2 m$ ("light" soil), $3 m$ ("heavy" soil), and $9 m$ ("peat"), respectively.
+:::
+
+
+::: {.callout-note icon=false}
+## Lessons learned (FM):
+
+- semivariance is calculated differently, i.e. not via R's `var` (see [@sec-parameters])
+- $\langle dw \rangle$ is the more practical choice (semivariance has problems with pooling squared values)
+- sample size per bin must be monitored, equal and large is better
+- outliers, especially on short distance, have a major drag on the regression. 
+
+In consequence, the results below ([@sec-variograms]) are the first convincing Matérn regressions I saw (good times!).
+
+:::
+
+
+# preparation
 
 ... the usual.
 
@@ -23,39 +65,22 @@ library("dbplyr")    |> void() # dplyr + databases
 library("arrow")     |> void() # writing parquet files
 library("ggplot2")   |> void() # a visualization toolbox
 library("gridExtra") |> void() # panels with ggplot
+library("ggcorrplot")|> void() # correlation, grid visualization
 library("mapview")   |> void() # map visualization
 library("ggridges")  |> void() # density ridges
-# library("gstat") # geospatial statistics
-# library("sdmTMB") # species distribution models Template Model Builder
 
-
-# source("./watina_migration.R")
-# source("./auxiliary_data_queries.R")
-
-# option to work offline; requires previous data download
-work_offline <- TRUE
-
-# connect watina 
-if (!work_offline && !exists("watina_dwh")) {
-  watina_dwh <- connect_watina()
-}
-
-# create a data folder (if not present)
-# dir.create("./data", showWarnings = FALSE)
 
 if (getOption("browser") == "") options(browser = "librewolf") 
 
 # user-set parameters
 cluster_dist <- 3400 # m # parameter for clustering
-min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
 data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
 diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
 
-# the user may choose to reload raw data
-force_data_reassembly <- FALSE
-reload <- force_data_reassembly || !file.exists(data_export_file)
 ```
 
+
+The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to assemble the data set loaded here.
 
 
 
@@ -102,70 +127,33 @@ diff_meta <- diff_data %>%
 
 ```
 
-# data inspection
 
-We can learn a lot about covariates which might influence water level differences.
+# binning (preview)
 
 
-Effect magnitude (log scale):
+Binning and joining the data is necessary, yet there is some procedural flexibility in how to apply it.
 
-```{r inspect-data-1}
+First and foremost, data is filtered to include spatial distance of up to `extent` ($512 m$).
 
-diff_data %>% 
-  ggplot(aes(x = log10(1+abs(dw)))) +
-  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
-  xlim(0, 2) +
-  theme_bw()
-
+```{r parameters}
+#| code-fold: false
+extent <- 512 # m
+n_bins <- 32
 ```
 
+Binning is optional, with `n_bins =` `{r} n_bins` giving the number of bins (equally-spaced at `{r} extent/n_bins` m); note however that the most relevant binning strategies might be two others:
 
-Correlation among covariates:
+1. Binning with fixed bin width of `1 m`.
+2. Binning with variable bin width, to achieve **equal sample size per bin**.
 
-```{r inspect-data-2}
-library("ggcorrplot")
-p.mat <- pp_data %>%
-    select(
-         elevation_dhmv, slope_r2.5m,
-         wata_min_dist,
-         emd_n, emd_amp1, emd_amp2, emd_ampsum,
-         emd_qdiff, emd_residual_qdiff
-           ) %>% 
-    cor_pmat()
-ggcorrplot(p.mat, hc.order = TRUE, type = "lower",
-   outline.col = "white",
-   ggtheme = ggplot2::theme_bw,
-   colors = c("#6D9EC1", "white", "#E46726"))
-```
+More on that below.
 
 
-More detail about the `slope`/`amp` correlation:
-
-```{r contour-two}
-pp_data %>% 
-  ggplot(aes(x = slope_r2.5m, y = emd_amp2)) +
-  stat_density_2d(aes(fill = after_stat(level)), geom = "polygon") +
-  scale_fill_continuous(low="lavenderblush", high="red") +
-  geom_jitter(alpha=0.05, size = 0.5) +
-  labs(subtitle = "") +
-  facet_grid(soilclass ~ wata_dist_class) + 
-  xlim(c(0, 0.16)) +
-  ylim(c(0, 0.16)) +
-  theme_bw()
-```
-
-
-# binning
-
-binning and joining the data:
 
 ```{r glimpse-data}
 
 # diff_meta %>% glimpse
 # diff_data %>% glimpse
-
-extent <- 512 # m
-n_bins <- 64
 
 diff_all <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
@@ -186,7 +174,7 @@ diff_all <- diff_meta %>%
         length.out = extent+2
       )
     ), # cut to "meters" bin
-    distance_bin8 = cut(ds,
+    distance_widebin = cut(ds,
       breaks = seq(
         -extent/n_bins*2,
         extent,
@@ -202,8 +190,8 @@ diff_all <- diff_meta %>%
 
 # glimpse(diff_all)
 
-diff_grouped8 <- diff_all %>%
-  group_by(pair, distance_bin8) %>%
+
+diff_widegroup <- diff_all %>%
   summarize(
     cnt = n(),
     #cnt = sum(as.integer(!is.na(dw))),
@@ -213,26 +201,35 @@ diff_grouped8 <- diff_all %>%
     semivar = 1/(2*cnt)*sum(dw^2, na.rm = TRUE),
     dw = 1/(cnt)*sum(abs(dw), na.rm = TRUE),
     # dw = mean(abs(dw), na.rm = TRUE)
+    .by = c(pair, distance_widebin)
   ) %>% ungroup %>% arrange(ds)
+```
 
-diff_grouped8 %>%
+
+Briefly inspecting the wide bins, sample size (circle extent) is balanced; none outstandingly big.
+
+```{r glimpse-data}
+#| label: fig-bubbletea
+#| fig-cap: "An irrelevant bubble tea plot. The size of the bubbles scales with the number of observations. Yes, this was only a humble first glimpse at the data; yes, I used `sqrt` as a 'cheat' to limit bubble size differences; yes, we will do better below. But the colors are nice."
+diff_widegroup %>%
   ggplot(aes(x = ds, y = log(1.0+dw),
          color = soilclass)) +
   geom_point(aes(cex = sqrt(cnt)), alpha = 0.16) +
   theme_bw()
 ```
 
-Sample size (circle extent) is balanced; none too big.
 
 
 # ridge plots
 
-... as an extra to regular difference-distance plots.
+... with the little "extra" to regular difference-distance plots.
 
 
 ```{r diff-ridges-dw}
-diff_grouped8 %>%
-  ggplot(aes(x = dw, y = distance_bin8)) +
+#| label: fig-ridges
+#| fig-cap: "Visualization of distance-dependent difference with ridges. With increasing distance (y-axis), the distribution of water level differences (x-axis, grey density distributions) increases (indicated by quantile lines)."
+diff_widegroup %>%
+  ggplot(aes(x = dw, y = distance_widebin)) +
   geom_density_ridges(rel_min_height = 0.05,
     quantile_lines = TRUE, quantiles = 3,
     scale = 4.0, bandwidth = 0.05) +
@@ -244,8 +241,10 @@ diff_grouped8 %>%
 
 
 ```{r diff-ridges}
-diff_grouped8 %>%
-  ggplot(aes(x = semivar, y = distance_bin8)) +
+#| eval: false
+#| include: false
+diff_widegroup %>%
+  ggplot(aes(x = semivar, y = distance_widebin)) +
   geom_density_ridges(rel_min_height = 0.05,
     quantile_lines = TRUE, quantiles = 2,
     scale = 4.0, bandwidth = 0.05) +
@@ -255,15 +254,19 @@ diff_grouped8 %>%
   theme_bw()
 ```
 
+This is a promising pattern. 
+We better expect to re-capture it in the analysis below.
 
-# grouping
 
-Re-applying the groups with more fine-grained binning
+# grouping and binning
+
+## pooled data: what to pool? {#sec-pooling}
+
+Re-applying the groups with more fine-grained binning.
 
 ```{r bin-data}
 
 diff_grouped <- diff_all %>%
-  group_by(pair, distance_bin) %>%
   summarize(
     cnt = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
@@ -272,50 +275,172 @@ diff_grouped <- diff_all %>%
     semivar = 1/(2*cnt)*sum(dw^2, na.rm = TRUE),
     dw = 1/(cnt)*sum(abs(dw), na.rm = TRUE),
     # dw = mean(abs(dw), na.rm = TRUE)
+    .by = c(pair, distance_bin)
   ) %>% ungroup %>% arrange(ds)
 
 
 combine_grouped <- function (val, cnt) sum(val*cnt, na.rm = TRUE)/sum(cnt, na.rm = TRUE)
 
-# a convenience function for calculated measures
-summarize_groupeddata <- function(data) {
-  data %>% 
-    summarize(
-      ds = mean(ds), 
-      dw_all = combine_grouped(dw, cnt),
-      dw_groups = mean(dw, na.rm = TRUE), 
-      semivar_all = combine_grouped(semivar, cnt),
-      semivar_groups = mean(semivar, na.rm = TRUE),
-      cnt_all = sum(cnt),
-      cnt_groups = mean(cnt),
-    ) %>% ungroup %>% arrange(ds)
-}
-
-
 diff_binned <- diff_grouped %>%
-  group_by(distance_bin, soilclass) %>%
-  summarize_groupeddata()
+  summarize(
+    ds = mean(ds), 
+    dw_all = combine_grouped(dw, cnt),
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_all = combine_grouped(semivar, cnt),
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    cnt_all = sum(cnt),
+    cnt_groups = mean(cnt),
+    .by = c(distance_bin, soilclass)
+  ) %>% ungroup %>% arrange(ds)
+
 
 knitr::kable(rbind(head(diff_binned, 5), tail(diff_binned, 5)))
 ```
 
 
-```{r plot_dw}
+::: {.callout-note icon=false}
+## Pooling
+
+There are multiple variables to consider for pooling.
+
+- pairs of locations (pseudo-replication)
+- the distance bins
+- soilclass
+
+Even the grouping order matters, it better be in the listed order.
+:::
+
+
+## choice of difference parameter {#sec-parameters}
+
+There are at least two possible distance parameters we can apply to this grouped data.
+This has implications for grouping, with some practical trouble for semivariance (see [@sec-semivar-binning]).
+
+
+First, we have **conventional semivariance** ["Method-of-Moments Estimator" according to @Cressie1993, p. 69, eqn. 2.4.2].
+This originally goes back to @Matheron1962, and only holds under the stationarity assumption ("constant mean").
+
+$$ \gamma = \frac{1}{2N} \sum\limits_{i,j} \left(z_j - z_i\right)^2 $$
+
+```{r plot-semivariance-distance}
+#| label: fig-semivariance-difference-plot
+#| fig-cap: "Semivariance-distance plot: the increase with distance is not as pronounced on the semivariance measure. Log scale for better visualization."
 diff_binned %>%
-  # filter(semivar < 1) %>% 
+  ggplot(aes(x = ds, y = log(1+semivar_groups), color = soilclass)) +
+  geom_point() 
+```
+
+This equation has the typical structure of "sum of square differences", the normalization with sample size $N$ effectively makes it an average. 
+Yet the "square" is not inverted by a "square root", which has some pitfalls [@sec-semivar-binning].
+
+
+Therefore, I suggest a simpler variant: **mean absolute difference** (MAD) in water level.
+
+$$ \langle dw\rangle = \frac{1}{N} \sum\limits_{i,j} \left| z_j - z_i\right| $$
+
+
+```{r plot-dw-distance}
+#| label: fig-difference-distance-plot
+#| fig-cap: "Difference-distance plot: rough top-down visualization to inspect if water level differences increases with distance. Apparently, it does. Log scale for better visualization."
+diff_binned %>%
   ggplot(aes(x = ds, y = log(1+dw_groups), color = soilclass)) +
   geom_point() 
 ```
 
-```{r}
+
+::: {.callout-warning}
+Neither of these is the actual variance, as in `?var` in R, although with his limited maths talent the author cannot exclude that variance and "semivariance" are related in the stationary case.
+:::
+
+
+Let's go MAD!
+
+
+
+## equally-sized bins {#sec-equalbins}
+
+Re-visit the binning.
+
+Sample size is rather rugged:
+
+```{r semivar-regression-samplesize}
+#| label: fig-sample-size
+#| fig-cap: "Sample size per bin in standard grouping. Dark blue: per location pair, i.e. repeated observations from the same location pairs are averaged. Light blue: per observation (divided by 10 to fit the axis)."
+
 diff_binned %>%
-  # filter(semivar < 1) %>% 
-  ggplot(aes(x = ds, y = log(1+semivar_all), color = soilclass)) +
-  geom_point() 
+  ggplot(aes(x = ds, y = cnt_groups)) +
+  geom_step(color = "darkblue") +
+  geom_step(aes(x = ds, y = cnt_all/10), color = "lightblue", alpha = 0.6) +
+  theme_bw()
 ```
 
 
+There are some *rather empty* bins touching the axis; they probably account at least in part for the outliers below.
+"Misery loves company:" some other bins are *spikes*, probably due to pseudo-replication (repeated sampling at high frequency).
+
+
+How about using equal-sized bins, i.e. buckets of variable width which are all filled to about the same level?
+
+Crucially, we'll have to group by location pair first because otherwise repeated measures fill single buckets.
+
+
+```{r equibin-preparation}
+#| code-fold: false
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(extent/2)
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+    
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw_all = combine_grouped(dw, cnt),
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_all = combine_grouped(semivar, cnt),
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    cnt_all = sum(cnt),
+    cnt_groups = mean(cnt),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+```
+    
+
+```{r equibin-samplesize}
+#| label: fig-equibin-sample-size
+#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt_groups, color = soilclass)) +
+  geom_step() +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  theme_bw()
+```
+
+Seems more balanced, let's see the outcome.
+
+
 # regression
+
+Here come the general toolkit for regression, based on `optim` ([docs](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim)).
+
+Note that root-mean square difference (RMSD) is optionally distance-weighted, by dividing each observed `prediction-actual` difference by square root of the distance.
 
 
 ```{r regression-tools}
@@ -347,13 +472,30 @@ create_prediction_function <- function(regressor, results) {
   return(fcn)
 }
 
+calculate_limit <- function(orsl, threshold = 0.01) {
+  par <- orsl$par
+  par[3] <- 0 # no nugget
+  # par[4] <- 1. # regular shape
+  test_x <- seq(0., par[2], length.out = 1000)
+  test_y <- matern_function(test_x, par)
+  limit <- test_x[min(which(test_y > threshold))]
+  return(limit)
+}
+
 # a uniform way to print results
 print_regression_results <- function(orsl, label = "") {
   par <- paste(round(orsl$par, 4), collapse = ", ")
   conv <- orsl$convergence
   eps <- orsl$value
+
+  threshold <- calculate_limit(orsl)
+
   print(
     sprintf("%s: conv %i at (%s), mse %.1f", label, conv, par, eps)
+  )
+  print(
+    sprintf("==> Threshold of dw > 1cm reached at %.3f m distance.", threshold)
+     
   )
 }
 
@@ -374,7 +516,38 @@ plot_residuals_histogram <- function (x, y, predictor_function, ...) {
 ```
 
 
+The Matérn parametrization below is related to the parametrs on semivariogram plots:
+
+```
+      ^
+      | Range
+      |<--->
+Sill  |     :____,model
+      |    /:
+ VAR  |   / :
+ IOG  |  /  :
+ RAM  | /   :
+      |/    :
+Nugget| Cor.: Uncor.
+     _|_____:___________>
+      |              lag distance
+```
+
+We get:
+$$ d\gamma = \gamma_{max} - \gamma_{min}$$
+$$ \gamma = \gamma_{max} - d\gamma \cdot \left( \frac{\sqrt{2\nu}}{\sigma} x \right)^{\nu} \cdot K_{\nu}\left( \frac{\sqrt{2\nu}}{\sigma} x \right) \cdot \frac{1}{2^{\nu - 1} \cdot \Gamma\left(\nu\right)} $$
+
+With sill $\gamma_{max}$, nugget $\gamma_{min}$, turning point $\sigma$ (related to range), and a shape parameter $\nu$ that controls the form of the sigmoid[^1]. 
+(Compare [wikipedia](https://en.wikipedia.org/wiki/Mat%C3%A9rn_covariance_function).)
+
+
+[^1]: In practical application, I soft-fix $\nu$ to a value of one ($\nu = 1.0$), and only give it moderate freedom in case of visual shape mismatches. 
+
+
+In code:
+
 ```{r matern-definition}
+#| code-fold: false
 
 matern_function <- function(d, parameters) {
   scale <- parameters[1] # related to semivariance
@@ -392,18 +565,14 @@ matern_function <- function(d, parameters) {
   return(result)
 }
 
-
 ```
 
+This particular parametrization of nugget, scale, and sill will facilitate optimization by ensuring that the nugget is always smaller than the sill.
+
+
+Because we repeatedly apply the procedure, a couple of convenience functions below.
 
 ```{r regression-matern-helpers}
-
-# ## for exploration:
-# start_values <- c("tau" = mean(y), "kappa" = sqrt(8)/250)
-# start_values <- c("phi" = 0.3, "sill" = 10) # , "nu" = 1. 
-# params <- start_values
-# d <- x
-# plot(x, matern_function(x, start_values), type = "l") 
 
 fit_matern <- function(x, y, distweighted = FALSE, ...) {
   target_fcn <- wrap_target_function
@@ -470,14 +639,20 @@ plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
 ```
 
 
-Finally, one mor not-so-general helper function:
+(Finally, one more not-so-general helper function.)
 
 ```{r regression-matérn-general}
-# trafo <- function(x) log(1.+x)
+# trafo <- function(x) log(1.+x) # feel free to try other transformations.
 trafo <- function(x) x
 
-regression_by_soilclass <- function(sc, reg_var, maxx = extent, maxy = NULL, ...) {
-  diff_sc <- diff_binned %>% filter(soilclass == sc)
+regression_by_soilclass <- function(
+    sc, reg_var, maxx = extent, maxy = NULL, use_equibin = TRUE,
+    ...) {
+  if (use_equibin) {
+    diff_sc <- diff_equibinned %>% filter(soilclass == sc)
+  } else {
+    diff_sc <- diff_binned %>% filter(soilclass == sc)
+  }
   
   x <- diff_sc$ds
   y <- trafo(diff_sc %>% pull(!!reg_var))
@@ -507,49 +682,44 @@ regression_by_soilclass <- function(sc, reg_var, maxx = extent, maxy = NULL, ...
     # control = list("fnscale" = 1e-4),
   )
   
-  print_regression_results(matern_fit, label = "grp")
+  print_regression_results(matern_fit, label = "regression:")
   ylabel <- "mean water level difference (pair-averaged)"
   # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
   g <- plot_matern(matern_fit, y_label = ylabel)
+
+  x_excl <- diff_sc$ds
+  y_excl <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y_excl <- y_excl[x_excl <= maxx]
+  x_excl <- x_excl[x_excl <= maxx]
+  x_excl <- x_excl[y_excl > maxy]
+  y_excl <- y_excl[y_excl > maxy]
+  g <- g + geom_point(aes(x = x_excl, y = y_excl),
+      size = 2.5, colour = "red", alpha = 0.2) 
   return(g)
 }
 
+
+
 ```
 
 
-# variograms
+# variograms {#sec-variograms}
 
+## water level difference (MAD)
 
-Sample size:
-
-```{r semivar-regression-samplesize}
-diff_binned %>%
-  ggplot(aes(x = ds, y = cnt_groups)) +
-  geom_step(color = "darkblue") +
-  geom_step(aes(x = ds, y = cnt_all/10), color = "lightblue", alpha = 0.6) +
-  theme_bw()
-  #ggplot(aes(x = ds, stat = "count")) +
-  #geom_histogram(bins = 256, fill = "lightgray", color = "black")
-```
-
-Nothing to see here.
-There are some *rather empty* bins; they probably account for the outliers below.
-However, the fine structure seems beneficial for regression.
-
-
-
-## water level difference
-
-Better called: **mean absolute difference** (MAD) in water level.
-
-$$ \langle dw\rangle = \frac{1}{N} \sum\limits_{i,j} \left| z_j - z_i\right| $$
-
-
+Feel free to adjust regression parameters; maybe most importantly, the outcome measure.
 
 ```{r dw-column}
+#| code-fold: false
+
 column <- "dw_groups"
 # column <- "dw_all"
+# # see also the "semivariance" options, below.
 ```
+
+There are also axis upper limits, start values, parameter limits, RMSD weighting, and binning to choose.
+Selected here are the most plausible settings (MAD, equal-sized bins, distance weighted, with sensible parameter starts and limits).
 
 
 ::: {.panel-tabset group="soilclass"}
@@ -557,10 +727,13 @@ column <- "dw_groups"
 ### heavy
 
 ```{r dw-regression-heavy}
+#| label: fig-dw-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
 regression_by_soilclass("heavy",
   reg_var = column,
   maxx = 256, maxy = Inf,
   distweighted = TRUE,
+  use_equibin = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 100, 0.48, 1.01)
@@ -572,10 +745,13 @@ regression_by_soilclass("heavy",
 ### light
 
 ```{r dw-regression-light}
+#| label: fig-dw-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
 regression_by_soilclass("light",
   reg_var = column,
   maxx = 256, maxy = Inf,
   distweighted = TRUE,
+  use_equibin = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 100, 0.48, 1.01)
@@ -586,10 +762,13 @@ regression_by_soilclass("light",
 ### peat
 
 ```{r dw-regression-peat}
+#| label: fig-dw-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
 regression_by_soilclass("peat",
   reg_var = column,
   maxx = 256, maxy = 2,
   distweighted = TRUE,
+  use_equibin = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
@@ -597,7 +776,7 @@ regression_by_soilclass("peat",
 ```
 
 ::: {.callout-warning}
-Capped: $<= 2$
+Capped: $<= 2$ (see [@sec-peat-outliers])
 :::
 
 
@@ -605,116 +784,237 @@ Capped: $<= 2$
 
 
 
-## semivariance
+
+# next
+
+close-range variograms of further subsets:
+
+- slope-classes
+- classes of elevation (difference)?
+- optional water distance filter
 
 
-Differences compared to MAD:
+<hr>
 
-- use squared values
-- divide by two, i.e. *semi*-variance
-- NOT the real variance! 
-- Better called: **half mean square difference.**
+# appendix {.appendix}
+
+
+## why not semivariance? {#sec-semivar-binning}
+
+Recall the two equations above:
+
+$$ \langle dw\rangle = \frac{1}{N} \sum\limits_{i,j} \left| z_j - z_i\right| $$
+
 
 $$ \gamma = \frac{1}{2N} \sum\limits_{i,j} \left(z_j - z_i\right)^2 $$
 
 
+From these equations, semivariance ($\gamma$) involves subtle differences compared to the more intuitive MAD ($\langle dw\rangle$):
+
+- $\gamma$ uses squared values
+- $\gamma$ is divided by two, i.e. it calculates **semi**-variance (*triv.*)
+- This is NOT the real variance! 
+
+Therefore, semivariance should better be called: **half mean square difference** (HMSD).
+
+
+Semivariance / HMSD be tried out with the code above by using either of the following:
 
 ```{r semivar-column}
-column <- "semivar_all"
-# column <- "semivar_groups"
-```
+#| code-fold: false
 
-
-::: {.panel-tabset group="soilclass"}
-
-### heavy
-
-```{r semivar-regression-heavy}
-regression_by_soilclass("heavy",
-  reg_var = column,
-  maxx = 256, maxy = 6, 
-  distweighted = TRUE,
-  par = c(8., 100, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(16., 250, 0.08, 1.01)
-) + ylim(0, 6)
-
+if (FALSE) {
+  column <- "semivar_all"
+  column <- "semivar_groups"
+}
 ```
 
 ::: {.callout-warning}
-Capped: $<= 6$
+The semivariance (i.e. HMSD) was not used here!
+Instead, I went MAD.
 :::
 
+This has two justifications:
 
-### light
+- observation of the outcome
+- consideration about pooling data
 
-```{r semivar-regression-light}
-regression_by_soilclass("light",
-  reg_var = column,
-  maxx = 256, maxy = 6,
-  distweighted = TRUE,
-  par = c(8., 100, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(16., 250, 0.08, 1.01)
-) + ylim(0, 6)
+
+Due to the square, pooling is non-trivial, which is best illustrated by a simple example. 
+
+Assume we measure the following water levels, in meters.
+
+```
+day 1: z1 = 0.1
+day 1: z2 = 0.5
+
+day 2: z1 = 0.1
+day 2: z2 = 0.3
+
+day 3: z1 = 0.1
+day 3: z3 = 0.4
+
 ```
 
-::: {.callout-warning}
-Capped: $<= 6$
+Differences are:
+
+```
+d1 = 0.5-0.1 = 0.4
+d2 = 0.2
+d3 = 0.3
+
+```
+
+Plain average would be:
+```
+<d> = (0.4 + 0.2 + 0.3) / 3 = 0.3
+```
+
+
+The first two observations are pseudo-replications, because they come from the same sites (`z1` and `z2`).
+We better average them:
+
+```
+<d> = ((0.4 + 0.2)/2 + 0.3) / 2 = 0.3
+```
+
+Of course, this is no co-incidence: I chose the values to yield identical results in grouped averaging.
+
+
+Compare this to the *squared* average difference used in semivariance:
+
+```
+γ = (0.4^2 + 0.2^2 + 0.3^2) / (2*3) = 0.0483
+γ = (((0.4 + 0.2)/2)^2 + 0.3^2) / (2*3) = 0.105
+```
+
+... but then we square the number of observations (positive integer, large numbers of observations become huge)... 
+Or maybe average the square differences?
+
+```
+γ = ((0.4^2 + 0.2^2)/2 + 0.3^2) / (2*3) = 0.03167
+```
+
+... but then we square our generally small differences (measured in meters), making them even smaller.
+Mr. Πυθαγόρας could have anticipated this.
+
+
+::: {.callout-note}
+This illustrates that, because water level differences are generally small, yet repeated sampling gives a lot of these small differences per location pair,
+the square structure of the semivariance formula can complicate grouping of repeated observations.
+
+
+The issue of squared values is consistent with the huge soilclass difference observed previously in *heavy versus light* soil.
 :::
 
 
-### peat
 
-```{r semivar-regression-peat}
+This is in part an *ex post* rationalization of the scattered values I see when attempting semivariance.
+Primary reason was inspection of the outcome, and non-plausible Matérn regressions when using semivariance.
+Another benefit is **unit retention**: differences in meters are easier to interpret and compare than the square meters produced by variance formulas.
+
+
+Using $\langle dw\rangle$ just works better.
+
+
+## peat outlier removal {#sec-peat-outliers}
+
+For the regression of the `peat` subset, values above a given $\langle dw\rangle$ were excluded from regression.
+This exclusion is not based on data-intrinsic reasons, but on the plausibility of the regression outcome.
+
+For completeness and comparison, behold the regression without the outlier removal.
+
+
+```{r dw-regression-peat-with-outliers}
+#| label: fig-dw-regression-peat-with-outliers
+#| fig-cap: "Matérn regression of water level distance (`dw (m)`) on 'peat', this time with the outliers included."
 regression_by_soilclass("peat",
-  reg_var = column,
-  maxx = 256, maxy = 1,
+  reg_var = "dw_groups",
+  maxx = 256, maxy = Inf,
   distweighted = TRUE,
-  par = c(8., 100, 0., 1.),
+  use_equibin = TRUE,
+  par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(16., 250, 0.08, 1.01)
+  upper = c(4., 200, 0.48, 1.01)
 ) + ylim(0, 6)
 ```
 
-::: {.callout-warning}
-Capped: $<= \mathbf{1}$
-:::
-
-:::
+The higher difference values attract the regression, leading to a much worse regression for the majority of points.
+This issue is emphasized by the larger absolute values of the outliers, leading to larger RMSD; the regression method above is non-robust.
 
 
-
-
-# Summary
-
-::: {.callout-tip}
-
-- semivariance is calculated differently, i.e. not via R's `var` (see formulas)
-- mean absolute difference might be the more practical choice
-- above are the first convincing Matérn regressions
-
-:::
-
-::: {.callout-tip}
-
-compared to `xG3` analysis:
-
-- no de-trending
-- *light* soil is less variable (range: $\approx 35 m$)
-- *heavy* soil is less flat, but probably still longer range than light (range: $\approx 70 m$)
-- *peat* seems to have a very long range ($\approx 100 m$)
-
-
+::: {.callout-note}
+In conclusion, outlier removal is not ideal, but a necessary workaround to avoid well-known regression issues.
 :::
 
 
-# Next
 
-close-range variograms of further subsets:
+## comparing co-variates
 
-- slope-class
-- elevation (difference)?
-- optional water distance filter
+Just to show off, we have a number of useful co-variates at hand which might be insightful by themselves.
 
 
+We can learn a lot about covariates which might influence water level differences.
+
+
+Effect magnitude (log scale, which kills a number of zero differences):
+
+```{r inspect-data-1}
+#| label: fig-effect-dw
+#| fig-cap: "Top-down, the water level difference follows and exponential distribution: large differences are increasingly unlikely."
+
+diff_data %>% 
+  ggplot(aes(x = log10(1+abs(dw)))) +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  xlim(0, 2) +
+  theme_bw()
+
+```
+
+
+Correlation among covariates:
+
+```{r inspect-data-2}
+#| label: fig-correlation-matrix
+#| fig-cap: "Matrix visualization of correlations of parameters. The redder, the more correlated. Only the lower half of the matrix is shown."
+p.mat <- pp_data %>%
+  select(
+       elevation_dhmv, slope_r2.5m,
+       wata_min_dist,
+       emd_n, emd_amp1, emd_amp2, emd_ampsum,
+       emd_qdiff, emd_residual_qdiff
+  ) %>% 
+  cor_pmat()
+ggcorrplot(p.mat, hc.order = TRUE, type = "lower",
+  outline.col = "white",
+  ggtheme = ggplot2::theme_bw,
+  colors = c("#6D9EC1", "white", "#E46726"))
+```
+
+
+More detail about the pronounced `slope`/`amp` correlation:
+
+```{r contour-two}
+#| label: fig-contour-slopeamp
+#| fig-cap: "Some parameters in the data set are correlated (here: slope and 2nd emd amplitude). However, the observations seem rather diffuse, even when separating soilclasses (rows) and water distances (columns)."
+pp_data %>% 
+  ggplot(aes(x = slope_r2.5m, y = emd_amp2)) +
+  stat_density_2d(aes(fill = after_stat(level)), geom = "polygon") +
+  scale_fill_continuous(low="lavenderblush", high="red") +
+  geom_jitter(alpha=0.05, size = 0.5) +
+  labs(subtitle = "") +
+  facet_grid(soilclass ~ wata_dist_class) + 
+  xlim(c(0, 0.16)) +
+  ylim(c(0, 0.16)) +
+  theme_bw()
+```
+
+
+Some of the more obvious co-variates (e.g. soilclass) were used in the analysis above.
+The others might be interesting for other purposes, another day.
+
+
+## references
+
+::: {#refs}
+:::
