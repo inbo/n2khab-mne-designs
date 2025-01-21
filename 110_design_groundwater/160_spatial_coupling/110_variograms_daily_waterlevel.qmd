@@ -268,12 +268,12 @@ Re-applying the groups with more fine-grained binning.
 
 diff_grouped <- diff_all %>%
   summarize(
-    cnt = sum(as.integer(!is.na(dw))),
+    n_obs = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
-    semivar = 1/(2*cnt)*sum(dw^2, na.rm = TRUE),
-    dw = 1/(cnt)*sum(abs(dw), na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
     # dw = mean(abs(dw), na.rm = TRUE)
     .by = c(pair, distance_bin)
   ) %>% ungroup %>% arrange(ds)
@@ -283,13 +283,13 @@ combine_grouped <- function (val, cnt) sum(val*cnt, na.rm = TRUE)/sum(cnt, na.rm
 
 diff_binned <- diff_grouped %>%
   summarize(
+    cnt = n(),
     ds = mean(ds), 
-    dw_all = combine_grouped(dw, cnt),
+    n_obs = sum(n_obs),
+    dw_all = combine_grouped(dw, n_obs),
     dw_groups = mean(dw, na.rm = TRUE), 
-    semivar_all = combine_grouped(semivar, cnt),
+    semivar_all = combine_grouped(semivar, n_obs),
     semivar_groups = mean(semivar, na.rm = TRUE),
-    cnt_all = sum(cnt),
-    cnt_groups = mean(cnt),
     .by = c(distance_bin, soilclass)
   ) %>% ungroup %>% arrange(ds)
 
@@ -365,12 +365,12 @@ Sample size is rather rugged:
 
 ```{r semivar-regression-samplesize}
 #| label: fig-sample-size
-#| fig-cap: "Sample size per bin in standard grouping. Dark blue: per location pair, i.e. repeated observations from the same location pairs are averaged. Light blue: per observation (divided by 10 to fit the axis)."
+#| fig-cap: "Sample size per bin in standard grouping. Dark blue: per location pair, i.e. repeated observations from the same location pairs are averaged. Light blue: per observation (divided by 100 to fit the axis)."
 
 diff_binned %>%
-  ggplot(aes(x = ds, y = cnt_groups)) +
+  ggplot(aes(x = ds, y = cnt)) +
   geom_step(color = "darkblue") +
-  geom_step(aes(x = ds, y = cnt_all/10), color = "lightblue", alpha = 0.6) +
+  geom_step(aes(x = ds, y = n_obs/100), color = "lightblue", alpha = 0.6) +
   theme_bw()
 ```
 
@@ -410,12 +410,11 @@ diff_equibinned <- diff_equigrouped %>%
   summarize(
     cnt = n(),
     ds = mean(ds), 
-    dw_all = combine_grouped(dw, cnt),
+    n_obs = sum(n_obs),
+    dw_all = combine_grouped(dw, n_obs),
     dw_groups = mean(dw, na.rm = TRUE), 
-    semivar_all = combine_grouped(semivar, cnt),
+    semivar_all = combine_grouped(semivar, n_obs),
     semivar_groups = mean(semivar, na.rm = TRUE),
-    cnt_all = sum(cnt),
-    cnt_groups = mean(cnt),
     .by = c(distance_equibin, soilclass)
   ) %>%
   ungroup %>% arrange(ds)
@@ -427,7 +426,7 @@ diff_equibinned <- diff_equigrouped %>%
 #| label: fig-equibin-sample-size
 #| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
 diff_equibinned %>%
-  ggplot(aes(x = ds, y = cnt_groups, color = soilclass)) +
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
   geom_step() +
   geom_hline(yintercept = 0, color = "darkgrey") +
   theme_bw()
