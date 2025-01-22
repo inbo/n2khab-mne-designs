@@ -1,0 +1,370 @@
+---
+title: "Water Chemistry Data Download"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Preparation 
+
+
+ChemVarWID -> holds the ID of compounds; 
+
+- `6` = $PO_4$, 
+- `7` = $NO_3$,
+- `8` = $NO_2$ (not used),
+- `9` = $NH_4$
+
+
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("gridExtra") |> void() # panels with ggplot
+library("mapview")   |> void() # map visualization
+library("scatterplot3d") |> void() # simple 3d vis
+
+
+source("./watina_migration.R")
+source("./auxiliary_data_queries.R")
+
+# option to work offline; requires previous data download
+work_offline <- FALSE
+
+# connect watina 
+if (!work_offline && !exists("watina_dwh")) {
+  watina_dwh <- connect_watina()
+}
+
+# create a data folder (if not present)
+dir.create("./data", showWarnings = FALSE)
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# user-set parameters
+cluster_dist <- 3400 # m # parameter for clustering
+min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
+data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
+diffdata_export_file <- paste0("data/waterchemistry_diffdata_cl", cluster_dist, ".parquet")
+
+# # the user may choose to reload raw data
+# force_data_reassembly <- FALSE
+# reload <- force_data_reassembly || !file.exists(data_export_file)
+```
+
+
+Oh, look! 
+Location Pairs stay the same!
+We can re-use the location data stored earlier! (`100_download_and_plot_waterlevel_for_vgram.qmd`)
+
+
+```{r amplitude-map}
+pp_data <- read_parquet(data_export_file)
+```
+
+
+# WAIT!
+
+Actually, we will not replace any site based on a single chemical alone.
+**We want to measure coupling of water chemistry in general!**
+Or, at least some chemicals.
+```{r chem-variables}
+chemvar_selection <- c(6, 7, 9)
+
+chemvars <- tbl(watina_dwh, "dimChemVar") %>%
+  select(ChemVarWID, ChemVarCode) %>%
+  filter(
+    ChemVarWID %in% chemvar_selection
+  ) %>%
+  mutate(ChemVarCode = as.character(lower(ChemVarCode)))
+knitr::kable(chemvars %>% collect)
+```
+
+Without further ado, let us try good old **PCA** (Principal Component Analysis).
+
+```{r glimpse-chemicals}
+#| eval: false
+peek <- tbl(watina_dwh, "FactChemischeMeting")
+glimpse(peek)
+```
+
+
+```{r pca-data}
+all_chem <- tbl(watina_dwh, "FactChemischeMeting") %>%
+  filter(
+    MetingStatusCode == "VLD",
+    ChemVarWID %in% c(6, 7, 9)
+  ) %>%
+  left_join(
+    chemvars,
+    by = join_by(ChemVarWID),
+    relationship = "many-to-many",
+    unmatched = "drop"
+  ) %>% 
+  select(PeilpuntWID, ChemVarCode, DatumWID, Meetwaarde) %>%
+  rename(
+    pp_idx = PeilpuntWID,
+    chem = ChemVarCode,
+    date = DatumWID,
+    m = Meetwaarde
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = chem,
+    values_from = m
+  ) %>%
+  rename_with(~stringr::str_remove(., '-') ) %>% 
+  collect
+
+```
+
+```{r pca-data-colors}
+sel <- colnames(all_chem)[3:5]
+
+legend_colors <- c(
+  "nnh4" = "darkblue",
+  "nno3" = "darkred",
+  "ppo4" = "darkorange"
+  )
+```
+
+
+```{r pca-data-distributions}
+#| label: fig-pca-data-distributions
+#| fig-cap: "Distributions of log concentrations of groundwater chemicals."
+ggplot(NULL) +
+  geom_density(
+    aes(x = log10(all_chem %>% pull(!!sel[1])),
+    color = sel[1])
+  ) +
+  geom_density(
+    aes(x = log10(all_chem %>% pull(!!sel[2])),
+    color = sel[2])
+  ) +
+  geom_density(
+    aes(x = log10(all_chem %>% pull(!!sel[3])),
+    color = sel[3])
+  ) +
+  labs(x = "log10 concentration") +
+  scale_color_manual(values = legend_colors) + 
+  theme_bw() + theme(legend.position = "right")
+```
+
+
+```{r pca-data-3d}
+#| label: fig-pca-data-scatter
+#| fig-cap: "Log concentrations of groundwater chemicals, data space visualization."
+scatterplot3d(log10(all_chem[, sel]),
+  main = "log10 concentrations",
+  xlab = paste0("log(c(", sel[1], "))", collapse = ""),
+  ylab = paste0("log(c(", sel[2], "))", collapse = ""),
+  zlab = paste0("log(c(", sel[3], "))", collapse = ""),
+  pch = 16, color = "steelblue", angle = 30
+  )
+
+```
+
+correlation
+
+```{r pca-data-correlation}
+
+# log, filter na/inf
+std_chem <- all_chem %>%
+  mutate(across(any_of(sel), function(vec) log10(vec))) %>%
+  filter(if_all(everything(), ~!is.na(.))) %>% 
+  filter(if_all(everything(), ~is.finite(.)))
+
+# center
+means <- colMeans(std_chem[, sel], na.rm = TRUE)
+std_chem <- std_chem %>%
+  mutate(across(any_of(sel), function (vec) vec - mean(vec, na.rm = TRUE)))
+
+# scale
+vars <- colMeans(abs(std_chem[, sel]), na.rm = TRUE)
+std_chem <- std_chem %>%
+  mutate(across(any_of(sel), function (vec) vec / mean(abs(vec), na.rm = TRUE)))
+
+chemcov <- cov(std_chem[, sel], use = "complete.obs")
+knitr::kable(chemcov, digits = 2)
+```
+
+```{r pca-data-3d}
+#| label: fig-pca-data-std
+#| fig-cap: "Standardized log concentrations of groundwater chemicals. These are data input to a PCA."
+scatterplot3d(std_chem[, sel],
+  main = "log10 concentrations",
+  xlab = paste0("standardized log(c(", sel[1], "))", collapse = ""),
+  ylab = paste0("standardized log(c(", sel[2], "))", collapse = ""),
+  zlab = paste0("standardized log(c(", sel[3], "))", collapse = ""),
+  pch = 16, color = "steelblue", angle = 30
+  )
+
+```
+
+
+eigenanalysis
+```{r}
+s <- svd(chemcov, nu = 3)
+pca.val <- s$d
+pca.weight <- pca.val / sum(pca.val)
+pca.weight_ <- paste0(round(100*pca.weight, 1), "%")
+pca.mat <- s$u
+
+datamat <- as.matrix(std_chem[, sel], wide = TRUE) 
+pcs <- paste0("PC", c(1, 2, 3))
+std_chem[, pcs] <- datamat %*% t(pca.mat)
+```
+
+
+```{r pca-data-3d}
+#| label: fig-pca-data-pca
+#| fig-cap: "PCA space of groundwater chemicals. The first axis will be used for differential data analysis (variograms)."
+scatterplot3d(std_chem[, pcs],
+  main = "log10 concentrations",
+  xlab = paste0(pcs[1], " (", pca.weight_[1], ")"),
+  ylab = paste0(pcs[2], " (", pca.weight_[2], ")"),
+  zlab = paste0(pcs[3], " (", pca.weight_[3], ")"),
+  pch = 16, color = "purple", angle = 20
+  )
+
+```
+
+
+There is not all that much variability concentrated on PC1 (`{r} pca.weight_[1]`).
+
+But, nevertheless, it is the most general "chemistry" measure we have.
+
+
+# differential data
+
+## pairing
+
+Retrieving all pairs of observation wells
+which are below a certain distance,
+
+```{r pairing}
+extent <- 512 # m
+
+# pp_data %>% count(cluster)
+
+pair_sites <- function(cluster_idx) {
+  sub_data <- pp_data %>%
+    filter(cluster == cluster_idx) %>%
+    select(mp_idx, pp_idx, x, y, soilclass)
+  
+  sub_data %>% 
+    left_join(sub_data,
+      by = join_by(
+        mp_idx > mp_idx, # only different locations
+        soilclass == soilclass, # from the same soilclass
+      ),
+      suffix = c("1", "2"),
+      relationship = "many-to-many"
+    ) %>% mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+    ) %>%
+    filter(ds >= 1.0/100, ds < extent)
+
+}
+
+pairs <- bind_rows(
+  lapply(
+    sort(unique(as.integer(pp_data$cluster))),
+    FUN = pair_sites
+  )
+) %>% arrange(ds)
+```
+
+
+
+```{r pair-distance-distribution}
+#| label: fig-pairs-ds
+#| fig-cap: "Distribution of pair distances."
+pairs %>%
+  ggplot(aes(x = ds)) +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  theme_bw()
+```
+
+It is okay to keep the close range sites for now.
+
+
+
+
+## water chem query
+
+
+query: pp1, pp2, date1, date2, Meetwaarde1, Meetwaarde2
+
+```{r chemistry-query}
+
+query_measurement <- function (pp1, pp2){
+
+  w1 <- std_chem %>%
+    filter(pp_idx == pp1,
+      ) %>%
+    select(pp_idx, date, PC1) %>%
+    rename(
+      pp_idx1 = pp_idx,
+      date1 = date,
+      m1 = PC1
+    )
+
+  w2 <- std_chem %>%
+    filter(pp_idx == pp2,
+      ) %>%
+    select(pp_idx, date, PC1) %>%
+    rename(
+      pp_idx2 = pp_idx,
+      date2 = date,
+      m2 = PC1
+    )
+
+  pair_diff <- w1 %>%
+    cross_join(w2) %>%
+    mutate(
+      across(c(date1, date2), function(x) as.Date(as.character(x), format = "%Y%m%d")),
+      dt = date2 - date1,
+      dc = m2 - m1
+    ) %>%
+    filter(abs(dt) < 30) %>% 
+    select(pp_idx1, pp_idx2, date1, date2, dc)
+
+  return(pair_diff)
+}
+
+pairs_test <- pairs
+# pairs_test <- pairs_test %>%
+#   head(100)
+n_rows <- nrow(pairs_test)
+
+pb <- txtProgressBar(min = 0, max = n_rows,
+                       initial = 0, style = 1)
+rowwise_query <- function(i) {
+  setTxtProgressBar(pb, i)
+  pp1 <- pairs[[i, "pp_idx1"]]
+  pp2 <- pairs[[i, "pp_idx2"]]
+  return(query_measurement(pp1, pp2))
+}
+
+
+diff_data <- bind_rows(
+    lapply(
+      1:n_rows,
+      FUN = rowwise_query
+    )
+  )
+
+close(pb)
+write_parquet(diff_data, sink = diffdata_export_file)
+
+```
