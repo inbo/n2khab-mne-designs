@@ -22,6 +22,13 @@ ChemVarWID -> holds the ID of compounds;
 - `9` = $NH_4$
 
 
+You have only one choice:
+```{r mmi}
+max_measurement_interval <- 16
+```
+
+
+
 
 ```{r setup}
 #| include: false
@@ -55,6 +62,7 @@ if (getOption("browser") == "") options(browser = "librewolf")
 cluster_dist <- 3400 # m # parameter for clustering
 min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
 data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
+chem_export_file <- paste0("data/waterchemistry_data_cl", cluster_dist, ".parquet")
 diffdata_export_file <- paste0("data/waterchemistry_diffdata_cl", cluster_dist, ".parquet")
 
 # # the user may choose to reload raw data
@@ -249,6 +257,12 @@ There is not all that much variability concentrated on PC1 (`{r} pca.weight_[1]`
 But, nevertheless, it is the most general "chemistry" measure we have.
 
 
+```{r re-store-data}
+std_chem %>% 
+  write_parquet(sink = chem_export_file)
+
+```
+
 # differential data
 
 ## pairing
@@ -338,7 +352,7 @@ query_measurement <- function (pp1, pp2){
     mutate(
       across(c(date1, date2), function(x) as.Date(as.character(x), format = "%Y%m%d")),
       dt = date2 - date1) %>% 
-    filter(abs(dt) < 62) %>%
+    filter(abs(dt) < max_measurement_interval) %>%
     mutate(
       dnnh4 = nnh42 - nnh41,
       dnno3 = nno32 - nno31,
