@@ -1436,6 +1436,14 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
       1L,
       as.integer(panel_period_main / panel_subperiod)
     ),
+    n_locvisits_per_cycle = as.integer(
+      years(cycle_duration_y) / (panel_count * panel_period) /
+        if_else(
+          is.na(limit_n_subperiods),
+          1L,
+          n_subperiods_per_main_period / limit_n_subperiods
+        )
+    ),
     panel_period_main_chr = map_chr(panel_period_main, simplify_period),
     panel_period_chr = map_chr(panel_period, simplify_period),
     panel_enddate_addition_chr = map_chr(panel_enddate_addition, simplify_period),
@@ -1523,6 +1531,8 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     panel_enddate_addition,
     panel_dateshift,
     panel_count,
+    cycle_duration_y,
+    n_locvisits_per_cycle,
     n_subperiods_per_main_period,
     limit_n_subperiods,
     panel_group_size,
@@ -1588,6 +1598,10 @@ compartment_paneldesign_fags <-
       factor() %>% 
       fct_relevel("SOIL", "HQ", after = Inf),
     fags = map(fas, ~.$field_activity_group),
+    cycle_nlocvisits = str_glue(
+      "{cycle_duration_y} y ({n_locvisits_per_cycle} ",
+      "visit{ifelse(n_locvisits_per_cycle > 1, 's', '')} per loc)"
+    )
     # actseqs_vec = map(fas, ~unique(unlist(.$actseqs_vec)))
   ) %>% 
   mutate(
@@ -1599,6 +1613,7 @@ compartment_paneldesign_fags <-
     .by = c(scheme, notation_paneldesign)
   ) %>% 
   summarize(
+    cycle_nlocvisits = str_c(unique(cycle_nlocvisits), collapse = ", "),
     fags = str_c(sort(unique(unlist(fags))), collapse = ", "),
     # actseqs = str_c(sort(unique(unlist(actseqs_vec))), collapse = ", "),
     scheme_moco = str_c(sort(unique(scheme_moco)), collapse = " | "),
