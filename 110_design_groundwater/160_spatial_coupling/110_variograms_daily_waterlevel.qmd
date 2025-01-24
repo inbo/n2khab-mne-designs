@@ -14,20 +14,27 @@ knitr:
 
 # summary (tl;dr)
 
+In this notebook, I analyze difference data of **daily water levels** from the `watina` database.
+Take two observation wells within a given distance, which are placed in the same type of soil ("soilclass"), and which have water level data (units: `mTAW`) available on the same day.
+We group all possible such pairs of wells by distance ("binning"), use pair-average in case of repeated measurement, and analyze the mean absolute difference in water level.
+To determine a range at which the average water level difference exceeds a given threshold (i.e. a range at which we would expect observation wells to yield more independent data), we use regression with a Matérn function.
 
-Differences compared to previous `xG3` analysis:
 
-- daily water levels were used (watina `PeilMeting`)
-- no de-trending was applied
-- pooling/averaging ([@sec-pooling]):
-  - observation pairs (as alternative to "random intercept", suggested by Floris)
+
+We attempted this analysis in various forms before, and there are subtle differences compared to previous `xG3` analysis:
+
+- Daily water levels were used (watina `PeilMeting`); no extraction of LG3 and HG3.
+- Categories for pooling/averaging ([@sec-pooling]), in the following order:
+  - observation pairs 
   - distance bins
   - soilclass
-- use of mean absolute difference $\langle dw \rangle$, instead of (semi)variance ($\gamma$, [@sec-parameters])
-- variable bin width to achieve homogeneous sample size ([@sec-equalbins])
+- Use **mean absolute difference** ($\langle dw \rangle$), instead of (semi)variance ($\gamma$, [@sec-parameters]).
+- Variable bin width to achieve homogeneous sample size ([@sec-equalbins]).
+- No de-trending was applied.
+- No "random intercept", as suggested by Floris: this is not applicable here because we disregarded the "modeling" approach (even de-trending).
 
 
-And in terms of the outcome ([@sec-variograms]):
+Summary of the outcome ([@sec-variograms]):
 
 - *light* soil is more variable, i.e. higher differences are expected to occur at closer distance (range: $\approx 30.6 m$)
 - confirmative evidence that *heavy* soil shows longer range of spatial correlation (range: $\approx 62 m$)
@@ -41,16 +48,19 @@ According to these variogram models, the $1 cm$ threshold would be exceeded at d
 
 
 ::: {.callout-note icon=false}
-## Lessons learned (FM):
+## Lessons learned (technical notes FM):
 
-- semivariance is calculated differently, i.e. not via R's `var` (see [@sec-parameters])
-- $\langle dw \rangle$ is the more practical choice (semivariance has problems with pooling squared values)
-- sample size per bin must be monitored, equal and large is better
-- outliers, especially on short distance, have a major drag on the regression. 
+The latest findings on an exciting journey.
 
-In consequence, the results below ([@sec-variograms]) are the first convincing Matérn regressions I saw (good times!).
+- semivariance is calculated differently than what I thought, i.e. not via R's `var` (see [@sec-parameters])
+- $\langle dw \rangle$ is the more practical choice (semivariance has problems with pooling squared values; $\langle dw \rangle$ is easier to interpret, e.g. because of units)
+- Sample size per bin must be monitored, "equal" are better and "sufficiently large" is preferrable
+- Outliers, especially on short distance, have a major drag on the regression. 
+
 
 :::
+
+The outcome ([@sec-variograms]) are variograms with Matérn regressions, which provide evidence about spatial coupling of water levels.
 
 
 # preparation
@@ -435,7 +445,7 @@ diff_equibinned %>%
 Seems more balanced, let's see the outcome.
 
 
-# regression
+# regression {#sec-regression}
 
 Here come the general toolkit for regression, based on `optim` ([docs](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim)).
 
@@ -797,6 +807,43 @@ close-range variograms of further subsets:
 
 # appendix {.appendix}
 
+## Questions
+
+> Kunnen we de maximale afwijking van 1 cm in de HG3 en LG3 vertalen naar een maximale afwijking in dagelijkse waarden?
+
+The HG3 and LG3 are non-linearly derived values that only indirectly measure highest or lowest water levels. 
+Though they are deterministically calculated, I think their calculation method introduces extra jitter.
+I do not see any additional value in using them.
+To answer specific questions about high- and low water regimes, a more sophisticated analysis (e.g. using Empirical Mode Decomposition, EMD) might be in reach.
+
+
+> Het is me niet duidelijk hoe de *observation pairs* zijn gedefinieerd: enkel pairs binnen een cluster (waardoor je niet moet detrenden noch met een random factor werken) op dezelfde dag gemeten? Zijn er voorwaarden obv filtertopdiepte?
+
+Observation pairs must lie in the same cluster, because cluster distance (i.e. distance between the closest points of two clusters, chosen `{r} cluster_dist` m) is far longer than the maximum pair distance we allow in the data set (`{r} extent` m). 
+We do not de-trend:
+the chosen difference measure (MAD) is the absolute difference value, but because direction is not biased, de-trending would tend to reduce variability (increase spatial coupling).
+
+
+> Waar staat *scale* in de Matérn-functie? Dat wordt gebruikt voor de berekening van de sill, maar ik zie niet waar ze juist in de vergelijking staat of er wordt van afgeleid.
+
+The scale is simply the difference between *sill* and *nugget* (see ascii plot in [@sec-regression]).
+The computation equation in the `matern_function` builds up step-wise.
+Parametrization is chosen to avoid non-sensical optimizer outcomes (e.g. "nugget > sill" situations).
+
+
+> Kan je ook de analyse doen voor de andere klassen die worden gecreëerd, i.e. water distance > 50 m en slope > 0.05? Je concludeert nl. dat de homogenisatie zorgt voor een toename in de range, maar geldt dit ook voor het andere deel van de dataset?
+
+TODO I will check.
+
+
+> Ook verwacht ik niet per sé homogenisatie wanneer een kleinere *treshold* voor afstand tot water wordt gekozen: ik zou denken dat we grotere verschillen in grondwaterstand kunnen verwachten op korte afstand wanneer je je dichter bij een waterloop bevindt. Kan een model lopen bij een *treshold* van 25 m?
+
+TODO I will run that model and check. 
+But there is other effects, such as bin size.
+I do not understand the rationale for expecting that there should be larger differences at lower inter-well distances if we are closer to surface water bodies.
+
+
+
 
 ## why not semivariance? {#sec-semivar-binning}
 
@@ -836,7 +883,7 @@ Instead, I went MAD.
 This has two justifications:
 
 - observation of the outcome
-- consideration about pooling data
+ consideration about pooling data
 
 
 Due to the square, pooling is non-trivial, which is best illustrated by a simple example. 
