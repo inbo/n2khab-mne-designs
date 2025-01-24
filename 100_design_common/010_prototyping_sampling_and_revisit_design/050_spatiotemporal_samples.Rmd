@@ -1437,13 +1437,23 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
       1L,
       as.integer(panel_period_main / panel_subperiod)
     ),
-    n_locvisits_per_cycle = as.integer(
-      years(cycle_duration_y) / (panel_count * panel_period) /
-        if_else(
-          is.na(limit_n_subperiods),
-          1L,
-          n_subperiods_per_main_period / limit_n_subperiods
-        )
+    # duration of the FAG specific cycle
+    fag_cycle = case_when(
+      revisit_pattern == "pure_panel" ~ panel_period_main,
+      .default = years(cycle_duration_y)
+    ),
+    # number of times a FAG happens at a single location during a single FAG
+    # cycle
+    n_locvisits_per_fagcycle = case_when(
+      revisit_pattern == "pure_panel" ~ 1L,
+      .default = as.integer(
+        fag_cycle / (panel_count * panel_period) /
+          if_else(
+            is.na(limit_n_subperiods),
+            1L,
+            n_subperiods_per_main_period / limit_n_subperiods
+          )
+      )
     ),
     panel_period_main_chr = simplify_period(panel_period_main),
     panel_period_chr = simplify_period(panel_period),
@@ -1532,8 +1542,8 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     panel_enddate_addition,
     panel_dateshift,
     panel_count,
-    cycle_duration_y,
-    n_locvisits_per_cycle,
+    fag_cycle,
+    n_locvisits_per_fagcycle,
     n_subperiods_per_main_period,
     limit_n_subperiods,
     panel_group_size,
@@ -1600,8 +1610,8 @@ compartment_paneldesign_fags <-
       fct_relevel("SOIL", "HQ", after = Inf),
     fags = map(fas, ~.$field_activity_group),
     cycle_nlocvisits = str_glue(
-      "{cycle_duration_y} y ({n_locvisits_per_cycle} ",
-      "visit{ifelse(n_locvisits_per_cycle > 1, 's', '')} per loc)"
+      "{simplify_period(fag_cycle)} ({n_locvisits_per_fagcycle} ",
+      "visit{ifelse(n_locvisits_per_fagcycle > 1, 's', '')} per loc)"
     )
     # actseqs_vec = map(fas, ~unique(unlist(.$actseqs_vec)))
   ) %>% 
