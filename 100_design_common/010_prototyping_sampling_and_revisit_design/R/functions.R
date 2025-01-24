@@ -447,14 +447,13 @@ generate_spare_units <- function(ssf_sample, coef_spare) {
 
 
 
-#' Convert a Period object to simplified string
+#' Convert a Period vector to simplified character vector
 #'
-#' @param x A scalar of class 'Period'.
+#' @param x A vector of class 'Period'.
 simplify_period <- function(x) {
-  if (is.na(x)) return(NA_character_)
   as.character(x) %>%
-    str_split_1(" ") %>%
-    {.[!str_detect(., "^0")]}
+    str_split(" ") %>%
+    map_chr(\(vec) vec[!str_detect(vec, "^0")])
 }
 
 
