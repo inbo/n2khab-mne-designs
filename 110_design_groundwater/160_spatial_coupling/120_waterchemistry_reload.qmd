@@ -24,7 +24,7 @@ ChemVarWID -> holds the ID of compounds;
 
 You have only one choice:
 ```{r mmi}
-max_measurement_interval <- 16
+max_measurement_interval <- 64
 ```
 
 
@@ -261,6 +261,8 @@ But, nevertheless, it is the most general "chemistry" measure we have.
 std_chem %>% 
   write_parquet(sink = chem_export_file)
 
+
+std_chem <- read_parquet(chem_export_file)
 ```
 
 # differential data
@@ -280,10 +282,10 @@ pair_sites <- function(cluster_idx) {
     filter(cluster == cluster_idx) %>%
     select(mp_idx, pp_idx, x, y, soilclass)
   
-  sub_data %>% 
+  pair_data <- sub_data %>% 
     left_join(sub_data,
       by = join_by(
-        mp_idx > mp_idx, # only different locations
+        mp_idx < mp_idx, # only different locations
         soilclass == soilclass, # from the same soilclass
       ),
       suffix = c("1", "2"),
@@ -291,8 +293,11 @@ pair_sites <- function(cluster_idx) {
     ) %>% mutate(
       ds = sqrt((x2-x1)^2 + (y2-y1)^2),
     ) %>%
-    filter(ds >= 1.0/100, ds < extent)
+    # filter((pp_idx1 == 8064) | (pp_idx1 == 8070)) %>% 
+    # filter((pp_idx2 == 8064) | (pp_idx2 == 8070)) %>% 
+    filter(ds >= 1.0/100, ds < extent) 
 
+  return(pair_data)
 }
 
 pairs <- bind_rows(
@@ -325,8 +330,12 @@ It is okay to keep the close range sites for now.
 query: pp1, pp2, date1, date2, Meetwaarde1, Meetwaarde2
 
 ```{r chemistry-query}
+# std_chem %>% count(pp_idx) %>% arrange(desc(n))
 
 query_measurement <- function (pp1, pp2){
+
+  # pp1 <- 8064
+  # pp2 <- 8070
 
   w1 <- std_chem %>%
     filter(pp_idx == pp1) %>%
@@ -334,7 +343,7 @@ query_measurement <- function (pp1, pp2){
       pp_idx, date,
       nnh4, nno3, ppo4,
       PC1, PC2, PC3
-     )
+     ) # %>% arrange(date) %>% head(4)
 
   w2 <- std_chem %>%
     filter(pp_idx == pp2) %>%
@@ -342,8 +351,8 @@ query_measurement <- function (pp1, pp2){
       pp_idx, date,
       nnh4, nno3, ppo4,
       PC1, PC2, PC3
-     )
-
+     ) # %>% arrange(date) %>% head(4)
+    
   pair_diff <- w1 %>%
     cross_join(
       w2,
@@ -352,7 +361,7 @@ query_measurement <- function (pp1, pp2){
     mutate(
       across(c(date1, date2), function(x) as.Date(as.character(x), format = "%Y%m%d")),
       dt = date2 - date1) %>% 
-    filter(abs(dt) < max_measurement_interval) %>%
+    filter(dt >= 0, dt < max_measurement_interval) %>%
     mutate(
       dnnh4 = nnh42 - nnh41,
       dnno3 = nno32 - nno31,
@@ -362,17 +371,36 @@ query_measurement <- function (pp1, pp2){
       dPC3  = PC32  - PC31
     ) %>%
     select(
-      pp_idx1, date1, pp_idx2, date2,
+      pp_idx1, date1, pp_idx2, date2, dt,
       dnnh4, dnno3, dppo4,
       dPC1, dPC2, dPC3
     )
 
+  # only keep closest interval
+  pair_diff <- pair_diff %>% 
+    filter(dt >= 0) %>%
+    arrange(dt) %>% 
+    group_by(date1) %>% 
+    reframe(head(pick(everything()), 1)) %>% 
+    arrange(dt) %>% 
+    group_by(date2) %>% 
+    reframe(head(pick(everything()), 1)) %>% 
+    select(-dt)
+  # knitr::kable(pair_diff %>% select(pp_idx1, date1, dt, date2, pp_idx2))
+
+
   return(pair_diff)
 }
 
+# pp_data %>% filter(pp_idx == 8064) %>%
+#   select(mp_idx, pp_idx, pp_code, cluster, soilclass)
+
 pairs_test <- pairs
-# pairs_test <- pairs_test %>%
-#   head(100)
+# pairs_test <- pairs_test %>% head(100)
+# pairs %>%
+#   filter(pp_idx1 >= 8064, pp_idx1 <= 8070) %>% 
+#   filter(pp_idx2 >= 8064, pp_idx2 <= 8070)  %>%
+#   arrange(pp_idx2)
 n_rows <- nrow(pairs_test)
 
 pb <- txtProgressBar(min = 0, max = n_rows,

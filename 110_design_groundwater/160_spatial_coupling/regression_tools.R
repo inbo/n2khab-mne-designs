@@ -40,20 +40,25 @@ calculate_limit <- function(orsl, threshold = 0.01) {
 }
 
 # a uniform way to print results
-print_regression_results <- function(orsl, label = "") {
+print_regression_results <- function(orsl, label = "", indicate_threshold = TRUE) {
   par <- paste(round(orsl$par, 4), collapse = ", ")
   conv <- orsl$convergence
   eps <- orsl$value
 
-  threshold <- calculate_limit(orsl)
 
   print(
     sprintf("%s: conv %i at (%s), mse %.1f", label, conv, par, eps)
   )
-  print(
-    sprintf("==> Threshold of dw > 1cm reached at %.3f m distance.", threshold)
 
-  )
+  if (indicate_threshold) {
+    threshold <- calculate_limit(orsl)
+    print(
+      sprintf("==> Threshold of dw > 1cm reached at %.3f m distance.", threshold)
+
+    )
+  } else {
+    print(sprintf("==> Sigma range is %.1f m.", orsl$par[2]))
+  }
 }
 
 # note: the `epsilon` can be calculated manually with the formula:

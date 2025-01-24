@@ -14,6 +14,15 @@ knitr:
 
 # summary (tl;dr)
 
+Variogram analysis of groundwater chemistry indicates close range spatial co-variation.
+The analysis was carried out per soil type.
+Visualization ([@sec-variograms]) and an overview table ([@sec-overview]) are available at the end of this document.
+
+
+- Only same-day chemical measurements in the same soilclass were included (18211 observations).
+- Once more, dynamic-width bins with homogeneous filling were defined.
+- The difference measure is mean absolute difference of *standardized* concentration/PC values. (standardized `= (value-mean)/sd` )
+- Observation counts are zero-inflated, and the closest measurements held unexpectedly large variation. Those were excluded.
 
 
 # preparation
@@ -42,7 +51,7 @@ chem_export_file <- paste0("data/waterchemistry_data_cl", cluster_dist, ".parque
 diffdata_export_file <- paste0("data/waterchemistry_diffdata_cl", cluster_dist, ".parquet")
 
 # parameters
-extent <- 512 # m
+extent <- 256 # m
 n_bins <- 128
 ```
 
@@ -65,6 +74,8 @@ pp_chem <- std_chem %>%
   )
 ```
 
+
+There are maps available (here: example for $NH_4$), yet measurement pairs are relatively scattered.
 
 ```{r map-data}
 
@@ -150,12 +161,22 @@ diff_all <- diff_meta %>%
   left_join(diff_data,
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
-  ) 
+  ) %>%
+  filter(
+    # ds >= extent/n_bins
+    date2 - date1 == 0
+  ) %>%
+  mutate(date = date1) %>% select(-date1, -date2)
+  # mutate(dt = abs(difftime(date1, date2, units = "days")))
+    
 
+diff_all %>% ggplot(aes(x = ds)) +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  theme_bw()
 
 ```
 
-# binning (preview)
+# binning
 
 
 After some good prior experience, I will once more apply binning with variable bin width, to achieve **equal sample size per bin**.
@@ -172,8 +193,8 @@ diff_equigrouped <- diff_all %>%
     soilclass = first(soilclass1),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
-    dt = mean(abs(date2-date1), na.rm = TRUE),
-    semivar = 1/(2*n_obs)*sum(dPC1^2, na.rm = TRUE),
+    # dt = mean(abs(date2-date1), na.rm = TRUE),
+    # semivar = 1/(2*n_obs)*sum(dPC1^2, na.rm = TRUE),
     dnnh4 = 1/(n_obs)*sum(abs(dnnh4), na.rm = TRUE),
     dnno3 = 1/(n_obs)*sum(abs(dnno3), na.rm = TRUE),
     dppo4 = 1/(n_obs)*sum(abs(dppo4), na.rm = TRUE),
@@ -184,6 +205,12 @@ diff_equigrouped <- diff_all %>%
   ) %>% ungroup %>% arrange(ds) %>%
   group_by(soilclass) %>% 
   mutate(
+    # distance_equibin = cut(ds,
+    #   breaks = seq(
+    #     -0, extent,
+    #     length.out = as.integer(extent/2)+1
+    #   )
+    # ) # cut to equal sized bins
     distance_equibin = cut_number(
       ds, as.integer(n_bins)
     ) # cut to equal sized bins
@@ -197,10 +224,10 @@ diff_binned <- diff_equigrouped %>%
   summarize(
     cnt = n(),
     ds = mean(ds), 
-    dt = mean(dt), 
+    # dt = mean(dt), 
     n_obs = sum(n_obs),
-    semivariance_groupmean = mean(semivar, na.rm = TRUE),
-    semivariance_all = combine_grouped(semivar, cnt),
+    # semivariance_groupmean = mean(semivar, na.rm = TRUE),
+    # semivariance_all = combine_grouped(semivar, cnt),
     dPC1_all = combine_grouped(dPC1, n_obs),
     dnnh4 = mean(dnnh4, na.rm = TRUE), 
     dnno3 = mean(dnno3, na.rm = TRUE), 
@@ -218,7 +245,6 @@ diff_binned <- diff_equigrouped %>%
 
 ```{r equibin-samplesize}
 #| label: fig-equibin-sample-size
-#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
 diff_binned %>%
   ggplot(aes(x = ds, y = cnt, color = soilclass)) +
   geom_step() +
@@ -303,6 +329,21 @@ plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
 # trafo <- function(x) log(1.+x) # feel free to try other transformations.
 trafo <- function(x) x
 
+
+list_of_variables <- c(
+    "dnnh4" , "dnno3" , "dppo4"
+  , "dPC1" , "dPC2" , "dPC3"
+)
+list_of_soilclasses <- c("heavy", "light", "peat")
+regression_storage <- matrix(rep(NA,
+  length(list_of_variables) * length(list_of_soilclasses)
+  ), length(list_of_variables), byrow = TRUE)
+regression_storage <- as.data.frame(regression_storage)
+
+colnames(regression_storage) <- list_of_soilclasses
+rownames(regression_storage) <- list_of_variables
+
+
 regression_by_soilclass <- function(
     regression_data, 
     sc, reg_var,
@@ -313,10 +354,16 @@ regression_by_soilclass <- function(
   x <- diff_sc$ds
   y <- trafo(diff_sc %>% pull(!!reg_var))
 
-  y <- y[x > 0]
-  x <- x[x > 0]
+  # exclude the first two bins
+  minx <- 1.1*extent/n_bins
+  lowy <- y[x < minx]
+  lowx <- x[x < minx]
+  y <- y[x >= minx]
+  x <- x[x >= minx]
   y <- y[x <= maxx]
   x <- x[x <= maxx]
+
+
 
   if (is.null(maxy)) maxy <- max(y)
   x <- x[y <= maxy]
@@ -334,9 +381,16 @@ regression_by_soilclass <- function(
     method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
     ...
   )
+
+  # https://stackoverflow.com/a/71621059 
+  regression_storage[reg_var, sc] <<- matern_fit$par[2]
   
-  print_regression_results(matern_fit, label = "regression:")
-  ylabel <- "mean water level difference (pair-averaged)"
+  print_regression_results(
+    matern_fit,
+    label = "regression",
+    indicate_threshold = FALSE
+    )
+  ylabel <- "mean difference (pair-averaged, then binned)"
   # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
   g <- plot_matern(matern_fit, y_label = ylabel)
 
@@ -349,6 +403,8 @@ regression_by_soilclass <- function(
   y_excl <- y_excl[y_excl > maxy]
   g <- g + geom_point(aes(x = x_excl, y = y_excl),
       size = 2.5, colour = "red", alpha = 0.2) 
+  g <- g + geom_point(aes(x = lowx, y = lowy),
+      size = 2.5, colour = "red", alpha = 0.2) 
   return(g)
 }
 
@@ -356,18 +412,17 @@ regression_by_soilclass <- function(
 ```
 
 
+There are several options,
+using mean-absolute difference 
+in (standardized) chemical concentration 
+or principal components.
 
 
-## variograms {#sec-waterdistance}
+I will cycle through those.
 
-using water level difference (MAD)
-
-
-```{r dw-column}
+```{r dw-column-overview}
 #| code-fold: false
 
-column <- "semivariance_all"
-column <- "semivariance_groupmean"
 column <- "dnnh4"
 column <- "dnno3"
 column <- "dppo4"
@@ -375,82 +430,397 @@ column <- "dPC1"
 column <- "dPC2"
 column <- "dPC3"
 
-column <- "semivariance_groupmean"
+column <- "dPC1"
 
+
+common_ylim <- 2
+common_maxx <- 256
 ```
 
 
+# variograms {#sec-variograms}
+
+## PC1
+
+```{r dw-column-pc1}
+#| code-fold: false
+column <- "dPC1"
+```
 
 ::: {.panel-tabset group="soilclass"}
 
 ### heavy
 
-```{r dw-regression-heavy}
-#| label: fig-dw-regression-heavy
-#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+```{r dw-regression-heavy-pc1}
+#| label: fig-dw-regression-heavy-pc1
 regression_by_soilclass(
   diff_binned,
   "heavy",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, common_ylim)
 
 ```
-
-::: {.callout-warning}
-Capped: $<= 2$ 
-:::
 
 
 ### light
 
-```{r dw-regression-light}
-#| label: fig-dw-regression-light
-#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+```{r dw-regression-light-pc1}
+#| label: fig-dw-regression-light-pc1
 regression_by_soilclass(
   diff_binned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, common_ylim)
 ```
-
-::: {.callout-warning}
-Capped: $<= 1.6$ 
-:::
-
-
 
 
 ### peat
 
-```{r dw-regression-peat}
-#| label: fig-dw-regression-peat
-#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+```{r dw-regression-peat-pc1}
+#| label: fig-dw-regression-peat-pc1
 regression_by_soilclass(
   diff_binned,
   sc = "peat",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, common_ylim)
 ```
 
-::: {.callout-warning}
-Capped: $<= 2$ 
-:::
-
 
 :::
 
+## PC2
+
+```{r dw-column-pc2}
+#| code-fold: false
+column <- "dPC2"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-regression-heavy-pc2}
+#| label: fig-dw-regression-heavy-pc2
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dw-regression-light-pc2}
+#| label: fig-dw-regression-light-pc2
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dw-regression-peat-pc2}
+#| label: fig-dw-regression-peat-pc2
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+## PC3
+
+```{r dw-column-pc3}
+#| code-fold: false
+column <- "dPC3"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-regression-heavy-pc3}
+#| label: fig-dw-regression-heavy-pc3
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dw-regression-light-pc3}
+#| label: fig-dw-regression-light-pc3
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dw-regression-peat-pc3}
+#| label: fig-dw-regression-peat-pc3
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+## $NH_4$
+
+```{r dw-column-nh4}
+#| code-fold: false
+column <- "dnnh4"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-regression-heavy-nh4}
+#| label: fig-dw-regression-heavy-nh4
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dw-regression-light-nh4}
+#| label: fig-dw-regression-light-nh4
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dw-regression-peat-nh4}
+#| label: fig-dw-regression-peat-nh4
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+## $NO_3$
+
+```{r dw-column-no3}
+#| code-fold: false
+column <- "dnno3"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-regression-heavy-no3}
+#| label: fig-dw-regression-heavy-no3
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dw-regression-light-no3}
+#| label: fig-dw-regression-light-no3
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dw-regression-peat-no3}
+#| label: fig-dw-regression-peat-no3
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+## $PO_4$
+
+```{r dw-column-po4}
+#| code-fold: false
+column <- "dppo4"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-regression-heavy-po4}
+#| label: fig-dw-regression-heavy-po4
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dw-regression-light-po4}
+#| label: fig-dw-regression-light-po4
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dw-regression-peat-po4}
+#| label: fig-dw-regression-peat-po4
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+
+# overview {#sec-overview}
+
+```{r}
+knitr::kable(regression_storage, digits = 2)
+```
