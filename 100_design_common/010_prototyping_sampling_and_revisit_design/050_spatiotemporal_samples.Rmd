@@ -3026,6 +3026,90 @@ fag_stratum_grts_calendar_cycleid %>%
   pull(fag_grouping)
 ```
 
+### Deduplicating simplified FAGs in the same cycle ID; keep the superior FAG
+
+We define an object that determines the rank of FAGs within the same simplified FAG.
+A lower rank will receive higher priority; it will be used to replace other FAGs in the same cycle ID at the same location x stratum.
+
+```{r}
+simplified_fag_ranks <- 
+  tribble(
+    ~fag_simplified, ~field_activity_group, ~simplification_rank,
+    "GWLEVREAD", "GWSURFLEVREADDIVERMAN", 1L,
+    "GWLEVREAD", "GWLEVREADDIVERMAN", 2L,
+    "GWLEVREAD", "GWLEVREADDIVER", 3L
+  ) %>% 
+  mutate(
+    fag_simplified = factor(
+      fag_simplified,
+      levels = levels(fag_stratum_grts_calendar_cycleid$fag_simplified)
+    ),
+    field_activity_group = factor(
+      field_activity_group,
+      levels = levels(fag_stratum_grts_calendar_cycleid$field_activity_group)
+    )
+  )
+```
+
+Checking that `fag_stratum_grts_calendar_cycleid` has no FAGs grouped into simplified FAGs that are missed by `simplified_fag_ranks`.
+
+```{r}
+fag_stratum_grts_calendar_cycleid %>% 
+  filter(
+    fag_simplifiable,
+    n() > 1,
+    .by = c(stratum, grts_address, fag_cycle_months, cycle_id, fag_simplified)
+  ) %>% 
+  distinct(fag_simplified, field_activity_group) %>% 
+  inner_join(
+    simplified_fag_ranks,
+    join_by(fag_simplified, field_activity_group),
+    relationship = "one-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  invisible()
+```
+
+Replacing FAG with most superior one if more than one FAG is present for a simplified FAG, at each location x stratum and per FAG cycle ID.
+
+```{r}
+fag_stratum_grts_calendar_cycleid <- 
+  fag_stratum_grts_calendar_cycleid %>% 
+  left_join(
+    simplified_fag_ranks,
+    join_by(fag_simplified, field_activity_group),
+    relationship = "many-to-one"
+  ) %>% 
+  mutate(
+    field_activity_group = case_when(
+      fag_simplifiable & !is.na(simplification_rank) ~ 
+        first(field_activity_group[simplification_rank == min(simplification_rank)]),
+      .default = field_activity_group
+    ),
+    .by = c(
+      stratum,
+      grts_address,
+      starts_with("fag_"),
+      n_locvisits_per_fagcycle,
+      cycle_id
+    )
+  ) %>% 
+  select(-simplification_rank) %>% 
+  # deduplicate FAG occasions due to the simplification
+  distinct()
+```
+
+Checking that dropping `fag_simplifiable` and `fag_simplified` does not generate duplicates, meaning that each occasion of `fag_simplified` corresponds to exactly one FAG.
+
+```{r}
+stopifnot(
+  fag_stratum_grts_calendar_cycleid %>% 
+    select(-fag_simplifiable, -fag_simplified) %>% 
+    distinct() %>% 
+    nrow() == nrow(fag_stratum_grts_calendar_cycleid)
+)
+```
+
 ## Deriving datasets and layers for use and visualization
 
 ```{r}
