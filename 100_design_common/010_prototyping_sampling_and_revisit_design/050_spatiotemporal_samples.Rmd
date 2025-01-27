@@ -3171,6 +3171,37 @@ fag_stratum_grts_calendar_alladhoc <-
   arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
 ```
 
+### FAG calendar (subsampling ADHOC FAGs)
+
+We implement the preset proportion to subsample ADHOC FAGs.
+
+```{r}
+set.seed(20250127)
+fag_stratum_grts_calendar <- 
+  fag_stratum_grts_calendar_alladhoc %>% 
+  filter(!str_detect(field_activity_group, "ADHOC")) %>% 
+  bind_rows(
+    fag_stratum_grts_calendar_alladhoc %>% 
+      filter(str_detect(field_activity_group, "ADHOC")) %>% 
+      slice_sample(prop = samplingprop_adhocfag)
+  ) %>%
+  arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
+```
+
+Keeping ADHOC FAGs in the calendar is only done to not overlook this substantial investment.
+Of course, their actual occurrence in space and time will be different, so that when implementing this calendar the ADHOC FAGs will be dropped.
+
+Uncertainties in the sampling frame cause duplication of GRTS addresses in the (generated) sample because multiple strata can be connected to the same GRTS address.
+Below object makes abstraction of this and only keeps unique GRTS addresses.
+However, except for some types that can be combined at the same GRTS address, this reduction by GRTS address will not happen in reality since the sample sizes must be maintained!
+
+```{r}
+fag_grts_calendar <-
+  fag_stratum_grts_calendar %>% 
+  distinct(pick(-stratum)) %>%
+  arrange(grts_address, date_start, rank, date_end, field_activity_group)
+```
+
 ## Deriving datasets and layers for use and visualization
 
 ```{r}
