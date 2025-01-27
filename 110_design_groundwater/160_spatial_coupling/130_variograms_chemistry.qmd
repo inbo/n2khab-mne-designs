@@ -23,6 +23,7 @@ Visualization ([@sec-variograms]) and an overview table ([@sec-overview]) are av
 - Once more, dynamic-width bins with homogeneous filling were defined.
 - The difference measure is mean absolute difference of *standardized* log(concentration) or PC values. (standardized `= (value-mean)/sd` )
 - Many simultaneous measurements happen at the same site, therefore observation counts are zero-inflated. Those well group measurements show unexpectedly large variation, complicating Matérn regression. Those were excluded by filtering for `dx > 2m` (approximatly one bin).
+- raw concentrations were appended, too, for transparency.
 
 
 # preparation
@@ -85,12 +86,12 @@ st_data <- pp_data %>%
     by = join_by(pp_idx),
     relationship = "one-to-one"
   ) %>% 
-  filter(!is.na(nnh4)) %>% 
+  filter(!is.na(nnh4_raw)) %>% 
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
 
 mapview(st_data,
   map.types = c("CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap", "OpenTopoMap"),
-  zcol = "nnh4",
+  zcol = "nnh4_raw",
   cex = 3,
   legend = TRUE
 )
@@ -198,6 +199,9 @@ diff_equigrouped <- diff_all %>%
     dnnh4 = 1/(n_obs)*sum(abs(dnnh4), na.rm = TRUE),
     dnno3 = 1/(n_obs)*sum(abs(dnno3), na.rm = TRUE),
     dppo4 = 1/(n_obs)*sum(abs(dppo4), na.rm = TRUE),
+    dnnh4r = 1/(n_obs)*sum(abs(dnnh4r), na.rm = TRUE),
+    dnno3r = 1/(n_obs)*sum(abs(dnno3r), na.rm = TRUE),
+    dppo4r = 1/(n_obs)*sum(abs(dppo4r), na.rm = TRUE),
     dPC1 = 1/(n_obs)*sum(abs(dPC1), na.rm = TRUE),
     dPC2 = 1/(n_obs)*sum(abs(dPC2), na.rm = TRUE),
     dPC3 = 1/(n_obs)*sum(abs(dPC3), na.rm = TRUE),
@@ -232,6 +236,9 @@ diff_binned <- diff_equigrouped %>%
     dnnh4 = mean(dnnh4, na.rm = TRUE), 
     dnno3 = mean(dnno3, na.rm = TRUE), 
     dppo4 = mean(dppo4, na.rm = TRUE), 
+    dnnh4r = mean(dnnh4r, na.rm = TRUE), 
+    dnno3r = mean(dnno3r, na.rm = TRUE), 
+    dppo4r = mean(dppo4r, na.rm = TRUE), 
     dPC1 = mean(dPC1, na.rm = TRUE), 
     dPC2 = mean(dPC2, na.rm = TRUE), 
     dPC3 = mean(dPC3, na.rm = TRUE), 
@@ -331,8 +338,9 @@ trafo <- function(x) x
 
 
 list_of_variables <- c(
-    "dnnh4" , "dnno3" , "dppo4"
-  , "dPC1" , "dPC2" , "dPC3"
+    "dnnh4" , "dnno3" , "dppo4",
+    "dnnh4r" , "dnno3r" , "dppo4r",
+    "dPC1" , "dPC2" , "dPC3"
 )
 list_of_soilclasses <- c("heavy", "light", "peat")
 regression_storage <- matrix(rep(NA,
@@ -813,6 +821,197 @@ regression_by_soilclass(
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
 ) + ylim(0, common_ylim)
+```
+
+
+:::
+
+
+
+## $NH_4$ Raw
+
+```{r dchem-column-nh4r}
+#| code-fold: false
+column <- "dnnh4r"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-nh4r}
+#| label: fig-dchem-regression-heavy-nh4r
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-nh4r}
+#| label: fig-dchem-regression-light-nh4r
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-nh4r}
+#| label: fig-dchem-regression-peat-nh4r
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+:::
+
+## $NO_3$ Raw
+
+```{r dchem-column-no3r}
+#| code-fold: false
+column <- "dnno3r"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-no3r}
+#| label: fig-dchem-regression-heavy-no3r
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-no3r}
+#| label: fig-dchem-regression-light-no3r
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-no3r}
+#| label: fig-dchem-regression-peat-no3r
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+:::
+
+## $PO_4$ Raw
+
+```{r dchem-column-po4r}
+#| code-fold: false
+column <- "dppo4r"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-po4r}
+#| label: fig-dchem-regression-heavy-po4r
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-po4r}
+#| label: fig-dchem-regression-light-po4r
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-po4r}
+#| label: fig-dchem-regression-peat-po4r
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
 ```
 
 
