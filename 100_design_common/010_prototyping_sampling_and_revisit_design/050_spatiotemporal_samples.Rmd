@@ -2864,6 +2864,168 @@ If needed, the first `n_locvisits_per_fagcycle` with different start dates are k
 In this case, the shortest (i.e. most demanding) date interval is kept.
 
 
+### Dropping low-frequency auxiliary FAGs if high-frequency occurs; calculate cycle ID
+
+```{r}
+fag_stratum_grts_calendar_cycleid <- 
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+  # adding year_first, panel_dateshift, fag_cycle & n_locvisits_per_fagcycle
+  inner_join(
+    scheme_moco_ps_spsubset_fas_panelcount %>% 
+      select(
+        scheme, 
+        module_combo_code, 
+        panel_split, 
+        in_aquatic_subset, 
+        year_first,
+        panel_dateshift,
+        fag_cycle,
+        n_locvisits_per_fagcycle,
+        notation_paneldesign,
+      ),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset,
+      notation_paneldesign
+    ),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  # adjust 'year_first' by taking into account panel_dateshift. This will be the
+  # basis to number the cycles from 1.
+  mutate(
+    year_first = year(
+      make_date(year_first, 1, 1) + 
+        if_else(!is.na(panel_dateshift), panel_dateshift, months(0))
+    ) %>% 
+      as.integer()
+  ) %>% 
+  unnest(fags) %>% 
+  mutate(
+    # we will only consider auxiliary FAGs in dropping planned FAGs across
+    # scheme x moco x panel split
+    fag_is_auxiliary = str_detect(
+      field_activity_group,
+      "LOCEVAL|INST|SPATPOSIT|LEVREADDIVER"
+    ),
+    # some auxiliary FAGs are clustered as a common 'simplified FAG'; they are
+    # deemed sufficiently compatible to consider them 'equal'; a single FAG will
+    # be selected later if more than one remains for the same visit, i.e. the
+    # more superior one
+    fag_simplifiable = 
+      fag_is_auxiliary &
+      !(field_activity_group %in% c("SURFLEVREADDIVER", "GWLEVREADDIVERDEEP")) & 
+      str_detect(field_activity_group, "LEVREAD"),
+    fag_simplified = case_when(
+      fag_simplifiable ~ "GWLEVREAD",
+      # we don't group the different GWINST occasions, since these are 
+      # effectively complementary, not overlapping (diver goes into well vs. 
+      # into piezometer)!
+      # str_detect(field_activity_group, "GWINST") ~ "GWINST",
+      .default = as.character(field_activity_group)
+    ) %>% 
+      factor(levels = c(
+        levels(field_activity_sequences$field_activity_group),
+        "GWLEVREAD"
+      ))
+  ) %>% 
+  # below step drops identical planned FAGs; the scheme x moco x panel split
+  # level is dropped
+  summarize(
+    year_first = as.integer(min(year_first)),
+    .by = c(
+      stratum,
+      grts_address,
+      field_activity_group,
+      fag_is_auxiliary,
+      fag_simplifiable,
+      fag_simplified,
+      fag_cycle,
+      n_locvisits_per_fagcycle,
+      rank,
+      date_start,
+      date_end,
+      date_interval
+    )
+  ) %>% 
+  mutate(
+    # FAG cycle duration expressed as number of months
+    fag_cycle_months = as.integer(year(fag_cycle) * 12 + month(fag_cycle)),
+    # average yearly number of times a FAG happens at a single location during a
+    # single FAG cycle
+    avg_visitfrequency_per_y = n_locvisits_per_fagcycle / fag_cycle_months * 12
+  ) %>% 
+  relocate(fag_cycle_months, .after = fag_cycle) %>% 
+  # drop planned auxiliary FAGs that have a lower avg_visitfrequency_per_y than
+  # the maximum one for that stratum x location x FAG. At the time of coding,
+  # these appear to be LOCEVAL FAGs with a cycle of 6 years, in case at that
+  # location a module is active where this happens with a cycle of 3 years.
+  filter(
+    !fag_is_auxiliary |
+      avg_visitfrequency_per_y == max(avg_visitfrequency_per_y),
+    .by = c(stratum, grts_address, field_activity_group)
+  ) %>% 
+  # drop planned auxiliary FAGs that have a longer FAG cycle duration than the
+  # shortest one for that stratum x location x FAG. At the time of coding,
+  # this does not remove further cases.
+  filter(
+    !fag_is_auxiliary |
+      fag_cycle_months == min(fag_cycle_months),
+    .by = c(stratum, grts_address, field_activity_group)
+  ) %>%
+  select(-avg_visitfrequency_per_y) %>% 
+  # derive an incremental FAG cycle ID
+  mutate(
+    cycle_id = as.integer(floor(
+      # elapsed months divided by fag_cycle_months
+      ((year(date_start) - min(year_first)) * 12 + month(date_start) - 1) /
+      fag_cycle_months +
+      1
+    )),
+    # calculate it across FAGs from the same fag_simplified and across visits
+    # (per location, stratum)
+    .by = c(
+      stratum,
+      grts_address,
+      contains("fag"),
+      rank
+    )
+  ) %>% 
+  select(-year_first)
+```
+
+
+```{r eval=FALSE, include=FALSE}
+# use below code to explore the respective FAG cycles:
+fag_stratum_grts_calendar_cycleid %>% 
+  summarize(
+    date_start = min(date_start),
+    .by = c(fag_cycle, cycle_id)
+  )
+# code to explore occurring FAG groups per simplified FAG, at 
+# location basis:
+fag_stratum_grts_calendar_cycleid %>% 
+  distinct(
+    stratum,
+    grts_address,
+    fag_cycle_months,
+    cycle_id,
+    fag_is_auxiliary,
+    fag_simplified,
+    field_activity_group
+  ) %>%
+  filter(
+    n() > 1,
+    .by = c(stratum, grts_address, fag_cycle_months, cycle_id, fag_simplified)
+  ) %>%
+  arrange(pick(everything())) %>%
+  nest(fag_grouping = c(fag_simplified, field_activity_group)) %>%
+  distinct(fag_grouping) %>%
+  pull(fag_grouping)
+```
+
 ## Deriving datasets and layers for use and visualization
 
 ```{r}
