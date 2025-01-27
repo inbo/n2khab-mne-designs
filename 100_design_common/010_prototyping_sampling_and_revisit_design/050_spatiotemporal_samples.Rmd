@@ -3110,6 +3110,67 @@ stopifnot(
 )
 ```
 
+### Dropping superfluous revisits for the same (simplified) auxiliary FAG and cycle ID
+
+Note that we also drop subsequently orphaned ADHOC FAGs, once more.
+
+```{r}
+fag_stratum_grts_calendar_alladhoc <- 
+  fag_stratum_grts_calendar_cycleid %>% 
+  select(-fag_simplifiable, -fag_simplified) %>% 
+  filter(
+    !fag_is_auxiliary | 
+      n() <= n_locvisits_per_fagcycle |
+      # we retain the first unique date_start values, notably the number of
+      # expected location visits in the FAG cycle, when more visits remain than
+      # expected. Exploration showed that this can apply to a wide range of
+      # FAGs.
+      date_start %in% head(sort(unique(date_start)), first(n_locvisits_per_fagcycle)),
+    .by = c(
+      stratum,
+      grts_address,
+      field_activity_group,
+      fag_cycle,
+      n_locvisits_per_fagcycle,
+      cycle_id
+    )
+  ) %>% 
+  filter(
+    !fag_is_auxiliary | 
+      # resolve duplicate values of date_start, i.e. where only date_end
+      # differs. Note that grouping here also includes date_start. Exploration
+      # showed that this potentially applies to SURFINSTGAUGE and
+      # SPATPOSITGAUGE, probably due to overlap between groundwater and surface
+      # water schemes.
+      date_end == min(date_end),
+    .by = c(
+      stratum,
+      grts_address,
+      field_activity_group,
+      fag_cycle,
+      n_locvisits_per_fagcycle,
+      cycle_id,
+      date_start
+    )
+  ) %>% 
+  # once more filter out orphaned ADHOC activities
+  filter(
+    !str_detect(field_activity_group, "ADHOC") |
+      date_start %in% date_start[!str_detect(field_activity_group, "ADHOC")],
+    .by = c(
+      stratum,
+      grts_address
+    )
+  ) %>% 
+  # drop unneeded columns
+  select(-starts_with("fag_"), -n_locvisits_per_fagcycle, -cycle_id) %>% 
+  # dropping cycle_id leads to some more duplicates (wrt GW sampling), so
+  # deduplicating
+  distinct() %>% 
+  relocate(field_activity_group, rank, .after = last_col()) %>%
+  arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
+```
+
 ## Deriving datasets and layers for use and visualization
 
 ```{r}
