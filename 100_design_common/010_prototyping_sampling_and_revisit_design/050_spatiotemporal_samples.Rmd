@@ -2829,36 +2829,40 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <-
 
 ## Field activities in space and time
 
-Some field activity groups may overlap between schemes, i.e. when the same sampling unit is present in more than one scheme _and_ the same field activity group happens in these schemes at the same time for this sampling unit.
+The above calendar objects contain the structure needed for statistical inference, by considering spatiotemporal field activity groups (FAGs) in relation to scheme, module combo, panel split, stratum and spatial poststratum.
 
-Further, the uncertainties in the sampling frame cause duplication of GRTS addresses in the (generated) sample because multiple strata can be connected to the same GRTS address.
+However this does not mean that executing each row at the designated time and location makes sense in reality:
 
-While in below object `fag_grts_calendar` both sources of duplication have been collapsed, we also create an object `fag_stratum_grts_calendar` that better reflects the expected _number_ of field activities in space and time: the reduction by GRTS address will not happen in reality since the sample sizes must be maintained!
+- schemes x module combos can have overlapping FAGs in space and time. It is best to remove these overlaps within limits and as long as this does not lead to data loss;
+- ADHOC FAGs, while theoretically given a pure panel design, will only be carried out during other scheduled FAGs and only with a low probability.
+
+In this section we will generate a sensible field activity calendar in terms of FAGs, location (GRTS address) x stratum and date interval.
+
+To determine a FAG overlap, not only identical FAGs are considered but also FAGs that overlap in the activities or activity specifics that they represent.
+In the latter case, the most 'sophisticated' FAG will be retained and the other overlapping ones are replaced by that one if they occur in the same FAG cycle in the same place and stratum.
+
+- This is only done for so-called 'auxiliary' FAGs, i.e. FAGs that are _not_ linked one-to-one to the collection of data (sampling, measuring) that apply to a specific point in time, but that potentially apply to a time series of data.
+The concept of a 'simplified FAG' is a helper to group these overlapping FAGs using a more general name.
+- In FAGs that are not grouped with other FAGs in this way, the simplified FAG is named as the FAG itself.
+
+Spatially, FAGs only 'overlap' if they occur at the same location in the same stratum.
+'Stratum' is used because the sample size is controlled per stratum; only for specific types it is possible to have more than one type linked to the same GRTS address = location).
 This means that new sampling units will be added from a list of spare sampling units, when a stratum on terrain is not the expected stratum, in order to maintain the sample size.
 This specifically applies to the (many) types where the cell center in the field must be the type, so that only one 'cell_center' type can correspond to a GRTS address, contrary to the theoretical information from the sampling frame.
 
-```{r}
-fag_grts_calendar <-
-  scheme_domain_fag_stratum_spsamples_calendar %>%
-  distinct(
-    field_activity_group,
-    pick(starts_with("date")),
-    grts_address
-  ) %>%
-  arrange(pick(everything()))
-```
+For the temporal component of a FAG overlap (i.e. identical simplified FAG), in case of auxiliary FAGs:
 
-```{r}
-fag_stratum_grts_calendar <-
-  scheme_domain_fag_stratum_spsamples_calendar %>%
-  distinct(
-    field_activity_group,
-    pick(starts_with("date")),
-    grts_address,
-    stratum
-  ) %>%
-  arrange(pick(everything()))
-```
+- We determine the duration of the FAG-specific cycle (`fag_cycle`), which represents the major regular time interval of revisiting the same location for that FAG.
+Within one FAG cycle, it is still possible that the FAG happens more than once (`n_locvisits_per_fagcycle`), but not regularly spaced during the FAG cycle.
+For pure panel designs, this duration is the value of the 'main panel period' in the `scheme_moco_ps_spsubset_fas_paneldesign` object, while in serially alternating designs it is the cycle duration already defined.
+- For each FAG, we require that it has the highest average yearly number of visits, and subsequently, the shortest cycle, that has been attributed to this FAG in the calendar, for the given location x stratum.
+FAG events that don't meet this condition are dropped.
+- To resolve 'more FAG occasions than needed', we first allocate all date intervals (FAG occasions) to cycle IDs, the numbering of which occurs separately for each simplified FAG x `fag_cycle` x `n_locvisits_per_fagcycle`.
+Then, for each cycle ID, we demand that (simplified) FAGs occur no more than the expected `n_locvisits_per_fagcycle`.
+If needed, the first `n_locvisits_per_fagcycle` with different start dates are kept in the considered cycle ID.
+- If still 'more FAG occasions occur than needed', then this is because overlapping FAGs at a location occur in the same cycle with the same start date but with a different end date.
+In this case, the shortest (i.e. most demanding) date interval is kept.
+
 
 ## Deriving datasets and layers for use and visualization
 
