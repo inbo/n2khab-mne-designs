@@ -22,7 +22,7 @@ Visualization ([@sec-variograms]) and an overview table ([@sec-overview]) are av
 - Only same-day chemical measurements in the same soilclass were included (18211 observations).
 - Once more, dynamic-width bins with homogeneous filling were defined.
 - The difference measure is mean absolute difference of *standardized* log(concentration) or PC values. (standardized `= (value-mean)/sd` )
-- Observation counts are zero-inflated, and the closest measurements held unexpectedly large variation. Those were excluded.
+- Many simultaneous measurements happen at the same site, therefore observation counts are zero-inflated. Those well group measurements show unexpectedly large variation, complicating Matérn regression. Those were excluded by filtering for `dx > 2m` (approximatly one bin).
 
 
 # preparation
@@ -355,11 +355,11 @@ regression_by_soilclass <- function(
   y <- trafo(diff_sc %>% pull(!!reg_var))
 
   # exclude the first two bins
-  minx <- 1.1*extent/n_bins
-  lowy <- y[x < minx]
-  lowx <- x[x < minx]
-  y <- y[x >= minx]
-  x <- x[x >= minx]
+  minx <- 1.0*extent/n_bins
+  lowy <- y[x <= minx]
+  lowx <- x[x <= minx]
+  y <- y[x > minx]
+  x <- x[x > minx]
   y <- y[x <= maxx]
   x <- x[x <= maxx]
 

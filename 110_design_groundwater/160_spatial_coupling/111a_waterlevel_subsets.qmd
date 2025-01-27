@@ -1,5 +1,5 @@
 ---
-title: "Daily Water Level Variograms: Data Categories"
+title: "Daily Water Level Variograms: Filtered Analysis"
 bibliography: references_csl.json
 format:
   html:
@@ -31,17 +31,36 @@ Notes on the filter parameters:
 
 **Overview of distance to 0.01m difference threshold:**
 
-| soilclass     | all in | water distance | slope indicator |
-|:--------------|-------:|---------------:|----------------:|
-| `(threshold)` |   `NA` |      ` < 50 m` |      ` < 0.05 ` |
-| heavy         |  3.0 m |          3.2 m |           6.3 m |
-| light         |  1.2 m |          5.8 m |          10.1 m |
-| peat          |  9.2 m |         14.2 m |           9.8 m |
+
+| soilclass     | all in | water distance | water distance | slope indicator |
+|:--------------|-------:|---------------:|---------------:|----------------:|
+| `(threshold)` |   `NA` |      ` < 50 m` |      ` < 25 m` |      ` < 0.05 ` |
+| heavy         |  3.0 m |          3.2 m |          4.0 m |           6.3 m |
+| light         |  1.2 m |          5.8 m |          6.0 m |          10.1 m |
+| peat          |  9.2 m |         14.2 m |          2.2 m |           9.8 m |
 
 
 As might be expected, homogenizing the data will increase the `range` of spatial co-variation.
 
 The results from an inclusive variogram analysis can be considered "conservative"/"cautious" estimates.
+
+
+> kan je ook de analyse doen voor de andere klassen die worden gecreëerd, i.e. water distance > 50 m en slope > 0.05? Je concludeert nl. dat de homogenisatie zorgt voor een toename in de range, maar geldt dit ook
+
+For convenience, this is available in another notebook: please find `111b_waterlevel_complements.qmd`. 
+Unfortunately, sample sizes of the complementary subsets are to small for definitive conclusions.
+
+
+> Ook verwacht ik niet per sé homogenisatie wanneer een kleinere *treshold* voor afstand tot water wordt gekozen: ik zou denken dat we grotere verschillen in grondwaterstand kunnen verwachten op korte afstand wanneer je je dichter bij een waterloop bevindt. Kan een model lopen bij een *treshold* van 25 m?
+
+*"Yes, we can!"* ([@sec-wadi-threshold-25m]).
+
+
+Note that the homogenization paradigma is just a general tendency: the low overall variability in "peat" and the detail difference in remaining datapoint provides a good counter-example. Regression landscape is generally flat, i.e. MSE differences are low.
+Generally, my considerations on this are rather technical, to begin with: I can judge well the mathematical component of a change in threshold, and the effects on regression.
+I am glad for expert input on water level influences.
+
+
 
 
 # Preparation
@@ -254,7 +273,7 @@ regression_by_soilclass <- function(
 
 
 
-# Water Distance
+# Water Distance I: 50m
 ## Filters
 
 Note: when filtering for location pairs "close" to water, only 298/18467 pairs would remain.
@@ -458,6 +477,214 @@ regression_by_soilclass(
 
 ::: {.callout-warning}
 Capped: $<= 2$ 
+:::
+
+
+:::
+
+
+# Water Distance II: 25m {#sec-wadi-threshold-25m}
+## Filters
+
+Again, with a narrower filter on water distance.
+
+
+```{r water-distribution-25m}
+water_threshold <- units::set_units(25, "m")
+
+diff_meta %>%
+  select(wata_min_dist1) %>%
+  mutate(filltered = wata_min_dist1 < water_threshold) %>% 
+  ggplot(aes(wata_min_dist1, fill = filltered, color = filltered)) +
+  geom_histogram(bins = 256) +
+  theme_bw()
+    
+```
+
+
+```{r water-filter-25m}
+somediff_meta <- diff_meta %>%
+  filter(
+    wata_min_dist1 < water_threshold
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+## Binning
+
+Binning parameters; will use homogeneously filled bins:
+
+```{r parameters-25m}
+#| code-fold: false
+extent <- 512 # m
+n_bins <- as.integer(extent/4)
+```
+
+
+```{r join-water-25m}
+diff_all <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(dw <= ds) # remove outliers
+
+# knitr::kable(t(head(diff_all, 3)), decimals = 2)
+```
+
+
+
+```{r groupwise-binning-25m}
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, n_bins
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+Sample size:
+
+```{r equibin-samplesize-25m}
+#| label: fig-equibin-sample-size-25m
+#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step() +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  theme_bw()
+```
+
+
+
+
+## variograms {#sec-waterdistance-25m}
+
+using water level difference (MAD)
+
+
+```{r dw-column-25m}
+#| code-fold: false
+
+column <- "dw_groups"
+# column <- "dw_all"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-regression-heavy-25m}
+#| label: fig-dw-regression-heavy-25m
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  "heavy",
+  reg_var = column,
+  maxx = 256, maxy = 3.0,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+
+```
+
+::: {.callout-warning}
+Capped: $<= 2$ 
+:::
+
+
+### light
+
+```{r dw-regression-light-25m}
+#| label: fig-dw-regression-light-25m
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = 256, maxy = 3.0,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+```
+
+::: {.callout-warning}
+Capped: $<= 1.6$ 
+:::
+
+
+
+
+### peat
+
+```{r dw-regression-peat-25m}
+#| label: fig-dw-regression-peat-25m
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = 256, maxy = 1,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+```
+
+::: {.callout-warning}
+Capped: $<= 1.0$ 
 :::
 
 

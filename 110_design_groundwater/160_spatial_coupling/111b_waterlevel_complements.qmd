@@ -1,0 +1,660 @@
+---
+title: "Daily Water Level Variograms: Complements"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Summary
+
+In this notebook, I filter the data for relevant subgroups in the following parameters:
+
+- `wata_min_dist` (via `wata_dist_class`)
+- `slope_r2.5m`
+
+
+Then, the variogram procedure is repeated.
+
+
+Notes on the filter parameters:
+
+- Water distance is measured on various water-related zenodo sources, and is known to suffer some inaccuracy (e.g. from water body dynamics).
+- Slope is defined as the horizontal component of the surface vector, calculated on a 2.5m radius.
+
+
+**Overview of distance to 0.01m difference threshold:**
+
+::: {.callout-warning}
+Sample sizes are prohibitively low.
+
+No clear conclusions.
+:::
+
+
+
+# Preparation
+
+## libraries
+... the usual.
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("gridExtra") |> void() # panels with ggplot
+library("ggcorrplot")|> void() # correlation, grid visualization
+library("mapview")   |> void() # map visualization
+library("ggridges")  |> void() # density ridges
+library("units")     |> void() # someone decided to soter water distance in meters...
+
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# user-set parameters
+cluster_dist <- 3400 # m # parameter for clustering
+data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
+diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
+
+```
+
+
+## data
+
+The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to assemble the data set loaded here.
+
+
+```{r load-data}
+
+pp_data <- read_parquet(data_export_file)
+
+diff_data <- read_parquet(diffdata_export_file)
+
+pp_join <- pp_data %>%
+  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff
+         )
+
+diff_meta <- diff_data %>%
+  select(pp_idx1, pp_idx2) %>%
+  distinct() %>%
+  left_join(
+    pp_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    pp_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+      dh = elevation_dhmv2-elevation_dhmv1,
+      dz = fdepth2-fdepth1,
+      damp = emd_ampsum2-emd_ampsum1,
+      dqdiff = emd_qdiff2-emd_qdiff1,
+      dwadi = wata_min_dist2-wata_min_dist1,
+      dslope = slope_r2.5m2-slope_r2.5m1,
+      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+      mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
+  )
+
+# glimpse(diff_meta)
+```
+
+
+## Regression Procedure Wrapper
+
+```{r regression-wrapper}
+
+source("regression_tools.R") 
+
+
+fit_matern <- function(x, y, distweighted = FALSE, ...) {
+  target_fcn <- wrap_target_function
+  if (distweighted) {
+    target_fcn <- distweighted_target_function
+  }
+  optimizer_results <- optim(
+    fn = function(params) {
+      target_fcn(x, y, matern_function, params)
+    },
+    ...
+  )
+  
+  # store everything in one list;
+  # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$fcn <- matern_function
+  optimizer_results$regx <- x
+  optimizer_results$regy <- y
+
+  # wrap the function with the optimized parameters
+  optimizer_results$predict <- create_prediction_function(
+    matern_function,
+    optimizer_results
+  )
+
+
+  return(optimizer_results)
+}
+
+
+plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
+
+  # retrieve everything 
+  fcn <- optimizer_results$fcn
+  regx <- optimizer_results$regx
+  regy <- optimizer_results$regy
+  predict <- optimizer_results$predict
+
+  # extract parameters
+  scale <- optimizer_results$par[1]
+  range <- optimizer_results$par[2]
+  nugget <- optimizer_results$par[3]
+  sill <- scale + nugget
+
+
+  # plotting
+  plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
+  plotx <- plotx[plotx>0]
+  
+  g <- ggplot(NULL, aes(x = regx, y = regy)) +
+    geom_vline(xintercept = range, color = "darkgrey") +
+    geom_hline(yintercept = nugget, color = "darkgrey") +
+    geom_hline(yintercept = sill, color = "darkgrey") +
+    geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.2) +
+    geom_line(aes(x = plotx, y = predict(plotx))) +
+    labs(title = paste0("Matérn regression: ",
+      paste(round(optimizer_results$par, 4), collapse = ", "))) +
+    xlab("distance (m)") + ylab(y_label) +
+    theme_minimal()
+
+  return(g)
+}
+
+```
+
+
+```{r regression-matérn-general}
+# trafo <- function(x) log(1.+x) # feel free to try other transformations.
+trafo <- function(x) x
+
+regression_by_soilclass <- function(
+    regression_data, 
+    sc, reg_var,
+    maxx = extent, maxy = NULL, 
+    ...) {
+  diff_sc <- regression_data %>% filter(soilclass == sc)
+  
+  x <- diff_sc$ds
+  y <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y <- y[x > 0]
+  x <- x[x > 0]
+  y <- y[x <= maxx]
+  x <- x[x <= maxx]
+
+  if (is.null(maxy)) maxy <- max(y)
+  x <- x[y <= maxy]
+  y <- y[y <= maxy]
+  
+  x <- x[!is.na(y)]
+  y <- y[!is.na(y)]
+
+  # standardization helps function comprehension
+  # x <- x/max(x)
+  # y <- y / mean(y)
+  
+  
+  matern_fit <- fit_matern(x, y,
+    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
+    ...
+  )
+  
+  print_regression_results(matern_fit, label = "regression:")
+  ylabel <- "mean water level difference (pair-averaged)"
+  # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
+  g <- plot_matern(matern_fit, y_label = ylabel)
+
+  x_excl <- diff_sc$ds
+  y_excl <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y_excl <- y_excl[x_excl <= maxx]
+  x_excl <- x_excl[x_excl <= maxx]
+  x_excl <- x_excl[y_excl > maxy]
+  y_excl <- y_excl[y_excl > maxy]
+  g <- g + geom_point(aes(x = x_excl, y = y_excl),
+      size = 2.5, colour = "red", alpha = 0.2) 
+  return(g)
+}
+
+
+```
+
+
+
+
+# Water Distance
+## Filters
+
+Note: when filtering for location pairs "close" to water, only 298/18467 pairs would remain.
+-> using "close" and "mid", i.e. distance <= 50m
+
+
+```{r water-distribution}
+water_threshold <- units::set_units(50, "m")
+
+diff_meta %>%
+  select(wata_min_dist1) %>%
+  mutate(filltered = wata_min_dist1 >= water_threshold) %>% 
+  ggplot(aes(wata_min_dist1, fill = filltered, color = filltered)) +
+  geom_histogram(bins = 256) +
+  theme_bw()
+    
+```
+
+
+```{r water-filter}
+somediff_meta <- diff_meta %>%
+  filter(
+    wata_min_dist1 >= water_threshold
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+## Binning
+
+Binning parameters; will use homogeneously filled bins:
+
+```{r parameters}
+#| code-fold: false
+extent <- 512 # m
+n_bins <- as.integer(extent/8)
+```
+
+
+```{r join-water}
+diff_all <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(dw <= ds) # remove outliers
+
+# knitr::kable(t(head(diff_all, 3)), decimals = 2)
+```
+
+
+
+```{r groupwise-binning}
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, n_bins
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+Sample size:
+
+```{r equibin-samplesize}
+#| label: fig-equibin-sample-size
+#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step() +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  theme_bw()
+```
+
+
+
+
+## variograms {#sec-waterdistance}
+
+using water level difference (MAD)
+
+
+```{r dw-column}
+#| code-fold: false
+
+column <- "dw_groups"
+# column <- "dw_all"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-regression-heavy}
+#| label: fig-dw-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  "heavy",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+
+```
+
+::: {.callout-warning}
+Capped: $<= 2$ 
+:::
+
+
+### light
+
+```{r dw-regression-light}
+#| label: fig-dw-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = 256, maxy = 4.0,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+```
+
+::: {.callout-warning}
+Capped: $<= 1.6$ 
+:::
+
+
+
+
+### peat
+
+```{r dw-regression-peat}
+#| label: fig-dw-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+```
+
+::: {.callout-warning}
+Capped: $<= 2$ 
+:::
+
+
+:::
+
+
+
+
+# Slope 
+## Filters
+
+
+- `slope_r2.5m` >= 0.05
+
+
+```{r slope-distribution}
+slope_threshold <- 0.05
+
+diff_meta %>%
+  select(slope_r2.5m1) %>%
+  mutate(filltered = slope_r2.5m1 >= slope_threshold) %>% 
+  ggplot(aes(slope_r2.5m1, fill = filltered, color = filltered)) +
+  geom_histogram(bins = 256) +
+  theme_bw()
+    
+```
+
+
+```{r slope-filter}
+somediff_meta <- diff_meta %>%
+  filter(
+    slope_r2.5m1 >= slope_threshold,
+    slope_r2.5m2 >= slope_threshold
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+## Binning
+
+
+```{r join-slope}
+diff_all <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(dw <= ds) # remove outliers
+
+# knitr::kable(t(head(diff_all, 3)), decimals = 2)
+```
+
+
+
+```{r groupwise-binning-slope}
+
+diff_equigrouped <- diff_all %>%
+  filter(!(soilclass1 == "unknown")) %>%  # too low bin fill
+  filter(!(soilclass1 == "peat")) %>%  # too low bin fill
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, n_bins
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+Sample size:
+
+```{r slope-equibin-samplesize}
+#| label: fig-slope-equibin-sample-size
+#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step() +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  theme_bw()
+```
+
+
+## variograms {#sec-slope}
+
+using water level difference (MAD)
+
+
+```{r dw-column-slope}
+#| code-fold: false
+
+column <- "dw_groups"
+# column <- "dw_all"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-slope-regression-heavy}
+#| label: fig-slope-dw-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "heavy",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+
+```
+
+
+### light
+
+```{r dw-slope-regression-light}
+#| label: fig-slope-dw-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+```
+
+::: {.callout-warning}
+Capped: $<= 1.0$ 
+:::
+
+
+
+
+### peat
+
+```{r dw-slope-regression-peat}
+#| eval: false
+#| label: fig-slope-dw-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = 256, maxy = 1.0,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 6)
+```
+
+::: {.callout-warning}
+too few observations
+:::
+
+
+
+:::
