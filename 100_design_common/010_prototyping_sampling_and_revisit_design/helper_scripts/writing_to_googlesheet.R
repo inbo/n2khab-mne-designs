@@ -301,6 +301,7 @@ scheme_domain_fag_stratum_spsamples_calendar %>%
 # Below code requires availability of:
 # - scheme_moco_ps_stratum_sppost_genericpanelrelations
 # - scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar
+# - fag_stratum_grts_calendar
 
 scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
   distinct(scheme, module_combo_code, panel_split, generic_panels) %>%
@@ -356,4 +357,18 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
   write_sheet(
     ss = gs_id,
     sheet = "panel_calendar"
+  )
+
+fag_stratum_grts_calendar %>%
+  count(date_interval, rank, field_activity_group) %>%
+  pivot_wider(
+    names_from = field_activity_group,
+    values_from = n,
+    names_sort = TRUE
+  ) %>%
+  arrange(date_interval, rank) %>%
+  mutate(date_interval = as.character(date_interval)) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "FAG_calendar"
   )
