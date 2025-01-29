@@ -1,4 +1,4 @@
-# Generating spatiotemporal samples {#sampling}
+# Preparing for spatiotemporal sampling {#spatiotemp-sampling-prep}
 
 ## Considerations
 
@@ -252,9 +252,21 @@ Nevertheless, it should be warned that the latter approach can lead to challengi
 It should also be accepted that for rare types, these samples may by necessity overlap between module combos.
 Hence, this should be simplified afterwards to avoid unnecessary duplication of fieldwork planning.
 
-## Spatial samples
+## Overview of most relevant objects in this chapter
 
-### Set GRTS address thresholds per domain and stratum for cross-scheme synergies
+```{r echo = FALSE}
+for (name in c(
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```
+
+
+# Generating spatial samples {#spatial-sampling}
+
+## Set GRTS address thresholds per domain and stratum for cross-scheme synergies
 
 Determining fixed GRTS address thresholds per domain and stratum to assign to module combos and panel splits, applicable across schemes, in order to maintain maximum synergy across schemes.
 
@@ -476,7 +488,7 @@ dom_stratum_grtspart_threshold %>%
 **Missing functionality**: write a file with these thresholds (GRTS partition definitions), so that it can be read in a static way from some point on!!
 
 
-### Apply the GRTS address threshold to the module combos and panel splits
+## Apply the GRTS address threshold to the module combos and panel splits
 
 Expanding the GRTS-partition-level GRTS-threshold to the level of module combos and panel splits (per domain and stratum).
 
@@ -517,7 +529,7 @@ mod_dom_scheme_ps_stratum_grtspart <-
   relocate(module, domain, scheme, panel_split)
 ```
 
-### Draw spatial samples
+## Draw spatial samples
 
 Determining the applicable domain relations.
 
@@ -747,7 +759,7 @@ In essence this means duplicating existing sampling units using applicable rows 
 This object then also contains the spatial poststrata, needed for inference, and we also need to add the sampling weights at that level.
 
 
-### Reclassify by spatial poststratum and add spare units {#sppoststrata}
+## Reclassify by spatial poststratum and add spare units {#sppoststrata}
 
 The `scheme_moco_ps_stratum_dom_spsamples` object distinguishes domains which can spatially overlap.
 This is caused by the domains envisaged by specific modules, and the sampling units attributed to the different domains are mutually exclusive.
@@ -921,7 +933,7 @@ scheme_moco_ps_stratum_sppost_spsamples_spares %>%
 ```
 
 
-### Deriving spatial layers of spatial samples (without spare units)
+## Deriving spatial layers of spatial samples (without spare units)
 
 `scheme_moco_ps_stratum_sppost_spsamples` is like `scheme_moco_ps_stratum_sppost_spsamples_spares` without the spare units.
 
@@ -954,8 +966,19 @@ samplinglocations_sf <-
   add_point_coords_grts()
 ```
 
+## Overview of most relevant objects in this chapter
 
-## Implementing the revisit design
+```{r echo = FALSE}
+for (name in c(
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```
+
+
+# Implementing the revisit design: panel design & panel membership {#revisit}
 
 <!-- --------------------------- -->
 Adding some ideas:
@@ -971,9 +994,9 @@ Adding some ideas:
 - in the first year of each compartment, start on 1 Jan and wind up to month_first_default
 <!-- --------------------------- -->
 
-### Preparations
+## Preparations
 
-#### Checking the spatial samples
+### Checking the spatial samples
 
 Checking that all schemes x module combos x panel splits x strata are still in the running.
 Listing the cases where the planned sample size is different than the one after GRTS series partitioning and reclassification (smaller: possible because of phab-corrections applied in the planned sample size but not (yet) in the samples; larger: possible because of the difference between domain 'Flanders' & spatial poststratum 'Flanders_remainder' (many; not shown), and sometimes also due to minor misfits in 3260 (popsize vs available GRTS addresses per domain)).
@@ -1033,7 +1056,7 @@ However several measures can be taken to maximize the synergy in panel membershi
 - Also, we will maximize the chance for cross-scheme and cross-compartment spatial alignment of sampling units by starting all panel designs on the same virtual date, and drop non-applicable (too early) parts afterwards.
 However do note that this introduces some instability with relation to selected sampling units in the first cycle, as further noted in section \@ref(cal-cleaning).
 
-#### Lifting mod_scheme_fag_paneldesign to the module combo & FA supergroup level
+### Lifting mod_scheme_fag_paneldesign to the module combo & FA supergroup level
 
 The module combos (of a scheme x panel split) reflect a common revisit design of the main field method of the target variable, across modules.
 We use this entity to populate all the different FAG panel designs (grouped into field activity supergroups) with the same corresponding sampling units (from `scheme_moco_ps_stratum_sppost_spsamples`).
@@ -1379,7 +1402,7 @@ stopifnot(
 ```
 
 
-### Number of panels {#nrpanels}
+## Number of panels {#nrpanels}
 
 Determining the _number_ of panels for each scheme x module combo x panel split x spatial subset x 'field activity supergroup' (FAS).
 We also generate (or keep) revisit design attributes needed to set date intervals in later steps.
@@ -1654,7 +1677,7 @@ compartment_paneldesign_fags %>%
   kable()
 ```
 
-### Panels
+## Panels
 
 Defining panels.
 
@@ -1701,7 +1724,7 @@ scheme_moco_ps_spsubset_fas_panels <-
   select(-spatial_subset_abbr, -scheme_moco_has_multiple_panel_splits)
 ```
 
-### Panel calendar
+## Panel calendar
 
 Defining date intervals and assigning panels to these intervals.
 
@@ -1840,7 +1863,7 @@ scheme_moco_ps_spsubset_panel_calendar %>%
   View("calendar")
 ```
 
-### Panel membership of spatial sampling units
+## Panel membership of spatial sampling units
 
 General note: the spatial samples are to be considered dynamic, i.e. dependent on new versions of the spatial sampling frames.
 Consequently, panel membership must also be considered dynamic in time.
@@ -1860,7 +1883,7 @@ This avoids repeating local pivotal sampling more than necessary, which would le
 
 Next, this is translated to the actual panels created before.
 
-#### Membership of generic panels
+### Membership of generic panels
 
 Generating and populating generic panels.
 
@@ -2015,7 +2038,7 @@ For these strata, we better share this distribution over the panels across schem
 **Missing functionality**: modules (like pan2124) with shorter cycle duration for data collection in groundwater schemes than the cycle applied to (re)install groundwater level devices, may need special attention which we didn't give it yet.
 Notably the implemented approach for 'auto' and 'fastalign' doesn't work out well here.
 
-#### Panel membership
+### Panel membership
 
 Translating the generic panel memberships to panel memberships for each FAS (hence revisit design).
 
@@ -2090,16 +2113,28 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
 
 Note that (in a scheme x panel split x module combo) only the combination of stratum x spatial poststratum stands for a consecutive GRTS series, equally distributed over panels, and that replacement with spare units of the stratum must happen within spatial poststrata.
 
-## Field activities & spatiotemporal samples
+## Overview of most relevant objects in this chapter
+
+```{r echo = FALSE}
+for (name in c(
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```
+
+
+# Generating scheme-specific spatiotemporal samples & planning of field activity groups {#spatiotemp-sampling}
 
 We will join panel memberships with the date intervals per panel to generate the spatiotemporal samples.
 At the same time, each FAS is replaced by its constituting FAGs (field activity groups), which have a common revisit design.
 
-### Calendar per scheme, FAG, stratum and spatial sampling unit
+## Calendar per scheme, FAG, stratum and spatial sampling unit
 
 This calendar still distinguishes between scheme x module combo x panel split.
 
-##### Initial spatial sampling unit calendar
+### Initial spatial sampling unit calendar
 
 Generating a sampling unit calendar, i.e. with timing per FAG, stratum and spatial sampling unit in a scheme x module combo x panel split x spatial poststratum.
 Note that the spatial subset is a mere attribute, as is already expressed by stratum and also FAG (in case of 7220).
@@ -2138,7 +2173,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial <-
   )
 ```
 
-#### Checking the initial spatial sampling unit calendar
+### Checking the initial spatial sampling unit calendar
 
 Checking that all calendar rows match a row of `scheme_moco_ps_spsubset_fas_paneldesign`.
 
@@ -2301,7 +2336,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
   invisible()
 ```
 
-#### Deriving spatial sampling unit calendar {#cal-cleaning}
+### Deriving spatial sampling unit calendar {#cal-cleaning}
 
 Here we still consider the panels, hence cleaning takes place within scheme x module combo x panel split.
 
@@ -2592,7 +2627,7 @@ rm(spsamples_calendar_actseqs_long)
 gc()
 ```
 
-#### Checking the spatial sampling unit calendar
+### Checking the spatial sampling unit calendar
 
 <!-- - check consistency (join completeness) with earlier objects -->
 
@@ -2819,7 +2854,7 @@ rm(obj_a, obj_b, obj_a_n, obj_b_n, obj_b1, obj_b2, obj_b3)
 ```
 
 
-#### Displaying the (scheme-specific) spatial sampling unit panel calendar
+### Displaying the (scheme-specific) spatial sampling unit panel calendar
 
 We display some items in a googlesheet for visual exploration and checking.
 For the code, see `helper_scripts/writing_to_googlesheet.R`.
@@ -2829,7 +2864,7 @@ For the code, see `helper_scripts/writing_to_googlesheet.R`.
 - a 'panel_calendar' worksheet, generated from the spatial sampling unit calendar (excluding ADHOC FAGs), lists the panels and number of involved locations, for each combination of date interval (rows) and panel design (notation) (columns).
 See previous dataset to find the connection with FAGs.
 
-### Spatiotemporal samples
+## Spatiotemporal samples
 
 Subsetting the sampling unit calendar to the occasions with a target FAG.
 This object comes closest to the notion of **spatiotemporal sample**.
@@ -2846,7 +2881,19 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <-
   relocate(fags, .after = in_aquatic_subset)
 ```
 
-## Field activities in space and time
+## Overview of most relevant objects in this chapter
+
+```{r echo = FALSE}
+for (name in c(
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```
+
+
+# Generating an overall plan of field activity groups in space and time (FAG calendar)
 
 The above calendar objects contain the structure needed for statistical inference, by considering spatiotemporal field activity groups (FAGs) in relation to scheme, module combo, panel split, stratum and spatial poststratum.
 
@@ -2885,7 +2932,7 @@ In this case, the shortest (i.e. most demanding) date interval is kept.
 
 **Missing functionality**: create an object that links the calendar with the result, so that the designed calendar of auxiliary FAGs can still be linked to the eventual field work. This may also be the logical place to store population sizes (and potential other sample attributes) needed to derive the sampling weights in inference, in a module combo x scheme (x panel split) x spatial poststratum x temporal poststratum.
 
-### Dropping low-frequency auxiliary FAGs if high-frequency occurs; calculate cycle ID
+## Dropping low-frequency auxiliary FAGs if high-frequency occurs; calculate cycle ID
 
 ```{r}
 fag_stratum_grts_calendar_cycleid <- 
@@ -3047,7 +3094,7 @@ fag_stratum_grts_calendar_cycleid %>%
   pull(fag_grouping)
 ```
 
-### Deduplicating simplified FAGs in the same cycle ID; keep the superior FAG
+## Deduplicating simplified FAGs in the same cycle ID; keep the superior FAG
 
 We define an object that determines the rank of FAGs within the same simplified FAG.
 A lower rank will receive higher priority; it will be used to replace other FAGs in the same cycle ID at the same location x stratum.
@@ -3131,7 +3178,7 @@ stopifnot(
 )
 ```
 
-### Dropping superfluous revisits for the same (simplified) auxiliary FAG and cycle ID
+## Dropping superfluous revisits for the same (simplified) auxiliary FAG and cycle ID
 
 Note that we also drop subsequently orphaned ADHOC FAGs, once more.
 
@@ -3192,7 +3239,7 @@ fag_stratum_grts_calendar_alladhoc <-
   arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
 ```
 
-### FAG calendar (subsampling ADHOC FAGs)
+## FAG calendar (subsampling ADHOC FAGs)
 
 We implement the preset proportions to subsample ADHOC FAGs.
 Note that a maximum yearly frequency at stratum x location is enforced for each ADHOC FAG before subsampling, since that was the assumption of the subsampling proportions.
@@ -3243,8 +3290,6 @@ fag_grts_calendar <-
   arrange(grts_address, date_start, rank, date_end, field_activity_group)
 ```
 
-## Optimizing resource allocation in time and space (within or between years)
-
 ## Overview of most relevant objects in this chapter
 
 ```{r echo = FALSE}
@@ -3255,3 +3300,8 @@ for (name in c(
   cat("\n")
 }
 ```
+
+
+# Optimizing resource allocation in time and space
+
+
