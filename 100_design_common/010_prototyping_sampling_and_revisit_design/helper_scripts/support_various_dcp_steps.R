@@ -3,13 +3,13 @@
 # other helper scripts.
 
 # This code requires availability of the following objects:
-# - scheme_domain_stratum_spsamples_sf
+# - scheme_moco_ps_stratum_sppost_spsamples_sf
 
-scheme_stratum_spsamples_sf %>%
+scheme_moco_ps_stratum_sppost_spsamples_sf %>%
   write_sf(
     file.path(
       datapath,
       "binary/intermediate",
-      "scheme_stratum_spsamples.gpkg"
+      "scheme_moco_ps_stratum_sppost_spsamples.gpkg"
     )
   )
