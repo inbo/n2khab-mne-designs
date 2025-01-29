@@ -62,7 +62,7 @@ save(
   list = rdata_set,
   file = file.path(
     datapath,
-    "binary/intermediate",
+    "binary/results",
     str_c("objects", module_suffix, ".RData")
   )
 )
