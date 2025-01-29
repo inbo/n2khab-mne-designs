@@ -261,41 +261,6 @@ compartment_paneldesign_fags %>%
 
 
 
-# Below code requires availability of:
-# - scheme_domain_fag_panel_calendar
-# - scheme_domain_fag_stratum_spsamples_calendar
-# This code was tailored specifically for module pan_effectmon_flanders !!
-
-scheme_domain_fag_panel_calendar %>%
-  select(domain, field_activity_group, panel, date_interval) %>%
-  summarize(
-    panels = str_c(panel, collapse = "\n"),
-    .by = c(domain, field_activity_group, date_interval)
-  ) %>%
-  pivot_wider(names_from = field_activity_group, values_from = panels) %>%
-  arrange(date_interval) %>%
-  mutate(date_interval = as.character(date_interval)) %>%
-  write_sheet(
-    ss = gs_id,
-    sheet = "dom_panel_calendar_PAN_PHASE_1_FLANDERS"
-  )
-
-scheme_domain_fag_stratum_spsamples_calendar %>%
-  distinct(domain, field_activity_group, spsunit_groups, date_interval) %>%
-  summarize(
-    spsunit_groups = str_c(spsunit_groups, collapse = "\n"),
-    .by = c(domain, field_activity_group, date_interval)
-  ) %>%
-  pivot_wider(names_from = field_activity_group, values_from = spsunit_groups) %>%
-  arrange(date_interval) %>%
-  mutate(date_interval = as.character(date_interval)) %>%
-  write_sheet(
-    ss = gs_id,
-    sheet = "dom_spsunitgroup_calendar_PAN_PHASE_1_FLANDERS"
-  )
-
-
-
 
 
 # Below code requires availability of:
