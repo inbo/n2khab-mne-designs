@@ -53,11 +53,7 @@ rdata_set <- c(
   "fag_stratum_grts_calendar",
   "fag_grts_calendar"
 )
-module_suffix <- if (length(params$active_modules) > 1) {
-  ""
-} else {
-  str_c("_", params$active_modules)
-}
+module_suffix <- str_c("_", str_flatten(modules$code_short))
 save(
   list = rdata_set,
   file = file.path(
