@@ -395,6 +395,31 @@ fag_grts_calendar <-
   arrange(grts_address, date_start, rank, date_end, field_activity_group)
 ```
 
+### Displaying an aggregation of the FAG calendar
+
+We display an aggregation of the FAG calendar in a googlesheet for visual exploration and checking.
+For the code, see `helper_scripts/writing_to_googlesheet.R`, and it can optionally be triggered while compiling this report by setting the parameter `update_spatiotemp_gsheet`, in which case the name of the worksheet will be made specific according to the active modules.
+
+```{r eval = params$update_spatiotemp_gsheet, include = FALSE, message = FALSE}
+gs_id <- "1vqxRmWVuc39HCF15K6xZhJEa5ls7Z7uF_xsEr_swQdk"
+ws_name_prefix <- str_c(str_flatten(modules$code_short), " | ")
+
+fag_stratum_grts_calendar %>%
+  count(date_interval, rank, field_activity_group) %>%
+  pivot_wider(
+    names_from = field_activity_group,
+    values_from = n,
+    names_sort = TRUE
+  ) %>%
+  arrange(date_interval, rank) %>%
+  mutate(date_interval = as.character(date_interval)) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = str_c(ws_name_prefix, "FAG_calendar")
+  )
+```
+
+
 ## Overview of most relevant objects in this chapter
 
 ```{r echo = FALSE}
