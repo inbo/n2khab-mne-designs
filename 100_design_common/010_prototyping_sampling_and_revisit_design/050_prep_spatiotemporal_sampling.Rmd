@@ -1,0 +1,264 @@
+# Preparing for spatiotemporal sampling {#spatiotemp-sampling-prep}
+
+## Considerations
+
+The samples don't explicitly address the non-core schemes, except for their types that are not covered by core schemes.
+There's no intention to do that, as for overlapping types the samples of the core schemes are the ones to be used for the non-core schemes.
+
+Module labelling of sampling units: this is needed to apply different revisit designs to different modules, if applicable.
+This should be tested first, because if module panel designs align, it's better for the membership design if all units are taken together.
+Combining different modules with different revisit designs is like creating a split panel design: in the same period, you need two different sets of sampling units that receive another revisit design.
+This is done to make these separate revisit designs form one strict GRTS series with their own spare units.
+In this way, replacements don't cause spillovers of units from one revisit design to another.
+The conflict is at what levels you want to guarantee a single strict GRTS series: within the module, within the year (conflicts with previous, supposing that each module should cover the full cycle) ...
+Since it's most reasonable to spread each module over the full cycle, this means that GRTS gaps will be inevitable either within a panel period (each module is a GRTS series split into periods, so for two or more modules this combines different GRTS subsets in the same period) or within a module (each panel is a GRTS series assigned to consecutive modules), notably between the different modules.
+
+- Combining modules with the same revisit design: panels can be created for all units, afterwards each panel can be divided over both modules for module labelling of units (if needed at all).
+This approach optimizes sampling design & inference for the module combination.
+  - Note that the panel _construction_ must be done for each domain separately, i.e. the overlapped domains and the non-overlapped (remainder) domain.
+  Otherwise you would have that the higher GRTS addresses added in the included domains (~ other module) end up in the latest (common) panels, hence the units of an included domain would not be well spread over the panels when specifically looking at the domain.
+  - The same holds for the generation of spare units: while module labelling is not needed within the same revisit pattern, a unit in a domain that is active because one of the applicable modules is, should be replaced _within the domain_ in order to maintain the sample size in the domain.
+  Consequently the same holds for spare units in the non-overlapped (remainder) domain.
+  We could also have applied this at the module x domain level, but then one needs to assign individual units to modules (and doing it in some randomized way, since we need interspersion of modules in time), even while the same revisit design applies, and it would lower the flexibility to maintain spatial balance when modules are stopped or added.
+  - Clearly, also the division of panels between modules only applies to the domains where both modules overlap.
+- Combining modules with different revisit design: sampling units must be assigned to modules a priori, each module has its own GRTS series + spare addresses (hence mandatory gap needed).
+The challenge will be to maintain sufficient gap for spare units while also maintaining a fixed start point for a second module (or panel split) for the future that doesn't necessarily compound the rise of new modules.
+Then panel designs are created for each module separately.
+The same approach holds for split panel designs.
+
+For now still without:
+
+- GRTS address offset for MHQ at Flemish level = undefined module
+- collapsing nearby units for groundwater schemes
+- the fact that the _installation_ of observation wells must be accelerated in the module's _first_ cycle if the latter is shorter than the enforced cycle duration.
+
+We will not take into account the fact that different modules can have _different end years_ (and maybe start years), so that their combination in a scheme and panel split would invoke the need for sample sizes and panel memberships on a yearly basis.
+However, large shifts in the membership designs when a module in a module combo ends (invoking location redistribution over panels in order to restore an even spread) would effectively disrupt the revisit design of those locations.
+Since the actual end years of modules are highly uncertain, we simply ignore this and assume that the maximum end year is most useful at the module combo level.
+We do the same for the start years, using the minimum year per scheme x module combo.
+If this situation is present, then consequences must be considered with care and some restrictions may need to be applied post-hoc to the spatiotemporal samples.
+See also the _missing functionality_ in section \@ref(moco).
+
+## Module combinations (module combos) per scheme based on common panel design of target variables {#moco}
+
+Determining module combos per scheme based on common panel design characteristics _of target variables_.
+The target variables limit the main field methods of a module x scheme to a great extent, since the latter also comprise variables for explanation & quality control.
+
+First create an object with the 'target' panel designs per module and scheme (target referring to the target variables restriction).
+
+```{r}
+mod_scheme_targetfieldmethod <- 
+  mod_scheme_mainfieldmethod %>% 
+  left_join(
+    envvars %>% 
+      filter(target) %>% 
+      distinct(module, scheme, main_datacollection_method) %>% 
+      mutate(target_envvar = TRUE),
+    join_by(module, scheme, main_field_method == main_datacollection_method),
+    relationship = "one-to-one",
+    unmatched = "drop"
+  ) %>% 
+  # the main field method of MHQ schemes also corresponds to a target variable;
+  # in MHQ we only defined a 'variable set' LSVI...
+  filter(target_envvar | str_detect(scheme, "^HQ")) %>% 
+  select(-is_core_scheme, -target_envvar)
+mod_scheme_targetfieldmethod_paneldesign <- 
+  mod_scheme_targetfieldmethod %>% 
+  # expand with FAG (note that some main field methods link to more than one
+  # FAG, which has to do with the spatial subsets, which we can ignore here
+  # since in the case of the MAIN field method these don't cause differences in
+  # panel designs but only in activities.)
+  inner_join(
+    mod_scheme_field_activity %>% 
+      distinct(module, scheme, field_activity, field_activity_group),
+    join_by(module, scheme, main_field_method == field_activity),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # add the FAG panel design
+  inner_join(
+    mod_scheme_fag_paneldesign %>% 
+      distinct(pick(module, scheme, field_activity_group, panel_split, revisit_pattern:last_col())),
+    join_by(module, scheme, field_activity_group),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  distinct(pick(
+    module,
+    scheme,
+    main_field_method,
+    panel_split,
+    revisit_pattern:last_col()
+  ))
+if (nrow(mod_scheme_targetfieldmethod_paneldesign) != nrow(mod_scheme_targetfieldmethod)) {
+  stop("The number of rows changed unexpectedly.")
+}
+mod_scheme_target_paneldesign <- 
+  mod_scheme_targetfieldmethod_paneldesign %>% 
+  distinct(pick(-main_field_method, -enforced_cycle_duration))
+```
+
+Now determining the module combos per scheme and panel split.
+Do note that the module combo code can only be interpreted as a unique revisit design in combination with scheme and panel split!
+So a module combo has to be seen as an aggregation based on a common revisit design _between_ modules but _within_ scheme and panel split.
+
+```{r}
+scheme_target_paneldesign <- 
+  mod_scheme_target_paneldesign %>% 
+  inner_join(
+    modules %>% select(module, code_short),
+    join_by(module),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  summarize(
+    module_combo_code = str_c(code_short, collapse = "_") %>% fct(),
+    module_combo = list(tibble(module = module)),
+    .by = -c(module, code_short)
+  ) %>% 
+  arrange(module_combo_code, scheme, panel_period_main, cycle_duration_y) %>% 
+  relocate(module_combo_code, module_combo, .after = scheme)
+scheme_target_paneldesign
+```
+
+We end up with `r nrow(scheme_target_paneldesign)` different scheme x target panel design combinations, each of which applies to one or several modules.
+
+Several schemes have more than one revisit design, i.e. different module combinations x panel splits:
+
+```{r}
+scheme_target_paneldesign %>% 
+  count(scheme, name = "nr_revisitpatterns_per_scheme") %>% 
+  count(nr_revisitpatterns_per_scheme)
+```
+
+<!-- It can be seen that module 'pan_transmon_be2100024' (pan2124) is always present when a scheme has more than one revisit design. -->
+<!-- So it is logical to handle it specially. -->
+
+```{r eval=FALSE, include=FALSE}
+# Not run since this chunk is too specific and depends on which modules are active.
+scheme_target_paneldesign %>% 
+  mutate(nr_revisitpatterns_per_scheme = n(), .by = scheme) %>% 
+  filter(nr_revisitpatterns_per_scheme > 1) %>% 
+  unnest(module_combo) %>% 
+  summarize(
+    has_pan2124 = any(module_combo_code == "pan2124"),
+    .by = scheme
+  ) %>% 
+  pull(has_pan2124) %>% 
+  all()
+```
+
+Creating an object that holds the relation between module, scheme, module combo, panel split and first & last years.
+
+```{r}
+mod_scheme_yrs_moco_ps <- 
+  module_domain_scheme_stratum_sample_size %>%
+  # next filter step is in alignment with earlier (see above); field
+  # activities of non-core schemes should (by definition) only apply to the
+  # explicitly (and only exceptionally) added sampling units for such non-core
+  # schemes.
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
+  distinct(module, scheme, year_first, year_last) %>%
+  # join module combos:
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  arrange(scheme, module_combo_code, panel_split)
+
+```
+
+Checking which scheme x module combo x panel split rows have conflicting first or last years across modules.
+
+- conflicting last years:
+
+```{r paged.print=FALSE}
+mod_scheme_yrs_moco_ps_yrsmoco <- 
+  mod_scheme_yrs_moco_ps %>% 
+  mutate(
+    year_first_moco = min(year_first),
+    year_last_moco = max(year_last),
+    .by = c(scheme, panel_split, module_combo_code)
+  )
+mod_scheme_yrs_moco_ps_yrsmoco %>% 
+  filter(year_last_moco != year_last)
+```
+
+- conflicting first years:
+
+```{r paged.print=FALSE}
+mod_scheme_ps_different_1styr <- 
+  mod_scheme_yrs_moco_ps_yrsmoco %>% 
+  filter(year_first_moco != year_first)
+mod_scheme_ps_different_1styr
+if (nrow(mod_scheme_ps_different_1styr) > 0L) {
+  warning("Conflicting first years detected!")
+} 
+```
+
+We ignore differing last years (assuming the maximum last year for the module combo; see section \@ref(considerations)), but we must pay attention to additional remedies in case of conflicting first years.
+
+**Missing functionality**: we currently don't correct the spatial sampling unit calendar for '`year_first` mismatches' between modules in the same module combo, if those occur.
+Handling this comes down to filtering sampling units in the first panel(s) of the first cycle where such mismatches occur, hence where not all modules have started yet.
+This requires calculation of module-level spatial sample sizes in poststrata.
+More generally, we should add support for temporal variation in which modules are active inside a module combo, and take (semi-automated) decisions to either filter sampling units (post-hoc, based on full panels) and accept the resulting gaps in the GRTS series, or rearrange the panel membership using a single sampled GRTS series (this seems more appropriate if reductions are for the longer term).
+Expansion with new, unplanned modules will always lead to rearranging the panel membership.
+
+From inspection of `scheme_target_paneldesign`, we decide to use the following order to prioritize module combos in the GRTS sampling.
+
+```{r}
+moco_order <- tribble(
+  ~module_combo_code, ~moco_rank,
+  "panfl_pan5_pan2124_mbaa", 1L,
+  "panfl_pan5_pan2124", 1L,
+  "panfl_pan5_mbaa", 1L,
+  "panfl_pan5", 1L,
+  "panfl", 1L,
+  "pan5_pan2124", 1L,
+  "pan5", 1L,
+  "mbaa", 1L,
+  "pan2124", 2L
+) %>% 
+  mutate(module_combo_code = factor(
+    module_combo_code,
+    levels = levels(scheme_target_paneldesign$module_combo_code)
+  ))
+```
+
+Note that panel splits are always ranked in ascending order, assuming that panel split 1 represents the _largest_ number of sampling units.
+This should be taken into account when defining the panel splits.
+
+To maximize matching of spatial samples across schemes, the module combo codes with the same rank within a common panel split rank will be forced to use the same subset of a GRTS series (i.e. GRTS address partition) for a particular stratum and domain!
+
+Check that no module combos exist that are missed by above object.
+
+```{r}
+stopifnot(all(
+  scheme_target_paneldesign$module_combo_code %in% moco_order$module_combo_code
+))
+```
+
+Note that _different_ module combos within a scheme are **currently** handled as if they were different panel splits, i.e. they need a separate portion of the GRTS series to sample from; the starting address could be set based on sample size proportion but after that the starting address should be held fixed.
+
+Note that this may not hold in general.
+This is currently invoked by the `pan_transmon_be2100024` module, which explicitly intends to apply the higher frequency monitoring to **new** (hence _extra_) monitoring locations, relative to the other modules.
+However it can also happen that future modules increase frequencies at the locations of _existing_ modules.
+Nevertheless, it should be warned that the latter approach can lead to challenging situations, once an original module stops: the extra module didn't foresee the needed budget to support the base frequency and the remaining visits (of the new module) may be pointless.
+
+It should also be accepted that for rare types, these samples may by necessity overlap between module combos.
+Hence, this should be simplified afterwards to avoid unnecessary duplication of fieldwork planning.
+
+## Overview of most relevant objects in this chapter
+
+```{r echo = FALSE}
+for (name in c(
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```
