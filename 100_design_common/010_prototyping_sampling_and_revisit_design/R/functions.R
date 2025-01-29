@@ -478,3 +478,37 @@ distribute_sample_over_panels <- function(sps, pan) {
     arrange(grts_address) %>%
     mutate(genericpanels_row = sort(c(panels_complete, panels_remainder)))
 }
+
+
+
+#' Subsample an ADHOC FAG in a FAG calendar
+#'
+#' Subsample an ADHOC FAG in a FAG calendar, taking into account a custom
+#' proportion.
+#'
+#' The custom proportion for subsampling is applied to  spatial-temporal
+#' calendar of a single ADHOC FAG, after limiting the number of within-year
+#' repetitions of the ADHOC FAG per location to local_max_per_year.
+#'
+#' @param fag_cal FAG calendar object.
+#' @param adhoc_fag Name of the ADHOC field activity group (FAG).
+#' @param local_max_per_year In case of repeated ADHOC FAG at a location, the
+#'   number of occasions to be sampled _before_ subsampling with `proportion`.
+#' @param proportion Proportion used in subsampling
+subsample_adhocfag <- function(fag_cal,
+                               adhoc_fag,
+                               local_max_per_year = 1,
+                               proportion) {
+  fag_cal %>%
+    filter(field_activity_group == adhoc_fag) %>%
+    mutate(year_start = year(date_start)) %>%
+    slice_sample(
+      n = local_max_per_year,
+      by = c(stratum, grts_address, year_start)
+    ) %>%
+    select(-year_start) %>%
+    slice_sample(prop = samplingprop_adhocpipereplace)
+}
+
+
+
