@@ -49,6 +49,7 @@ rdata_set <- c(
   "scheme_moco_ps_stratum_sppost_spsamples_spares",
   "scheme_moco_ps_stratum_sppost_spsamples",
   "scheme_moco_ps_stratum_sppost_spsamples_sf",
+  "samplinglocations_sf",
   "scheme_moco_ps_spsubset_panel_calendar",
   "scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship",
   "scheme_moco_ps_spsubset_targetfag",
