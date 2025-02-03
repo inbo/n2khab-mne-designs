@@ -502,11 +502,13 @@ subsample_adhocfag <- function(fag_cal,
   fag_cal %>%
     filter(field_activity_group == adhoc_fag) %>%
     mutate(year_start = year(date_start)) %>%
+    # limit to local_max_per_year
     slice_sample(
       n = local_max_per_year,
       by = c(stratum, grts_address, year_start)
     ) %>%
     select(-year_start) %>%
+    # subsample
     slice_sample(prop = samplingprop_adhocpipereplace)
 }
 
