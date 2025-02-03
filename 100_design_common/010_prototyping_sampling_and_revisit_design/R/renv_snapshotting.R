@@ -2,8 +2,13 @@
 # at specific stages. I.e. we avoid a .Rprofile file with the source() statement
 # below. (First-time setup: run renv::activate() and then remove .Rprofile)
 
-source("renv/activate.R") # this is 'activating renv on demand'
+# source("renv/activate.R") # this is 'activating renv on demand'
 # if asked 'Would you like to restore the project library?', answer N
+
+# Above line has been outcommented since it appears that hydrating &
+# snapshotting can now be done based on current library paths, without
+# activating the project. When asked, choose accordingly.
+
 renv::upgrade() # makes sure latest renv version is in use
 if (file.exists(".Rprofile")) unlink(".Rprofile")
 # populate or update renv project library with the package versions used when
