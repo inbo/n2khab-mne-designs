@@ -491,10 +491,10 @@ distribute_sample_over_panels <- function(sps, pan) {
 #' repetitions of the ADHOC FAG per location to local_max_per_year.
 #'
 #' Furthermore, the date intervals of the remaining ADHOC FAGs are relaxed to
-#' take (at random) one of the existing date intervals of non-ADHOC FAGs that
-#' have the same start date (in the same stratum x location). This is done to
-#' not limit ADHOC FAGs to their initial date interval of one month, but align
-#' them with existing date intervals.
+#' take (at random) one of the existing date intervals of non-ADHOC & non-biotic
+#' FAGs that have the same start date (in the same stratum x location). This is
+#' done to not limit ADHOC FAGs to their initial date interval of one month, but
+#' align them with existing date intervals.
 #'
 #' @param fag_cal FAG calendar object.
 #' @param adhoc_fag Name of the ADHOC field activity group (FAG).
@@ -519,7 +519,7 @@ subsample_and_relax_adhocfag <- function(fag_cal,
     # relax the ADHOC date intervals
     inner_join(
       fag_cal %>%
-        filter(!str_detect(field_activity_group, "ADHOC")) %>%
+        filter(!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")) %>%
         select(-field_activity_group, -rank) %>%
         rename(
           date_end_new = date_end,

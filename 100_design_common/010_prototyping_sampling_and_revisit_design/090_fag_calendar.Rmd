@@ -5,7 +5,7 @@ The above calendar objects contain the structure needed for statistical inferenc
 However this does not mean that executing each row at the designated time and location makes sense in reality:
 
 - schemes x module combos can have overlapping FAGs in space and time. It is best to remove these overlaps within limits and as long as this does not lead to data loss;
-- ADHOC FAGs, while theoretically given a pure panel design, will only be carried out during other scheduled FAGs and only with a low probability.
+- ADHOC FAGs, while theoretically given a pure panel design, will only be carried out during other scheduled (non-biotic) FAGs and only with a low probability.
 
 In this section we will generate a sensible field activity calendar in terms of FAGs, location (GRTS address) x stratum and date interval.
 
@@ -329,7 +329,8 @@ fag_stratum_grts_calendar_alladhoc <-
   # once more filter out orphaned ADHOC activities
   filter(
     !str_detect(field_activity_group, "ADHOC") |
-      date_start %in% date_start[!str_detect(field_activity_group, "ADHOC")],
+      date_start %in% 
+      date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
     .by = c(
       stratum,
       grts_address
@@ -349,7 +350,7 @@ fag_stratum_grts_calendar_alladhoc <-
 We implement the preset proportions to subsample ADHOC FAGs.
 Note that a maximum yearly frequency at stratum x location is enforced for each ADHOC FAG before subsampling, since that was the assumption of the subsampling proportions.
 
-Further, we relax the date intervals of the remaining ADHOC FAGs to take _one of the existing_ date intervals of non-ADHOC FAGs that have the same start date (in the same stratum x location).
+Further, we relax the date intervals of the remaining ADHOC FAGs to take _one of the existing_ date intervals of non-ADHOC, non-biotic FAGs that have the same start date (in the same stratum x location).
 This is done in order to not limit ADHOC FAGs to their initial date interval of one month, but align them with existing date intervals.
 
 ```{r}
