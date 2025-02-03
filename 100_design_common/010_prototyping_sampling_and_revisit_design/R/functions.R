@@ -481,21 +481,27 @@ distribute_sample_over_panels <- function(sps, pan) {
 
 
 
-#' Subsample an ADHOC FAG in a FAG calendar
+#' Subsample and relax an ADHOC FAG in a FAG calendar
 #'
 #' Subsample an ADHOC FAG in a FAG calendar, taking into account a custom
 #' proportion.
 #'
-#' The custom proportion for subsampling is applied to  spatial-temporal
+#' The custom proportion for subsampling is applied to the spatial-temporal
 #' calendar of a single ADHOC FAG, after limiting the number of within-year
 #' repetitions of the ADHOC FAG per location to local_max_per_year.
+#'
+#' Furthermore, the date intervals of the remaining ADHOC FAGs are relaxed to
+#' take (at random) one of the existing date intervals of non-ADHOC FAGs that
+#' have the same start date (in the same stratum x location). This is done to
+#' not limit ADHOC FAGs to their initial date interval of one month, but align
+#' them with existing date intervals.
 #'
 #' @param fag_cal FAG calendar object.
 #' @param adhoc_fag Name of the ADHOC field activity group (FAG).
 #' @param local_max_per_year In case of repeated ADHOC FAG at a location, the
 #'   number of occasions to be sampled _before_ subsampling with `proportion`.
 #' @param proportion Proportion used in subsampling
-subsample_adhocfag <- function(fag_cal,
+subsample_and_relax_adhocfag <- function(fag_cal,
                                adhoc_fag,
                                local_max_per_year = 1,
                                proportion) {
@@ -509,7 +515,30 @@ subsample_adhocfag <- function(fag_cal,
     ) %>%
     select(-year_start) %>%
     # subsample
-    slice_sample(prop = samplingprop_adhocpipereplace)
+    slice_sample(prop = samplingprop_adhocpipereplace) %>%
+    # relax the ADHOC date intervals
+    inner_join(
+      fag_cal %>%
+        filter(!str_detect(field_activity_group, "ADHOC")) %>%
+        select(-field_activity_group, -rank) %>%
+        rename(
+          date_end_new = date_end,
+          date_interval_new = date_interval
+        ),
+      join_by(stratum, grts_address, date_start),
+      relationship = "one-to-many",
+      unmatched = c("error", "drop")
+    ) %>%
+    slice_sample(
+      n = 1,
+      by = !c(date_end_new, date_interval_new)
+    ) %>%
+    mutate(
+      date_end = date_end_new,
+      date_interval = date_interval_new
+    ) %>%
+    select(-contains("new")) %>%
+    arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
 }
 
 

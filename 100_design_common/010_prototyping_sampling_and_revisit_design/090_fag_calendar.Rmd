@@ -344,10 +344,13 @@ fag_stratum_grts_calendar_alladhoc <-
   arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
 ```
 
-## FAG calendar (subsampling ADHOC FAGs)
+## FAG calendar (subsampling and relaxing ADHOC FAGs)
 
 We implement the preset proportions to subsample ADHOC FAGs.
 Note that a maximum yearly frequency at stratum x location is enforced for each ADHOC FAG before subsampling, since that was the assumption of the subsampling proportions.
+
+Further, we relax the date intervals of the remaining ADHOC FAGs to take _one of the existing_ date intervals of non-ADHOC FAGs that have the same start date (in the same stratum x location).
+This is done in order to not limit ADHOC FAGs to their initial date interval of one month, but align them with existing date intervals.
 
 ```{r}
 set.seed(20250127)
@@ -356,7 +359,7 @@ fag_stratum_grts_calendar <-
   filter(!str_detect(field_activity_group, "ADHOC")) %>% 
   bind_rows(
     fag_stratum_grts_calendar_alladhoc %>% 
-      subsample_adhocfag(
+      subsample_and_relax_adhocfag(
         adhoc_fag = "ADHOCPIPEREPLACE",
         local_max_per_year = 1,
         proportion = samplingprop_adhocpipereplace
@@ -364,7 +367,7 @@ fag_stratum_grts_calendar <-
   ) %>%
   bind_rows(
     fag_stratum_grts_calendar_alladhoc %>% 
-      subsample_adhocfag(
+      subsample_and_relax_adhocfag(
         adhoc_fag = "ADHOCDIVERREPLACE",
         local_max_per_year = 1,
         proportion = samplingprop_adhocdiverreplace
@@ -372,7 +375,7 @@ fag_stratum_grts_calendar <-
   ) %>%
   bind_rows(
     fag_stratum_grts_calendar_alladhoc %>% 
-      subsample_adhocfag(
+      subsample_and_relax_adhocfag(
         adhoc_fag = "SURFADHOCGAUGEREPLACE",
         local_max_per_year = 1,
         proportion = samplingprop_surfadhocgaugereplace
