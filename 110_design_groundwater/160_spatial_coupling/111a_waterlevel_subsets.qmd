@@ -17,7 +17,8 @@ knitr:
 In this notebook, I filter the data for relevant subgroups in the following parameters:
 
 - `wata_min_dist` (via `wata_dist_class`)
-- `slope_r2.5m`
+- `mslope` (`dh/ds`)
+- `dz` difference in filter depth
 
 
 Then, the variogram procedure is repeated.
@@ -32,12 +33,12 @@ Notes on the filter parameters:
 **Overview of distance to 0.01m difference threshold:**
 
 
-| soilclass     | all in | water distance | water distance | slope indicator |
-|:--------------|-------:|---------------:|---------------:|----------------:|
-| `(threshold)` |   `NA` |      ` < 50 m` |      ` < 25 m` |      ` < 0.01 ` |
-| heavy         |  1.7 m |          3.1 m |          2.2 m |           9.4 m |
-| light         |  0.7 m |          2.3 m |          5.7 m |           9.1 m |
-| peat          | 10.2 m |         10.6 m |          7.8 m |          21.9 m |
+| soilclass     | all in | water distance | water distance |      slope | filter depth |
+|:--------------|-------:|---------------:|---------------:|-----------:|-------------:|
+| `(threshold)` |   `NA` |      ` < 50 m` |      ` < 25 m` | ` < 0.01 ` |     ` < 1 m` |
+| heavy         |  1.7 m |          3.1 m |          2.2 m |      9.4 m |        1.7 m |
+| light         |  0.7 m |          2.3 m |          5.7 m |      9.1 m |        0.7 m |
+| peat          | 10.2 m |         10.6 m |          7.8 m |     21.9 m |       14.0 m |
 
 
 As might be expected, homogenizing the data will increase the `range` of spatial co-variation.
@@ -717,9 +718,11 @@ Capped: $<= 1.0$
 
 
 - ~~`slope_r2.5m` < 0.05~~
+- `mslope` < 0.01 m/m
 
 :::{.callout-warning}
-No filter here yet; we will interpret slope pairwise.
+We now interpret slope pairwise: 
+difference in elevation, normalized by distance.
 :::
 
 
@@ -922,4 +925,204 @@ Capped: $<= 1$
 
 
 
-# TODO: fdepth
+# Filter Depth 
+## Filters
+
+
+- `dz` <  m
+
+
+```{r dfdepth-distribution}
+dfdepth_threshold <- 1 # Inf # m
+
+diff_meta %>%
+  select(dz) %>%
+  mutate(filltered = abs(dz) < dfdepth_threshold) %>% 
+  ggplot(aes(abs(dz), fill = filltered, color = filltered)) +
+  geom_histogram(bins = 256) +
+  theme_bw()
+    
+```
+
+
+```{r dfdepth-filter}
+somediff_meta <- diff_meta %>%
+  filter(
+    dz < dfdepth_threshold
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+## Binning
+
+
+```{r join-dfdepth}
+diff_all <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_all, 3)), decimals = 2)
+```
+
+
+
+```{r groupwise-binning-dfdepth}
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, n_bins
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+Sample size:
+
+```{r dfdepth-equibin-samplesize}
+#| label: fig-dfdepth-equibin-sample-size
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step(stat = "ecdf") +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  theme_bw()
+```
+
+
+## variograms {#sec-dfdepth}
+
+using water level difference (MAD)
+
+
+```{r dw-column-dfdepth}
+#| code-fold: false
+
+column <- "dw_groups"
+# column <- "dw_all"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-dfdepth-regression-heavy}
+#| label: fig-dfdepth-dw-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "heavy",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+
+```
+
+
+### light
+
+```{r dw-dfdepth-regression-light}
+#| label: fig-dfdepth-dw-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+```
+
+<!--
+::: {.callout-warning}
+Capped: $<= 1.0$ 
+::: 
+-->
+
+
+
+
+### peat
+
+```{r dw-dfdepth-regression-peat}
+#| label: fig-dfdepth-dw-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = 512, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 2)
+```
+
+<!--
+::: {.callout-warning}
+Capped: $<= 1$ 
+:::
+-->
+
+
+:::
+
