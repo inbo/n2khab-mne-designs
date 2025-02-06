@@ -34,10 +34,10 @@ Notes on the filter parameters:
 
 | soilclass     | all in | water distance | water distance | slope indicator |
 |:--------------|-------:|---------------:|---------------:|----------------:|
-| `(threshold)` |   `NA` |      ` < 50 m` |      ` < 25 m` |      ` < 0.05 ` |
-| heavy         |  3.0 m |          3.2 m |          4.0 m |           6.3 m |
-| light         |  1.2 m |          5.8 m |          6.0 m |          10.1 m |
-| peat          |  9.2 m |         14.2 m |          2.2 m |           9.8 m |
+| `(threshold)` |   `NA` |      ` < 50 m` |      ` < 25 m` |      ` < 0.01 ` |
+| heavy         |  1.7 m |          3.1 m |          2.2 m |           9.4 m |
+| light         |  0.7 m |          2.3 m |          5.7 m |           9.1 m |
+| peat          | 10.2 m |         10.6 m |          7.8 m |          21.9 m |
 
 
 As might be expected, homogenizing the data will increase the `range` of spatial co-variation.
@@ -59,7 +59,6 @@ Unfortunately, sample sizes of the complementary subsets are to small for defini
 Note that the homogenization paradigma is just a general tendency: the low overall variability in "peat" and the detail difference in remaining datapoint provides a good counter-example. Regression landscape is generally flat, i.e. MSE differences are low.
 Generally, my considerations on this are rather technical, to begin with: I can judge well the mathematical component of a change in threshold, and the effects on regression.
 I am glad for expert input on water level influences.
-
 
 
 
@@ -89,6 +88,18 @@ cluster_dist <- 3400 # m # parameter for clustering
 data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
 diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
 
+```
+
+
+## parameters
+
+```{r parameters}
+#| code-fold: false
+extent <- 512 # m
+n_bins <- as.integer(extent/4)
+
+bin_target <- 32 # alternative: observations per bin
+cap_dw <- 8 # m # maximum accepted water level difference
 ```
 
 
@@ -135,7 +146,8 @@ diff_meta <- diff_data %>%
       dwadi = wata_min_dist2-wata_min_dist1,
       dslope = slope_r2.5m2-slope_r2.5m1,
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
-      mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
+      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+      mslope = abs(dh) / ds
   )
 
 # glimpse(diff_meta)
@@ -312,12 +324,6 @@ paste0(
 
 Binning parameters; will use homogeneously filled bins:
 
-```{r parameters}
-#| code-fold: false
-extent <- 512 # m
-n_bins <- as.integer(extent/4)
-```
-
 
 ```{r join-water}
 diff_all <- somediff_meta %>%
@@ -337,7 +343,7 @@ diff_all <- somediff_meta %>%
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
   ) %>% 
-  filter(dw <= ds) # remove outliers
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
 
 # knitr::kable(t(head(diff_all, 3)), decimals = 2)
 ```
@@ -359,7 +365,9 @@ diff_equigrouped <- diff_all %>%
   group_by(soilclass) %>% 
   mutate(
     distance_equibin = cut_number(
-      ds, n_bins
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, n_bins
+      # ds, as.integer(min(c(floor(n()/8), n_bins)))
     ) # cut to equal sized bins
   ) %>%
   ungroup
@@ -384,11 +392,13 @@ Sample size:
 
 ```{r equibin-samplesize}
 #| label: fig-equibin-sample-size
-#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
 diff_equibinned %>%
   ggplot(aes(x = ds, y = cnt, color = soilclass)) +
-  geom_step() +
+  geom_step(stat = "ecdf") +
   geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
   theme_bw()
 ```
 
@@ -420,18 +430,20 @@ regression_by_soilclass(
   diff_equibinned,
   "heavy",
   reg_var = column,
-  maxx = 256, maxy = 2.0,
+  maxx = 256, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 
 ```
 
+<!--
 ::: {.callout-warning}
 Capped: $<= 2$ 
 :::
+-->
 
 
 ### light
@@ -443,17 +455,19 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = 1.6,
+  maxx = 256, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 ```
 
+<!--
 ::: {.callout-warning}
 Capped: $<= 1.6$ 
 :::
+-->
 
 
 
@@ -472,12 +486,14 @@ regression_by_soilclass(
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 ```
 
+<!--
 ::: {.callout-warning}
 Capped: $<= 2$ 
 :::
+-->
 
 
 :::
@@ -518,13 +534,7 @@ paste0(
 
 ## Binning
 
-Binning parameters; will use homogeneously filled bins:
-
-```{r parameters-25m}
-#| code-fold: false
-extent <- 512 # m
-n_bins <- as.integer(extent/4)
-```
+(Binning parameters as above.)
 
 
 ```{r join-water-25m}
@@ -545,7 +555,7 @@ diff_all <- somediff_meta %>%
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
   ) %>% 
-  filter(dw <= ds) # remove outliers
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
 
 # knitr::kable(t(head(diff_all, 3)), decimals = 2)
 ```
@@ -567,7 +577,8 @@ diff_equigrouped <- diff_all %>%
   group_by(soilclass) %>% 
   mutate(
     distance_equibin = cut_number(
-      ds, n_bins
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, n_bins
     ) # cut to equal sized bins
   ) %>%
   ungroup
@@ -592,11 +603,13 @@ Sample size:
 
 ```{r equibin-samplesize-25m}
 #| label: fig-equibin-sample-size-25m
-#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
 diff_equibinned %>%
   ggplot(aes(x = ds, y = cnt, color = soilclass)) +
-  geom_step() +
+  geom_step(stat = "ecdf") +
   geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
   theme_bw()
 ```
 
@@ -628,18 +641,20 @@ regression_by_soilclass(
   diff_equibinned,
   "heavy",
   reg_var = column,
-  maxx = 256, maxy = 3.0,
+  maxx = 256, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 
 ```
 
+<!--
 ::: {.callout-warning}
 Capped: $<= 2$ 
 :::
+-->
 
 
 ### light
@@ -651,17 +666,19 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = 3.0,
+  maxx = 256, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 ```
 
+<!--
 ::: {.callout-warning}
 Capped: $<= 1.6$ 
 :::
+-->
 
 
 
@@ -675,17 +692,19 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "peat",
   reg_var = column,
-  maxx = 256, maxy = 1,
+  maxx = 256, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 ```
 
+<!--
 ::: {.callout-warning}
 Capped: $<= 1.0$ 
 :::
+-->
 
 
 :::
@@ -697,16 +716,21 @@ Capped: $<= 1.0$
 ## Filters
 
 
-- `slope_r2.5m` < 0.05
+- ~~`slope_r2.5m` < 0.05~~
+
+:::{.callout-warning}
+No filter here yet; we will interpret slope pairwise.
+:::
 
 
 ```{r slope-distribution}
-slope_threshold <- 0.05
+# slope_threshold <- Inf #0.05
+slope_threshold <- 0.01/1 # 1 cm per meter
 
 diff_meta %>%
-  select(slope_r2.5m1) %>%
-  mutate(filltered = slope_r2.5m1 < slope_threshold) %>% 
-  ggplot(aes(slope_r2.5m1, fill = filltered, color = filltered)) +
+  select(mslope) %>%
+  mutate(filltered = mslope < slope_threshold) %>% 
+  ggplot(aes(log10(mslope), fill = filltered, color = filltered)) +
   geom_histogram(bins = 256) +
   theme_bw()
     
@@ -716,8 +740,9 @@ diff_meta %>%
 ```{r slope-filter}
 somediff_meta <- diff_meta %>%
   filter(
-    slope_r2.5m1 < slope_threshold,
-    slope_r2.5m2 < slope_threshold
+    # slope_r2.5m1 < slope_threshold,
+    # slope_r2.5m2 < slope_threshold
+    mslope < slope_threshold
   )
 
 paste0(
@@ -749,7 +774,7 @@ diff_all <- somediff_meta %>%
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
   ) %>% 
-  filter(dw <= ds) # remove outliers
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
 
 # knitr::kable(t(head(diff_all, 3)), decimals = 2)
 ```
@@ -771,7 +796,8 @@ diff_equigrouped <- diff_all %>%
   group_by(soilclass) %>% 
   mutate(
     distance_equibin = cut_number(
-      ds, n_bins
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, n_bins
     ) # cut to equal sized bins
   ) %>%
   ungroup
@@ -796,11 +822,13 @@ Sample size:
 
 ```{r slope-equibin-samplesize}
 #| label: fig-slope-equibin-sample-size
-#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
 diff_equibinned %>%
   ggplot(aes(x = ds, y = cnt, color = soilclass)) +
-  geom_step() +
+  geom_step(stat = "ecdf") +
   geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
   theme_bw()
 ```
 
@@ -835,7 +863,7 @@ regression_by_soilclass(
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 
 ```
 
@@ -849,17 +877,19 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = 1.0,
+  maxx = 256, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 ```
 
+<!--
 ::: {.callout-warning}
 Capped: $<= 1.0$ 
-:::
+::: 
+-->
 
 
 
@@ -873,17 +903,23 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "peat",
   reg_var = column,
-  maxx = 256, maxy = 1.0,
+  maxx = 512, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 2)
 ```
 
+<!--
 ::: {.callout-warning}
 Capped: $<= 1$ 
 :::
+-->
 
 
 :::
+
+
+
+# TODO: fdepth

@@ -111,7 +111,8 @@ diff_meta <- diff_data %>%
       dwadi = wata_min_dist2-wata_min_dist1,
       dslope = slope_r2.5m2-slope_r2.5m1,
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
-      mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
+      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+      mslope = abs(dh) / ds
   )
 
 # glimpse(diff_meta)
@@ -291,6 +292,9 @@ Binning parameters; will use homogeneously filled bins:
 #| code-fold: false
 extent <- 512 # m
 n_bins <- as.integer(extent/8)
+
+bin_target <- 48 # alternative: observations per bin
+cap_dw <- 8 # m # maximum accepted water level difference
 ```
 
 
@@ -312,7 +316,7 @@ diff_all <- somediff_meta %>%
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
   ) %>% 
-  filter(dw <= ds) # remove outliers
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
 
 # knitr::kable(t(head(diff_all, 3)), decimals = 2)
 ```
@@ -334,7 +338,8 @@ diff_equigrouped <- diff_all %>%
   group_by(soilclass) %>% 
   mutate(
     distance_equibin = cut_number(
-      ds, n_bins
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, n_bins
     ) # cut to equal sized bins
   ) %>%
   ungroup
@@ -359,11 +364,13 @@ Sample size:
 
 ```{r equibin-samplesize}
 #| label: fig-equibin-sample-size
-#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
 diff_equibinned %>%
   ggplot(aes(x = ds, y = cnt, color = soilclass)) +
-  geom_step() +
+  geom_step(stat = "ecdf") +
   geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
   theme_bw()
 ```
 

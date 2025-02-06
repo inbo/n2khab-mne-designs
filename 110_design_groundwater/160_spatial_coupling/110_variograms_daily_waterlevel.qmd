@@ -132,7 +132,8 @@ diff_meta <- diff_data %>%
       dwadi = wata_min_dist2-wata_min_dist1,
       dslope = slope_r2.5m2-slope_r2.5m1,
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
-      mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
+      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+      mslope = abs(dh) / ds
   )
 
 ```
@@ -149,6 +150,8 @@ First and foremost, data is filtered to include spatial distance of up to `exten
 #| code-fold: false
 extent <- 512 # m
 n_bins <- 32
+bin_target <- 48 # alternative: observations per bin
+cap_dw <- 8 # m # maximum accepted water level difference
 ```
 
 Binning is optional, with `n_bins =` `{r} n_bins` giving the number of bins (equally-spaced at `{r} extent/n_bins` m); note however that the most relevant binning strategies might be two others:
@@ -165,7 +168,7 @@ More on that below.
 # diff_meta %>% glimpse
 # diff_data %>% glimpse
 
-diff_all <- diff_meta %>%
+diff_meta <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
@@ -191,16 +194,27 @@ diff_all <- diff_meta %>%
         length.out = n_bins/2+2
       ) # cut to 8m bins
     )
-  ) %>%
+  ) 
+
+diff_all <- diff_meta %>% 
   left_join(diff_data,
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
   ) %>% 
-  filter(dw <= ds) # remove outliers
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
 
 # glimpse(diff_all)
 
+```
 
+:::{.callout-warning}
+All single observations with a difference in water level of *more than 16m* were filtered.
+
+Given a maximum filter depth of 8m, extent (i.e. maximum pair distance) of 1024m, and the flatness of Belgian topography, values of that magnitude are not plausible.
+:::
+
+
+```{r widegroup-data}
 diff_widegroup <- diff_all %>%
   summarize(
     cnt = n(),
@@ -393,6 +407,10 @@ How about using equal-sized bins, i.e. buckets of variable width which are all f
 
 Crucially, we'll have to group by location pair first because otherwise repeated measures fill single buckets.
 
+:::{.callout-warning}
+After feedback by Thierry, I try to stabilize the variograms by widening bins,
+aspiring to get approximately `{r} bin_target` observations per bin.
+:::
 
 ```{r equibin-preparation}
 #| code-fold: false
@@ -410,7 +428,8 @@ diff_equigrouped <- diff_all %>%
   group_by(soilclass) %>% 
   mutate(
     distance_equibin = cut_number(
-      ds, as.integer(extent/2)
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, as.integer(min(c(floor(n()/8), extent/2)))
     ) # cut to equal sized bins
   ) %>%
   ungroup
@@ -434,11 +453,13 @@ diff_equibinned <- diff_equigrouped %>%
 
 ```{r equibin-samplesize}
 #| label: fig-equibin-sample-size
-#| fig-cap: "Sample size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes."
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
 diff_equibinned %>%
   ggplot(aes(x = ds, y = cnt, color = soilclass)) +
-  geom_step() +
+  geom_step(stat = "ecdf") +
   geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
   theme_bw()
 ```
 
@@ -746,7 +767,7 @@ regression_by_soilclass("heavy",
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 100, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 
 ```
 
@@ -764,7 +785,7 @@ regression_by_soilclass("light",
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 100, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 ```
 
 
@@ -775,18 +796,20 @@ regression_by_soilclass("light",
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
 regression_by_soilclass("peat",
   reg_var = column,
-  maxx = 256, maxy = 2,
+  maxx = 256, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
+) + ylim(0, 2)
 ```
 
+<!--
 ::: {.callout-warning}
 Capped: $<= 2$ (see [@sec-peat-outliers])
 :::
+-->
 
 
 :::
@@ -1058,6 +1081,60 @@ pp_data %>%
 
 Some of the more obvious co-variates (e.g. soilclass) were used in the analysis above.
 The others might be interesting for other purposes, another day.
+
+
+## tracing outliers
+
+If the following plots are empty, we effectively removed all outliers above.
+
+```{r trace-outliers}
+outlier_trace <- diff_equibinned %>%
+  filter(
+    # soilclass == "peat",
+    dw_groups > 2
+  ) %>%
+  pull(distance_equibin)
+outlier_trace
+
+
+outlier_bins <- diff_equigrouped %>%
+  filter(distance_equibin %in% outlier_trace)
+
+outlier_bins %>%
+  ggplot(aes(x = ds, y = dw)) +
+  geom_point()
+
+
+outlier_pairs <- outlier_bins %>%
+  filter(dw > 5) %>%
+  pull(pair)
+
+
+diff_outliers <- diff_meta %>% 
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) 
+  # filter(dw <= ds, dw <= 24) # remove outliers
+
+outlier_observations <- diff_outliers %>%
+  filter(pair %in% outlier_pairs)
+
+outlier_observations %>%
+  ggplot(aes(x = abs(dw))) +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  theme_bw()
+
+```
+
+
+:::{.callout-warning}
+Conclusion:
+
+Removed observations with `dw > ` `{r} cap_dw`.
+Even if there were good ones in there, 
+they are a minority.
+:::
 
 
 ## references
