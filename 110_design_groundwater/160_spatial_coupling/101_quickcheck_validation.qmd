@@ -1,0 +1,134 @@
+---
+title: "Validation Quantification"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# What fraction of WATINA is validated?
+
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("ggplot2")   |> void() # a visualization toolbox
+
+source("./watina_migration.R")
+watina_dwh <- connect_watina()
+
+```
+
+
+# PeilPunt
+
+```{r}
+
+# tbl(watina_dwh, "FactPeilMeting")
+
+peilpunten <- tbl(watina_dwh, "dimPeilpunt") %>%
+  mutate(
+    is_validated = PeilpuntStatusCode == "VLD",
+    year = year(PeilpuntPlaatsing)
+  )  %>%
+  filter(year < 2025)
+
+data <- peilpunten %>%
+  summarize(
+    n(), sum(AantalMetingen, na.rm = TRUE),
+    .by = c(PeilpuntStatusCode, is_validated, year)
+  ) %>%
+  arrange(year, is_validated) %>%
+  collect
+data <- data %>% rename_with(~c("status", "vld", "year", "wells", "observations"))
+knitr::kable(data)
+```
+
+
+```{r}
+data %>%
+  ggplot(aes(x = year, y = wells, color = status)) +
+  geom_line()
+```
+
+
+# PeilMeting
+
+```{r}
+peilmetingen <- tbl(watina_dwh, "FactPeilMeting") %>%
+  mutate(year = floor(DatumWID/10000),
+    is_validated = PeilmetingStatusCode == "VLD",
+  ) %>% 
+  filter(year < 2025)
+
+observations <- peilmetingen %>% summarize(
+    n(),
+    .by = c(PeilmetingStatusCode, is_validated, year)
+  ) %>%
+  arrange(year, PeilmetingStatusCode) %>%
+  collect
+
+observations <- observations %>% rename_with(~c("status", "vld", "year", "observations"))
+knitr::kable(observations)
+```
+
+
+```{r}
+observations %>%
+  ggplot(aes(x = year, y = observations, color = status)) +
+  geom_line()
+```
+
+
+# Combination
+
+```{r}
+data <- peilmetingen %>%
+  left_join(peilpunten,
+    by = join_by(PeilpuntWID),
+    relationship = "many-to-many",
+    suffix = c("_meting", "_punt")
+  )
+
+counts <- data %>%
+  summarize(
+    n(),
+    .by = c(is_validated_punt, is_validated_meting, year_meting)
+  ) %>% collect %>%
+  mutate(validation = paste0(is_validated_punt, "_", is_validated_meting)) %>%
+  rename_with(~c("val_pt", "val_mtg", "year", "observations", "val")) %>%
+  filter(year < 2025)
+
+knitr::kable(counts)
+```
+
+```{r}
+g <- counts %>% 
+  filter(year > 2000) %>% 
+  ggplot(aes(x = year, y = observations, color = val)) +
+  geom_line() +
+  guides(color=guide_legend(title="validation (peilpunt | peilmeting)", position = "inside")) +
+  theme_bw()
+
+ggsave("figures/validation_share.png", g, dpi = 300)
+```
+
+```{r}
+sumry_tbl <- counts %>%
+  filter(year > 2000) %>% 
+  summarize(
+    percent =
+      100*sum(observations) / sum(counts$observations),
+    .by = c(val_pt, val_mtg)
+  ) %>%
+  rename_with(~c("Peilpunt_validated", "PeilMeting_validated", "share"))
+
+knitr::kable(sumry_tbl, digits = 1)
+```
