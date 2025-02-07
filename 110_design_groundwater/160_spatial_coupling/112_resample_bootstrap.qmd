@@ -1,0 +1,463 @@
+---
+title: "Water Level Variograms: Resampling/Bootstrapping"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# preparation
+
+... the usual.
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("ggplot2")   |> void() # for cut_number
+library("arrow")     |> void() # writing parquet files
+library("parallel")  |> void() # parallel processing
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# user-set parameters
+cluster_dist <- 3400 # m # parameter for clustering
+data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
+diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
+
+```
+
+
+```{r parameters}
+#| code-fold: false
+extent <- 512 # m
+n_bins <- 32
+bin_target <- 32 # alternative: observations per bin
+cap_dw <- 8 # m # maximum accepted water level difference
+```
+
+
+
+```{r load-data}
+
+pp_data <- read_parquet(data_export_file)
+
+diff_data <- read_parquet(diffdata_export_file)
+
+pp_join <- pp_data %>%
+  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         # emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         # emd_qdiff, emd_residual_qdiff
+         )
+
+diff_meta <- diff_data %>%
+  select(pp_idx1, pp_idx2) %>%
+  distinct() %>%
+  left_join(
+    pp_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    pp_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+      dh = elevation_dhmv2-elevation_dhmv1,
+      dz = fdepth2-fdepth1,
+      # damp = emd_ampsum2-emd_ampsum1,
+      # dqdiff = emd_qdiff2-emd_qdiff1,
+      dwadi = wata_min_dist2-wata_min_dist1,
+      dslope = slope_r2.5m2-slope_r2.5m1,
+      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+      mslope = abs(dh) / ds
+  )
+
+```
+
+
+
+
+```{r glimpse-data}
+
+# diff_meta %>% glimpse
+# diff_data %>% glimpse
+
+diff_meta <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, # damp,
+      # dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    ),
+    distance_bin = cut(ds,
+      breaks = seq(
+        -1,
+        extent,
+        length.out = extent+2
+      )
+    ), # cut to "meters" bin
+    distance_widebin = cut(ds,
+      breaks = seq(
+        -extent/n_bins*2,
+        extent,
+        length.out = n_bins/2+2
+      ) # cut to 8m bins
+    )
+  ) 
+
+diff_all <- diff_meta %>% 
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# glimpse(diff_all)
+
+```
+
+
+
+# grouping and binning
+
+```{r equibin-preparation}
+#| code-fold: false
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = ggplot2::cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, as.integer(min(c(floor(n()/8), extent/2)))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+    
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    n_obs = sum(n_obs),
+    dw = mean(dw, na.rm = TRUE), 
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+```
+
+
+```{r equibin-samplesize}
+#| label: fig-equibin-sample-size
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step(stat = "ecdf") +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  theme_bw()
+```
+
+
+
+
+## Regression Procedure Wrapper
+
+```{r regression-wrapper}
+#| code-fold: true
+
+source("regression_tools.R") 
+
+
+matern_function <- function(d, parameters) {
+  scale <- parameters[1] # related to semivariance
+  sigma <- parameters[2] # related to actual range; turning point
+  nugget <- parameters[3]
+  nu <- parameters[4]
+
+  sill <- scale + nugget
+  z <- sqrt(2 * nu) * d / sigma
+  K <- suppressWarnings(besselK(z, nu))
+  matern <- (z)^nu * K / (2^(nu - 1) * gamma(nu))
+  result <- sill - scale * matern
+  
+  result[is.na(result)] <- 0
+  return(result)
+}
+
+
+fit_matern <- function(x, y, ...) {
+}
+```
+
+
+
+```{r regression-matérn-general}
+trafo <- function(x) x
+
+regression_wrapper <- function(
+    regression_data, 
+    reg_var = "dw",
+    ...) {
+  
+  x <- regression_data$ds
+  y <- trafo(regression_data %>% pull(!!reg_var))
+
+  y <- y[x > 0]
+  x <- x[x > 0]
+  y <- y[x <= extent]
+  x <- x[x <= extent]
+
+  x <- x[!is.na(y)]
+  y <- y[!is.na(y)]
+
+ 
+  optimizer_results <- optim(
+    fn = function(params) {
+      distweighted_target_function(x, y, matern_function, params)
+    },
+    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
+    ...
+  )
+  
+  # store everything in one list;
+  # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$fcn <- matern_function
+  optimizer_results$regx <- x
+  optimizer_results$regy <- y
+
+  # wrap the function with the optimized parameters
+  optimizer_results$predict <- create_prediction_function(
+    matern_function,
+    optimizer_results
+  )
+
+  # calculate 1cm threshold
+  optimizer_results$threshold <- calculate_limit(optimizer_results, threshold = 0.01)
+
+  return(optimizer_results)
+}
+
+
+```
+
+
+
+
+# variograms {#sec-variograms}
+... in repeated execution.
+
+
+
+
+
+# bootstrapping
+- <https://www.modernstatisticswithr.com/modchapter.html#a-general-approach>
+
+
+## all in: getting starting values
+
+```{r regression-reference}
+lower_limits = c(0.0,   0.0, 0.0, 0.99)# 0.1)
+upper_limits = c(6.0, 400.0, 2.0, 1.01)#16.01)
+reference <- regression_wrapper(
+  regression_data = diff_equibinned,
+  par = c(1., 10, 0., 1.),
+  lower = lower_limits,
+  upper = upper_limits
+)
+```
+
+
+```{r parallel-bootstrap}
+
+# straps <- bind_rows(mclapply(
+#   1:n_iterations,
+#   datawrap_bootstrap("all", diff_equibinned),
+#   mc.cores = detectCores()-1
+#   ))
+# 
+# straps %>%
+#   filter(conv == 0) %>% 
+#   ggplot(aes(x = threshold)) +
+#   geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+#   labs(x = "threshold", y = "bootstrap", title = sc) +
+#   theme_bw()
+    
+```
+
+# wrapping by soilclass
+
+## bootstrap function
+```{r bootstrap}
+
+
+datawrap_bootstrap <- function(reference, pass_data) {
+
+  bootstrap_function <- function(i){
+    # Draw row numbers for the bootstrap sample:
+    row_numbers <- sample(1:nrow(pass_data), as.integer(nrow(pass_data)),
+                          replace = TRUE)
+    
+    # Obtain the bootstrap sample:
+    sample <- pass_data[row_numbers,]
+    
+    result <- regression_wrapper(
+      regression_data = sample,
+      par = reference$par,
+      lower = lower_limits,
+      upper = upper_limits
+    )
+    return(as.data.frame(list(
+        "i" = i,
+        "conv" = result$convergence,
+        "rmse" = result$value,
+        "scale" = result$par[1],
+        "sigma" = result$par[2],
+        "nugget" = result$par[3],
+        "nu" = result$par[4],
+        "threshold" = result$threshold
+      )))
+  }
+  return(bootstrap_function)
+}
+
+
+```
+
+
+## subset
+
+```{r subset-bootstrap}
+
+ref_store <- list()
+
+subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
+  reference <- regression_wrapper(
+    regression_data = sub_data,
+    par = c(1., 10, 0., 1.),
+    lower = lower_limits,
+    upper = upper_limits
+  )
+
+
+  ref_store[[sc]] <<- as.data.frame(list(
+      "i" = 0,
+      "conv" = reference$convergence,
+      "rmse" = reference$value,
+      "scale" = reference$par[1],
+      "sigma" = reference$par[2],
+      "nugget" = reference$par[3],
+      "nu" = reference$par[4],
+      "threshold" = reference$threshold,
+      "soilclass" = sc
+    ))
+
+  straps <- bind_rows(mclapply(
+    1:n_iterations,
+    datawrap_bootstrap(reference, sub_data),
+    mc.cores = detectCores()-2
+    ))
+  return (straps)
+}
+
+```
+
+```{r soil-subset-data}
+
+all_dolled_up <- list()
+for (sc in c("heavy", "light", "peat")) {
+  sub_data <- diff_equibinned %>% filter(soilclass == sc)
+  straps <- subset_bootstrap(sc, sub_data, n_iterations = 2^14)
+  straps$soilclass <- sc
+  all_dolled_up[[sc]] <- straps
+}
+
+all_dolled_up[["ref"]] <- bind_rows(ref_store)
+all_dolled_up <- bind_rows(all_dolled_up)
+all_dolled_up <- all_dolled_up %>%
+  mutate(sill = nugget + scale)
+
+# save bootstraps
+write_parquet(all_dolled_up, sink = "./data/bootstrapping_soilclass.parquet")
+
+```
+
+
+```{r count}
+
+# count failed regressions
+all_dolled_up %>% count(conv)
+
+```
+
+
+
+
+```{r one-parameter}
+
+ref_boots <- all_dolled_up %>%
+  filter(i == 0)
+sub_boots <- all_dolled_up %>%
+  filter(conv == 0, i > 0, if_all(everything(), ~ !is.na(.x)))
+
+param <- "threshold"
+
+```
+
+
+
+```{r plot-one-parameter}
+plot_param <- function(param){
+  h <- sub_boots %>%
+    mutate(param = sub_boots[, param]) %>% 
+    ggplot(aes(x = param, fill = soilclass, color = "black")) +
+    geom_vline(xintercept = ref_boots[,param]) +
+    geom_histogram(bins = 256, color = "black", alpha = 0.5, position = "identity") +
+    theme_bw()
+  ggsave(paste0("figures/bootstrap_", param, ".png"), h, dpi = 300)
+}
+
+```
+
+
+```{r plot-all-parameters}
+plot_param("threshold")
+plot_param("rmse")
+plot_param("scale")
+plot_param("sigma")
+plot_param("nugget")
+plot_param("sill")
+
+```
