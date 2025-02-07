@@ -44,6 +44,7 @@ if (getOption("browser") == "") options(browser = "librewolf")
 cluster_dist <- 3400 # m # parameter for clustering
 min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
 data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
+qq_export_file <- paste0("data/waterlevel_quantiles_cl", cluster_dist, ".parquet")
 diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
 
 # the user may choose to reload raw data
@@ -69,7 +70,7 @@ reload <- force_data_reassembly || !file.exists(data_export_file)
 max_filterdepth <- 5.8 # 3 # (m) # choice to focus on shallow gw (ecologically relevant for GW_03.3 and GW_05.1)
 
 peilpunten <- tbl(watina_dwh, "dimPeilpunt") %>%
-  filter(PeilpuntStatusCode == "VLD") %>% 
+  # filter(PeilpuntStatusCode == "VLD") %>% 
   filter(LandCode == "BE") %>%
     mutate(
       filterdepth = PeilbuisLengte - ReferentieNiveauMaaiveld - (FilterLengte/2)
@@ -93,6 +94,8 @@ peilpunten <- tbl(watina_dwh, "dimPeilpunt") %>%
     MeetpuntWID,
     PeilpuntXCoordinaat,
     PeilpuntYCoordinaat,
+    PeilpuntStatusCode,
+    MeetpuntStatusCode
   ) %>%
   rename(
     mp_idx = MeetpuntWID,
@@ -103,7 +106,8 @@ peilpunten <- tbl(watina_dwh, "dimPeilpunt") %>%
     flength = FilterLengte,
     fdepth = filterdepth,
     pp_code = PeilpuntCode,
-    status = PeilpuntStatusCode,
+    pp_vld = PeilpuntStatusCode,
+    mp_vld = MeetpuntStatusCode,
     x = PeilpuntXCoordinaat,
     y = PeilpuntYCoordinaat,
   ) %>%
@@ -111,14 +115,15 @@ peilpunten <- tbl(watina_dwh, "dimPeilpunt") %>%
   mutate(
     region = substring(pp_code, first = 1, last = 3)
   ) %>%
-    filter(region != "VBS") # remove Luxemburg
+  filter(region != "VBS") # remove Luxemburg
 
 # print(colnames(peilpunten))
 nrow(peilpunten)
 
 peilpunten %>%
-  ggplot(aes(x = fdepth)) +
-  geom_histogram(bins = 128, fill = "lightgray", color = "black") +
+  mutate(vld = paste0(mp_vld, "_", pp_vld)) %>% 
+  ggplot(aes(x = fdepth, fill = vld)) +
+  geom_histogram(bins = 128, color = "black") +
   theme_bw()
 ```
 
@@ -485,8 +490,12 @@ get_trace <- function(pp_idx, show_plot = FALSE) {
   # pp_idx = 24
 
   peilmeting <- tbl(watina_dwh, "FactPeilMeting") %>%
-    filter(PeilpuntWID == pp_idx) %>%
-    select(DatumWID, mTAW) %>%
+    filter(
+      PeilpuntWID == pp_idx,
+      PeilmetingStatusCode == "VLD"
+    ) %>%
+    mutate(is_vld = PeilmetingStatusCode == "VLD") %>% 
+    select(DatumWID, is_vld, mTAW) %>%
     arrange(DatumWID) %>%
     collect
   
@@ -503,10 +512,11 @@ get_trace <- function(pp_idx, show_plot = FALSE) {
 
   t <- peilmeting %>% pull(date) 
   t0 <- t[1]
-  t <- difftime(t, t0, units = "days")
+  t <- as.numeric(difftime(t, t0, units = "days"))
   y <- peilmeting %>% pull(mTAW) 
+  vld <- peilmeting %>% pull(is_vld) 
     
-  return(list("t" = as.numeric(t), "y" = y, "t0" = t0))
+  return(list("t" = t[vld], "y" = y[vld], "t0" = t0, "vld" = vld, "tx" = t, "yx" = y))
 }
 
 get_emd_trace <- function(tr) calculate_empirical_mode(tr[["y"]], t = tr[["t"]], zero = "-")
@@ -828,6 +838,14 @@ if (reload) {
   pp_data$emd_amp2 <- as.numeric(NA)
   pp_data$emd_n <- as.numeric(NA)
   pp_data$emd_residual_qdiff <- as.numeric(NA)
+
+  # choice / storage of quantiles per year
+  qntls <- seq(0.0, 1.0, length.out = 21)
+  # for (q in paste0("q", sprintf("%03.0f", 100*qntls))){
+  #   pp_data[, q] <- as.numeric(NA)
+  # }
+  qq_data <- list()
+
   pp_data$emd_qdiff <- as.numeric(NA)
   for (i in 1:length(indices)) { 
   
@@ -848,6 +866,23 @@ if (reload) {
 
     # print(label2)
 
+    ### yearly quantiles
+    qq_store <- list()
+    yearvec <- lubridate::year(trace[["t0"]] + trace[["t"]])
+    waterlevel <- trace[["y"]]
+    for (yr in sort(unique(yearvec))){
+      yearlevel <- waterlevel[yearvec == yr]
+      if (length(yearlevel) < 4) next
+      qq_store[[yr]] <- c(idx, yr, length(yearlevel),
+        t(as.numeric(quantile(yearlevel, qntls, na.rm = TRUE)))
+      )
+    }
+    qq_data[[i]] <- as.data.frame(do.call("rbind", qq_store))
+    if (length(qq_store) > 0) {
+      colnames(qq_data[[i]]) <- c("idx", "yr", "n", paste0("q", sprintf("%03.0f", 100*qntls)))
+    }
+
+    ### EMD
     multi_emd <- execute_multistep_emd(trace, apply_savgol = TRUE) 
     
     if (all(is.na(multi_emd))) next
@@ -870,6 +905,7 @@ if (reload) {
 
     # quantile difference
     qdiff <- function(mode) suppressWarnings(diff(as.numeric(quantile(mode, c(0.1, 0.9), na.rm = TRUE))))
+
     pp_data[pp_data$pp_idx == idx, "emd_qdiff"] <- qdiff(sg)
     if (!all(is.na(amp2))) {
       pp_data[pp_data$pp_idx == idx, "emd_residual_qdiff"] <- qdiff(secondmode)
@@ -887,7 +923,7 @@ if (reload) {
                             c(4, 5)
                             ),
       top = label2
-     ) # gridExtra
+    ) # gridExtra
 
     ggsave(paste0("figures/emd/", idx, "_", label, ".png", collapse = ""), h,
            dpi = 300, height = 16, width = 24, units = "cm") |> suppressMessages()
@@ -896,6 +932,10 @@ if (reload) {
   }
   
   close(pb) # close the progress bar
+
+  # store quantiles
+  qq_data <- bind_rows(qq_data)
+  write_parquet(qq_data, sink = qq_export_file)
 
   # combine amplitudes
   pp_data <- pp_data %>% mutate(emd_ampsum = sqrt(emd_amp1^2 + emd_amp2^2))
@@ -971,7 +1011,7 @@ It is okay to keep the close range sites for now.
 
 ## water level query
 
-query: pp1, pp2, date, mTAW1, mTAW2
+query: pp1, pp2, date, mTAW1, mTAW2, validation statusses
 
 ```{r level-query}
 
@@ -979,13 +1019,23 @@ query_measurement <- function (pp1, pp2){
 
   w1 <- tbl(watina_dwh, "FactPeilMeting") %>%
     filter(PeilpuntWID == pp1) %>%
-    select(PeilpuntWID, DatumWID, mTAW) %>%
-    rename(pp_idx1 = PeilpuntWID, date1 = DatumWID, w1 = mTAW)
+    select(PeilpuntWID, DatumWID, mTAW, PeilmetingStatusCode) %>%
+    rename(
+      pp_idx1 = PeilpuntWID,
+      date1 = DatumWID,
+      w1 = mTAW,
+      pm_vld1 = PeilmetingStatusCode
+    )
 
   w2 <- tbl(watina_dwh, "FactPeilMeting") %>%
     filter(PeilpuntWID == pp2) %>%
-    select(PeilpuntWID, DatumWID, mTAW) %>% 
-    rename(pp_idx2 = PeilpuntWID, date2 = DatumWID, w2 = mTAW)
+    select(PeilpuntWID, DatumWID, mTAW, PeilmetingStatusCode) %>%
+    rename(
+      pp_idx2 = PeilpuntWID,
+      date2 = DatumWID,
+      w2 = mTAW,
+      pm_vld2 = PeilmetingStatusCode
+    )
 
   pair_diff <- w1 %>%
     inner_join(w2,
@@ -998,7 +1048,7 @@ query_measurement <- function (pp1, pp2){
       dw = w2 - w1
     ) %>%
     rename(date = date1) %>%
-    select(pp_idx1, pp_idx2, date, dw)
+    select(pp_idx1, pp_idx2, pm_vld1, pm_vld2, date, dw)
 
   return(pair_diff)
 }
