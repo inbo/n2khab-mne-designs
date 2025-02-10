@@ -228,11 +228,11 @@ trafo <- function(x) x
 
 regression_wrapper <- function(
     regression_data, 
-    reg_var = "dw",
+    regression_variable = "dw",
     ...) {
   
   x <- regression_data$ds
-  y <- trafo(regression_data %>% pull(!!reg_var))
+  y <- trafo(regression_data %>% pull(!!regression_variable))
 
   y <- y[x > 0]
   x <- x[x > 0]
@@ -293,6 +293,7 @@ lower_limits = c(0.0,   0.0, 0.0, 0.99)# 0.1)
 upper_limits = c(6.0, 400.0, 2.0, 1.01)#16.01)
 reference <- regression_wrapper(
   regression_data = diff_equibinned,
+  regression_variable = "dw",
   par = c(1., 10, 0., 1.),
   lower = lower_limits,
   upper = upper_limits
@@ -333,8 +334,13 @@ datawrap_bootstrap <- function(reference, pass_data) {
     # Obtain the bootstrap sample:
     sample <- pass_data[row_numbers,]
     
+    # jittering the observations
+    # see https://influentialpoints.com/Training/properties-of-bootstrap_estimators.htm#howm
+    sample$dw <- jitter(sample$dw, amount = 0.1*sd(sample$dw))
+
     result <- regression_wrapper(
       regression_data = sample,
+      regression_variable = "dw",
       par = reference$par,
       lower = lower_limits,
       upper = upper_limits
@@ -399,7 +405,7 @@ subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
 all_dolled_up <- list()
 for (sc in c("heavy", "light", "peat")) {
   sub_data <- diff_equibinned %>% filter(soilclass == sc)
-  straps <- subset_bootstrap(sc, sub_data, n_iterations = 2^14)
+  straps <- subset_bootstrap(sc, sub_data, n_iterations = 2^15)
   straps$soilclass <- sc
   all_dolled_up[[sc]] <- straps
 }
@@ -432,7 +438,7 @@ ref_boots <- all_dolled_up %>%
 sub_boots <- all_dolled_up %>%
   filter(conv == 0, i > 0, if_all(everything(), ~ !is.na(.x)))
 
-param <- "threshold"
+# param <- "threshold"
 
 ```
 
@@ -445,8 +451,10 @@ plot_param <- function(param){
     ggplot(aes(x = param, fill = soilclass, color = "black")) +
     geom_vline(xintercept = ref_boots[,param]) +
     geom_histogram(bins = 256, color = "black", alpha = 0.5, position = "identity") +
+    xlab(param) +
     theme_bw()
   ggsave(paste0("figures/bootstrap_", param, ".png"), h, dpi = 300)
+  print(h)
 }
 
 ```
