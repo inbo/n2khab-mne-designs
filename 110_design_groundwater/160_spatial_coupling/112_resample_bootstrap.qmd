@@ -38,9 +38,14 @@ diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".pa
 ```{r parameters}
 #| code-fold: false
 extent <- 512 # m
-n_bins <- 32
-bin_target <- 32 # alternative: observations per bin
+bin_target <- 16 # alternative: observations per bin
 cap_dw <- 8 # m # maximum accepted water level difference
+
+wadi_threshold     <- units::set_units(50, "m")
+slope_threshold    <- 0.01/1 # 1 cm per meter
+dfdepth_threshold  <- 1 # m # Inf
+
+n_bootstraps <- 2**16 # number of bootstrapping iterations
 ```
 
 
@@ -85,9 +90,27 @@ diff_meta <- diff_data %>%
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
       mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
       mslope = abs(dh) / ds
+  ) %>%
+  filter(
+    wata_min_dist1 < wadi_threshold,
+    wata_min_dist2 < wadi_threshold,
+    mslope < slope_threshold,
+    abs(dz) < dfdepth_threshold
   )
 
+
+diff_meta %>% count(soilclass1)
+
 ```
+
+
+:::{.callout-warning}
+- water distance was filtered to be below `{r} wadi_threshold`.
+- Pairs with an elevation difference of more than `{r} slope_threshold` m per m distance were removed.
+- Filterdepth difference was limited to observations below `{m} dfdepth_threshold`.
+
+After that, `{r} nrow(diff_meta)` observation remain.
+:::
 
 
 
@@ -109,20 +132,6 @@ diff_meta <- diff_meta %>%
   mutate(
     pair = factor(paste0(
       as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
-    ),
-    distance_bin = cut(ds,
-      breaks = seq(
-        -1,
-        extent,
-        length.out = extent+2
-      )
-    ), # cut to "meters" bin
-    distance_widebin = cut(ds,
-      breaks = seq(
-        -extent/n_bins*2,
-        extent,
-        length.out = n_bins/2+2
-      ) # cut to 8m bins
     )
   ) 
 
@@ -204,7 +213,7 @@ matern_function <- function(d, parameters) {
   scale <- parameters[1] # related to semivariance
   sigma <- parameters[2] # related to actual range; turning point
   nugget <- parameters[3]
-  nu <- parameters[4]
+  nu <- 1 # parameters[4]
 
   sill <- scale + nugget
   z <- sqrt(2 * nu) * d / sigma
@@ -243,16 +252,40 @@ regression_wrapper <- function(
   y <- y[!is.na(y)]
 
  
-  optimizer_results <- optim(
+  ## using L-BFGS-B to get the optimizer close
+  pre_ <- optim(
     fn = function(params) {
       distweighted_target_function(x, y, matern_function, params)
+      # wrap_target_function(x, y, matern_function, params)
     },
     method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
     ...
   )
+
+  ## then performing a local Nelder-Mead adjustment
+  optimizer_results <- pre_
+  # optimizer_results <- optim(
+  #   fn = function(params) {
+  #     distweighted_target_function(x, y, matern_function, params)
+  #     # wrap_target_function(x, y, matern_function, params)
+  #   },
+  #   par = pre_$par,
+  #   method = "L-BFGS-B",
+  #   lower = lower_limits, upper = upper_limits,
+  #   control = list("fnscale" = 1000)
+  # )
+  # optimizer_results <- optim(
+  #   fn = function(params) {
+  #     distweighted_target_function(x, y, matern_function, params)
+  #     # wrap_target_function(x, y, matern_function, params)
+  #   },
+  #   par = pre_$par,
+  #   method = "Nelder-Mead" # "L-BFGS-B"
+  # )
   
   # store everything in one list;
   # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$pre_par <- pre_$par
   optimizer_results$fcn <- matern_function
   optimizer_results$regx <- x
   optimizer_results$regy <- y
@@ -289,12 +322,12 @@ regression_wrapper <- function(
 ## all in: getting starting values
 
 ```{r regression-reference}
-lower_limits = c(0.0,   0.0, 0.0, 0.99)# 0.1)
-upper_limits = c(6.0, 400.0, 2.0, 1.01)#16.01)
+lower_limits = c(0.0,   0.0, 0.0)# 0.1)
+upper_limits = c(4.0, extent, 4.0)#16.01)
 reference <- regression_wrapper(
   regression_data = diff_equibinned,
   regression_variable = "dw",
-  par = c(1., 10, 0., 1.),
+  par = c(1., 10., 0.), # 1.0)
   lower = lower_limits,
   upper = upper_limits
 )
@@ -341,7 +374,8 @@ datawrap_bootstrap <- function(reference, pass_data) {
     result <- regression_wrapper(
       regression_data = sample,
       regression_variable = "dw",
-      par = reference$par,
+      # par = reference$par,
+      par = c(1., 10., 0.),
       lower = lower_limits,
       upper = upper_limits
     )
@@ -352,7 +386,7 @@ datawrap_bootstrap <- function(reference, pass_data) {
         "scale" = result$par[1],
         "sigma" = result$par[2],
         "nugget" = result$par[3],
-        "nu" = result$par[4],
+        # "nu" = result$par[4],
         "threshold" = result$threshold
       )))
   }
@@ -372,9 +406,10 @@ ref_store <- list()
 subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
   reference <- regression_wrapper(
     regression_data = sub_data,
-    par = c(1., 10, 0., 1.),
+    par = c(1., 10, 0.), # 1.0)
     lower = lower_limits,
-    upper = upper_limits
+    upper = upper_limits,
+    control = list("fnscale" = 1000)
   )
 
 
@@ -385,7 +420,7 @@ subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
       "scale" = reference$par[1],
       "sigma" = reference$par[2],
       "nugget" = reference$par[3],
-      "nu" = reference$par[4],
+      # "nu" = reference$par[4],
       "threshold" = reference$threshold,
       "soilclass" = sc
     ))
@@ -405,7 +440,7 @@ subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
 all_dolled_up <- list()
 for (sc in c("heavy", "light", "peat")) {
   sub_data <- diff_equibinned %>% filter(soilclass == sc)
-  straps <- subset_bootstrap(sc, sub_data, n_iterations = 2^15)
+  straps <- subset_bootstrap(sc, sub_data, n_iterations = n_bootstraps)
   straps$soilclass <- sc
   all_dolled_up[[sc]] <- straps
 }
@@ -439,7 +474,10 @@ sub_boots <- all_dolled_up %>%
   filter(conv == 0, i > 0, if_all(everything(), ~ !is.na(.x)))
 
 # param <- "threshold"
+knitr::kable(t(ref_boots))
 
+# knitr::kable(t(head(sub_boots)))
+print(summary(sub_boots))
 ```
 
 
@@ -448,24 +486,47 @@ sub_boots <- all_dolled_up %>%
 plot_param <- function(param){
   h <- sub_boots %>%
     mutate(param = sub_boots[, param]) %>% 
-    ggplot(aes(x = param, fill = soilclass, color = "black")) +
+    ggplot(aes(x = param, fill = soilclass)) +
     geom_vline(xintercept = ref_boots[,param]) +
-    geom_histogram(bins = 256, color = "black", alpha = 0.5, position = "identity") +
+    geom_histogram(bins = 256, width = 1.05, color = NA, alpha = 0.67, position = "identity") +
     xlab(param) +
     theme_bw()
+
+  # if (param == "threshold") h <- h + xlim(0, 50)
+  # if (param == "scale") h <- h + xlim(lower_limits[1], upper_limits[1])
+  # if (param == "sigma") h <- h + xlim(lower_limits[2], upper_limits[2])
+  # if (param == "nugget") h <- h + xlim(lower_limits[3], upper_limits[3])
+
+  # if (TRUE) h <- h + ylim(0, 100) # ARRRR! R blanks bars above the ylim 8(
+
   ggsave(paste0("figures/bootstrap_", param, ".png"), h, dpi = 300)
-  print(h)
+  return(h)
 }
 
 ```
 
 
 ```{r plot-all-parameters}
-plot_param("threshold")
-plot_param("rmse")
-plot_param("scale")
-plot_param("sigma")
-plot_param("nugget")
-plot_param("sill")
+print(plot_param("threshold"))
+print(plot_param("rmse"))
+print(plot_param("scale"))
+print(plot_param("sigma"))
+print(plot_param("nugget"))
+print(plot_param("sill"))
 
 ```
+
+
+
+# Preliminary Status Quo (20250210)
+
+After *a lot* of trial-and-error, I note the following:
+
+- The default bootstrap regression (L-BFGS-N, with sensible limits) returns bimodal outcomes on the bootstraps if started with the reference outcome.
+- Yet these depend on start values, bins, *et cetera*. With the default, some parameters come out at the limits; threshold (as a parameter mainly derived from sigma) is heavily quantized depending on secondary fit params.
+- This is especially obvious for the peat subset.
+- BFGS followed by Nelder-Mead seems stable; Nelder-Mead seems to find a result in a Normal range, yet values are relatively meaningless (sigma > limits, some nuggets < 0, ...).
+- Filtered for water distance, slope, filter depth difference; `{r} round(100*4801/18741, 1)` \% of the observations pass all criteria.
+- Binning plays a role, but is kept dynamic.
+- Distance weighting of the regression RMSE might be influential; applied here together with the `fnscale` control parameter.
+- Regressions are convergent because of the start values (low, then running into the lowest local minimum).

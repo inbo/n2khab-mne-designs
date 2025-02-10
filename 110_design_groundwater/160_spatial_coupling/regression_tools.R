@@ -16,7 +16,7 @@ distweighted_target_function <- function(x, y, regressor, params) {
   #differences <- log(1.0+y) - log(1.0+predictions)
   # differences <- 1000*differences * (1+1/x^2)
   # return(sqrt( sum(differences^2)/sum((1+1/x^2)) ))
-  differences <- 1000*differences /sqrt(x)
+  differences <- 1000.*differences / sqrt(x)
   return(sqrt( mean(differences^2) ))
 }
 
