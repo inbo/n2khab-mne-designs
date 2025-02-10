@@ -423,6 +423,8 @@ get_normed <- function(vec) vec / norm(vec, type = "2")
 #'
 get_single_point_elevation <- function (idx, xy) {
 
+  stopifnot(inbospatial = require('inbospatial'))
+
   margin <- 2.5 # query an area around the focus point
 
   outcome <- NULL # required to identify failure in the tryCatch
@@ -448,7 +450,7 @@ get_single_point_elevation <- function (idx, xy) {
 
   # in case the query was unsuccesful, return NA
   if (is.null(outcome)) {
-    return(NA)
+    return(list("idx" = idx, "elevation_dhmv" = NA, "slope_r2.5m" = NA))
   }
 
   # otherwise, extract and return the elevation value.
