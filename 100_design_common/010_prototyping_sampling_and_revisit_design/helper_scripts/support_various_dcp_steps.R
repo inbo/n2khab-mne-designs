@@ -4,6 +4,7 @@
 
 # This code requires availability of the following objects:
 # - scheme_moco_ps_stratum_sppost_spsamples_sf
+# - n2khab_strata
 
 # First run setup chunk
 #
