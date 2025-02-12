@@ -103,15 +103,23 @@ collapse_strata <- function(df) {
 }
 
 
-aggregate_sample_size <- function(df, sample_size_all_panels_var, mhq_scheme_category) {
+aggregate_sample_size <- function(df,
+                                  sample_size_all_panels_var,
+                                  mhq_scheme_category,
+                                  by_module_combo = FALSE) {
+  if (by_module_combo) {
+    modvar <- "module_combo_code"
+  } else {
+    modvar <- "module"
+  }
   df %>%
     mutate(yearly_sample_size = .data[[sample_size_all_panels_var]] / cycle_duration_y) %>%
     summarize(
       yearly_sample_size = sum(yearly_sample_size, na.rm = TRUE),
-      .by = c(module, scheme)
+      .by = c(all_of(modvar), scheme)
     ) %>%
     filter(!is.na(yearly_sample_size), yearly_sample_size > 0) %>%
-    arrange(module, scheme) %>%
+    arrange(.data[[modvar]], scheme) %>%
     left_join(mhq_scheme_category, by = "scheme") %>%
     mutate(
       is_mhq = str_detect(scheme, "^HQ"),
@@ -119,7 +127,7 @@ aggregate_sample_size <- function(df, sample_size_all_panels_var, mhq_scheme_cat
     ) %>%
     summarize(
       yearly_sample_size = sum(yearly_sample_size) %>% round() %>% as.integer(),
-      .by = c(module, scheme_aggr)
+      .by = c(all_of(modvar), scheme_aggr)
     )
 }
 
