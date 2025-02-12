@@ -28,16 +28,18 @@ scheme_moco_ps_dom_stratum_sample_size_positive <-
   scheme_moco_ps_dom_stratum_sample_size %>% 
   select(-cycle_duration_y) %>% 
   filter(sp_sample_size_all_panels_stratum > 0)
+scheme_moco_ps_sppost_stratum_sample_size_obtained <- 
+  scheme_moco_ps_stratum_sppost_spsamples %>% 
+  mutate(
+    ss_by_sppost = map(sp_poststr_samples, ~count(., sp_poststratum, name = "total_sample_size_after_partitioning")),
+    .keep = "unused"
+  ) %>% 
+  unnest(ss_by_sppost)
 scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned <- 
   scheme_moco_ps_dom_stratum_sample_size_positive %>% 
   rename(total_sample_size_planned = sp_sample_size_all_panels_stratum) %>% 
   inner_join(
-    scheme_moco_ps_stratum_sppost_spsamples %>% 
-      mutate(
-        ss_by_sppost = map(sp_poststr_samples, ~count(., sp_poststratum, name = "total_sample_size_after_partitioning")),
-        .keep = "unused"
-      ) %>% 
-      unnest(ss_by_sppost),
+    scheme_moco_ps_sppost_stratum_sample_size_obtained,
     join_by(scheme, module_combo_code, panel_split, stratum),
     relationship = "many-to-many",
     unmatched = "error"
@@ -76,6 +78,26 @@ However several measures can be taken to maximize the synergy in panel membershi
 - For the above strata where spatial samples do match across schemes, panel membership is to be aligned.
 - Also, we will maximize the chance for cross-scheme and cross-compartment spatial alignment of sampling units by starting all panel designs on the same virtual date, and drop non-applicable (too early) parts afterwards.
 However do note that this introduces some instability with relation to selected sampling units in the first cycle, as further noted in section \@ref(cal-cleaning).
+
+Also checking the aggregated sizes of the obtained samples.
+
+```{r paged.print = FALSE}
+scheme_moco_ps_sppost_stratum_sample_size_obtained %>% 
+  inner_join(
+    scheme_target_paneldesign %>% 
+      select(scheme, module_combo_code, panel_split, cycle_duration_y),
+    join_by(scheme, module_combo_code, panel_split),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  aggregate_sample_size(
+    "total_sample_size_after_partitioning",
+    mhq_scheme_category,
+    by_module_combo = TRUE
+  ) %>% 
+  print(n = Inf)
+```
+
 
 ### Lifting mod_scheme_fag_paneldesign to the module combo & FA supergroup level
 
