@@ -14,7 +14,7 @@ if (file.exists(".Rprofile")) unlink(".Rprofile")
 # populate or update renv project library with the package versions used when
 # renv is not active:
 renv::hydrate(update = "all")
-# renv::install("yaml") # links a missing package in the renv project library
+# renv::hydrate("yaml") # links a missing package in the renv project library
 renv::snapshot() # records packages with their versions in renv.lock
 # renv::record("yaml") # records a renv project library package in renv.lock
 
