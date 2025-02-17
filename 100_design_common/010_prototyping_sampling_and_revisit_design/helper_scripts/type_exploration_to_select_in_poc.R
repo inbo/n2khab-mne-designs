@@ -7,13 +7,13 @@
 pop_size_terr <-
   read_vc(
     "030_preparations/010_explore_targetpop/pop_size_terr",
-    root = find_root(is_git_root)
+    root = gitroot
   ) %>%
   as_tibble() %>%
   inner_join(
     read_vc(
       "030_preparations/010_explore_targetpop/type_approaches",
-      root = find_root(is_git_root)
+      root = gitroot
     ),
     by = "type"
   ) %>%
