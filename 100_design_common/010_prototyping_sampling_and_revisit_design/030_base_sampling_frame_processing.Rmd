@@ -216,11 +216,43 @@ stratum_grts_phab_cellcenter_n2khab_collapsed <-
   )
 ```
 
+Determining for each stratum which GRTS addresses are dropped by bernouilli sampling, based on the `raster_runif` data source.
+Note that this step can be turned off with the `phab_correct` parameter.
+
+```{r eval = params$phab_correct}
+stratum_grts_n2khab_collapsed_phabexcluded <- 
+  tibble(
+    grts_address = values(grts_mh_n2khab, na.rm = TRUE)[, 1],
+    # lower limit (minimum threshold) for phab:
+    phab_ll = read_raster_runif() %>% 
+      crop(grts_mh_n2khab, mask = TRUE) %>% 
+      values(na.rm = TRUE) %>% 
+      .[, 1] * 100
+  ) %>% 
+  inner_join(
+    stratum_grts_phab_cellcenter_n2khab_collapsed,
+    join_by(grts_address),
+    relationship = "one-to-many",
+    unmatched = c("drop", "error")
+  ) %>% 
+  filter(phab < phab_ll) %>% 
+  select(grts_address, stratum)
+```
+
+Constructing the phab-corrected collapsed base sampling frame.
 
 ```{r}
-# dummy step
-stratum_grts_n2khab_phabcorrected <- stratum_grts_n2khab_collapsed
-phabcorrection_done <- FALSE
+stratum_grts_n2khab_phabcorrected <- 
+  if (params$phab_correct) {
+    stratum_grts_n2khab_collapsed %>% 
+      anti_join(
+        stratum_grts_n2khab_collapsed_phabexcluded,
+        join_by(stratum, grts_address)
+      )
+  } else {
+    # dummy step
+    stratum_grts_n2khab_collapsed
+  }
 ```
 
 
