@@ -275,11 +275,12 @@ domain_stratum_non_cell_nunits <-
 ```
 
 Determining the population size per domain for strata with cell-center-based units.
+Regardless whether phab-correction by bernouilli sampling has been carried out, we also determine population sizes by phab-based calculation from the collapsed base sampling frame, in order to compare both approaches.
 
 <!-- Below simplification (representing domains and polygons + their intersection as cells and then using phab) can be slightly improved by actually intersecting polygons by domains, then calculating phab-corrected areas (see git history for such an approach but still lacking st_intersection()). -->
 
 ```{r}
-domain_stratum_cellcenter_nunits <-
+domain_stratum_cellcenter_nunits_calculated <- 
   domain_grts_n2khab %>%
   inner_join(
     stratum_grts_phab_cellcenter_n2khab_collapsed,
@@ -290,8 +291,67 @@ domain_stratum_cellcenter_nunits <-
   summarize(
     nunits = sum(phab) / 100,
     .by = c(domain, stratum)
-  )
+  ) %>%
+  arrange(domain, stratum)
+
+domain_stratum_cellcenter_nunits <- 
+  if (params$phab_correct) {
+    domain_grts_n2khab %>%
+      inner_join(
+        stratum_grts_n2khab_phabcorrected,
+        join_by(grts_address),
+        relationship = "many-to-many",
+        unmatched = c("drop", "drop")
+      ) %>% 
+      semi_join(
+        n2khab_types_expanded_properties %>%
+          filter(sample_support_code == "cell_conditioned_on_center"),
+        join_by(stratum == type)
+      ) %>%
+      count(domain, stratum, name = "nunits") %>%
+      arrange(domain, stratum)
+  } else {
+    domain_stratum_cellcenter_nunits_calculated
+  }
 ```
+
+Listing largest relative and absolute differences between `domain_stratum_cellcenter_nunits` and `domain_stratum_cellcenter_nunits_calculated`:
+
+```{r}
+domain_stratum_cellcenter_nunits_diffs <-
+  domain_stratum_cellcenter_nunits_calculated %>%
+  rename(nunits_calc = nunits) %>%
+  inner_join(
+    domain_stratum_cellcenter_nunits,
+    join_by(domain, stratum),
+    relationship = "one-to-one",
+    unmatched = c("drop", "error")
+  ) %>%
+  mutate(
+    absdiff = nunits - nunits_calc,
+    reldiff = (nunits - nunits_calc) / nunits_calc
+  )
+
+domain_stratum_cellcenter_nunits_diffs %>%
+  filter(abs(reldiff) > 0.25)
+
+domain_stratum_cellcenter_nunits_diffs %>% 
+  arrange(desc(abs(absdiff)))
+```
+
+Notes:
+
+- The more accurate and fine-grained the base sampling frame (for the `cell_conditioned_on_center` strata) is, i.e. the more cells with phab = 100 occur, the less differences will emerge between both approaches.
+- Large relative differences emerge only for (very) small populations.
+- The bernouilli sampling uses a raster with numbers from a random uniform distribution, to apply a bernouilli sampling with cell-specific probability `phab / 100`.
+This naturally results in deviations from the expected (calculated) population size, but at the same time there is no straightforward way to adjust this while maintaining these bernouilli-based inclusion probabilities.
+Furthermore, post-hoc adjustments would not hold for every possible current or future domain at the same time.
+That ultimately requires a perfect base sampling frame for the `cell_conditioned_on_center` strata, having phab = 100 in all cells.
+- Spatially using a simple random approach within this bernouilli sampling indeed makes most sense: there is no reason to assume that cells to be selected (and that are assumed to represent phab = 100) should be spatially well spread or systematically distributed within a phab tier of the considered stratum.
+- Consequently, we accept this inaccuracy when reducing the sampling frame for `cell_conditioned_on_center` strata based on phab.
+- It is not possible to both apply the phab-based reduction and still use the calculated population size for finite population correction of sample sizes, because of the mismatch between the number of population units in the obtained base sampling frame (and which are available for sampling), and this calculated population size.
+  - If the latter is larger than in the corrected base sampling frame, then for smaller populations the required sample size (as obtained from the calculated population size) may or will not available in the sampling frame.
+  - If the calculated population size is smaller than in the corrected base sampling frame, then we could choose to neglect this difference and use the calculated population size for finite population correction, but unwanted side-effects (of more units available than expected) may then still occur, e.g. total spatial sample sizes would still arise in module combos or split panel designs (chapter \@ref(spatial-sampling)) that are larger than the calculated population size.
 
 Determining the population size per domain for strata with cell-based units.
 
