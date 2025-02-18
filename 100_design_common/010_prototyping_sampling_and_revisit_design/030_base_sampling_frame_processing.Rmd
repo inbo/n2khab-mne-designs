@@ -172,15 +172,7 @@ glimpse(stratum_grts_n2khab_collapsed)
 
 ### Apply bernouilli sampling to the collapsed base sampling frame, depending on phab value
 
-`phab` values of `cell_conditioned_on_center` types.
-
-<!-- XXXXXXX I think we should further process below object to a form that extends the `stratum_grts_cellcenter` object with a phab column! -->
-
-<!-- Also, since this has to be used for the collapsed sampling frame, the -->
-<!-- collapsing should happen too. -->
-<!-- Also prevent code duplication where such thing is already done (further down *) to -->
-<!-- calculate number of population units per domain. -->
-<!-- * See object `hmt_pol_stratum_cellcenter_nunits` -->
+`phab` values of `cell_conditioned_on_center` types in each polygon (no collapsing).
 
 ```{r}
 hmt_pol_phab_cellcenter_n2khab <-
@@ -201,7 +193,29 @@ dissolving polygons _per type_ based on a similar value:
 - the resulting polygons are only needed for the replacement protocol.
 Filtering in order to create spatial sampling frames can just be done at the cell level.
 
-<!-- PHAB correction still to be done! -->
+`phab` values of `cell_conditioned_on_center` types (strata) per GRTS address, including stratum collapsing.
+
+```{r}
+stratum_grts_phab_cellcenter_n2khab_collapsed <- 
+  hmt_pol_grts_cellcenter %>%
+  inner_join(
+    hmt_pol_phab_cellcenter_n2khab,
+    by = "polygon_id",
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  rename(stratum = type) %>%
+  collapse_strata() %>% 
+  select(-polygon_id) %>% 
+  relocate(stratum) %>% 
+  # due to the collapsing, we need to sum cases where types were translated into
+  # the same code
+  summarize(
+    phab = sum(phab),
+    .by = c(stratum, grts_address)
+  )
+```
+
 
 ```{r}
 # dummy step
@@ -235,14 +249,12 @@ Determining the population size per domain for strata with cell-center-based uni
 ```{r}
 domain_stratum_cellcenter_nunits <-
   domain_grts_n2khab %>%
-  inner_join(hmt_pol_grts_cellcenter, by = "grts_address") %>%
   inner_join(
-    hmt_pol_phab_cellcenter_n2khab,
-    by = "polygon_id",
-    relationship = "many-to-many"
+    stratum_grts_phab_cellcenter_n2khab_collapsed,
+    join_by(grts_address),
+    relationship = "many-to-many",
+    unmatched = c("drop", "drop")
   ) %>%
-  rename(stratum = type) %>%
-  collapse_strata() %>%
   summarize(
     nunits = sum(phab) / 100,
     .by = c(domain, stratum)
