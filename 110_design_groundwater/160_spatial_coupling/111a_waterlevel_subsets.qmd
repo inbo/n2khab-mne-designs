@@ -16,19 +16,14 @@ knitr:
 
 In this notebook, I filter the data for relevant subgroups in the following parameters:
 
-- `wata_min_dist` (via `wata_dist_class`)
-- `mslope` (`dh/ds`)
-- `dz` difference in filter depth
+- `wata_min_dist` (via `wata_dist_class`): Water distance is measured on various water-related zenodo sources, and is known to suffer some inaccuracy (e.g. from water body dynamics).
+- `mslope` (`dh/ds`): Slope is defined as the difference in elevation within a pair of wells, normalized by their distance.
+- `dz` difference in filter depth: Difference in filter depth is what it says: the difference in filter depth.
 
 
 Then, the variogram procedure is repeated.
 
 
-Notes on the filter parameters:
-
-- Water distance is measured on various water-related zenodo sources, and is known to suffer some inaccuracy (e.g. from water body dynamics).
-- Slope is defined as the difference in elevation within a pair of wells, normalized by their distance.
-- Difference in filter depth is what it says.
 
 
 **Overview of distance to 0.01m difference threshold:**
@@ -42,10 +37,10 @@ Notes on the filter parameters:
 | peat          | 10.2 m |         10.6 m |          7.8 m |     21.9 m |       14.0 m |
 
 
-As might be expected, homogenizing the data will increase the `range` of spatial co-variation.
+<!--As might be expected, homogenizing the data will increase the `range` of spatial co-variation.
 
 The results from an inclusive variogram analysis can be considered "conservative"/"cautious" estimates.
-
+-->
 
 # Preparation
 
@@ -81,9 +76,10 @@ diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".pa
 ```{r parameters}
 #| code-fold: false
 extent <- 512 # m
-n_bins <- as.integer(extent/4)
 
-bin_target <- 32 # alternative: observations per bin
+n_bins <- as.integer(extent/4) # the number of bins...
+bin_target <- 32 # ... and the preferred alternative: observations per bin
+
 cap_dw <- 8 # m # maximum accepted water level difference
 ```
 
@@ -506,7 +502,8 @@ diff_meta %>%
 ```{r water-filter-25m}
 somediff_meta <- diff_meta %>%
   filter(
-    wata_min_dist1 < water_threshold
+    wata_min_dist1 < water_threshold,
+    wata_min_dist2 < water_threshold
   )
 
 paste0(
@@ -1117,10 +1114,8 @@ Capped: $<= 1$
 > kan je ook de analyse doen voor de andere klassen die worden gecreëerd, i.e. water distance > 50 m en slope > 0.05? Je concludeert nl. dat de homogenisatie zorgt voor een toename in de range, maar geldt dit ook
 
 For convenience, this is available in another notebook: please find `111b_waterlevel_complements.qmd`. 
-Unfortunately, sample sizes of the complementary subsets are to small for definitive conclusions.
+Unfortunately, sample sizes of the complementary subsets are too small for definitive conclusions.
 
-
---> supplementary notebook not updated.
 
 
 > Ook verwacht ik niet per sé homogenisatie wanneer een kleinere *treshold* voor afstand tot water wordt gekozen: ik zou denken dat we grotere verschillen in grondwaterstand kunnen verwachten op korte afstand wanneer je je dichter bij een waterloop bevindt. Kan een model lopen bij een *treshold* van 25 m?

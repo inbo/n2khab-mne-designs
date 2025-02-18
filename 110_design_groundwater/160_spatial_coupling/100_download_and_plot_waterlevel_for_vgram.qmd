@@ -48,7 +48,7 @@ qq_export_file <- paste0("data/waterlevel_quantiles_cl", cluster_dist, ".parquet
 diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
 
 # the user may choose to reload raw data
-force_data_reassembly <- TRUE
+force_data_reassembly <- FALSE
 reload <- force_data_reassembly || !file.exists(data_export_file)
 ```
 
@@ -824,9 +824,7 @@ plot_multistep_emd(multi_emd, show = TRUE)
 TODO: is sampling frequency related? (implicit temporal averaging)
 -> partly compensated by savgol `fl` 
 
-```{r emd-loop-sites}
-
-
+```{r quantile-loop-sites}
 
 if (reload) {
   indices <- sort(unique(pp_data$pp_idx))
@@ -834,10 +832,6 @@ if (reload) {
     min = 0, max = length(indices),
     initial = 0, style = 1
   )
-  pp_data$emd_amp1 <- as.numeric(NA)
-  pp_data$emd_amp2 <- as.numeric(NA)
-  pp_data$emd_n <- as.numeric(NA)
-  pp_data$emd_residual_qdiff <- as.numeric(NA)
 
   # choice / storage of quantiles per year
   qntls <- seq(0.0, 1.0, length.out = 21)
@@ -846,7 +840,6 @@ if (reload) {
   # }
   qq_data <- list()
 
-  pp_data$emd_qdiff <- as.numeric(NA)
   for (i in 1:length(indices)) { 
   
     setTxtProgressBar(pb, i)
@@ -881,6 +874,51 @@ if (reload) {
     if (length(qq_store) > 0) {
       colnames(qq_data[[i]]) <- c("idx", "yr", "n", paste0("q", sprintf("%03.0f", 100*qntls)))
     }
+
+  }
+  
+  close(pb) # close the progress bar
+
+  # store quantiles
+  qq_data <- bind_rows(qq_data)
+  write_parquet(qq_data, sink = qq_export_file)
+
+}
+
+```
+
+```{r emd-loop-sites}
+
+if (FALSE && reload) {
+  indices <- sort(unique(pp_data$pp_idx))
+  pb <- txtProgressBar(
+    min = 0, max = length(indices),
+    initial = 0, style = 1
+  )
+  pp_data$emd_amp1 <- as.numeric(NA)
+  pp_data$emd_amp2 <- as.numeric(NA)
+  pp_data$emd_n <- as.numeric(NA)
+  pp_data$emd_residual_qdiff <- as.numeric(NA)
+  pp_data$emd_qdiff <- as.numeric(NA)
+
+  for (i in 1:length(indices)) { 
+  
+    setTxtProgressBar(pb, i)
+    idx <- indices[i]
+    label <- get_locationcode(idx)
+    trace <- get_trace(idx, show_plot = FALSE)
+
+    label2 <- paste(
+        as.character(idx),
+        get_info(idx, "cluster"),
+        get_info(idx, "pp_code"),
+        as.character(round(as.numeric(get_info(idx, "elevation_dhmv")))),
+        get_info(idx, "soilclass"),
+        get_info(idx, "wata_dist_class"),
+        collapse = " "
+      )
+
+    # print(label2)
 
     ### EMD
     multi_emd <- execute_multistep_emd(trace, apply_savgol = TRUE) 
@@ -933,10 +971,6 @@ if (reload) {
   
   close(pb) # close the progress bar
 
-  # store quantiles
-  qq_data <- bind_rows(qq_data)
-  write_parquet(qq_data, sink = qq_export_file)
-
   # combine amplitudes
   pp_data <- pp_data %>% mutate(emd_ampsum = sqrt(emd_amp1^2 + emd_amp2^2))
 
@@ -948,15 +982,18 @@ pp_data <- read_parquet(data_export_file)
 
 
 ```{r amplitude-map}
+#| eval: false
 
-st_amp <- pp_data %>%
-  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
-
-mapview(st_amp,
-  map.types = c("CartoDB.Positron", "OpenTopoMap", "CartoDB.DarkMatter", "OpenStreetMap" ),
-  zcol = "emd_ampsum"
-  # legend = FALSE
-)
+if (FALSE){
+  st_amp <- pp_data %>%
+    sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+  
+  mapview(st_amp,
+    map.types = c("CartoDB.Positron", "OpenTopoMap", "CartoDB.DarkMatter", "OpenStreetMap" ),
+    zcol = "emd_ampsum"
+    # legend = FALSE
+  )
+}
 
 ```
 
