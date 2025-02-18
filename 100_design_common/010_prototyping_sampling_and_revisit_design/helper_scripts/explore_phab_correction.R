@@ -64,3 +64,45 @@ diffs %>%
   ggplot(aes(x = absdiff)) +
   geom_density() +
   facet_wrap(~domain, scales = "free_y")
+
+# comparing mhq_terr sample with stratum_grts_n2khab_phabcorrected
+
+mhq_terr_datapath <- file.path(dirname(gitroot), "n2khab-sample-admin/data/mhq_terr/rapportage2025")
+mhq_terr_assessments <-
+  read_vc("mhq_terr_assessments", root = mhq_terr_datapath) %>%
+  as_tibble()
+mhq_terr_popunits <-
+  read_vc("mhq_terr_popunits", root = mhq_terr_datapath) %>%
+  as_tibble()
+mhq_assessed_locations <-
+  mhq_terr_popunits %>%
+  select(point_code, grts_ranking_draw, type) %>%
+  semi_join(
+    mhq_terr_assessments %>%
+      filter(is_present) %>%
+      distinct(point_code, type),
+    join_by(point_code, type)
+  ) %>%
+  mutate(grts_ranking_draw = as.integer(grts_ranking_draw)) %>%
+  select(grts_ranking_draw, type) %>%
+  distinct()
+
+mhq_assessed_locations %>%
+  filter(type %in% stratum_grts_n2khab_phabcorrected$stratum) %>%
+  left_join(
+    stratum_grts_n2khab_phabcorrected %>%
+      mutate(match = TRUE),
+    join_by(
+      grts_ranking_draw == grts_address,
+      type == stratum
+    ),
+    relationship = "one-to-one"
+  ) %>%
+  summarize(
+    n_match = n(),
+    prop_match = sum(match, na.rm = TRUE) / n(),
+    .by = type
+  ) %>%
+  arrange(desc(prop_match)) %>%
+  print(n = Inf)
+
