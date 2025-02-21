@@ -1,5 +1,31 @@
 library(ggplot2)
 
+
+# MHQ-derived components --------------------------------------------------
+
+valid_extra_popunits_cell_all_n2khab %>%
+  inner_join(
+    valid_extra_popunits_cell_all_n2khab,
+    join_by(grts_address_drawn == grts_address),
+    relationship = "many-to-many",
+    unmatched = "drop",
+    keep = TRUE
+  ) %>%
+  filter(grts_address_drawn.x != grts_address.x)
+
+# replacements
+
+valid_extra_popunits_cell_all_n2khab %>%
+  filter(grts_address_drawn != grts_address)
+
+# non-replacements
+
+valid_extra_popunits_cell_all_n2khab %>%
+  filter(grts_address_drawn == grts_address)
+
+# phab correction ---------------------------------------------------------
+
+
 # object where popsize is determined by cell count after bernouilli sampling
 domain_stratum_cellcenter_nunits <-
   domain_grts_n2khab %>%
