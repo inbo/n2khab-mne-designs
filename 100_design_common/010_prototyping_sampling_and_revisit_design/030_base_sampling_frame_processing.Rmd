@@ -166,6 +166,160 @@ stopifnot(
 ```
 
 
+### Updating the base sampling frame based on existing field assessments
+
+The aim is to add existing field assessments to the base sampling frame.
+
+These steps require the availability of data that are currently external to this repository and used packages.
+
+```{r}
+# A bit clumsy; needs maintenance. In the longer term, the management of all
+# this needs more centralization and rigidity.
+mhq_terr_datapath <- file.path(
+  dirname(gitroot),
+  "n2khab-sample-admin/data/mhq_terr/rapportage2025"
+)
+mhq_watersurfaces_datapath <- file.path(
+  dirname(gitroot),
+  "n2khab-sample-admin/data/mhq_watersurfaces/rapportage2025"
+)
+mhq_data_available <- 
+  dir.exists(mhq_terr_datapath) && dir.exists(mhq_watersurfaces_datapath)
+```
+
+These data are `r if (!mhq_data_available) "_not_"` available.
+
+```{r eval = mhq_data_available}
+mhq_terr_popunits <-
+  read_vc("mhq_terr_popunits", root = mhq_terr_datapath) %>%
+  as_tibble() %>% 
+  mutate(
+    type = factor(type, levels = levels(n2khab_types$type)),
+    source = factor(source),
+    across(where(is.numeric), as.integer)
+  ) %>% 
+  select(-sac, -phab, -polygon_id) %>% 
+  rename(
+    grts_address = grts_ranking,
+    grts_address_drawn = grts_ranking_draw
+  )
+mhq_terr_refpoints <-
+  read_vc("mhq_terr_refpoints", root = mhq_terr_datapath) %>%
+  as_tibble() %>% 
+  select(point_code, is_cell_center = is_centroid)
+mhq_watersurfaces_assessments <-
+  read_vc("mhq_watersurfaces_assessments", root = mhq_watersurfaces_datapath) %>%
+  as_tibble()
+mhq_watersurfaces_populationunits <-
+  read_vc("mhq_watersurfaces_populationunits", root = mhq_watersurfaces_datapath) %>%
+  as_tibble()
+```
+
+```{r eval = mhq_data_available}
+n2khab_types_cell_all <- 
+  n2khab_types_expanded_properties %>% 
+  select(type, grts_join_method) %>% 
+  filter(str_detect(grts_join_method, "cell"))
+valid_extra_popunits_cell_all_n2khab <- 
+  mhq_terr_popunits %>% 
+  # only consider assessment data:
+  filter(str_detect(source, "assessment")) %>% 
+  inner_join(
+    read_types() %>% 
+      select(type, typelevel, hydr_class),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # expansion of main types to subtypes is needed to join with MNE target
+  # population; those main types are subsequently removed. We don't expand
+  # subtypes to main types
+  expand_types(mark = TRUE) %>% 
+  filter(
+    !(expanded & typelevel == "main_type"),
+    is.na(expanded_to) | expanded_to != "main_type"
+  ) %>% 
+  select(-typelevel, -expanded, -source) %>% 
+  # at the time of coding, 2 records from lhs needed to be dropped because
+  # they are not cell-based types (but aquatic)
+  filter(!(hydr_class %in% c("HC3"))) %>% 
+  # adding grts_join_method (either cell or cell_center)
+  inner_join(
+    n2khab_types_cell_all,
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # include whether a location is assessed at the cell center
+  inner_join(
+    mhq_terr_refpoints,
+    join_by(point_code),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  select(-point_code, -hydr_class) %>% 
+  rename(assessed_at_cell_center = is_cell_center) %>% 
+  filter(
+    # don't include legacy sites except if grts_join_method is cell (also, note
+    # that all 'bosinventarisatie' sites are considered legacy sites and are
+    # never assessed at the cell center). At the time of coding such combination
+    # did not exist BTW.
+    !legacy_site | grts_join_method == "cell",
+    # require that cell_center-joined types have an assessment at the cell
+    # center
+    grts_join_method == "cell_center" & assessed_at_cell_center |
+      grts_join_method == "cell"
+  ) %>% 
+  mutate(typelevel_certain = is.na(expanded_to)) %>% 
+  select(-expanded_to, -grts_join_method, -legacy_site) %>% 
+  relocate(grts_address_drawn)
+```
+
+Checking that non-replaced GRTS addresses for cell-center types are unique.
+
+```{r eval = mhq_data_available}
+stopifnot(
+  valid_extra_popunits_cell_all_n2khab %>% 
+    filter(
+      grts_address_drawn == grts_address,
+      assessed_at_cell_center
+    ) %>% 
+    count(grts_address_drawn) %>% 
+    filter(n > 1) %>% 
+    nrow() == 0
+)
+```
+
+For each _drawn_ GRTS address x type, we expect only one occurrence.
+Listing violations for further enquiry.
+
+```{r paged.print = FALSE, eval = mhq_data_available}
+valid_extra_popunits_cell_all_n2khab %>% 
+  count(grts_address_drawn, type) %>% 
+  filter(n > 1) %>% 
+  semi_join(
+    valid_extra_popunits_cell_all_n2khab, 
+    .,
+    join_by(grts_address_drawn, type)
+  )
+```
+
+For each _real_ GRTS address x type, we expect only one occurrence.
+Listing violations for further enquiry.
+
+```{r paged.print = FALSE, eval = mhq_data_available}
+valid_extra_popunits_cell_all_n2khab %>% 
+  count(grts_address, type) %>% 
+  filter(n > 1) %>% 
+  semi_join(
+    valid_extra_popunits_cell_all_n2khab, 
+    .,
+    join_by(grts_address, type)
+  ) %>% 
+  arrange(grts_address)
+```
+
+
 ### Apply bernouilli sampling to the collapsed base sampling frame, depending on phab value
 
 `phab` values of `cell_conditioned_on_center` types in each polygon (no collapsing).
