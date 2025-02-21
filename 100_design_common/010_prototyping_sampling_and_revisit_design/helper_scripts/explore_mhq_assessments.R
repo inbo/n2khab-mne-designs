@@ -45,6 +45,13 @@ mhq_terr_popunits %>%
   filter(n > 1) %>%
   semi_join(mhq_terr_popunits, ., join_by(point_code))
 
+# point_code is unique when only considering assessment as a source.
+mhq_terr_popunits %>%
+  filter(str_detect(source, "assessment")) %>%
+  count(point_code) %>%
+  filter(n > 1) %>%
+  nrow() == 0
+
 # point_code consistent with combination of grts_ranking x grts_ranking_draw
 mhq_terr_popunits %>%
   distinct(point_code, grts_ranking, grts_ranking_draw) %>%
@@ -60,6 +67,32 @@ mhq_terr_popunits %>%
 # grts_ranking empty
 mhq_terr_popunits %>% filter(is.na(grts_ranking_draw)) %>% nrow() # bosinventarisatie
 mhq_terr_popunits %>% filter(is.na(grts_ranking)) %>% nrow()
+
+mhq_terr_popunits %>%
+  filter(is.na(grts_ranking_draw)) %>%
+  count(legacy_site)
+
+# all points from 'bosinventarisatie' are not labelled as cell centroid
+mhq_terr_popunits %>%
+  filter(is.na(grts_ranking_draw)) %>%
+  inner_join(
+    mhq_terr_refpoints,
+    join_by(point_code),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  count(is_centroid)
+
+# all legacy sites are not labelled as cell centroid
+mhq_terr_popunits %>%
+  filter(legacy_site) %>%
+  inner_join(
+    mhq_terr_refpoints,
+    join_by(point_code),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  count(is_centroid)
 
 # grts_ranking kept
 mhq_terr_popunits %>%
@@ -86,7 +119,7 @@ not_in_hmt %>% count(source) # most are from 'assessment only' XXXXXXXXXXXXXXXXX
 
 
 # explore
-mhq_terr_popunits %>% distinct(source)
+mhq_terr_popunits %>% count(source)
 mhq_terr_popunits$phab %>% summary()
 
 
@@ -143,8 +176,30 @@ mhq_terr_assessments %>%
   count(n_repeated, last_assessment_year) %>%
   pivot_wider(names_from = n_repeated, values_from = n, values_fill = 0)
 
+# contradictions between changed GRTS address and change_location?
+assessment_replacement <-
+  mhq_terr_assessments %>%
+  select(assessment_date, point_code, type, is_present, change_location) %>%
+  inner_join(
+    mhq_terr_popunits %>%
+      filter(str_detect(source, "assessment")) %>%
+      select(point_code, grts_ranking, grts_ranking_draw, type),
+    join_by(point_code, type),
+    relationship = "many-to-one",
+    unmatched = c("drop", "error")
+  ) %>%
+  mutate(local_replacement = grts_ranking != grts_ranking_draw) %>%
+  relocate(local_replacement, .before = grts_ranking)
 
+assessment_replacement %>%
+  count(is_present, change_location, local_replacement) %>%
+  filter(change_location != local_replacement)
 
+assessment_replacement %>%
+  filter(change_location != local_replacement) %>%
+  semi_join(assessment_replacement, ., join_by(point_code)) %>%
+  arrange(grts_ranking, grts_ranking_draw, type, point_code) %>%
+  print(n = 25)
 
 # mhq_terr_measurements ---------------------------------------------------
 
