@@ -293,20 +293,37 @@ We don't need points for `grts_join_method == "cell"`.
 We will use cell centers on the fly for `grts_join_method == "cell_center"`.
 
 Defining points that represent the watersurface units (object `points_watsurf`).
+This step requires the availability of data that are currently external to this repository and used packages.
 
 ```{r}
-# Accessing a temporary data source for watersurfaces
-with_drive_quiet({
-  path <- file.path(tempdir(), "watersurfaces_refpoints.tsv")
-  drive_download(as_id("1XgtdZOebbqp-MJih60P_Vi-npz_5UVkY"), path = path)
-  path2 <- file.path(tempdir(), "watersurfaces_refpoints.yml")
-  drive_download(as_id("1Bb07utgZOyMK65TdR64-4VjGP7T6GqMa"), path = path2)
-})
-points_watsurf <- read_vc("watersurfaces_refpoints", tempdir()) %>%
-  as_tibble() %>%
+if (curl::has_internet()) {
+  # Accessing a temporary data source for watersurfaces
+  with_drive_quiet({
+    path <- file.path(tempdir(), "watersurfaces_refpoints.tsv")
+    drive_download(as_id("1XgtdZOebbqp-MJih60P_Vi-npz_5UVkY"), path = path)
+    path2 <- file.path(tempdir(), "watersurfaces_refpoints.yml")
+    drive_download(as_id("1Bb07utgZOyMK65TdR64-4VjGP7T6GqMa"), path = path2)
+  })
+  points_watsurf <- 
+    read_vc("watersurfaces_refpoints", tempdir()) %>%
+    as_tibble()
+  invisible(file.remove(path, path2))
+} else {
+  # Clumsy approach; needs maintenance. In the longer term, the management of
+  # all this needs more centralization and rigidity.
+  mhq_ssfws_datapath <- file.path(
+    dirname(gitroot),
+    "n2khab-samplingframes/data/watersurfaces"
+  )
+  stopifnot(dir.exists(mhq_ssfws_datapath))
+  points_watsurf <- 
+    read_vc("watersurfaces_refpoints", root = mhq_ssfws_datapath) %>%
+    as_tibble()
+}
+points_watsurf <- 
+  points_watsurf %>%
   select(polygon_id, x, y) %>%
   st_as_sf(coords = c("x", "y"), crs = 31370)
-invisible(file.remove(path, path2))
 # adding all other watersurfaces
 points_watsurf <-
   bind_rows(
