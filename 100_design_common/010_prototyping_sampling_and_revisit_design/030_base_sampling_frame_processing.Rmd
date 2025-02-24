@@ -220,10 +220,6 @@ mhq_watersurfaces_populationunits <-
 Determining a list of valid terrestrial population units for the collapsed base sampling frame.
 
 ```{r eval = mhq_data_available}
-n2khab_types_cell_all <- 
-  n2khab_types_expanded_properties %>% 
-  select(type, grts_join_method) %>% 
-  filter(str_detect(grts_join_method, "cell"))
 valid_extra_popunits_cell_all_n2khab <- 
   mhq_terr_popunits %>% 
   # only consider assessment data:
@@ -249,7 +245,9 @@ valid_extra_popunits_cell_all_n2khab <-
   filter(!(hydr_class %in% c("HC3"))) %>% 
   # adding grts_join_method (either cell or cell_center)
   inner_join(
-    n2khab_types_cell_all,
+    n2khab_types_expanded_properties %>% 
+      select(type, grts_join_method) %>% 
+      filter(str_detect(grts_join_method, "cell")),
     join_by(type),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
