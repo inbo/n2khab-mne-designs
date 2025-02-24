@@ -23,6 +23,11 @@ valid_extra_popunits_cell_all_n2khab %>%
 valid_extra_popunits_cell_all_n2khab %>%
   filter(grts_address_drawn == grts_address)
 
+# counting replacements
+
+valid_extra_popunits_cell_all_n2khab_tidy %>%
+  count(across(starts_with("replace"), \(x) is.na(x)))
+
 # phab correction ---------------------------------------------------------
 
 
