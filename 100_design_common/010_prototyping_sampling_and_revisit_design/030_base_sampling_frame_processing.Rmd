@@ -135,8 +135,16 @@ stratum_grts_n2khab_collapsed <-
   # subtypes and main types that are attached to the same GRTS address, i.e.
   # were attached to the same habitatmap polygon, have induced duplicates. We
   # need to solve that:
-  distinct()
+  distinct() %>% 
+  mutate(
+    typelevel_certain = NA,
+    replaced_by = NA_integer_,
+    replacement_for = NA_integer_ 
+  ) %>% 
+  relocate(typelevel_certain, .after = stratum)
 ```
+
+Note that we also added some extra attributes with relation to assessments and local replacements.
 
 Checking that GRTS addresses occur only once in each stratum.
 
@@ -430,6 +438,8 @@ stopifnot(
 
 ### Apply bernouilli sampling to the collapsed base sampling frame, depending on phab value
 
+#### Extend collapsed base sampling frame for cell-centered strata with phab column
+
 `phab` values of `cell_conditioned_on_center` types in each polygon (no collapsing).
 
 ```{r}
@@ -473,6 +483,52 @@ stratum_grts_phab_cellcenter_n2khab_collapsed <-
     .by = c(stratum, grts_address)
   )
 ```
+
+
+#### Substitute with assessed cell-centered population units (phab = 100)
+
+Formatting subset of cell-centered units in `valid_extra_popunits_cell_all_n2khab_tidy` as the collapsed base sampling frame `stratum_grts_n2khab_collapsed`.
+
+```{r eval = mhq_data_available}
+stratum_grts_phab_cellcenter_n2khab_extra <- 
+  valid_extra_popunits_cell_all_n2khab_tidy %>% 
+  filter(assessed_at_cell_center) %>% 
+  select(-assessed_at_cell_center)
+```
+
+Updating the collapsed base sampling frame `stratum_grts_n2khab_collapsed` by substituting with cells from `stratum_grts_phab_cellcenter_n2khab_extra`.
+
+```{r eval = mhq_data_available}
+stratum_grts_n2khab_collapsed <- 
+  bind_rows(
+    stratum_grts_phab_cellcenter_n2khab_extra,
+    stratum_grts_n2khab_collapsed %>% 
+      anti_join(
+        stratum_grts_phab_cellcenter_n2khab_extra,
+        join_by(stratum, grts_address)
+      )
+  )
+```
+
+Updating the 'phab' data frame `stratum_grts_phab_cellcenter_n2khab_collapsed` by substituting with cells from `stratum_grts_phab_cellcenter_n2khab_extra`.
+This object is needed for bernouilli sampling.
+
+```{r eval = mhq_data_available}
+stratum_grts_phab_cellcenter_n2khab_collapsed <- 
+  bind_rows(
+    stratum_grts_phab_cellcenter_n2khab_extra %>% 
+      mutate(phab = 100) %>% 
+      select(stratum, grts_address, phab),
+    stratum_grts_phab_cellcenter_n2khab_collapsed %>% 
+      anti_join(
+        stratum_grts_phab_cellcenter_n2khab_extra,
+        join_by(stratum, grts_address)
+      )
+  )
+```
+
+
+#### Apply bernouilli sampling
 
 Determining for each stratum which GRTS addresses are dropped by bernouilli sampling, based on the `raster_runif` data source.
 Note that this step can be turned off with the `phab_correct` parameter.
