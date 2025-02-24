@@ -383,6 +383,50 @@ stopifnot(
 )
 ```
 
+Drawn GRTS addresses that have been locally replaced by another address will still be substituted in the sampling frame, since we need this to draw samples according to the GRTS address series.
+On the other hand, these drawn GRTS addresses should not be used to direct fieldwork, since they were indeed replaced by another GRTS address in the vicinity.
+
+Creating a tidy object with a single GRTS address column, plus indication whether this replaces another address or is being replaced.
+Depending on the purpose, one will need to filter the sampling frame one way or another, using this replacement information.
+
+```{r eval = mhq_data_available}
+valid_extra_popunits_cell_all_n2khab_tidy <- 
+  valid_extra_popunits_cell_all_n2khab %>% 
+  # select(-assessed_at_cell_center) %>% 
+  mutate(
+    replaced_by = 
+      ifelse(grts_address_drawn != grts_address, grts_address, NA_integer_),
+    replacement_for = 
+      ifelse(grts_address_drawn != grts_address, grts_address_drawn, NA_integer_)
+  ) %>% 
+  (function(df) {
+    bind_rows(
+      # adding the GRTS addresses that were drawn
+      df %>% 
+        filter(grts_address_drawn != grts_address) %>% 
+        select(-grts_address) %>% 
+        rename(grts_address = grts_address_drawn) %>% 
+        relocate(stratum, typelevel_certain) %>% 
+        mutate(replacement_for = NA_integer_),
+      df %>% 
+        select(-grts_address_drawn) %>% 
+        relocate(stratum, typelevel_certain) %>% 
+        mutate(replaced_by = NA_integer_)
+    )
+  }) %>% 
+  arrange(stratum, grts_address)
+```
+
+Checking that combinations of GRTS address x type are unique.
+
+```{r eval = mhq_data_available}
+stopifnot(
+  valid_extra_popunits_cell_all_n2khab_tidy %>% 
+    distinct(stratum, grts_address) %>% 
+    nrow() == nrow(valid_extra_popunits_cell_all_n2khab_tidy)
+)
+```
+
 
 ### Apply bernouilli sampling to the collapsed base sampling frame, depending on phab value
 
