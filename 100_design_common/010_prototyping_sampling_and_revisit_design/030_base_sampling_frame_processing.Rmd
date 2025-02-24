@@ -306,13 +306,33 @@ For each _drawn_ GRTS address x type, we expect only one occurrence.
 Listing violations for further enquiry.
 
 ```{r paged.print = FALSE, eval = mhq_data_available}
-valid_extra_popunits_cell_all_n2khab %>% 
-  count(grts_address_drawn, type) %>% 
+grtsaddrdrawn_duplicates_in_stratum <- 
+  valid_extra_popunits_cell_all_n2khab %>% 
+  count(grts_address_drawn, stratum) %>% 
   filter(n > 1) %>% 
   semi_join(
     valid_extra_popunits_cell_all_n2khab, 
     .,
-    join_by(grts_address_drawn, type)
+    join_by(grts_address_drawn, stratum)
+  )
+grtsaddrdrawn_duplicates_in_stratum
+```
+
+Applying a temporary, somewhat doubtful quick-fix.
+
+<!-- XXXXXX To be revisited! -->
+
+```{r eval = mhq_data_available && nrow(grtsaddrdrawn_duplicates_in_type) > 0}
+valid_extra_popunits_cell_all_n2khab <- 
+  valid_extra_popunits_cell_all_n2khab %>% 
+  # from the duplicates, only keep the one with the highest GRTS address
+  anti_join(
+    grtsaddrdrawn_duplicates_in_stratum %>% 
+      filter(
+        grts_address != max(grts_address), 
+        .by = c(grts_address_drawn, stratum)
+      ),
+    join_by(grts_address_drawn, grts_address, stratum)
   )
 ```
 
@@ -320,15 +340,36 @@ For each _real_ GRTS address x type, we expect only one occurrence.
 Listing violations for further enquiry.
 
 ```{r paged.print = FALSE, eval = mhq_data_available}
-valid_extra_popunits_cell_all_n2khab %>% 
-  count(grts_address, type) %>% 
+grtsaddr_duplicates_in_stratum <- 
+  valid_extra_popunits_cell_all_n2khab %>% 
+  count(grts_address, stratum) %>% 
   filter(n > 1) %>% 
   semi_join(
     valid_extra_popunits_cell_all_n2khab, 
     .,
-    join_by(grts_address, type)
+    join_by(grts_address, stratum)
   ) %>% 
   arrange(grts_address)
+grtsaddr_duplicates_in_stratum
+```
+
+Applying a temporary, somewhat doubtful quick-fix.
+
+<!-- XXXXXX To be revisited! -->
+
+```{r eval = mhq_data_available && nrow(grtsaddr_duplicates_in_type) > 0}
+valid_extra_popunits_cell_all_n2khab <- 
+  valid_extra_popunits_cell_all_n2khab %>% 
+  # don't include the duplicates with grts_address != grts_address_drawn; we
+  # don't consider them as an actual local replacement
+  anti_join(
+    grtsaddr_duplicates_in_stratum %>% 
+      filter(
+        grts_address != grts_address_drawn, 
+        .by = c(grts_address_drawn, stratum)
+      ),
+    join_by(grts_address_drawn, grts_address, stratum)
+  )
 ```
 
 
