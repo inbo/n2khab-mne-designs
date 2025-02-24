@@ -216,6 +216,78 @@ mapview(st_soil,
 
 ... once we're at it.
 
+```{r}
+
+
+lookup_data <- pp_data %>%
+  select(pp_idx, cluster, x, y)
+
+cut_equal <- function(.data, count_column, n_bins = 2, show = FALSE) {
+  bins <- seq(0, nrow(.data), length.out = n_bins)
+  
+  cumn <- .data %>%
+    pull(!!enquo(count_column)) %>%
+    tapply(., ., length) %>%
+    cumsum()
+  
+  firsts <- unique(apply(
+    outer(cumn, bins,
+      FUN = function(X,Y) X>Y
+      ), 2,
+    function (x) suppressWarnings(min(which(x)))
+  )-1)
+  
+  if (show) {
+    ggplot(NULL) +
+      geom_line(aes(seq(1, length(cumn)), cumn)) +
+      geom_vline(xintercept = firsts) +
+      geom_hline(yintercept = cumn[firsts])
+  }
+
+  grp <- .data %>% 
+    pull(!!enquo(count_column)) %>%
+    as.numeric() %>% 
+    cut(firsts, labels = FALSE) %>%
+    sprintf("%05.0f", .) %>% 
+    paste0(count_column, "_grp", .)
+
+  return(factor(grp))
+}
+
+# lookup_data$cluster_group <- cut_equal(lookup_data, count_column = "cluster", n_bins = 17)
+
+data_subgroups <- split(lookup_data, cut_equal(lookup_data, count_column = "cluster", n_bins = 8*17))
+
+library("parallel")
+mclapply( data_subgroups[1:3],
+  FUN = function(subdata) query_elevation(
+    subdata,
+    index_column = "pp_idx",
+    coordinate_columns = c("x", "y"),
+    progress = FALSE
+    ),
+  mc.cores = 4
+  )
+
+# https://www.rdocumentation.org/packages/foreach/versions/1.5.2/topics/foreach
+library("doParallel")
+numCores <- parallel::detectCores()
+registerDoParallel(numCores)
+foreach(subdata = data_subgroups[1:3], .combine=rbind) %dopar% {
+  query_elevation(
+    subdata,
+    index_column = "pp_idx",
+    coordinate_columns = c("x", "y"),
+    progress = FALSE
+    )
+  # TODO loop group id's; store output on disk; load&combine
+}
+
+```
+
+
+
+
 ```{r elevation-join}
 
 if (reload) {
@@ -974,7 +1046,7 @@ if (FALSE && reload) {
   # combine amplitudes
   pp_data <- pp_data %>% mutate(emd_ampsum = sqrt(emd_amp1^2 + emd_amp2^2))
 
-  write_parquet(pp_data, sink = data_export_file)
+  # write_parquet(pp_data, sink = data_export_file)
 }
 pp_data <- read_parquet(data_export_file)
 ```

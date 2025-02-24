@@ -499,7 +499,8 @@ get_single_point_elevation <- function (idx, xy) {
 query_elevation <- function(
     data,
     index_column = "idx",
-    coordinate_columns = NULL
+    coordinate_columns = NULL,
+    progress = TRUE
     ) {
 
   if (is.null(coordinate_columns)) {
@@ -518,13 +519,13 @@ query_elevation <- function(
   data_distinct <- data[, c(index_column, coordinate_columns)] %>%
     dplyr::distinct(.keep_all = TRUE)
 
-  pb <- txtProgressBar(min = 0, max = nrow(data_distinct),
+  if (progress) pb <- txtProgressBar(min = 0, max = nrow(data_distinct),
                        initial = 0, style = 1)
 
   # helper function to query multiple positions
   rowwise_elevation <- function(i){
     # update the progress bar
-    setTxtProgressBar(pb,i)
+    if (progress) setTxtProgressBar(pb,i)
 
     idx <- data_distinct[i, index_column]
 
@@ -547,7 +548,7 @@ query_elevation <- function(
     )
   )
 
-  close(pb) # close the progress bar
+  if (progress) close(pb) # close the progress bar
 
   colnames(elevation_lookup) <-
     c(index_column, "elevation_dhmv", "slope_r2.5m")
