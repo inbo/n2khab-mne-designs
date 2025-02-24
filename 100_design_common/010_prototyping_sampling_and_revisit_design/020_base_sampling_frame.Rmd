@@ -675,8 +675,18 @@ Check that no empty GRTS addresses occur:
 ```{r}
 stratum_grts_n2khab <-
   stratum_grts_non_cell_n2khab %>%
-  bind_rows(stratum_grts_cell_all_n2khab)
+  bind_rows(stratum_grts_cell_all_n2khab) %>% 
+  mutate(
+    typelevel_certain = NA,
+    assessed_at_cell_center = FALSE,
+    replaced_by = NA_integer_,
+    replacement_for = NA_integer_ 
+  ) %>% 
+  relocate(typelevel_certain, .after = stratum) %>% 
+  relocate(assessed_at_cell_center, .after = grts_address)
 ```
+
+We also added some extra attributes that prepare for integrating information on assessments and local replacements.
 
 Checking that GRTS addresses occur only once in each stratum.
 
@@ -820,10 +830,6 @@ valid_extra_popunits_cell_all_n2khab <-
     typelevel_certain = is.na(expanded_to),
     stratum = factor(stratum, levels = levels(n2khab_strata$stratum))
   ) %>% 
-  # collapse strata (in this case limited to converting some subtypes to main
-  # types) to achieve compatibility with the MNE/MHQ target populations and the
-  # collapsed base sampling frame
-  collapse_strata() %>% 
   select(-expanded_to, -grts_join_method, -legacy_site) %>% 
   relocate(grts_address_drawn)
 ```
@@ -913,13 +919,13 @@ valid_extra_popunits_cell_all_n2khab <-
   )
 ```
 
-Verifying that all strata occur in `n2khab_strata`.
+Verifying that all strata can be found in `n2khab_strata_expanded`.
 
 ```{r eval = mhq_data_available}
 stopifnot(
   valid_extra_popunits_cell_all_n2khab %>%
   distinct(stratum) %>%
-  anti_join(n2khab_strata, join_by(stratum)) %>%
+  anti_join(n2khab_strata_expanded, join_by(stratum)) %>%
   nrow() == 0
 )
 ```
