@@ -273,7 +273,16 @@ valid_extra_popunits_cell_all_n2khab <-
     grts_join_method == "cell_center" & assessed_at_cell_center |
       grts_join_method == "cell"
   ) %>% 
-  mutate(typelevel_certain = is.na(expanded_to)) %>% 
+  # since the base sampling frame uses strata, not types, we must align
+  rename(stratum = type) %>% 
+  mutate(
+    typelevel_certain = is.na(expanded_to),
+    stratum = factor(stratum, levels = levels(n2khab_strata$stratum))
+  ) %>% 
+  # collapse strata (in this case limited to converting some subtypes to main
+  # types) to achieve compatibility with the MNE/MHQ target populations and the
+  # collapsed base sampling frame
+  collapse_strata() %>% 
   select(-expanded_to, -grts_join_method, -legacy_site) %>% 
   relocate(grts_address_drawn)
 ```
