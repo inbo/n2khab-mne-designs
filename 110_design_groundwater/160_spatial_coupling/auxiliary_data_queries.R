@@ -353,7 +353,7 @@ query_to_disk <- function (query_function, store_filepath,
 }
 
 
-combine_subfolder_data <- function (label) {
+combine_subfolder_data <- function (label, output_file = NA) {
 
   stopifnot(
     arrow = require("arrow"),
@@ -368,7 +368,9 @@ combine_subfolder_data <- function (label) {
     )
 
   # save to disk
-  output_file <- here::here("data", paste0(label, ".parquet", collapse = ""))
+  if (is.na(output_file)) {
+    output_file <- here::here("data", paste0("_", label, ".parquet", collapse = ""))
+  }
   write_parquet(dplyr::bind_rows(all_data), sink = output_file)
 }
 
@@ -419,8 +421,9 @@ parallel_query_to_disk <- function(
   }
 
   # combine downloaded data in case of changes
-  if (any(count_nonexisting)) {
-    combine_subfolder_data(label)
+  output_file <- here::here("data", paste0("_", label, ".parquet", collapse = ""))
+  if (!file.exists(output_file) || any(count_nonexisting)) {
+    combine_subfolder_data(label, output_file = output_file)
   }
 }
 
