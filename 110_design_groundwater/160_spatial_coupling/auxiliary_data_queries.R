@@ -326,16 +326,17 @@ query_to_disk <- function (query_function, store_filepath,
 
   # query and join the data
   if (FALSE) {
-  lookup <- query_function(
-          data, index_column = index_column,
-          n_quantiles = 20,
-          db_conn = watina_dwh,
-          progress = TRUE
-  )
+    lookup <- query_function(
+            data, index_column = index_column,
+            # n_quantiles = 20,
+            # db_conn = watina_dwh,
+            progress = TRUE
+    )
   }
   # print(lookup)
   lookup <- suppressMessages(query_function(
           data, index_column = index_column, ...))
+  print(lookup)
   result <- join_lookup(
       data = data,
       lookup,
@@ -378,13 +379,13 @@ combine_subfolder_data <- function (label) {
 #' @param split_data the data, `split()` by category groups
 #' @param label a label, serving as data path and filename
 #' @param query_function the function to query extra data
-#' @param serial boolean do decide between serial and parallel execution
+#' @param sequential boolean do decide between serial and parallel execution
 #'
 #' @export
 #'
 parallel_query_to_disk <- function(
     split_data, label, query_function,
-    serial = FALSE, verbose = FALSE, ...
+    sequential = FALSE, verbose = FALSE, ...
   ) {
 
   numCores <- parallel::detectCores() - 2
@@ -407,7 +408,7 @@ parallel_query_to_disk <- function(
 
   # parallel application of the query function
   # https://www.rdocumentation.org/packages/foreach/versions/1.5.2/topics/foreach
-  if (serial) {
+  if (sequential) {
     foreach(i = 1:length(split_data), .combine=rbind) %do% {
       query_step(i)
     } -> count_nonexisting

@@ -31,6 +31,11 @@ source("./auxiliary_data_queries.R")
 # option to work offline; requires previous data download
 work_offline <- FALSE
 
+# verbosity
+global_verbose <- FALSE
+global_progress <- FALSE
+
+
 # connect watina 
 if (!work_offline && !exists("watina_dwh")) {
   watina_dwh <- connect_watina()
@@ -51,6 +56,8 @@ diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".pa
 # the user may choose to reload raw data
 force_data_reassembly <- FALSE
 reload <- force_data_reassembly || !file.exists(data_export_file)
+reload_emd <- FALSE
+
 ```
 
 
@@ -310,7 +317,6 @@ mapview(st_elevation,
 
 ```{r download-waterdistance}
 
-source("./auxiliary_data_queries.R")
 label <- "waterdistance"
 if (reload) {
   remove_all_in_subfolder(label)
@@ -357,7 +363,6 @@ kind of emulating "HG3" and "LG3", but for continuous water level measurement.
 
 ```{r download-quantiles}
 
-source("./auxiliary_data_queries.R")
 label <- "quantiles"
 if (reload) {
   remove_all_in_subfolder(label)
@@ -378,12 +383,12 @@ parallel_query_to_disk(
   split_data = data_subgroups,
   label = label,
   query_function = query_waterlevel_quantiles,
-  serial = TRUE,
-  verbose = TRUE,
+  sequential = TRUE,
+  verbose = global_verbose,
   index_column = "pp_idx",
   n_quantiles = 20,
   db_conn = watina_dwh,
-  progress = TRUE
+  progress = global_progress
   )
 
 
@@ -912,39 +917,42 @@ TODO: is sampling frequency related? (implicit temporal averaging)
 
 ```{r emd-loop-sites}
 
-if (FALSE && reload) {
-  indices <- sort(unique(pp_data$pp_idx))
-  pb <- txtProgressBar(
-    min = 0, max = length(indices),
-    initial = 0, style = 1
-  )
-  pp_data$emd_amp1 <- as.numeric(NA)
-  pp_data$emd_amp2 <- as.numeric(NA)
-  pp_data$emd_n <- as.numeric(NA)
-  pp_data$emd_residual_qdiff <- as.numeric(NA)
-  pp_data$emd_qdiff <- as.numeric(NA)
+emd_multistep_function <- function (data, index_column = "idx", progress = FALSE) {  
+  indices <- sort(unique(data[[index_column]]))
 
-  for (i in 1:length(indices)) { 
+  if (progress) {
+    pb <- txtProgressBar(
+      min = 0, max = length(indices),
+      initial = 0, style = 1
+    )
+  }
+  emd_data <- data %>% select(!!enquo(index_column))
+  colnames(emd_data) <- c("idx")
+  emd_data$emd_amp1 <- as.numeric(NA)
+  emd_data$emd_amp2 <- as.numeric(NA)
+  emd_data$emd_n <- as.numeric(NA)
+  emd_data$emd_residual_qdiff <- as.numeric(NA)
+  emd_data$emd_qdiff <- as.numeric(NA)
+
+  for (i_emd in 1:length(indices)) { 
   
-    setTxtProgressBar(pb, i)
-    idx <- indices[i]
-    label <- get_locationcode(idx)
+    if (progress) setTxtProgressBar(pb, i_emd)
+    idx <- indices[i_emd]
+    locationcode <- get_locationcode(idx)
     trace <- get_trace(idx, show_plot = FALSE)
 
     label2 <- paste(
         as.character(idx),
         get_info(idx, "cluster"),
         get_info(idx, "pp_code"),
-        as.character(round(as.numeric(get_info(idx, "elevation_dhmv")))),
-        get_info(idx, "soilclass"),
-        get_info(idx, "wata_dist_class"),
         collapse = " "
       )
 
     # print(label2)
 
     ### EMD
-    multi_emd <- execute_multistep_emd(trace, apply_savgol = TRUE) 
+    multi_emd <- tryCatch({execute_multistep_emd(trace, apply_savgol = TRUE)},
+      error = {next})
     
     if (all(is.na(multi_emd))) next
 
@@ -960,18 +968,18 @@ if (FALSE && reload) {
     secondmode <- as.numeric(join_sig(collect_emd2, "firstmode"))
 
     # collect info
-    pp_data[pp_data$pp_idx == idx, "emd_n"] <- suppressWarnings(length(sg))
-    pp_data[pp_data$pp_idx == idx, "emd_amp1"] <- suppressWarnings(mean(amp1, na.rm = TRUE))
-    pp_data[pp_data$pp_idx == idx, "emd_amp2"] <- suppressWarnings(mean(amp2, na.rm = TRUE))
+    emd_data[emd_data$idx == idx, "emd_n"] <- suppressWarnings(length(sg))
+    emd_data[emd_data$idx == idx, "emd_amp1"] <- suppressWarnings(mean(amp1, na.rm = TRUE))
+    emd_data[emd_data$idx == idx, "emd_amp2"] <- suppressWarnings(mean(amp2, na.rm = TRUE))
 
     # quantile difference
     qdiff <- function(mode) suppressWarnings(diff(as.numeric(quantile(mode, c(0.1, 0.9), na.rm = TRUE))))
 
-    pp_data[pp_data$pp_idx == idx, "emd_qdiff"] <- qdiff(sg)
+    emd_data[emd_data$idx == idx, "emd_qdiff"] <- qdiff(sg)
     if (!all(is.na(amp2))) {
-      pp_data[pp_data$pp_idx == idx, "emd_residual_qdiff"] <- qdiff(secondmode)
+      emd_data[emd_data$idx == idx, "emd_residual_qdiff"] <- qdiff(secondmode)
     } else if (!all(is.na(amp1))) {
-      pp_data[pp_data$pp_idx == idx, "emd_residual_qdiff"] <- qdiff(firstmode)
+      emd_data[emd_data$idx == idx, "emd_residual_qdiff"] <- qdiff(firstmode)
     }
     
 
@@ -986,20 +994,56 @@ if (FALSE && reload) {
       top = label2
     ) # gridExtra
 
-    ggsave(paste0("figures/emd/", idx, "_", label, ".png", collapse = ""), h,
+    ggsave(paste0("figures/emd/", idx, "_", locationcode, ".png", collapse = ""), h,
            dpi = 300, height = 16, width = 24, units = "cm") |> suppressMessages()
 
 
   }
   
-  close(pb) # close the progress bar
+  if (progress) close(pb) # close the progress bar
 
   # combine amplitudes
-  pp_data <- pp_data %>% mutate(emd_ampsum = sqrt(emd_amp1^2 + emd_amp2^2))
+  emd_data <- emd_data %>% mutate(emd_ampsum = sqrt(emd_amp1^2 + emd_amp2^2))
 
   # write_parquet(pp_data, sink = data_export_file)
+  return(emd_data %>% rename(c("pp_idx" = "idx")))
 }
-pp_data <- read_parquet(data_export_file)
+
+
+label <- "empiricalmodes"
+if (reload) {
+  remove_all_in_subfolder(label)
+}
+
+numCores <- parallel::detectCores() - 2
+registerDoParallel(numCores)
+
+query_step <- function(i_query) {
+  system(paste0("mkdir -p '", here::here("data", label), "'"))
+  cluster_group <- names(data_subgroups)[[i_query]]
+  subdata <- data_subgroups[[i_query]]
+  storage_path <- here::here("data", label, cluster_group)
+  if (file.exists(storage_path)) return(FALSE)
+
+  print(cluster_group)
+  emd <- suppressWarnings(emd_multistep_function(
+    subdata,
+    index_column = "pp_idx",
+    progress = global_progress
+  ))
+
+  write_parquet(emd, sink = storage_path)
+  # if (verbose) print(storage_path)
+}
+
+if (reload_emd) {
+  foreach(i = 1:length(data_subgroups), .combine=rbind) %do% {
+    query_step(i)
+  } -> count_nonexisting
+}
+
+combine_subfolder_data(label)
+
 ```
 
 
@@ -1007,9 +1051,15 @@ pp_data <- read_parquet(data_export_file)
 ```{r amplitude-map}
 #| eval: false
 
-if (FALSE){
-  st_amp <- pp_data %>%
-    sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+fi <- "empiricalmodes.parquet"
+st_amp <- read_parquet(here::here("data", fi)) %>%
+  right_join(
+    lookup_data,
+    by = "pp_idx",
+    relationship = "one-to-one"
+  ) %>% 
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
   
   mapview(st_amp,
     map.types = c("CartoDB.Positron", "OpenTopoMap", "CartoDB.DarkMatter", "OpenStreetMap" ),
@@ -1019,6 +1069,7 @@ if (FALSE){
 }
 
 ```
+
 
 
 # differential data
@@ -1036,13 +1087,14 @@ extent <- 512 # m
 pair_sites <- function(cluster_idx) {
   sub_data <- pp_data %>%
     filter(cluster == cluster_idx) %>%
-    select(mp_idx, pp_idx, x, y, soilclass)
+    select(mp_idx, pp_idx, cluster, x, y, soilclass)
   
   sub_data %>% 
     left_join(sub_data,
       by = join_by(
         mp_idx > mp_idx, # only different locations
         soilclass == soilclass, # from the same soilclass
+        cluster == cluster, # from the same soilclass
       ),
       suffix = c("1", "2"),
       relationship = "many-to-many"
@@ -1113,29 +1165,99 @@ query_measurement <- function (pp1, pp2){
   return(pair_diff)
 }
 
-pairs_test <- pairs
+
+# pairs_test <- pairs
 # pairs_test <- pairs_test %>%
 #   head(100)
-n_rows <- nrow(pairs_test)
 
-pb <- txtProgressBar(min = 0, max = n_rows,
-                       initial = 0, style = 1)
-rowwise_query <- function(i) {
-  setTxtProgressBar(pb, i)
-  pp1 <- pairs[[i, "pp_idx1"]]
-  pp2 <- pairs[[i, "pp_idx2"]]
-  return(query_measurement(pp1, pp2))
+query_waterlevel_differences <- function (
+    sub_pairs,
+    progress = FALSE
+  ) {
+  n_rows <- nrow(sub_pairs)
+  
+  if (progress) {
+    pb <- txtProgressBar(min = 0, max = n_rows,
+                           initial = 0, style = 1)
+  }
+  rowwise_query <- function(i) {
+    if (progress) setTxtProgressBar(pb, i)
+    pp1 <- sub_pairs[[i, "pp_idx1"]]
+    pp2 <- sub_pairs[[i, "pp_idx2"]]
+    return(query_measurement(pp1, pp2))
+  }
+  
+  
+  diff_data <- bind_rows(
+      lapply(
+        1:n_rows,
+        FUN = rowwise_query
+      )
+    )
+  
+  if (progress) close(pb)
+
+  # write_parquet(diff_data, sink = storage_filepath)
+  return(diff_data)
+}
+
+```
+
+
+```{r waterlevel-split-apply-combine}
+
+
+# knitr::kable(head(pairs))
+pair_subgroups <- split(
+  pairs,
+  split_balanced(
+    pairs,
+    count_column = "cluster",
+    n_bins = 8*17,
+    show = TRUE
+  )
+)
+
+
+label = "diffdata"
+if (reload) {
+  remove_all_in_subfolder(label)
 }
 
 
-diff_data <- bind_rows(
-    lapply(
-      1:n_rows,
-      FUN = rowwise_query
-    )
+numCores <- parallel::detectCores() - 2
+registerDoParallel(numCores)
+
+query_step <- function(i) {
+  system(paste0("mkdir -p '", here::here("data", label), "'"))
+  cluster_group <- names(pair_subgroups)[[i]]
+  subdata <- pair_subgroups[[i]]
+  storage_path <- here::here("data", label, cluster_group)
+  if (file.exists(storage_path)) return(FALSE)
+
+  print(cluster_group)
+  waledi <- query_waterlevel_differences(
+    subdata,
+    progress = global_progress
   )
 
-close(pb)
-write_parquet(diff_data, sink = diffdata_export_file)
+  write_parquet(waledi, sink = storage_path)
+  # if (verbose) print(storage_path)
+  return(TRUE)
+}
+
+foreach(i = 1:length(pair_subgroups), .combine=rbind) %do% {
+  query_step(i)
+} -> count_nonexisting
+
+combine_subfolder_data(label)
+
 
 ```
+
+
+# Reload All Data
+
+All data has been stored to disk.
+Here we will reload some of it.
+
