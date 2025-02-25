@@ -242,29 +242,15 @@ data_subgroups <- split(
 
 ```{r download-elevation}
 
-source("./auxiliary_data_queries.R")
 label <- "elevation"
 if (reload) {
-  storage_path <- here::here("data", label)
-
-  if (interactive()) {
-    confirm_delete <- utils::askYesNo(
-      msg = paste0("Really delete everything?",
-                   storage_path,
-                   collapse = "\n"
-                   ),
-      default = FALSE, 
-    )
-    if (confirm_delete) system(paste0("rm -rf ", storage_path))
-  } else {
-    system(paste0("rm -rf ", storage_path))
-  }
+  remove_all_in_subfolder(label)
 }
 
 
 parallel_query_to_disk(
   split_data = data_subgroups,
-  label = "elevation",
+  label = label,
   query_function = query_elevation,
   index_column = "pp_idx",
   coordinate_columns = c("x", "y"),
@@ -322,40 +308,34 @@ mapview(st_elevation,
 
 ## waterdistance
 
-```{r waterdistance-join}
+```{r download-waterdistance}
+
+source("./auxiliary_data_queries.R")
+label <- "waterdistance"
 if (reload) {
-  pp_data <- pp_data %>%
-    join_waterdistance(index_column = "pp_idx")
-
-  ## (Tuesday) today, nothing works as supposed.
-  ## (Wednesday) not better, yet :(
-  # source("./auxiliary_data_queries.R")
-  # pp_test <- pp_data %>%
-  #   tail(100)
-  # pp_test %>% 
-  #   join_waterdistance(index_column = "pp_idx")
-  # wd_lookup <- query_waterdistance(pp_test, index_column = "pp_idx")
-
-  # water_lookup <- wd_lookup
-  # meters <- function(x) units::set_units(x, "m")
-  # water_lookup <- water_lookup %>%
-  #   mutate(
-  #     wata_dist_class = factor(dplyr::case_when(
-  #       wata_min_dist <= meters(50) ~ "mid",
-  #       wata_min_dist <= meters(5) ~ "close",
-  #       .default = "far"
-  #   )))
-
-  write_parquet(pp_data, sink = data_export_file)
+  remove_all_in_subfolder(label)
 }
-pp_data <- read_parquet(data_export_file)
+
+
+parallel_query_to_disk(
+  split_data = data_subgroups,
+  label = label,
+  query_function = query_waterdistance,
+  index_column = "pp_idx",
+  coordinate_columns = c("x", "y"),
+  progress = FALSE
+  )
+
+
 ```
 
 
 Okay, why not, let's map it.
 
 ```{r wata-map}
-st_wata <- pp_data %>%
+
+fi <- "waterdistance.parquet"
+st_wata <- read_parquet(here::here("data", fi)) %>%
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
 
 mapview(st_wata,
@@ -364,8 +344,51 @@ mapview(st_wata,
   # legend = FALSE
 )
 
-# TODO this is not correct yet; switched order of `case_when`
+# TODO this is not correct yet; see coastal wells
 ```
+
+# Quantiles
+
+To correctly frame yearly water water fluctuations,
+we would like to know various quantile levels per location.
+Downstream, these will be used to determine "high level" and "low level" episodes,
+kind of emulating "HG3" and "LG3", but for continuous water level measurement.
+
+
+```{r download-quantiles}
+
+source("./auxiliary_data_queries.R")
+label <- "quantiles"
+if (reload) {
+  remove_all_in_subfolder(label)
+}
+
+
+# query_waterlevel_quantiles(
+#   data = lookup_data,
+#   index_column = "pp_idx",
+#   n_quantiles = 20,
+#   db_conn = watina_dwh,
+#   progress = TRUE
+# )
+
+# data <- data_subgroups[[1]]
+
+parallel_query_to_disk(
+  split_data = data_subgroups,
+  label = label,
+  query_function = query_waterlevel_quantiles,
+  serial = TRUE,
+  verbose = TRUE,
+  index_column = "pp_idx",
+  n_quantiles = 20,
+  db_conn = watina_dwh,
+  progress = TRUE
+  )
+
+
+```
+
 
 
 # amplitude
@@ -886,68 +909,6 @@ plot_multistep_emd(multi_emd, show = TRUE)
 TODO: is sampling frequency related? (implicit temporal averaging)
 -> partly compensated by savgol `fl` 
 
-```{r quantile-loop-sites}
-
-if (reload) {
-  indices <- sort(unique(pp_data$pp_idx))
-  pb <- txtProgressBar(
-    min = 0, max = length(indices),
-    initial = 0, style = 1
-  )
-
-  # choice / storage of quantiles per year
-  qntls <- seq(0.0, 1.0, length.out = 21)
-  # for (q in paste0("q", sprintf("%03.0f", 100*qntls))){
-  #   pp_data[, q] <- as.numeric(NA)
-  # }
-  qq_data <- list()
-
-  for (i in 1:length(indices)) { 
-  
-    setTxtProgressBar(pb, i)
-    idx <- indices[i]
-    label <- get_locationcode(idx)
-    trace <- get_trace(idx, show_plot = FALSE)
-
-    label2 <- paste(
-        as.character(idx),
-        get_info(idx, "cluster"),
-        get_info(idx, "pp_code"),
-        as.character(round(as.numeric(get_info(idx, "elevation_dhmv")))),
-        get_info(idx, "soilclass"),
-        get_info(idx, "wata_dist_class"),
-        collapse = " "
-      )
-
-    # print(label2)
-
-    ### yearly quantiles
-    qq_store <- list()
-    yearvec <- lubridate::year(trace[["t0"]] + trace[["t"]])
-    waterlevel <- trace[["y"]]
-    for (yr in sort(unique(yearvec))){
-      yearlevel <- waterlevel[yearvec == yr]
-      if (length(yearlevel) < 4) next
-      qq_store[[yr]] <- c(idx, yr, length(yearlevel),
-        t(as.numeric(quantile(yearlevel, qntls, na.rm = TRUE)))
-      )
-    }
-    qq_data[[i]] <- as.data.frame(do.call("rbind", qq_store))
-    if (length(qq_store) > 0) {
-      colnames(qq_data[[i]]) <- c("idx", "yr", "n", paste0("q", sprintf("%03.0f", 100*qntls)))
-    }
-
-  }
-  
-  close(pb) # close the progress bar
-
-  # store quantiles
-  qq_data <- bind_rows(qq_data)
-  write_parquet(qq_data, sink = qq_export_file)
-
-}
-
-```
 
 ```{r emd-loop-sites}
 

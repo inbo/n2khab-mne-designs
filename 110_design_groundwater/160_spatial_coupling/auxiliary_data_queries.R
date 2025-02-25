@@ -73,7 +73,10 @@ get_example_data <- function() {
 #'
 #' @keywords internal
 #'
-check_common_assertions <- function (data, index_column, coordinate_columns) {
+check_common_assertions <- function (
+    data, index_column, coordinate_columns,
+    skip_coordinates = FALSE
+    ) {
 
   stopifnot(assertthat = require('assertthat'))
 
@@ -97,6 +100,10 @@ check_common_assertions <- function (data, index_column, coordinate_columns) {
     )
   )
 
+  # optionally skip coordinate columns
+  if (skip_coordinates) {
+    return(invisible(NULL))
+  }
 
   # coordinate columns
   assertthat::assert_that(
@@ -189,7 +196,7 @@ join_lookup <- function(
       dplyr::left_join(
         lookup,
         by = index_column,
-        relationship = "many-to-one"
+        relationship = "many-to-many"
       )
   } else {
     # solve column overlap by a suffix
@@ -197,7 +204,7 @@ join_lookup <- function(
       dplyr::left_join(
         lookup,
         by = index_column,
-        relationship = "many-to-one",
+        relationship = "many-to-many",
         suffix = c("", "_")
       )
   }
@@ -318,7 +325,16 @@ query_to_disk <- function (query_function, store_filepath,
   )
 
   # query and join the data
-  lookup = suppressMessages(query_function(
+  if (FALSE) {
+  lookup <- query_function(
+          data, index_column = index_column,
+          n_quantiles = 20,
+          db_conn = watina_dwh,
+          progress = TRUE
+  )
+  }
+  # print(lookup)
+  lookup <- suppressMessages(query_function(
           data, index_column = index_column, ...))
   result <- join_lookup(
       data = data,
@@ -367,7 +383,8 @@ combine_subfolder_data <- function (label) {
 #' @export
 #'
 parallel_query_to_disk <- function(
-    split_data, label, query_function, serial = FALSE, ...
+    split_data, label, query_function,
+    serial = FALSE, verbose = FALSE, ...
   ) {
 
   numCores <- parallel::detectCores() - 2
@@ -378,12 +395,14 @@ parallel_query_to_disk <- function(
     cluster_group <- names(split_data)[[i]]
     subdata <- split_data[[i]]
     storage_path <- here::here("data", label, cluster_group)
+    if (verbose && !file.exists(storage_path)) print(cluster_group)
     query_to_disk(
       query_function = query_function,
       store_filepath = storage_path,
       data = subdata,
       ...
       )
+    # if (verbose) print(storage_path)
   }
 
   # parallel application of the query function
@@ -404,6 +423,25 @@ parallel_query_to_disk <- function(
   }
 }
 
+
+remove_all_in_subfolder <- function(subfolder) {
+
+  storage_path <- here::here("data", subfolder)
+
+  if (interactive()) {
+    confirm_delete <- utils::askYesNo(
+      msg = paste0("Really delete everything?",
+                   storage_path,
+                   collapse = "\n"
+                   ),
+      default = FALSE,
+    )
+    if (confirm_delete) system(paste0("rm -rf ", storage_path))
+  } else {
+    # we suppose you know what you are doing if you call this function.
+    system(paste0("rm -rf ", storage_path))
+  }
+}
 
 
 #_______________________________________________________________________________
@@ -753,8 +791,6 @@ query_elevation <- function(
 #'
 join_elevation <- wrap_query_to_join(query_elevation)
 
-
-
 #_______________________________________________________________________________
 # soilclass
 #_______________________________________________________________________________
@@ -844,6 +880,139 @@ join_soilclass <- wrap_query_to_join(query_soilclass)
 
 
 
+
+#_______________________________________________________________________________
+# waterlevel quantiles
+#_______________________________________________________________________________
+
+#' Query waterlevel quantiles of many locations.
+#'
+#' This will iteratively query water levels
+#' and determine quantiles per year
+#'
+#' @param data the data, in data frame format
+#' @param index_column the column holding a row identifier, e.g. `idx`
+#'
+#' @return a data frame of water level quantiles (in columns),
+#'         per year and location
+#'
+#' @examples
+#' \dontrun{
+#'    query_waterlevel_quantiles(test_data)
+#' }
+#'
+#' @export
+#'
+query_waterlevel_quantiles <- function(
+    data,
+    index_column = "idx",
+    n_quantiles = 20,
+    db_conn = NA,
+    progress = TRUE
+    ) {
+
+  stopifnot(
+    assertthat = require("assertthat"),
+    dplyr = require("dplyr")
+  )
+
+  check_common_assertions(data, index_column,
+                          coordinate_columns = c(),
+                          skip_coordinates = TRUE
+                          )
+
+  # data type
+  assertthat::assert_that(
+    is.numeric(n_quantiles) && (n_quantiles > 0),
+    msg = paste0("Number of quantiles (`n_quantiles`) must be an integer greater than zero.")
+  )
+
+  # because this produces a lookup, we will work on distinct rows.
+  indices <- sort(unique(data[[index_column]]))
+
+  # specific helper functions
+
+  get_trace <- function(pp_idx, show_plot = FALSE) {
+    # pp_idx = 24
+
+    peilmeting <- tbl(db_conn, "FactPeilMeting") %>%
+      filter(
+        PeilpuntWID == pp_idx,
+      ) %>%
+      mutate(is_vld = PeilmetingStatusCode == "VLD") %>%
+      select(DatumWID, is_vld, mTAW) %>%
+      arrange(DatumWID) %>%
+      collect
+
+    peilmeting <- peilmeting %>%
+      mutate(date = as.Date(as.character(DatumWID), format = "%Y%m%d"))
+
+    t <- peilmeting %>% pull(date)
+    t0 <- t[1]
+    t <- as.numeric(difftime(t, t0, units = "days"))
+    y <- peilmeting %>% pull(mTAW)
+    vld <- peilmeting %>% pull(is_vld)
+
+    return(list("t" = t[vld], "y" = y[vld], "t0" = t0, "vld" = vld, "tx" = t, "yx" = y))
+  }
+
+
+  if (progress){
+    pb <- txtProgressBar(
+      min = 0, max = length(indices),
+      initial = 0, style = 1
+    )
+  }
+
+  # choice / storage of quantiles per year
+  qntls <- seq(0.0, 1.0, length.out = 1+n_quantiles)
+  qq_data <- list()
+
+  # print(length(indices))
+
+  for (i in 1:length(indices)) {
+
+    if (progress) setTxtProgressBar(pb, i)
+    idx <- indices[i]
+    trace <- get_trace(idx, show_plot = FALSE)
+
+    ### yearly quantiles
+    qq_store <- list()
+    yearvec <- lubridate::year(trace[["t0"]] + trace[["t"]])
+    waterlevel <- trace[["y"]]
+    for (yr in sort(unique(yearvec))){
+      yearlevel <- waterlevel[yearvec == yr]
+      if (length(yearlevel) < 4) next
+      qq_store[[yr]] <- c(idx, yr, length(yearlevel),
+        t(as.numeric(quantile(yearlevel, qntls, na.rm = TRUE)))
+      )
+    }
+    qq_data[[i]] <- as.data.frame(do.call("rbind", qq_store))
+    if (length(qq_store) > 0) {
+      colnames(qq_data[[i]]) <- c(index_column, "yr", "n", paste0("q", sprintf("%03.0f", 100*qntls)))
+    }
+
+  }
+
+  if (progress) close(pb) # close the progress bar
+
+  # store quantiles
+  qq_data <- bind_rows(qq_data)
+
+  return(qq_data)
+}
+
+
+#' Query and join the waterlevel quantiles of many locations.
+#'
+#' @inherit query_waterlevel_quantiles
+#'
+#' @export
+#'
+join_waterlevel_quantiles <- wrap_query_to_join(query_waterlevel_quantiles)
+
+
+
 #_______________________________________________________________________________
 # distance from water body
 #_______________________________________________________________________________
@@ -885,7 +1054,8 @@ query_waterdistance <- function (
     data,
     index_column = "idx",
     coordinate_columns = NULL,
-    cluster_column = NA
+    cluster_column = NA,
+    progress = TRUE
     ) {
 
   if (is.null(coordinate_columns)) {
@@ -1003,15 +1173,20 @@ query_waterdistance <- function (
 
 
   # progress bar
+  if (progress) {
   pb <- txtProgressBar(
     min = 0,
     max = max(data_distinct[, cluster_column]),
     initial = 0, style = 1)
+  }
 
   # wrapping a progress bar around the above procedure
   waterdist_query_pb <- function (cluster_idx) {
-    setTxtProgressBar(pb, cluster_idx)
-    print(cluster_idx)
+
+    if (progress) {
+      setTxtProgressBar(pb, cluster_idx)
+      # print(cluster_idx)
+    }
     sub_data <- data_distinct[data_distinct[[cluster_column]] == cluster_idx, ]
     return(get_min_water_distances_clusterwise(sub_data))
   }
@@ -1021,7 +1196,8 @@ query_waterdistance <- function (
     sort(unique(data_distinct[[cluster_column]])),
     FUN = waterdist_query_pb
     )
-  close(pb)
+
+  if (progress) close(pb)
 
   # combine and return the output data
   water_lookup <- dplyr::bind_rows(water_lookup)
