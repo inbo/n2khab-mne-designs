@@ -939,6 +939,34 @@ valid_extra_popunits_cell_all_n2khab %>%
   anti_join(n2khab_strata, join_by(stratum))
 ```
 
+We expect that all GRTS addresses, both in `grts_address_drawn` and `grts_address`, exist in the `GRTSmaster_habitats` data source.
+
+```{r eval = mhq_data_available}
+stopifnot(
+  valid_extra_popunits_cell_all_n2khab %>% 
+    distinct(grts_address) %>% 
+    pull(grts_address) %>% 
+    all(. %in% values(grts_mh))
+)
+```
+
+```{r eval = mhq_data_available}
+valid_extra_popunits_cell_all_n2khab %>% 
+  distinct(grts_address_drawn) %>% 
+  pull(grts_address_drawn) %>% 
+  all(. %in% values(grts_mh))
+```
+
+Listing violations for `grts_address_drawn`:
+
+```{r eval = mhq_data_available}
+grtsaddrdrawn_invalid <- 
+  valid_extra_popunits_cell_all_n2khab %>% 
+  distinct(grts_address_drawn) %>% 
+  filter(!grts_address_drawn %in% values(grts_mh))
+grtsaddrdrawn_invalid
+```
+
 Drawn GRTS addresses that have been locally replaced by another address will still be substituted in the sampling frame, since we need this to draw samples according to the GRTS address series.
 On the other hand, these drawn GRTS addresses should not be used to direct fieldwork, since they were indeed replaced by another GRTS address in the vicinity.
 
