@@ -967,6 +967,25 @@ grtsaddrdrawn_invalid <-
 grtsaddrdrawn_invalid
 ```
 
+Applying a temporary, somewhat doubtful quick-fix.
+
+<!-- XXXXXX To be revisited! -->
+
+```{r eval = mhq_data_available && nrow(grtsaddrdrawn_invalid) > 0}
+valid_extra_popunits_cell_all_n2khab <- 
+  valid_extra_popunits_cell_all_n2khab %>% 
+  mutate(
+    drawn_invalid = 
+      grts_address_drawn %in% grtsaddrdrawn_invalid$grts_address_drawn,
+    grts_address_drawn = ifelse(
+      drawn_invalid,
+      NA_integer_, 
+      grts_address_drawn
+    )
+  ) %>% 
+  select(-drawn_invalid)
+```
+
 Drawn GRTS addresses that have been locally replaced by another address will still be substituted in the sampling frame, since we need this to draw samples according to the GRTS address series.
 On the other hand, these drawn GRTS addresses should not be used to direct fieldwork, since they were indeed replaced by another GRTS address in the vicinity.
 
@@ -978,15 +997,26 @@ valid_extra_popunits_cell_all_n2khab_tidy <-
   valid_extra_popunits_cell_all_n2khab %>% 
   mutate(
     replaced_by = 
-      ifelse(grts_address_drawn != grts_address, grts_address, NA_integer_),
+      case_when(
+        is.na(grts_address_drawn) | is.na(grts_address) ~ NA_integer_,
+        grts_address_drawn != grts_address ~ grts_address,
+        .default = NA_integer_
+        ),
     replacement_for = 
-      ifelse(grts_address_drawn != grts_address, grts_address_drawn, NA_integer_)
+      case_when(
+        is.na(grts_address_drawn) | is.na(grts_address) ~ NA_integer_,
+        grts_address_drawn != grts_address ~ grts_address_drawn,
+        .default = NA_integer_
+      )
   ) %>% 
   (function(df) {
     bind_rows(
       # adding the GRTS addresses that were drawn
       df %>% 
-        filter(grts_address_drawn != grts_address) %>% 
+        filter(
+          !is.na(grts_address_drawn),
+          grts_address_drawn != grts_address
+        ) %>% 
         select(-grts_address) %>% 
         rename(grts_address = grts_address_drawn) %>% 
         relocate(stratum, typelevel_certain) %>% 
