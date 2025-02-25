@@ -234,6 +234,179 @@ wrap_query_to_join <- function (query_function) {
 
 
 #_______________________________________________________________________________
+# split-apply-combine
+#_______________________________________________________________________________
+
+
+#' Splitting data by a categorical into equal-sized groups
+#'
+#' This function will slice/cut a categorical `column`
+#' into `n_bins` subgroups based on occurrence count within the groups.
+#'
+#' @param .data a data.frame-like table which contains the categorical
+#' @param count_column the categorical column which contains groups to count
+#' @param n_bins an integer giving the number of bins to assign
+#' @param show boolean to indicate whether to plot the cuts
+#'
+#' @return boolean to indicate whether data was stored.
+#'
+#' @keywords internal
+#'
+split_balanced <- function(.data, count_column, n_bins = 2, show = FALSE) {
+
+  # define the bins as a sequence of their edges
+  bins <- seq(0, nrow(.data), length.out = n_bins)
+
+  # cumulated count of elements in the group
+  cumn <- .data %>%
+    pull(!!enquo(count_column)) %>%
+    tapply(., ., length) %>%
+    cumsum()
+
+  # find the first occurrence of elements above all bin edges
+  firsts <- unique(apply(
+    outer(cumn, bins,
+      FUN = function(X,Y) X>Y
+      ), 2,
+    function (x) suppressWarnings(min(which(x)))
+  )-1) # (the last one will be `Inf`)
+
+  # optionally plot
+  if (show) {
+    ggplot(NULL) +
+      geom_line(aes(seq(1, length(cumn)), cumn)) +
+      geom_vline(xintercept = firsts) +
+      geom_hline(yintercept = cumn[firsts])
+  }
+
+  # retrieve and label the groups
+  grp <- .data %>%
+    pull(!!enquo(count_column)) %>%
+    as.numeric() %>%
+    cut(firsts, labels = FALSE) %>%
+    sprintf("%05.0f", .) %>%
+    paste0(count_column, "_grp", .)
+
+  return(factor(grp))
+}
+
+
+
+#' A wrapper to enable de-serialized HDD storage of data blocks.
+#'
+#' Modifies a `query_*` function to save (chunks of) queried data
+#' to disk after loading.
+#' The function will skip existing data, unless you specify otherwise.
+#'
+#' @param query_function a function that queries extra info for a given dataset
+#' @param store_filepath specification of the './data' subpath to store results
+#' @param data the data on which new columns are joined
+#' @param index_column the column holding a row identifier, e.g. `idx`
+#' @param ... other parameters are passed to the query
+#'
+#' @return boolean to indicate whether data was stored.
+#'
+#' @keywords internal
+#'
+query_to_disk <- function (query_function, store_filepath,
+      data, index_column = "idx", ...) {
+
+  if (file.exists(store_filepath)) return(FALSE)
+
+  stopifnot(
+    arrow = require("arrow")
+  )
+
+  # query and join the data
+  lookup = suppressMessages(query_function(
+          data, index_column = index_column, ...))
+  result <- join_lookup(
+      data = data,
+      lookup,
+      index_column = index_column,
+      delete_existing = TRUE
+    )
+
+  # print(knitr::kable(head(result)))
+
+  # store data to disk
+  write_parquet(result, sink = store_filepath)
+
+  return(TRUE)
+}
+
+
+combine_subfolder_data <- function (label) {
+
+  stopifnot(
+    arrow = require("arrow"),
+    dplyr = require("dplyr")
+  )
+
+  # find all files
+  storage_path <- here::here("data", label)
+  all_files <- list.files(storage_path)
+  all_data <- lapply(all_files,
+    FUN = function(fi) read_parquet(here::here("data", label, fi))
+    )
+
+  # save to disk
+  output_file <- here::here("data", paste0(label, ".parquet", collapse = ""))
+  write_parquet(dplyr::bind_rows(all_data), sink = output_file)
+}
+
+
+#' Query data with parallel processes and store to disk.
+#'
+#' @inherit query_to_disk
+#' @param split_data the data, `split()` by category groups
+#' @param label a label, serving as data path and filename
+#' @param query_function the function to query extra data
+#' @param serial boolean do decide between serial and parallel execution
+#'
+#' @export
+#'
+parallel_query_to_disk <- function(
+    split_data, label, query_function, serial = FALSE, ...
+  ) {
+
+  numCores <- parallel::detectCores() - 2
+  registerDoParallel(numCores)
+
+  query_step <- function(i) {
+    system(paste0("mkdir -p '", here::here("data", label), "'"))
+    cluster_group <- names(split_data)[[i]]
+    subdata <- split_data[[i]]
+    storage_path <- here::here("data", label, cluster_group)
+    query_to_disk(
+      query_function = query_function,
+      store_filepath = storage_path,
+      data = subdata,
+      ...
+      )
+  }
+
+  # parallel application of the query function
+  # https://www.rdocumentation.org/packages/foreach/versions/1.5.2/topics/foreach
+  if (serial) {
+    foreach(i = 1:length(split_data), .combine=rbind) %do% {
+      query_step(i)
+    } -> count_nonexisting
+  } else {
+    foreach(i = 1:length(split_data), .combine=rbind) %dopar% {
+      query_step(i)
+    } -> count_nonexisting
+  }
+
+  # combine downloaded data in case of changes
+  if (any(count_nonexisting)) {
+    combine_subfolder_data(label)
+  }
+}
+
+
+
+#_______________________________________________________________________________
 # clusters
 #_______________________________________________________________________________
 
