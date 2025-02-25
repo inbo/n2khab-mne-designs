@@ -8,18 +8,65 @@ These objects are needed in preparing scheme-specific sampling frames or samples
 
 ### Subsetting `GRTSmaster_habitats` according to the base sampling frame
 
-Create SpatRaster layers that are masked with the 3 vector layers that represent the base sampling frame, and integrate them.
+Create SpatRaster layers that are masked with the 3 vector layers plus assessed population units that represent the base sampling frame, and integrate them.
 
 In spatial processing operations, this form (with much less integer values) has shown to be a bit faster to process than `grts_mh`.
+
+First create some preparatory objects in order to cater for extra population units from assessments.
+
+```{r eval = params$regenerate_binary_files}
+valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod <- 
+  valid_extra_popunits_cell_all_n2khab_tidy %>% 
+  inner_join(
+    n2khab_types_expanded_properties %>% 
+      select(type, grts_join_method) %>% 
+      filter(str_detect(grts_join_method, "cell")),
+    join_by(stratum == type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
+valid_extra_popunits_cell_n2khab_grts <- 
+  valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% 
+  # at the time of coding this leaves zero rows:
+  filter(grts_join_method == "cell") %>% 
+  distinct(grts_address) %>% 
+  pull(grts_address)
+```
+
+Now create the SpatRaster.
 
 ```{r eval = params$regenerate_binary_files}
 grts_mh_non_cell <- mask(grts_mh, points_non_cell_n2khab)
 grts_mh_cellcenter <- mask(grts_mh, hmt_pol_cellcenter, touches = FALSE)
 grts_mh_cell <- mask(grts_mh, hmt_pol_cell)
+grts_mh_cellcenter_extra <- 
+  mask(
+    grts_mh,
+    grts_mh,
+    maskvalues = 
+      valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% 
+      filter(grts_join_method == "cell_center") %>% 
+      distinct(grts_address) %>% 
+      pull(grts_address),
+    inverse = TRUE
+  )
+if (length(valid_extra_popunits_cell_n2khab_grts) > 0) {
+  grts_mh_cell_extra <- 
+    mask(
+      grts_mh,
+      grts_mh,
+      maskvalues = valid_extra_popunits_cell_n2khab_grts,
+      inverse = TRUE
+    )
+} else {
+  grts_mh_cell_extra <- rast(grts_mh, vals = NA)
+}
 grts_mh_n2khab <- max(
   grts_mh_non_cell,
   grts_mh_cellcenter,
   grts_mh_cell,
+  grts_mh_cellcenter_extra,
+  grts_mh_cell_extra,
   na.rm = TRUE
 ) %>%
   as.int()
@@ -37,6 +84,10 @@ global(grts_mh_non_cell, "notNA")
 global(grts_mh_cellcenter, "notNA")
 # compare to hmt_pol_grts_cell %>% distinct(grts_address) %>% nrow:
 global(grts_mh_cell, "notNA")
+# compare to valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% filter(grts_join_method == "cell_center") %>% distinct(grts_address) %>% nrow:
+global(grts_mh_cellcenter_extra, "notNA")
+# compare to length(valid_extra_popunits_cell_n2khab_grts):
+global(grts_mh_cell_extra, "notNA")
 # compare to stratum_grts_n2khab %>% distinct(grts_address) %>% nrow:
 global(grts_mh_n2khab, "notNA")
 ```
