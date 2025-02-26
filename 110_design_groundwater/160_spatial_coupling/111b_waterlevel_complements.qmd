@@ -20,32 +20,10 @@ In this notebook, I filter the data for relevant subgroups in the following para
 - `mslope` (`dh/ds`)
 - `dz` difference in filter depth
 
-
-Then, the variogram procedure is repeated.
-
-
-Notes on the filter parameters:
-
-- Water distance is measured on various water-related zenodo sources, and is known to suffer some inaccuracy (e.g. from water body dynamics).
-- Slope is defined as the difference in elevation within a pair of wells, normalized by their distance.
-- Difference in filter depth is what it says.
-
-
-**Overview of distance to 0.01m difference threshold:**
-
-
-| soilclass     | all in | water distance | water distance |      slope | filter depth |
-|:--------------|-------:|---------------:|---------------:|-----------:|-------------:|
-| `(threshold)` |   `NA` |      ` < 50 m` |      ` < 25 m` | ` < 0.01 ` |     ` < 1 m` |
-| heavy         |  1.7 m |          3.1 m |          2.2 m |      9.4 m |        1.7 m |
-| light         |  0.7 m |          2.3 m |          5.7 m |      9.1 m |        0.7 m |
-| peat          | 10.2 m |         10.6 m |          7.8 m |     21.9 m |       14.0 m |
-
-
-As might be expected, homogenizing the data will increase the `range` of spatial co-variation.
-
-The results from an inclusive variogram analysis can be considered "conservative"/"cautious" estimates.
-
+:::{.callout-warning}
+This notebook shows the complements, i.e. the sites which were left out previously.
+Text is not adjusted; just look at the plots.
+:::
 
 # Preparation
 
@@ -68,10 +46,9 @@ library("units")     |> void() # someone decided to soter water distance in mete
 
 if (getOption("browser") == "") options(browser = "librewolf") 
 
-# user-set parameters
-cluster_dist <- 3400 # m # parameter for clustering
-data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
-diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
+# data is loaded from cache
+source("./auxiliary_data_queries.R")
+metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
 
 ```
 
@@ -95,11 +72,14 @@ The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to as
 
 ```{r load-data}
 
-pp_data <- read_parquet(data_export_file)
+meta_data <- join_auxiliary_cache(label = "metadata") %>%
+  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
+  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
-diff_data <- read_parquet(diffdata_export_file)
+diff_data <- join_auxiliary_cache(label = "diffdata")
 
-pp_join <- pp_data %>%
+meta_join <- meta_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
          wata_min_dist, wata_dist_class,
@@ -111,13 +91,13 @@ diff_meta <- diff_data %>%
   select(pp_idx1, pp_idx2) %>%
   distinct() %>%
   left_join(
-    pp_join,
+    meta_join,
     by = join_by(pp_idx1 == pp_idx),
     relationship = "many-to-one",
     suffix = c("", "1")
   ) %>%
   left_join(
-    pp_join,
+    meta_join,
     by = join_by(pp_idx2 == pp_idx),
     relationship = "many-to-one",
     suffix = c("1", "2")
@@ -135,7 +115,6 @@ diff_meta <- diff_data %>%
       mslope = abs(dh) / ds
   )
 
-# glimpse(diff_meta)
 ```
 
 
@@ -282,7 +261,7 @@ water_threshold <- units::set_units(50, "m")
 
 diff_meta %>%
   select(wata_min_dist1) %>%
-  mutate(filltered = wata_min_dist1 < water_threshold) %>% 
+  mutate(filltered = wata_min_dist1 > water_threshold) %>% 
   ggplot(aes(wata_min_dist1, fill = filltered, color = filltered)) +
   geom_histogram(bins = 256) +
   theme_bw()
@@ -293,8 +272,8 @@ diff_meta %>%
 ```{r water-filter}
 somediff_meta <- diff_meta %>%
   filter(
-    wata_dist_class1 %in% c("close", "mid"),
-    wata_dist_class2 %in% c("close", "mid")
+    wata_min_dist1 > water_threshold,
+    wata_min_dist2 > water_threshold
   )
 
 paste0(
@@ -506,7 +485,8 @@ diff_meta %>%
 ```{r water-filter-25m}
 somediff_meta <- diff_meta %>%
   filter(
-    wata_min_dist1 < water_threshold
+    wata_min_dist1 > water_threshold,
+    wata_min_dist2 > water_threshold
   )
 
 paste0(
@@ -716,7 +696,7 @@ slope_threshold <- 0.01/1 # 1 cm per meter
 
 diff_meta %>%
   select(mslope) %>%
-  mutate(filltered = mslope < slope_threshold) %>% 
+  mutate(filltered = mslope > slope_threshold) %>% 
   ggplot(aes(log10(mslope), fill = filltered, color = filltered)) +
   geom_histogram(bins = 256) +
   theme_bw()
@@ -729,7 +709,7 @@ somediff_meta <- diff_meta %>%
   filter(
     # slope_r2.5m1 < slope_threshold,
     # slope_r2.5m2 < slope_threshold
-    mslope < slope_threshold
+    mslope > slope_threshold
   )
 
 paste0(
@@ -921,7 +901,7 @@ dfdepth_threshold <- 1 # Inf # m
 
 diff_meta %>%
   select(dz) %>%
-  mutate(filltered = abs(dz) < dfdepth_threshold) %>% 
+  mutate(filltered = abs(dz) > dfdepth_threshold) %>% 
   ggplot(aes(abs(dz), fill = filltered, color = filltered)) +
   geom_histogram(bins = 256) +
   theme_bw()
@@ -932,7 +912,7 @@ diff_meta %>%
 ```{r dfdepth-filter}
 somediff_meta <- diff_meta %>%
   filter(
-    dz < dfdepth_threshold
+    dz > dfdepth_threshold
   )
 
 paste0(
