@@ -441,6 +441,72 @@ parallel_query_to_cache <- function(
 }
 
 
+
+#' Load and/or join cached summary file.
+#'
+#' @param .data the original data to join, serving to identify data path and filename
+#' @param label the label, serving to identify data path and filename
+#' @param index_column the column holding a row identifier, e.g. `idx`
+#'
+#' @returns an (extended) data frame
+#'
+join_auxiliary_cache <- function(
+    .data = NULL,
+    label = c(
+      "metadata",
+      "elevation",
+      "waterdistance",
+      "empiricalmodes",
+      "quantiles",
+      "diffdata"
+    ),
+    index_column = "idx"
+  ) {
+
+  stopifnot(
+    assertthat = require('assertthat'),
+    dplyr = require('dplyr')
+  )
+
+  # if provided, data must be in a frame.
+  if (!is.null(.data)) {
+    assertthat::assert_that(
+      inherits(.data, "data.frame"),
+      msg = paste0("Input data must be a data.frame-like object.")
+    )
+  }
+
+  # label
+  assertthat::assert_that(is.character(label),
+    msg = paste0("The `label` must be of type `character`.")
+  )
+
+  # index column
+  assertthat::assert_that(is.character(index_column),
+    msg = paste0("The `index_column` must be of type `character`.")
+  )
+
+  # load additional data
+  fi <- paste0("_", label, ".parquet")
+  additional_data <- read_parquet(here::here(local_cache_folder, fi))
+
+  # return or append and return data
+  if (is.null(.data)) return(additional_data)
+
+  # skip duplicate columns
+  additional_data <- additional_data %>%
+    select(matches(index_column), !matches(colnames(.data )))
+
+  data_appended <- .data %>%
+    dplyr::left_join(additional_data,
+      by = index_column,
+      relationship = "many-to-many" # quantiles and diffdata are not 1-1
+    )
+
+  return(data_appended)
+}
+
+
 #' Empty a cache subfolder of choice.
 #'
 #' @param subfolder the label, serving as data path and filename

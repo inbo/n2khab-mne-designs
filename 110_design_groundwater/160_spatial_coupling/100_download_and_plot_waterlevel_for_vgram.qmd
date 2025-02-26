@@ -49,7 +49,8 @@ dir.create("./cache", showWarnings = FALSE)
 # user-set parameters
 cluster_dist <- 3400 # m # parameter for clustering
 min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
-metadata_export_file <- paste0("cache/waterlevel_metadata_cl", cluster_dist, ".parquet")
+# metadata_export_file <- paste0("cache/waterlevel_metadata_cl", cluster_dist, ".parquet")
+metadata_export_file <- here::here(, "_metadata.parquet")
 
 # the user may choose to reload raw data
 force_data_reassembly <- FALSE
@@ -192,7 +193,7 @@ duplicates <- meta_data[, c("cluster", "mp_idx", "pp_idx", "x", "y")]
 duplicates <- duplicates %>% 
   filter(mp_idx %in% (duplicates %>% count(mp_idx) %>% filter(n>1) %>% pull(mp_idx))) %>%
   arrange(cluster, mp_idx)
-knitr::kable(duplicates)
+knitr::kable(head(duplicates))
 ```
 
 Some, but not all, might be due to historical coordinate rounding.
@@ -272,7 +273,7 @@ parallel_query_to_cache(
   )
 
 # fi <- "cluster_grp00001"
-# check <- read_parquet(here::here_cache_folderelevation", fi))
+# check <- read_parquet(here::here(local_cache_folder", "elevation", fi))
 # fi <- "elevation.parquet"
 # check <- read_parquet(here::here(local_cache_folder, fi))
 
@@ -1264,5 +1265,42 @@ combine_subfolder_data(label)
 # Reload All Data
 
 All data has been stored to disk.
-Here we will reload some of it.
+Here we will reload some of it, for demonstration and testing.
 
+
+Metadata:
+
+```{r reload-all-data}
+source("./auxiliary_data_queries.R")
+meta <- join_auxiliary_cache(label = "metadata")
+# .data <- meta
+meta %>%
+  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
+  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") %>%
+  glimpse
+
+```
+
+Quantiles:
+
+```{r reload-quantiles}
+meta %>%
+  join_auxiliary_cache("quantiles", index_column = "pp_idx") %>%
+  glimpse
+
+```
+
+
+Waterlevel differences:
+
+```{r reload-diffdata}
+diffdata <- join_auxiliary_cache(label = "diffdata")
+meta %>%
+  select(pp_idx, region, cluster, soilclass) %>%
+  right_join(diffdata,
+    by = join_by(pp_idx == pp_idx1),
+      relationship = "many-to-many" 
+  )
+
+```
