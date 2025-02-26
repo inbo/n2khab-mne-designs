@@ -55,7 +55,7 @@ metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
 # the user may choose to reload raw data
 force_data_reassembly <- FALSE
 reload <- force_data_reassembly || !file.exists(metadata_export_file)
-reload_emd <- FALSE
+reload_emd <- TRUE
 
 ```
 
@@ -148,7 +148,9 @@ meta_data <- peilpunten %>%
     minimum_cluster_member_count = min_cluster_size
   ) 
 
-knitr::kable(head(meta_data))
+meta_data %>%
+  sample_n(5) %>% t() %>%
+  knitr::kable()
 ```
 
 
@@ -184,6 +186,28 @@ mapview(st_clust,
 ```
 
 
+Are clusters non-overlapping?
+
+```{r cluster-nonoverlap}
+
+st_clust <- meta_data %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+mapview(st_clust,
+  map.types = c("CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap", "OpenTopoMap"),
+  zcol = "cluster",
+  cex = 3,
+  legend = FALSE
+)
+
+```
+
+:::{.callout-note}
+Visual inspection: yes, clusters are disjunct,
+but no, observation wells in clusters can be closer than their defining `cluster_dist` to wells from other clusters.
+:::
+
+
 ## local Belgian plate tectonics
 
 Mental note: some locations have ambiguous co-ordinates
@@ -197,6 +221,37 @@ knitr::kable(head(duplicates))
 ```
 
 Some, but not all, might be due to historical coordinate rounding.
+
+
+## clusters of clusters
+
+For data loading, it makes sense to slice the data into chunks.
+However, clusters should stay separated.
+
+```{r split-balanced}
+
+
+backbone_data <- meta_data %>%
+  select(pp_idx, cluster, x, y)
+knitr::kable(head(backbone_data))
+
+
+# backbone_data$cluster_group <- split_balanced(backbone_data, count_column = "cluster", n_bins = 17)
+
+metadata_in_chunks <- split(
+  backbone_data,
+  split_balanced(
+    backbone_data,
+    count_column = "cluster",
+    n_bins = 8*17,
+    show = TRUE
+  )
+)
+
+# ggplot(NULL, aes(x = 1:length(metadata_in_chunks), y = sapply(metadata_in_chunks, FUN = nrow))) + geom_step()
+
+```
+
 
 
 ## soilclass
@@ -227,33 +282,11 @@ mapview(st_soil,
 
 ```
 
+
 ## elevation
 
 ... once we're at it.
 
-```{r split-balanced}
-
-
-backbone_data <- meta_data %>%
-  select(pp_idx, cluster, x, y)
-knitr::kable(head(backbone_data))
-
-
-# backbone_data$cluster_group <- split_balanced(backbone_data, count_column = "cluster", n_bins = 17)
-
-data_subgroups <- split(
-  backbone_data,
-  split_balanced(
-    backbone_data,
-    count_column = "cluster",
-    n_bins = 8*17,
-    show = TRUE
-  )
-)
-
-# ggplot(NULL, aes(x = 1:length(data_subgroups), y = sapply(data_subgroups, FUN = nrow))) + geom_step()
-
-```
 
 ```{r download-elevation}
 
@@ -264,7 +297,7 @@ if (reload) {
 
 
 parallel_query_to_cache(
-  split_data = data_subgroups,
+  split_data = metadata_in_chunks,
   label = label,
   query_function = query_elevation,
   index_column = "pp_idx",
@@ -279,8 +312,10 @@ parallel_query_to_cache(
 
 ```
 
+
 ```{r elevation-archive}
 
+# this is how we did things in the *old days*.
 if (FALSE) {
   # meta_data <- meta_data %>%
   #   join_elevation(index_column = "pp_idx")
@@ -332,7 +367,7 @@ if (reload) {
 
 
 parallel_query_to_cache(
-  split_data = data_subgroups,
+  split_data = metadata_in_chunks,
   label = label,
   query_function = query_waterdistance,
   index_column = "pp_idx",
@@ -358,8 +393,12 @@ mapview(st_wata,
   # legend = FALSE
 )
 
-# TODO this is not correct yet; see coastal wells
 ```
+
+:::{.callout-warning}
+TODO Water distance is not entirely correct yet; see coastal wells.
+:::
+
 
 # Quantiles
 
@@ -385,10 +424,10 @@ if (reload) {
 #   progress = TRUE
 # )
 
-# data <- data_subgroups[[1]]
+# data <- metadata_in_chunks[[1]]
 
 parallel_query_to_cache(
-  split_data = data_subgroups,
+  split_data = metadata_in_chunks,
   label = label,
   query_function = query_waterlevel_quantiles,
   sequential = TRUE,
@@ -400,10 +439,10 @@ parallel_query_to_cache(
   )
 
 
-fi <- "cluster_grp00001"
-check <- read_parquet(here::here(local_cache_folder, "quantiles", fi))
-fi <- "_quantiles.parquet"
-check <- read_parquet(here::here(local_cache_folder, fi))
+# fi <- "cluster_grp00001"
+# check <- read_parquet(here::here(local_cache_folder, "quantiles", fi))
+# fi <- "_quantiles.parquet"
+# check <- read_parquet(here::here(local_cache_folder, fi))
 ```
 
 
@@ -714,8 +753,7 @@ for (j in 1:length(tiny_traces)) {
 
 ```{r plot-multistep-emd}
 
-trace[["t0"]]
-
+# trace[["t0"]]
 
 join_sig <- function(multi, part, stitch_na = TRUE) {
   
@@ -775,7 +813,7 @@ execute_multistep_emd <- function(trace, apply_savgol = TRUE) {
     #   geom_line(aes(t, y), color = "darkgrey", linewidth = 0.5) +
     #   geom_line(aes(t, sg), color = "black", linewidth = 1.0) +
     #   theme_bw()
-    trs <- tr
+    trs <- tr # smoothed trace
     if (apply_savgol) trs[["y"]] <- smooth_sg(tr, days = 31, forder = 8)
     collect_y <- append(collect_y, list(trs))
 
@@ -923,7 +961,7 @@ plot_multistep_emd(multi_emd, show = TRUE)
 
 
 
-TODO: is sampling frequency related? (implicit temporal averaging)
+TODO: is EMD outcome sampling frequency related? (implicit temporal averaging)
 -> partly compensated by savgol `fl` 
 
 
@@ -963,8 +1001,10 @@ emd_multistep_function <- function (data, index_column = "idx", progress = FALSE
     # print(label2)
 
     ### EMD
-    multi_emd <- tryCatch({execute_multistep_emd(trace, apply_savgol = TRUE)},
-      error = {next})
+    tryCatch({
+        multi_emd <- execute_multistep_emd(trace, apply_savgol = TRUE)
+    }, error = function (cond) next
+    )
     
     if (all(is.na(multi_emd))) next
 
@@ -1022,7 +1062,7 @@ emd_multistep_function <- function (data, index_column = "idx", progress = FALSE
 
 
 label <- "empiricalmodes"
-if (reload) {
+if (TRUE || reload) {
   empty_cache_subfolder(paste0(label, collapse = ""))
 }
 
@@ -1031,8 +1071,8 @@ registerDoParallel(numCores)
 
 query_step <- function(i_query) {
   system(paste0("mkdir -p '", here::here(local_cache_folder, label), "'"))
-  cluster_group <- names(data_subgroups)[[i_query]]
-  subdata <- data_subgroups[[i_query]]
+  cluster_group <- names(metadata_in_chunks)[[i_query]]
+  subdata <- metadata_in_chunks[[i_query]]
   storage_path <- here::here(local_cache_folder, label, cluster_group)
   if (file.exists(storage_path)) return(FALSE)
 
@@ -1048,7 +1088,7 @@ query_step <- function(i_query) {
 }
 
 if (reload_emd) {
-  foreach(i = 1:length(data_subgroups), .combine=rbind) %do% {
+  foreach(i = 1:length(metadata_in_chunks), .combine=rbind) %do% {
     query_step(i)
   } -> count_nonexisting
 }
@@ -1278,10 +1318,14 @@ Metadata:
 source("./auxiliary_data_queries.R")
 meta <- join_auxiliary_cache(label = "metadata")
 # .data <- meta
-meta %>%
+all_meta <- meta %>%
   join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
   join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
-  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") %>%
+  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+
+print(sum(is.na(all_meta$emd_amp1)))
+
+all_meta %>%
   head(3) %>%
   t() %>%
   knitr::kable()

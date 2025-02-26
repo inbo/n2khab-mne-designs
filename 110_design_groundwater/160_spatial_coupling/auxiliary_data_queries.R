@@ -494,8 +494,6 @@ join_auxiliary_cache <- function(
   if (is.null(.data)) return(additional_data)
 
   # skip duplicate columns
-  print(colnames(.data))
-  print(colnames(additional_data))
   additional_data <- additional_data %>%
     select(matches(index_column), !any_of(colnames(.data )))
 
