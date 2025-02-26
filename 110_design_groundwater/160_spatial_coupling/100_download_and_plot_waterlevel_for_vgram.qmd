@@ -55,7 +55,7 @@ metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
 # the user may choose to reload raw data
 force_data_reassembly <- FALSE
 reload <- force_data_reassembly || !file.exists(metadata_export_file)
-reload_emd <- TRUE
+reload_emd <- reload
 
 ```
 
@@ -1001,9 +1001,9 @@ emd_multistep_function <- function (data, index_column = "idx", progress = FALSE
     # print(label2)
 
     ### EMD
-    tryCatch({
-        multi_emd <- execute_multistep_emd(trace, apply_savgol = TRUE)
-    }, error = function (cond) next
+    multi_emd <- tryCatch({
+        execute_multistep_emd(trace, apply_savgol = TRUE)
+    }, error = function (cond) return(NA)
     )
     
     if (all(is.na(multi_emd))) next
@@ -1035,19 +1035,22 @@ emd_multistep_function <- function (data, index_column = "idx", progress = FALSE
     }
     
 
-    hlist <- plot_multistep_emd(multi_emd, show = FALSE)
+    # skip plotting traces
+    if (FALSE) {
+      hlist <- plot_multistep_emd(multi_emd, show = FALSE)
 
-    h <- grid.arrange(hlist[[1]], hlist[[2]], hlist[[3]], hlist[[4]], hlist[[5]],
-      widths = c(2, 1),
-      layout_matrix = rbind(c(1, NA),
-                            c(2, 3),
-                            c(4, 5)
-                            ),
-      top = label2
-    ) # gridExtra
+      h <- grid.arrange(hlist[[1]], hlist[[2]], hlist[[3]], hlist[[4]], hlist[[5]],
+        widths = c(2, 1),
+        layout_matrix = rbind(c(1, NA),
+                              c(2, 3),
+                              c(4, 5)
+                              ),
+        top = label2
+      ) # gridExtra
 
-    ggsave(paste0("figures/emd/", idx, "_", locationcode, ".png", collapse = ""), h,
-           dpi = 300, height = 16, width = 24, units = "cm") |> suppressMessages()
+      ggsave(paste0("figures/emd/", idx, "_", locationcode, ".png", collapse = ""), h,
+             dpi = 300, height = 16, width = 24, units = "cm") |> suppressMessages()
+    }
 
 
   }
@@ -1062,7 +1065,7 @@ emd_multistep_function <- function (data, index_column = "idx", progress = FALSE
 
 
 label <- "empiricalmodes"
-if (TRUE || reload) {
+if (reload_emd) {
   empty_cache_subfolder(paste0(label, collapse = ""))
 }
 
@@ -1089,7 +1092,7 @@ query_step <- function(i_query) {
 
 if (reload_emd) {
   foreach(i = 1:length(metadata_in_chunks), .combine=rbind) %do% {
-    query_step(i)
+    query_step(121-i)
   } -> count_nonexisting
 }
 
