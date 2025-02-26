@@ -16,14 +16,17 @@ knitr:
 
 In this notebook, I filter the data for relevant subgroups in the following parameters:
 
-- `wata_min_dist` (via `wata_dist_class`)
-- `mslope` (`dh/ds`)
-- `dz` difference in filter depth
+- `wata_min_dist` (via `wata_dist_class`): Water distance is measured on various water-related zenodo sources, and is known to suffer some inaccuracy (e.g. from water body dynamics).
+- `mslope` (`dh/ds`): Slope is defined as the difference in elevation within a pair of wells, normalized by their distance.
+- `dz` difference in filter depth: Difference in filter depth is what it says: the difference in filter depth.
+- `pp_vld & mp_vld` validation status of the site/obswell
+
 
 :::{.callout-warning}
 This notebook shows the complements, i.e. the sites which were left out previously.
-Text is not adjusted; just look at the plots.
+Text is not adjusted; please focus on the plots.
 :::
+
 
 # Preparation
 
@@ -49,7 +52,6 @@ if (getOption("browser") == "") options(browser = "librewolf")
 # data is loaded from cache
 source("./auxiliary_data_queries.R")
 metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
-
 ```
 
 
@@ -58,9 +60,10 @@ metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
 ```{r parameters}
 #| code-fold: false
 extent <- 512 # m
-n_bins <- as.integer(extent/4)
 
-bin_target <- 32 # alternative: observations per bin
+n_bins <- as.integer(extent/4) # the number of bins...
+bin_target <- 32 # ... and the preferred alternative: observations per bin
+
 cap_dw <- 8 # m # maximum accepted water level difference
 ```
 
@@ -84,7 +87,8 @@ meta_join <- meta_data %>%
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
          wata_min_dist, wata_dist_class,
          emd_n, emd_amp1, emd_amp2, emd_ampsum,
-         emd_qdiff, emd_residual_qdiff
+         emd_qdiff, emd_residual_qdiff,
+         pp_vld, mp_vld
          )
 
 diff_meta <- diff_data %>%
@@ -103,6 +107,9 @@ diff_meta <- diff_data %>%
     suffix = c("1", "2")
   ) %>%
   mutate(
+      validated1 = as.integer(pp_vld1 == "VLD") * as.integer(mp_vld1 == "VLD"),
+      validated2 = as.integer(pp_vld2 == "VLD") * as.integer(mp_vld2 == "VLD"),
+      validated = as.logical(validated1 * validated2),
       ds = sqrt((x2-x1)^2 + (y2-y1)^2),
       dh = elevation_dhmv2-elevation_dhmv1,
       dz = fdepth2-fdepth1,
@@ -261,7 +268,7 @@ water_threshold <- units::set_units(50, "m")
 
 diff_meta %>%
   select(wata_min_dist1) %>%
-  mutate(filltered = wata_min_dist1 > water_threshold) %>% 
+  mutate(filltered = wata_min_dist1 >= water_threshold) %>% 
   ggplot(aes(wata_min_dist1, fill = filltered, color = filltered)) +
   geom_histogram(bins = 256) +
   theme_bw()
@@ -272,8 +279,8 @@ diff_meta %>%
 ```{r water-filter}
 somediff_meta <- diff_meta %>%
   filter(
-    wata_min_dist1 > water_threshold,
-    wata_min_dist2 > water_threshold
+    wata_min_dist1 >= water_threshold,
+    wata_min_dist2 >= water_threshold
   )
 
 paste0(
@@ -474,7 +481,7 @@ water_threshold <- units::set_units(25, "m")
 
 diff_meta %>%
   select(wata_min_dist1) %>%
-  mutate(filltered = wata_min_dist1 < water_threshold) %>% 
+  mutate(filltered = wata_min_dist1 >= water_threshold) %>% 
   ggplot(aes(wata_min_dist1, fill = filltered, color = filltered)) +
   geom_histogram(bins = 256) +
   theme_bw()
@@ -485,8 +492,8 @@ diff_meta %>%
 ```{r water-filter-25m}
 somediff_meta <- diff_meta %>%
   filter(
-    wata_min_dist1 > water_threshold,
-    wata_min_dist2 > water_threshold
+    wata_min_dist1 >= water_threshold,
+    wata_min_dist2 >= water_threshold
   )
 
 paste0(
@@ -696,7 +703,7 @@ slope_threshold <- 0.01/1 # 1 cm per meter
 
 diff_meta %>%
   select(mslope) %>%
-  mutate(filltered = mslope > slope_threshold) %>% 
+  mutate(filltered = mslope >= slope_threshold) %>% 
   ggplot(aes(log10(mslope), fill = filltered, color = filltered)) +
   geom_histogram(bins = 256) +
   theme_bw()
@@ -709,7 +716,7 @@ somediff_meta <- diff_meta %>%
   filter(
     # slope_r2.5m1 < slope_threshold,
     # slope_r2.5m2 < slope_threshold
-    mslope > slope_threshold
+    mslope >= slope_threshold
   )
 
 paste0(
@@ -901,7 +908,7 @@ dfdepth_threshold <- 1 # Inf # m
 
 diff_meta %>%
   select(dz) %>%
-  mutate(filltered = abs(dz) > dfdepth_threshold) %>% 
+  mutate(filltered = abs(dz) >= dfdepth_threshold) %>% 
   ggplot(aes(abs(dz), fill = filltered, color = filltered)) +
   geom_histogram(bins = 256) +
   theme_bw()
@@ -912,7 +919,7 @@ diff_meta %>%
 ```{r dfdepth-filter}
 somediff_meta <- diff_meta %>%
   filter(
-    dz > dfdepth_threshold
+    dz >= dfdepth_threshold
   )
 
 paste0(
@@ -1091,16 +1098,218 @@ Capped: $<= 1$
 :::
 
 
+
+# Validation
+## Filters
+
+Validation, validation, validation.
+
+In an effort to build on as broad a foundation as possible, I experimentally included unvalidated data.
+"Unvalidated" does not mean "wrong" or "excluded", after all.
+
+- `validated` == TRUE
+
+
+```{r vali-distribution}
+diff_meta %>%
+  select(soilclass1, validated) %>%
+  ggplot(aes(soilclass1, fill = validated, color = validated)) +
+  geom_bar() +
+  theme_bw()
+    
+```
+
+
+```{r vali-filter}
+somediff_meta <- diff_meta %>%
+  filter(
+    !validated
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+## Binning
+
+
+```{r join-vali}
+diff_all <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_all, 3)), decimals = 2)
+```
+
+
+
+```{r groupwise-binning-vali}
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, n_bins
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+Sample size:
+
+```{r vali-equibin-samplesize}
+#| label: fig-vali-equibin-sample-size
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step(stat = "ecdf") +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  theme_bw()
+```
+
+
+## variograms {#sec-vali}
+
+using water level difference (MAD)
+
+
+```{r dw-column-vali}
+#| code-fold: false
+
+column <- "dw_groups"
+# column <- "dw_all"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-vali-regression-heavy}
+#| label: fig-vali-dw-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "heavy",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+
+```
+
+
+### light
+
+```{r dw-vali-regression-light}
+#| label: fig-vali-dw-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+```
+
+<!--
+::: {.callout-warning}
+Capped: $<= 1.0$ 
+::: 
+-->
+
+
+
+
+### peat
+
+```{r dw-vali-regression-peat}
+#| label: fig-vali-dw-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = 512, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 2)
+```
+
+<!--
+::: {.callout-warning}
+Capped: $<= 1$ 
+:::
+-->
+
+
+:::
+
+
 # Archive
 ## Responses on earlier questions
 
 > kan je ook de analyse doen voor de andere klassen die worden gecreëerd, i.e. water distance > 50 m en slope > 0.05? Je concludeert nl. dat de homogenisatie zorgt voor een toename in de range, maar geldt dit ook
 
 For convenience, this is available in another notebook: please find `111b_waterlevel_complements.qmd`. 
-Unfortunately, sample sizes of the complementary subsets are to small for definitive conclusions.
+Unfortunately, sample sizes of the complementary subsets are too small for definitive conclusions.
 
-
---> supplementary notebook not updated.
 
 
 > Ook verwacht ik niet per sé homogenisatie wanneer een kleinere *treshold* voor afstand tot water wordt gekozen: ik zou denken dat we grotere verschillen in grondwaterstand kunnen verwachten op korte afstand wanneer je je dichter bij een waterloop bevindt. Kan een model lopen bij een *treshold* van 25 m?
