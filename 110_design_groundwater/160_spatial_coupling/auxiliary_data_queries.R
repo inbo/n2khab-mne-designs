@@ -133,15 +133,15 @@ check_common_assertions <- function (
 
 #' A generic function to join extra information to data.
 #'
-#' Join the `lookup` to `data` based on an `index_column`.
+#' Join the `additional_data` to `data` based on an `index_column`.
 #' By default, matching columns will be deleted from the `data`.
 #'
 #' @param data the data, in data frame format
-#' @param lookup the new data to be appended, also in data frame format
+#' @param additional_data the new data to be appended, also in data frame format
 #' @param index_column the column holding a row identifier, e.g. `idx`
 #' @param delete_existing boolean to enable prior removal of matching columns.
 #'
-#' @return the data, joined by the lookup
+#' @return the data, joined by the additional_data
 #'
 #' @examples
 #' \dontrun{
@@ -156,35 +156,35 @@ check_common_assertions <- function (
 #'
 join_lookup <- function(
     data,
-    lookup,
+    additional_data,
     index_column = "idx",
     delete_existing = TRUE
   ) {
 
   # type_dataidx <- typeof(data[, index_column])
-  # type_lookupidx <- typeof(lookup[, index_column])
+  # type_lookupidx <- typeof(additional_data[, index_column])
 
   # if (!(type_dataidx == type_lookupidx)) {
   #   message(paste0("data (", type_dataidx,
-  #       ") and lookup (", type_lookupidx,") are not of the same type. ",
-  #       "attempting to convert lookup index."))
+  #       ") and additional_data (", type_lookupidx,") are not of the same type. ",
+  #       "attempting to convert additional_data index."))
   # data[, index_column]
   # }
 
   # this circumvents occasional type mismatch of <integer> and <tbl_df:integer>
   data <- as.data.frame(data)
-  lookup <- as.data.frame(lookup)
+  additional_data <- as.data.frame(additional_data)
 
   # data <- data[!is.na(data[, index_column]), ]
-  # lookup <- lookup[!is.na(lookup[, index_column]), ]
+  # additional_data <- additional_data[!is.na(additional_data[, index_column]), ]
 
   data[, index_column] <- type.convert(data[, index_column], as.is = TRUE)
-  lookup[, index_column] <- type.convert(lookup[, index_column], as.is = TRUE)
+  additional_data[, index_column] <- type.convert(additional_data[, index_column], as.is = TRUE)
 
 
   if (delete_existing) {
     # remove overlapping columns before join
-    for (col in colnames(lookup)) {
+    for (col in colnames(additional_data)) {
       if (!(col == index_column) && (col %in% colnames(data))) {
         data <- data %>%
           dplyr::select(-dplyr::one_of(col))
@@ -194,7 +194,7 @@ join_lookup <- function(
     # join, after deleting existing cols
     data <- data %>%
       dplyr::left_join(
-        lookup,
+        additional_data,
         by = index_column,
         relationship = "many-to-many"
       )
@@ -202,7 +202,7 @@ join_lookup <- function(
     # solve column overlap by a suffix
     data <- data %>%
       dplyr::left_join(
-        lookup,
+        additional_data,
         by = index_column,
         relationship = "many-to-many",
         suffix = c("", "_")
@@ -241,9 +241,10 @@ wrap_query_to_join <- function (query_function) {
 
 
 #_______________________________________________________________________________
-# split-apply-combine
+# split-apply-cache-combine
 #_______________________________________________________________________________
 
+local_cache_folder <- "cache"
 
 #' Splitting data by a categorical into equal-sized groups
 #'
@@ -306,7 +307,7 @@ split_balanced <- function(.data, count_column, n_bins = 2, show = FALSE) {
 #' The function will skip existing data, unless you specify otherwise.
 #'
 #' @param query_function a function that queries extra info for a given dataset
-#' @param store_filepath specification of the './data' subpath to store results
+#' @param store_filepath specification of the cache subfolder to store results
 #' @param data the data on which new columns are joined
 #' @param index_column the column holding a row identifier, e.g. `idx`
 #' @param ... other parameters are passed to the query
@@ -315,9 +316,10 @@ split_balanced <- function(.data, count_column, n_bins = 2, show = FALSE) {
 #'
 #' @keywords internal
 #'
-query_to_disk <- function (query_function, store_filepath,
+query_to_cache <- function (query_function, store_filepath,
       data, index_column = "idx", ...) {
 
+  # skip cached files
   if (file.exists(store_filepath)) return(FALSE)
 
   stopifnot(
@@ -326,20 +328,21 @@ query_to_disk <- function (query_function, store_filepath,
 
   # query and join the data
   if (FALSE) {
-    lookup <- query_function(
+    # debubbing helper
+    additional_data <- query_function(
             data, index_column = index_column,
             # n_quantiles = 20,
             # db_conn = watina_dwh,
             progress = TRUE
     )
   }
-  # print(lookup)
-  lookup <- suppressMessages(query_function(
+  # print(additional_data)
+  additional_data <- suppressMessages(query_function(
           data, index_column = index_column, ...))
-  print(lookup)
+  # print(additional_data)
   result <- join_lookup(
       data = data,
-      lookup,
+      additional_data,
       index_column = index_column,
       delete_existing = TRUE
     )
@@ -353,6 +356,14 @@ query_to_disk <- function (query_function, store_filepath,
 }
 
 
+#' combining all cached chunks to one data file.
+#'
+#' @param label subfolder name to the relevant data
+#' @param output_file optional path to the combined results,
+#'                    creating a standard filename if not provided
+#'
+#' @return path to the output file
+#'
 combine_subfolder_data <- function (label, output_file = NA) {
 
   stopifnot(
@@ -361,23 +372,25 @@ combine_subfolder_data <- function (label, output_file = NA) {
   )
 
   # find all files
-  storage_path <- here::here("data", label)
+  storage_path <- here::here(local_cache_folder, label)
   all_files <- list.files(storage_path)
   all_data <- lapply(all_files,
-    FUN = function(fi) read_parquet(here::here("data", label, fi))
+    FUN = function(fi) read_parquet(here::here(local_cache_folder, label, fi))
     )
 
   # save to disk
   if (is.na(output_file)) {
-    output_file <- here::here("data", paste0("_", label, ".parquet", collapse = ""))
+    output_file <- here::here(local_cache_folder, paste0("_", label, ".parquet", collapse = ""))
   }
   write_parquet(dplyr::bind_rows(all_data), sink = output_file)
+
+  return(output_file)
 }
 
 
 #' Query data with parallel processes and store to disk.
 #'
-#' @inherit query_to_disk
+#' @inherit query_to_cache
 #' @param split_data the data, `split()` by category groups
 #' @param label a label, serving as data path and filename
 #' @param query_function the function to query extra data
@@ -385,7 +398,7 @@ combine_subfolder_data <- function (label, output_file = NA) {
 #'
 #' @export
 #'
-parallel_query_to_disk <- function(
+parallel_query_to_cache <- function(
     split_data, label, query_function,
     sequential = FALSE, verbose = FALSE, ...
   ) {
@@ -394,12 +407,12 @@ parallel_query_to_disk <- function(
   registerDoParallel(numCores)
 
   query_step <- function(i) {
-    system(paste0("mkdir -p '", here::here("data", label), "'"))
+    system(paste0("mkdir -p '", here::here(local_cache_folder, label), "'"))
     cluster_group <- names(split_data)[[i]]
     subdata <- split_data[[i]]
-    storage_path <- here::here("data", label, cluster_group)
+    storage_path <- here::here(local_cache_folder, label, cluster_group)
     if (verbose && !file.exists(storage_path)) print(cluster_group)
-    query_to_disk(
+    query_to_cache(
       query_function = query_function,
       store_filepath = storage_path,
       data = subdata,
@@ -421,16 +434,20 @@ parallel_query_to_disk <- function(
   }
 
   # combine downloaded data in case of changes
-  output_file <- here::here("data", paste0("_", label, ".parquet", collapse = ""))
+  output_file <- here::here(local_cache_folder, paste0("_", label, ".parquet", collapse = ""))
   if (!file.exists(output_file) || any(count_nonexisting)) {
     combine_subfolder_data(label, output_file = output_file)
   }
 }
 
 
-remove_all_in_subfolder <- function(subfolder) {
+#' Empty a cache subfolder of choice.
+#'
+#' @param subfolder the label, serving as data path and filename
+#'
+empty_cache_subfolder <- function(subfolder) {
 
-  storage_path <- here::here("data", subfolder)
+  storage_path <- here::here(local_cache_folder, subfolder)
 
   if (interactive()) {
     confirm_delete <- utils::askYesNo(

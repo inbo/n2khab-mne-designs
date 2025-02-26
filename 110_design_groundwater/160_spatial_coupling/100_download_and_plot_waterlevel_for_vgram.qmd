@@ -42,20 +42,18 @@ if (!work_offline && !exists("watina_dwh")) {
 }
 
 # create a data folder (if not present)
-dir.create("./data", showWarnings = FALSE)
+dir.create("./cache", showWarnings = FALSE)
 
 # if (getOption("browser") == "") options(browser = "librewolf") 
 
 # user-set parameters
 cluster_dist <- 3400 # m # parameter for clustering
 min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
-data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
-qq_export_file <- paste0("data/waterlevel_quantiles_cl", cluster_dist, ".parquet")
-diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
+metadata_export_file <- paste0("cache/waterlevel_metadata_cl", cluster_dist, ".parquet")
 
 # the user may choose to reload raw data
 force_data_reassembly <- FALSE
-reload <- force_data_reassembly || !file.exists(data_export_file)
+reload <- force_data_reassembly || !file.exists(metadata_export_file)
 reload_emd <- FALSE
 
 ```
@@ -143,13 +141,13 @@ removing all clusters which contain only one location.
 
 ```{r cluster-join}
 
-pp_data <- peilpunten %>%
+meta_data <- peilpunten %>%
   join_clusters(index_column = "pp_idx", characteristic_distance = cluster_dist) %>%
   remove_underpopulated_clusters(
     minimum_cluster_member_count = min_cluster_size
   ) 
 
-knitr::kable(head(pp_data))
+knitr::kable(head(meta_data))
 ```
 
 
@@ -157,20 +155,20 @@ Cluster size:
 
 ```{r cluster-size}
 
-pp_data %>%
+meta_data %>%
   count(cluster) %>%
   arrange(desc(n)) %>%
   ggplot(aes(x = n)) +
   geom_histogram(bins = 256, fill = "lightgray", color = "black") +
   theme_bw()
 
-# levels(pp_data$cluster)
+# levels(meta_data$cluster)
 ```
 
 
 ```{r cluster-location}
 
-st_clust <- pp_data %>%
+st_clust <- meta_data %>%
   group_by(region, cluster) %>%
   summarize(x = mean(x), y = mean(y), count = n()) %>% 
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
@@ -184,12 +182,13 @@ mapview(st_clust,
 
 ```
 
+
 ## local Belgian plate tectonics
 
 Mental note: some locations have ambiguous co-ordinates
 
 ```{r location-duplicates}
-duplicates <- pp_data[, c("cluster", "mp_idx", "pp_idx", "x", "y")]
+duplicates <- meta_data[, c("cluster", "mp_idx", "pp_idx", "x", "y")]
 duplicates <- duplicates %>% 
   filter(mp_idx %in% (duplicates %>% count(mp_idx) %>% filter(n>1) %>% pull(mp_idx))) %>%
   arrange(cluster, mp_idx)
@@ -201,11 +200,19 @@ Some, but not all, might be due to historical coordinate rounding.
 
 ## soilclass
 
+Soilclass is so fundamental that I consider it pert of the meta data.
+
 ```{r soilclass-join}
-pp_data <- pp_data %>%
+meta_data <- meta_data %>%
     join_soilclass(index_column = "pp_idx")
 
-st_soil <- pp_data %>%
+
+write_parquet(meta_data, sink = metadata_export_file)
+```
+
+
+```{r soilclass-map}
+st_soil <- meta_data %>%
   group_by(soilclass, region, cluster) %>%
   summarize(x = mean(x), y = mean(y), count = n()) %>% 
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
@@ -226,17 +233,17 @@ mapview(st_soil,
 ```{r split-balanced}
 
 
-lookup_data <- pp_data %>%
+backbone_data <- meta_data %>%
   select(pp_idx, cluster, x, y)
-knitr::kable(head(lookup_data))
+knitr::kable(head(backbone_data))
 
 
-# lookup_data$cluster_group <- split_balanced(lookup_data, count_column = "cluster", n_bins = 17)
+# backbone_data$cluster_group <- split_balanced(backbone_data, count_column = "cluster", n_bins = 17)
 
 data_subgroups <- split(
-  lookup_data,
+  backbone_data,
   split_balanced(
-    lookup_data,
+    backbone_data,
     count_column = "cluster",
     n_bins = 8*17,
     show = TRUE
@@ -251,11 +258,11 @@ data_subgroups <- split(
 
 label <- "elevation"
 if (reload) {
-  remove_all_in_subfolder(label)
+  empty_cache_subfolder(paste0(label, collapse = ""))
 }
 
 
-parallel_query_to_disk(
+parallel_query_to_cache(
   split_data = data_subgroups,
   label = label,
   query_function = query_elevation,
@@ -265,20 +272,20 @@ parallel_query_to_disk(
   )
 
 # fi <- "cluster_grp00001"
-# check <- read_parquet(here::here("data", "elevation", fi))
+# check <- read_parquet(here::here_cache_folderelevation", fi))
 # fi <- "elevation.parquet"
-# check <- read_parquet(here::here("data", fi))
+# check <- read_parquet(here::here(local_cache_folder, fi))
 
 ```
 
 ```{r elevation-archive}
 
 if (FALSE) {
-  # pp_data <- pp_data %>%
+  # meta_data <- meta_data %>%
   #   join_elevation(index_column = "pp_idx")
   
   ## "Oh No!", there were duplicates.
-  # data <- pp_data
+  # data <- meta_data
   # index_column = "mp_idx"
   # coordinate_columns <- c("x", "y")
   # elevation_lookup <- query_elevation(data, index_column = "mp_idx")
@@ -299,7 +306,7 @@ if (FALSE) {
 ```{r elevation-map}
 
 fi <- "_elevation.parquet"
-st_elevation <- read_parquet(here::here("data", fi)) %>%
+st_elevation <- read_parquet(here::here(local_cache_folder, fi)) %>%
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
 
 mapview(st_elevation,
@@ -319,11 +326,11 @@ mapview(st_elevation,
 
 label <- "waterdistance"
 if (reload) {
-  remove_all_in_subfolder(label)
+  empty_cache_subfolder(paste0(label, collapse = ""))
 }
 
 
-parallel_query_to_disk(
+parallel_query_to_cache(
   split_data = data_subgroups,
   label = label,
   query_function = query_waterdistance,
@@ -341,7 +348,7 @@ Okay, why not, let's map it.
 ```{r wata-map}
 
 fi <- "_waterdistance.parquet"
-st_wata <- read_parquet(here::here("data", fi)) %>%
+st_wata <- read_parquet(here::here(local_cache_folder, fi)) %>%
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
 
 mapview(st_wata,
@@ -365,12 +372,12 @@ kind of emulating "HG3" and "LG3", but for continuous water level measurement.
 
 label <- "quantiles"
 if (reload) {
-  remove_all_in_subfolder(label)
+  empty_cache_subfolder(paste0(label, collapse = ""))
 }
 
 
 # query_waterlevel_quantiles(
-#   data = lookup_data,
+#   data = backbone_data,
 #   index_column = "pp_idx",
 #   n_quantiles = 20,
 #   db_conn = watina_dwh,
@@ -379,7 +386,7 @@ if (reload) {
 
 # data <- data_subgroups[[1]]
 
-parallel_query_to_disk(
+parallel_query_to_cache(
   split_data = data_subgroups,
   label = label,
   query_function = query_waterlevel_quantiles,
@@ -625,7 +632,7 @@ try_emd_trace <- function(tr) {
 }
 get_firstmode <- function(emd) list("t" = emd[["time"]], "y" = emd[["firstmode"]])
 mean_amplitude <- function(emd) mean(emd[["amplitude"]])
-get_info <- function(idx, info) paste0(pp_data %>% filter(pp_idx == idx) %>% pull(!!info), collapse = ", ")
+get_info <- function(idx, info) paste0(meta_data %>% filter(pp_idx == idx) %>% pull(!!info), collapse = ", ")
 get_locationcode <- function(idx) get_info(idx, "pp_code")
 
 # example
@@ -1005,24 +1012,23 @@ emd_multistep_function <- function (data, index_column = "idx", progress = FALSE
   # combine amplitudes
   emd_data <- emd_data %>% mutate(emd_ampsum = sqrt(emd_amp1^2 + emd_amp2^2))
 
-  # write_parquet(pp_data, sink = data_export_file)
   return(emd_data %>% rename(c("pp_idx" = "idx")))
 }
 
 
 label <- "empiricalmodes"
 if (reload) {
-  remove_all_in_subfolder(label)
+  empty_cache_subfolder(paste0(label, collapse = ""))
 }
 
 numCores <- parallel::detectCores() - 2
 registerDoParallel(numCores)
 
 query_step <- function(i_query) {
-  system(paste0("mkdir -p '", here::here("data", label), "'"))
+  system(paste0("mkdir -p '", here::here(local_cache_folder, label), "'"))
   cluster_group <- names(data_subgroups)[[i_query]]
   subdata <- data_subgroups[[i_query]]
-  storage_path <- here::here("data", label, cluster_group)
+  storage_path <- here::here(local_cache_folder, label, cluster_group)
   if (file.exists(storage_path)) return(FALSE)
 
   print(cluster_group)
@@ -1053,9 +1059,9 @@ combine_subfolder_data(label)
 
 
 fi <- "_empiricalmodes.parquet"
-st_amp <- read_parquet(here::here("data", fi)) %>%
+st_amp <- read_parquet(here::here(local_cache_folder, fi)) %>%
   right_join(
-    lookup_data,
+    backbone_data,
     by = "pp_idx",
     relationship = "one-to-one"
   ) %>% 
@@ -1082,10 +1088,10 @@ which are below a certain distance,
 ```{r pairing}
 extent <- 512 # m
 
-# pp_data %>% count(cluster)
+# meta_data %>% count(cluster)
 
 pair_sites <- function(cluster_idx) {
-  sub_data <- pp_data %>%
+  sub_data <- meta_data %>%
     filter(cluster == cluster_idx) %>%
     select(mp_idx, pp_idx, cluster, x, y, soilclass)
   
@@ -1107,7 +1113,7 @@ pair_sites <- function(cluster_idx) {
 
 pairs <- bind_rows(
   lapply(
-    sort(unique(as.integer(pp_data$cluster))),
+    sort(unique(as.integer(meta_data$cluster))),
     FUN = pair_sites
   )
 ) %>% arrange(ds)
@@ -1197,7 +1203,6 @@ query_waterlevel_differences <- function (
   
   if (progress) close(pb)
 
-  # write_parquet(diff_data, sink = storage_filepath)
   return(diff_data)
 }
 
@@ -1221,7 +1226,7 @@ pair_subgroups <- split(
 
 label = "diffdata"
 if (reload) {
-  remove_all_in_subfolder(label)
+  empty_cache_subfolder(paste0(label, collapse = ""))
 }
 
 
@@ -1229,10 +1234,10 @@ numCores <- parallel::detectCores() - 2
 registerDoParallel(numCores)
 
 query_step <- function(i) {
-  system(paste0("mkdir -p '", here::here("data", label), "'"))
+  system(paste0("mkdir -p '", here::here(local_cache_folder, label), "'"))
   cluster_group <- names(pair_subgroups)[[i]]
   subdata <- pair_subgroups[[i]]
-  storage_path <- here::here("data", label, cluster_group)
+  storage_path <- here::here(local_cache_folder, label, cluster_group)
   if (file.exists(storage_path)) return(FALSE)
 
   print(cluster_group)
