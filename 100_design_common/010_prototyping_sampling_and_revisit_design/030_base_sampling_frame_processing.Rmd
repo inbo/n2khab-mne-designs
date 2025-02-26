@@ -108,6 +108,41 @@ grts_mh_n2khab_index <- tibble(
   filter(!is.na(grts_address))
 ```
 
+## Sanity check of local replacements {#bsf-sanity}
+
+Where local replacements are defined in the base sampling frame, we expect them not to be far apart.
+
+```{r}
+points_new <- 
+  stratum_grts_n2khab %>% 
+  filter(!is.na(replacement_for)) %>% 
+  select(grts_new = grts_address) %>% 
+  add_point_coords_grts(grts_var = "grts_new") %>% 
+  rename(geometry_new = geometry) %>% 
+  as_tibble()
+points_original <- 
+  stratum_grts_n2khab %>% 
+  filter(!is.na(replacement_for)) %>% 
+  select(grts_original = replacement_for) %>% 
+  add_point_coords_grts(grts_var = "grts_original") %>% 
+  rename(geometry_original = geometry) %>% 
+  as_tibble()
+far_points <- 
+  bind_cols(points_original, points_new) %>% 
+  mutate(
+    distance = st_distance(geometry_original, geometry_new, by_element = TRUE) %>% 
+      set_units("km")
+  ) %>% 
+  arrange(desc(distance)) %>% 
+  filter(distance > set_units(1, "km"))
+# far_points
+# far_points$grts_original %>% sort() %>% as.numeric() %>% dput()
+stopifnot(nrow(far_points) == 0)
+```
+
+Exceptions originally existed and their corresponding value of `grts_address_drawn` has been dropped in section \@ref(mhqterr-fixes).
+
+
 ## Determining the GRTS addresses per domain
 
 Determining all GRTS addresses of the base sampling frame per domain.
