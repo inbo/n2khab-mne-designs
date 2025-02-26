@@ -273,7 +273,7 @@ parallel_query_to_cache(
   )
 
 # fi <- "cluster_grp00001"
-# check <- read_parquet(here::here(local_cache_folder", "elevation", fi))
+# check <- read_parquet(here::here(local_cache_folder, "elevation", fi))
 # fi <- "elevation.parquet"
 # check <- read_parquet(here::here(local_cache_folder, fi))
 
@@ -400,6 +400,10 @@ parallel_query_to_cache(
   )
 
 
+fi <- "cluster_grp00001"
+check <- read_parquet(here::here(local_cache_folder, "quantiles", fi))
+fi <- "_quantiles.parquet"
+check <- read_parquet(here::here(local_cache_folder, fi))
 ```
 
 
@@ -1278,16 +1282,22 @@ meta %>%
   join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
   join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
   join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") %>%
-  glimpse
+  head(3) %>%
+  t() %>%
+  knitr::kable()
 
 ```
 
 Quantiles:
 
 ```{r reload-quantiles}
+
+source("./auxiliary_data_queries.R")
 meta %>%
   join_auxiliary_cache("quantiles", index_column = "pp_idx") %>%
-  glimpse
+  head(3) %>%
+  t() %>%
+  knitr::kable()
 
 ```
 
@@ -1301,6 +1311,8 @@ meta %>%
   right_join(diffdata,
     by = join_by(pp_idx == pp_idx1),
       relationship = "many-to-many" 
-  )
+  ) %>%
+  sample_n(8) %>%
+  knitr::kable()
 
 ```

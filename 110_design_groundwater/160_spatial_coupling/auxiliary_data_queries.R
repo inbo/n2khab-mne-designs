@@ -494,8 +494,10 @@ join_auxiliary_cache <- function(
   if (is.null(.data)) return(additional_data)
 
   # skip duplicate columns
+  print(colnames(.data))
+  print(colnames(additional_data))
   additional_data <- additional_data %>%
-    select(matches(index_column), !matches(colnames(.data )))
+    select(matches(index_column), !any_of(colnames(.data )))
 
   data_appended <- .data %>%
     dplyr::left_join(additional_data,

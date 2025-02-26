@@ -23,27 +23,27 @@ To determine a range at which the average water level difference exceeds a given
 
 We attempted this analysis in various forms before, and there are subtle differences compared to previous `xG3` analysis:
 
-- Daily water levels were used (watina `PeilMeting`); no extraction of LG3 and HG3.
+- Daily water levels were used (watina `PeilMeting`); no extraction of LG3 and HG3. (We get back to "seasonal" high and low values in another notebook via quantiles.)
 - Categories for pooling/averaging ([@sec-pooling]), in the following order:
   - observation pairs 
   - distance bins
   - soilclass
 - Use **mean absolute difference** ($\langle dw \rangle$), instead of (semi)variance ($\gamma$, [@sec-parameters]).
-- Variable bin width to achieve homogeneous sample size ([@sec-equalbins]).
-- No de-trending was applied.
+- Variable bin width to achieve homogeneous sample size per bin ([@sec-equalbins]).
+- No de-trending whatsoever was applied.
 - No "random intercept", as suggested by Floris: this is not applicable here because we disregarded the "modeling" approach (even de-trending).
 
 
 Summary of the outcome ([@sec-variograms]):
 
-- *light* soil is more variable, i.e. higher differences are expected to occur at closer distance (range: $\approx 30.6 m$)
-- confirmative evidence that *heavy* soil shows longer range of spatial correlation (range: $\approx 62 m$)
-- the $\langle dw\rangle$ (y-axis) of *heavy* soil ($\approx 1.3 m$) is smaller than on *light* soil ($\approx 1.8 m$), but overall value ranges are more similar (therefore plausible) than for $\gamma$
-- *peat* data fits a rather long range ($> 100 m$) and differences are small ($\approx 0.5 m$), but there are outliers
+- *light* soil is most variable, i.e. higher differences are expected to occur at closer distance (shortest range to $1 cm$ difference threshold: $\approx 0.8 m$)
+- confirmative evidence that *heavy* soil shows wider range of spatial correlation ($\approx 1.35 m$ distance to find $1 cm$ difference)
+- *peat* data fits a comparatively long range ($> 7.8 m$ to $1 cm$ threshold) 
+- In the limit, the $\langle dw\rangle$ (y-axis range) of *heavy* and *light* soil are similar ($\approx 0.47 m$)
 
 ::: {.callout-tip icon=false}
 ## Thresholds
-According to these variogram models, the $1 cm$ threshold would be exceeded at distances of $1.2 m$ ("light" soil), $3 m$ ("heavy" soil), and $9 m$ ("peat"), respectively.
+According to these variogram models, the $1 cm$ threshold would be exceeded at distances of $0.8 m$ ("light" soil), $1.35 m$ ("heavy" soil), and $7.8 m$ ("peat"), respectively.
 :::
 
 
@@ -54,9 +54,10 @@ The latest findings on an exciting journey.
 
 - semivariance is calculated differently than what I thought, i.e. not via R's `var` (see [@sec-parameters])
 - $\langle dw \rangle$ is the more practical choice (semivariance has problems with pooling squared values; $\langle dw \rangle$ is easier to interpret, e.g. because of units)
-- Sample size per bin must be monitored, "equal" are better and "sufficiently large" is preferrable
-- Outliers, especially on short distance, have a major drag on the regression. 
-
+- Sample size per bin must be monitored, "equal" are better and "sufficiently large" is preferrable.
+- Sample size per bin should be generous, sufficient to stabilize the vgram.
+- Outliers, especially on short distance, have a major drag on the regression (but none shall remain when bins are sufficiently large). 
+- Data loading must be serialized. Even if the computer manages to load the data once, no guarantee it will work again.
 
 :::
 
@@ -82,25 +83,29 @@ library("ggridges")  |> void() # density ridges
 
 if (getOption("browser") == "") options(browser = "librewolf") 
 
-# user-set parameters
-cluster_dist <- 3400 # m # parameter for clustering
-data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
-diffdata_export_file <- paste0("data/waterlevel_diffdata_cl", cluster_dist, ".parquet")
+# data is loaded from cache
+source("./auxiliary_data_queries.R")
+metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
 
+# for reference
+cluster_dist <- 3400 # m # parameter for clustering, used on data loading
 ```
 
 
-The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to assemble the data set loaded here.
+The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to assemble the data set loaded here; helper functions are collected in `auxiliary_data_queries.R`.
 
 
 
 ```{r load-data}
 
-pp_data <- read_parquet(data_export_file)
+meta_data <- join_auxiliary_cache(label = "metadata") %>%
+  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
+  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
-diff_data <- read_parquet(diffdata_export_file)
+diff_data <- join_auxiliary_cache(label = "diffdata")
 
-pp_join <- pp_data %>%
+meta_join <- meta_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
          wata_min_dist, wata_dist_class,
@@ -112,13 +117,13 @@ diff_meta <- diff_data %>%
   select(pp_idx1, pp_idx2) %>%
   distinct() %>%
   left_join(
-    pp_join,
+    meta_join,
     by = join_by(pp_idx1 == pp_idx),
     relationship = "many-to-one",
     suffix = c("", "1")
   ) %>%
   left_join(
-    pp_join,
+    meta_join,
     by = join_by(pp_idx2 == pp_idx),
     relationship = "many-to-one",
     suffix = c("1", "2")
@@ -208,9 +213,9 @@ diff_all <- diff_meta %>%
 ```
 
 :::{.callout-warning}
-All single observations with a difference in water level of *more than 16m* were filtered.
+All single observations with a difference in water level of *more than 8m* were filtered out.
 
-Given a maximum filter depth of 8m, extent (i.e. maximum pair distance) of 1024m, and the flatness of Belgian topography, values of that magnitude are not plausible.
+Given a maximum filter depth of 8m, extent (i.e. maximum pair distance) of 512 m, and the flatness of Belgian topography, values exceeding that magnitude are not plausible.
 :::
 
 
@@ -399,18 +404,20 @@ diff_binned %>%
 ```
 
 
-There are some *rather empty* bins touching the axis; they probably account at least in part for the outliers below.
+There are some *rather empty* bins touching the axis; they probably account at least in part for potential outliers.
 "Misery loves company:" some other bins are *spikes*, probably due to pseudo-replication (repeated sampling at high frequency).
 
 
-How about using equal-sized bins, i.e. buckets of variable width which are all filled to about the same level?
+How about using equal-sized bins, i.e. buckets of variable width which are all filled (by design) with approximately equal number of observations?
 
 Crucially, we'll have to group by location pair first because otherwise repeated measures fill single buckets.
 
 :::{.callout-warning}
 After feedback by Thierry, I try to stabilize the variograms by widening bins,
 aspiring to get approximately `{r} bin_target` observations per bin.
+Wider bins caused trouble by undersampling of the proximal areas.
 :::
+
 
 ```{r equibin-preparation}
 #| code-fold: false
@@ -429,7 +436,6 @@ diff_equigrouped <- diff_all %>%
   mutate(
     distance_equibin = cut_number(
       ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
-      # ds, as.integer(min(c(floor(n()/8), extent/2)))
     ) # cut to equal sized bins
   ) %>%
   ungroup
@@ -472,76 +478,11 @@ Here come the general toolkit for regression, based on `optim` ([docs](https://w
 
 Note that root-mean square difference (RMSD) is optionally distance-weighted, by dividing each observed `prediction-actual` difference by square root of the distance.
 
+Regression tools are collected in a script file for convenient re-use. 
 
 ```{r regression-tools}
 
-# wrap a regression function to generate residuals
-# the result is the parameter to be minimized.
-wrap_target_function <- function(x, y, regressor, params) {
-  predictions <- regressor(x, params)
-  differences <- y - predictions
-  return(sqrt(mean(differences^2)))
-}
-
-distweighted_target_function <- function(x, y, regressor, params) {
-  predictions <- regressor(x, params)
-  differences <- y - predictions
-  #differences <- log(1.0+y) - log(1.0+predictions)
-  # differences <- 1000*differences * (1+1/x^2)
-  # return(sqrt( sum(differences^2)/sum((1+1/x^2)) ))
-  differences <- 1000*differences /sqrt(x)
-  return(sqrt( mean(differences^2) ))
-}
-
-# this can turn regression output into a usable function.
-create_prediction_function <- function(regressor, results) {
-  fcn <- function (x) {
-    regressor(x, results$par)
-  }
-
-  return(fcn)
-}
-
-calculate_limit <- function(orsl, threshold = 0.01) {
-  par <- orsl$par
-  par[3] <- 0 # no nugget
-  # par[4] <- 1. # regular shape
-  test_x <- seq(0., par[2], length.out = 1000)
-  test_y <- matern_function(test_x, par)
-  limit <- test_x[min(which(test_y > threshold))]
-  return(limit)
-}
-
-# a uniform way to print results
-print_regression_results <- function(orsl, label = "") {
-  par <- paste(round(orsl$par, 4), collapse = ", ")
-  conv <- orsl$convergence
-  eps <- orsl$value
-
-  threshold <- calculate_limit(orsl)
-
-  print(
-    sprintf("%s: conv %i at (%s), mse %.1f", label, conv, par, eps)
-  )
-  print(
-    sprintf("==> Threshold of dw > 1cm reached at %.3f m distance.", threshold)
-     
-  )
-}
-
-# note: the `epsilon` can be calculated manually with the formula:
-#   sum((predictor_function(x) - y)^2)
-
-
-# Finally, a quick histogram plot of residuals.
-plot_residuals_histogram <- function (x, y, predictor_function, ...) {
-  residuals <- predictor_function(x) - y
-  ggplot(NULL, aes(x = residuals)) +
-    geom_histogram(...) +
-    geom_vline(xintercept = 0, color = "darkgrey") +
-    theme_bw()
-}
-
+source("regression_tools.R") 
 
 ```
 
@@ -738,13 +679,13 @@ regression_by_soilclass <- function(
 
 ## water level difference (MAD)
 
-Feel free to adjust regression parameters; maybe most importantly, the outcome measure.
+Feel free to adjust regression parameters; maybe most importantly, the outcome measure ("target column").
 
 ```{r dw-column}
 #| code-fold: false
 
-column <- "dw_groups"
-# column <- "dw_all"
+target_column <- "dw_groups"
+# target_column <- "dw_all"
 # # see also the "semivariance" options, below.
 ```
 
@@ -760,7 +701,7 @@ Selected here are the most plausible settings (MAD, equal-sized bins, distance w
 #| label: fig-dw-regression-heavy
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'heavy' soil."
 regression_by_soilclass("heavy",
-  reg_var = column,
+  reg_var = target_column,
   maxx = 256, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
@@ -778,7 +719,7 @@ regression_by_soilclass("heavy",
 #| label: fig-dw-regression-light
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'light' soil."
 regression_by_soilclass("light",
-  reg_var = column,
+  reg_var = target_column,
   maxx = 256, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
@@ -795,7 +736,7 @@ regression_by_soilclass("light",
 #| label: fig-dw-regression-peat
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
 regression_by_soilclass("peat",
-  reg_var = column,
+  reg_var = target_column,
   maxx = 256, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
@@ -816,14 +757,6 @@ Capped: $<= 2$ (see [@sec-peat-outliers])
 
 
 
-
-# next
-
-close-range variograms of further subsets:
-
-- slope-classes
-- classes of elevation (difference)?
-- optional water distance filter
 
 
 <hr>
@@ -856,12 +789,12 @@ Parametrization is chosen to avoid non-sensical optimizer outcomes (e.g. "nugget
 
 > Kan je ook de analyse doen voor de andere klassen die worden gecreëerd, i.e. water distance > 50 m en slope > 0.05? Je concludeert nl. dat de homogenisatie zorgt voor een toename in de range, maar geldt dit ook voor het andere deel van de dataset?
 
-TODO I will check.
+See the adjacent notebook files.
 
 
 > Ook verwacht ik niet per sé homogenisatie wanneer een kleinere *treshold* voor afstand tot water wordt gekozen: ik zou denken dat we grotere verschillen in grondwaterstand kunnen verwachten op korte afstand wanneer je je dichter bij een waterloop bevindt. Kan een model lopen bij een *treshold* van 25 m?
 
-TODO I will run that model and check. 
+I ~~will~~ did run that model and check. 
 But there is other effects, such as bin size.
 I do not understand the rationale for expecting that there should be larger differences at lower inter-well distances if we are closer to surface water bodies.
 
@@ -893,8 +826,8 @@ Semivariance / HMSD be tried out with the code above by using either of the foll
 #| code-fold: false
 
 if (FALSE) {
-  column <- "semivar_all"
-  column <- "semivar_groups"
+  target_column <- "semivar_all"
+  target_column <- "semivar_groups"
 }
 ```
 
@@ -906,7 +839,7 @@ Instead, I went MAD.
 This has two justifications:
 
 - observation of the outcome
- consideration about pooling data
+- consideration about pooling data
 
 
 Due to the square, pooling is non-trivial, which is best illustrated by a simple example. 
@@ -986,38 +919,6 @@ Another benefit is **unit retention**: differences in meters are easier to inter
 Using $\langle dw\rangle$ just works better.
 
 
-## peat outlier removal {#sec-peat-outliers}
-
-For the regression of the `peat` subset, values above a given $\langle dw\rangle$ were excluded from regression.
-This exclusion is not based on data-intrinsic reasons, but on the plausibility of the regression outcome.
-
-For completeness and comparison, behold the regression without the outlier removal.
-
-
-```{r dw-regression-peat-with-outliers}
-#| label: fig-dw-regression-peat-with-outliers
-#| fig-cap: "Matérn regression of water level difference (`dw (m)`) on 'peat', this time with the outliers included."
-regression_by_soilclass("peat",
-  reg_var = "dw_groups",
-  maxx = 256, maxy = Inf,
-  distweighted = TRUE,
-  use_equibin = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 6)
-```
-
-The higher difference values attract the regression, leading to a much worse regression for the majority of points.
-This issue is emphasized by the larger absolute values of the outliers, leading to larger RMSD; the regression method above is non-robust.
-
-
-::: {.callout-note}
-In conclusion, outlier removal is not ideal, but a necessary workaround to avoid well-known regression issues.
-:::
-
-
-
 ## comparing co-variates
 
 Just to show off, we have a number of useful co-variates at hand which might be insightful by themselves.
@@ -1046,9 +947,10 @@ Correlation among covariates:
 ```{r inspect-data-2}
 #| label: fig-correlation-matrix
 #| fig-cap: "Matrix visualization of correlations of parameters. The redder, the more correlated. Only the lower half of the matrix is shown."
-p.mat <- pp_data %>%
+p.mat <- meta_data %>%
   select(
        elevation_dhmv, slope_r2.5m,
+       fdepth, ref_taw, 
        wata_min_dist,
        emd_n, emd_amp1, emd_amp2, emd_ampsum,
        emd_qdiff, emd_residual_qdiff
@@ -1066,8 +968,8 @@ More detail about the pronounced `slope`/`amp` correlation:
 ```{r contour-two}
 #| label: fig-contour-slopeamp
 #| fig-cap: "Some parameters in the data set are correlated (here: slope and 2nd emd amplitude). However, the observations seem rather diffuse, even when separating soilclasses (rows) and water distances (columns)."
-pp_data %>% 
-  ggplot(aes(x = slope_r2.5m, y = emd_amp2)) +
+meta_data %>% 
+  ggplot(aes(x = slope_r2.5m, y = emd_amp1)) +
   stat_density_2d(aes(fill = after_stat(level)), geom = "polygon") +
   scale_fill_continuous(low="lavenderblush", high="red") +
   geom_jitter(alpha=0.05, size = 0.5) +
