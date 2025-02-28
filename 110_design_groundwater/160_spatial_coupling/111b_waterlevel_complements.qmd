@@ -16,15 +16,19 @@ knitr:
 
 In this notebook, I filter the data for relevant subgroups in the following parameters:
 
-- `wata_min_dist` (via `wata_dist_class`): Water distance is measured on various water-related zenodo sources, and is known to suffer some inaccuracy (e.g. from water body dynamics).
+- `wata_min_dist`: Water distance is measured on various water-related zenodo sources, and is known to suffer some inaccuracy (e.g. from water body dynamics).
 - `mslope` (`dh/ds`): Slope is defined as the difference in elevation within a pair of wells, normalized by their distance.
 - `dz` difference in filter depth: Difference in filter depth is what it says: the difference in filter depth.
 - `pp_vld & mp_vld` validation status of the site/obswell
 
 
+
 :::{.callout-warning}
 This notebook shows the complements, i.e. the sites which were left out previously.
 Text is not adjusted; please focus on the plots.
+
+
+Attention: bin target is reduced to visualize any meaningful patterns.
 :::
 
 
@@ -80,7 +84,8 @@ meta_data <- join_auxiliary_cache(label = "metadata") %>%
   join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
   join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
-diff_data <- join_auxiliary_cache(label = "diffdata")
+diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
+  filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
 
 meta_join <- meta_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
@@ -900,7 +905,7 @@ Capped: $<= 1$
 ## Filters
 
 
-- `dz` <  m
+- `dz < 1 m`
 
 
 ```{r dfdepth-distribution}
