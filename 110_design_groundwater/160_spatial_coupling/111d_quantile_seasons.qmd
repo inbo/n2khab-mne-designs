@@ -1,0 +1,639 @@
+---
+title: "Daily Water Level Variograms: Quantile Filters"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Summary
+
+In this derived workbook, I filter for paired observations of water levels which fall in certain quantile ranges of all water levels of that year.
+Observations are only included if *both* sites were within their respecive quantile ranges.
+
+
+
+| soilclass  | all in | low water | high water |
+|:-----------|-------:|----------:|-----------:|
+| `(filter)` |   `NA` |  `<= q30` |   `>= q70` |
+| heavy      |  1.3 m |     1.4 m |      1.2 m |
+| light      |  0.8 m |     0.9 m |      0.8 m |
+| peat       |  7.8 m |     6.9 m |      6.3 m |
+
+
+# Preparation
+
+## libraries
+... the usual.
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("gridExtra") |> void() # panels with ggplot
+library("ggcorrplot")|> void() # correlation, grid visualization
+library("mapview")   |> void() # map visualization
+library("ggridges")  |> void() # density ridges
+
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# data is loaded from cache
+source("./auxiliary_data_queries.R")
+metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
+
+```
+
+
+## parameters
+
+```{r parameters}
+#| code-fold: false
+extent <- 512 # m
+
+n_bins <- as.integer(extent/4) # the number of bins...
+bin_target <- 32 # ... and the preferred alternative: observations per bin
+
+cap_dw <- 8 # m # maximum accepted water level difference
+
+
+# quantile selection
+lower_quantile <- "q030"
+upper_quantile <- "q070"
+
+
+```
+
+## data
+
+The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to assemble the data set loaded here.
+
+
+```{r load-data}
+meta_data <- join_auxiliary_cache(label = "metadata") %>%
+  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
+  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+
+diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
+  filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
+
+quantile_data <- join_auxiliary_cache(label = "quantiles") %>%
+  select(pp_idx, yr, !!enquo(lower_quantile), !!enquo(upper_quantile)) %>%
+  rename(lq = !!enquo(lower_quantile), hq = !!enquo(upper_quantile))
+
+meta_join <- meta_data %>%
+  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff
+         )
+
+diff_meta <- diff_data %>%
+  select(pp_idx1, pp_idx2) %>%
+  distinct() %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+      dh = elevation_dhmv2-elevation_dhmv1,
+      dz = fdepth2-fdepth1,
+      damp = emd_ampsum2-emd_ampsum1,
+      dqdiff = emd_qdiff2-emd_qdiff1,
+      dwadi = wata_min_dist2-wata_min_dist1,
+      dslope = slope_r2.5m2-slope_r2.5m1,
+      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+      mslope = abs(dh) / ds
+  )
+
+```
+
+```{r join-quantiles}
+diff_data <- diff_data %>%
+  mutate(yr = lubridate::year(date)) %>%
+  left_join(quantile_data,
+    by = join_by(pp_idx1 == pp_idx, yr == yr),
+    relationship = "many-to-one"
+  ) %>%
+  mutate(lq1 = w1 <= lq, hq1 = w1 >= hq) %>%
+  select(-lq, -hq) %>%
+  left_join(quantile_data,
+    by = join_by(pp_idx2 == pp_idx, yr == yr),
+    relationship = "many-to-one"
+  ) %>%
+  mutate(lq2 = w2 <= lq, hq2 = w2 >= hq) %>%
+  select(-lq, -hq)
+
+knitr::kable(sample_n(diff_data, 5))
+```
+
+
+
+## Regression Procedure Wrapper
+
+```{r regression-wrapper}
+
+source("regression_tools.R") 
+
+
+fit_matern <- function(x, y, distweighted = FALSE, ...) {
+  target_fcn <- wrap_target_function
+  if (distweighted) {
+    target_fcn <- distweighted_target_function
+  }
+  optimizer_results <- optim(
+    fn = function(params) {
+      target_fcn(x, y, matern_function, params)
+    },
+    ...
+  )
+  
+  # store everything in one list;
+  # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$fcn <- matern_function
+  optimizer_results$regx <- x
+  optimizer_results$regy <- y
+
+  # wrap the function with the optimized parameters
+  optimizer_results$predict <- create_prediction_function(
+    matern_function,
+    optimizer_results
+  )
+
+
+  return(optimizer_results)
+}
+
+
+plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
+
+  # retrieve everything 
+  fcn <- optimizer_results$fcn
+  regx <- optimizer_results$regx
+  regy <- optimizer_results$regy
+  predict <- optimizer_results$predict
+
+  # extract parameters
+  scale <- optimizer_results$par[1]
+  range <- optimizer_results$par[2]
+  nugget <- optimizer_results$par[3]
+  sill <- scale + nugget
+
+
+  # plotting
+  plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
+  plotx <- plotx[plotx>0]
+  
+  g <- ggplot(NULL, aes(x = regx, y = regy)) +
+    geom_vline(xintercept = range, color = "darkgrey") +
+    geom_hline(yintercept = nugget, color = "darkgrey") +
+    geom_hline(yintercept = sill, color = "darkgrey") +
+    geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.2) +
+    geom_line(aes(x = plotx, y = predict(plotx))) +
+    labs(title = paste0("Matérn regression: ",
+      paste(round(optimizer_results$par, 4), collapse = ", "))) +
+    xlab("distance (m)") + ylab(y_label) +
+    theme_minimal()
+
+  return(g)
+}
+
+```
+
+
+```{r regression-matérn-general}
+# trafo <- function(x) log(1.+x) # feel free to try other transformations.
+trafo <- function(x) x
+
+regression_by_soilclass <- function(
+    regression_data, 
+    sc, reg_var,
+    maxx = extent, maxy = NULL, 
+    ...) {
+  diff_sc <- regression_data %>% filter(soilclass == sc)
+  
+  x <- diff_sc$ds
+  y <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y <- y[x > 0]
+  x <- x[x > 0]
+  y <- y[x <= maxx]
+  x <- x[x <= maxx]
+
+  if (is.null(maxy)) maxy <- max(y)
+  x <- x[y <= maxy]
+  y <- y[y <= maxy]
+  
+  x <- x[!is.na(y)]
+  y <- y[!is.na(y)]
+
+  # standardization helps function comprehension
+  # x <- x/max(x)
+  # y <- y / mean(y)
+  
+  
+  matern_fit <- fit_matern(x, y,
+    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
+    ...
+  )
+  
+  print_regression_results(matern_fit, label = "regression:")
+  ylabel <- "mean water level difference (pair-averaged)"
+  # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
+  g <- plot_matern(matern_fit, y_label = ylabel)
+
+  x_excl <- diff_sc$ds
+  y_excl <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y_excl <- y_excl[x_excl <= maxx]
+  x_excl <- x_excl[x_excl <= maxx]
+  x_excl <- x_excl[y_excl > maxy]
+  y_excl <- y_excl[y_excl > maxy]
+  g <- g + geom_point(aes(x = x_excl, y = y_excl),
+      size = 2.5, colour = "red", alpha = 0.2) 
+  return(g)
+}
+
+
+```
+
+
+<hr>
+
+# Low Waters
+## Filters
+
+We only take those simultaneous measurements which are in the lowest quantile for *both* observation points.
+
+```{r lq-water-filter}
+filter_columns <- c("lq1", "lq2")
+some_diff_data <- diff_data %>%
+  filter(if_all(filter_columns))
+
+paste0(
+  "selected ", nrow(some_diff_data), " / ",
+  nrow(diff_data), " location pairs (",
+  round(100*nrow(some_diff_data)/nrow(diff_data)), "%)."
+)
+    
+```
+
+
+## Binning
+
+Binning parameters; will use homogeneously filled bins:
+
+
+```{r lq-join-water}
+diff_all <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(some_diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_all, 3)), decimals = 2)
+```
+
+
+
+```{r lq-groupwise-binning}
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, n_bins
+      # ds, as.integer(min(c(floor(n()/8), n_bins)))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+Sample size:
+
+```{r lq-equibin-samplesize}
+#| label: fig-lq-equibin-sample-size
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step(stat = "ecdf") +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  theme_bw()
+```
+
+
+
+
+## variograms {#sec-lowwater}
+
+using water level difference (MAD)
+
+
+```{r lq-dw-column}
+#| code-fold: false
+
+column <- "dw_groups"
+# column <- "dw_all"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r lq-dw-regression-heavy}
+#| label: fig-lq-dw-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  "heavy",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+
+```
+
+
+### light
+
+```{r lq-dw-regression-light}
+#| label: fig-lq-dw-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+```
+
+
+
+### peat
+
+```{r lq-dw-regression-peat}
+#| label: fig-lq-dw-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = 256, maxy = 2,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+```
+
+:::
+
+
+<hr>
+
+# High Waters
+## Filters
+
+We only take those simultaneous measurements which are in the lowest quantile for *both* observation points.
+
+```{r hq-water-filter}
+filter_columns <- c("hq1", "hq2")
+some_diff_data <- diff_data %>%
+  filter(if_all(filter_columns))
+
+paste0(
+  "selected ", nrow(some_diff_data), " / ",
+  nrow(diff_data), " location pairs (",
+  round(100*nrow(some_diff_data)/nrow(diff_data)), "%)."
+)
+    
+```
+
+
+## Binning
+
+Binning parameters; will use homogeneously filled bins:
+
+
+```{r hq-join-water}
+diff_all <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(some_diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_all, 3)), decimals = 2)
+```
+
+
+
+```{r hq-groupwise-binning}
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, n_bins
+      # ds, as.integer(min(c(floor(n()/8), n_bins)))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+Sample size:
+
+```{r hq-equibin-samplesize}
+#| label: fig-hq-equibin-sample-size
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step(stat = "ecdf") +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  theme_bw()
+```
+
+
+
+
+## variograms {#sec-highwater}
+
+using water level difference (MAD)
+
+
+```{r hq-dw-column}
+#| code-fold: false
+
+column <- "dw_groups"
+# column <- "dw_all"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r hq-dw-regression-heavy}
+#| label: fig-hq-dw-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  "heavy",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+
+```
+
+
+### light
+
+```{r hq-dw-regression-light}
+#| label: fig-hq-dw-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+```
+
+
+
+### peat
+
+```{r hq-dw-regression-peat}
+#| label: fig-hq-dw-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = 256, maxy = 2,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 2)
+```
+
+:::
