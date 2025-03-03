@@ -134,6 +134,8 @@ dom_stratum_grtspart_threshold <-
     relationship = "one-to-many",
     unmatched = c("error", "drop")
   ) %>% 
+  # dropping extra attributes; to be joined afterwards for fieldwork planning
+  select(-typelevel_certain, -assessed_in_field, -replaced_by) %>% 
   nest(grts_addresses = grts_address) %>% 
   # now determine threshold for each domain x stratum combination
   mutate(
@@ -367,6 +369,9 @@ scheme_moco_ps_stratum_dom_spsamples_nested <-
       dss %>% 
         inner_join(
           sfd %>% 
+            # dropping extra attributes; to be joined afterwards for fieldwork
+            # planning
+            select(domain, stratum, grts_address) %>% 
             nest(grts_addresses = grts_address),
           join_by(domain, stratum),
           relationship = "many-to-one",
