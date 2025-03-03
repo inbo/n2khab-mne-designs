@@ -678,12 +678,12 @@ stratum_grts_n2khab <-
   bind_rows(stratum_grts_cell_all_n2khab) %>% 
   mutate(
     typelevel_certain = NA,
-    assessed_at_cell_center = FALSE,
+    assessed_in_field = FALSE,
     replaced_by = NA_integer_,
     replacement_for = NA_integer_ 
   ) %>% 
   relocate(typelevel_certain, .after = stratum) %>% 
-  relocate(assessed_at_cell_center, .after = grts_address)
+  relocate(assessed_in_field, .after = grts_address)
 ```
 
 We also added some extra attributes that prepare for integrating information on assessments and local replacements.
@@ -812,7 +812,7 @@ valid_extra_popunits_cell_all_n2khab <-
     unmatched = c("error", "drop")
   ) %>%
   select(-point_code, -hydr_class) %>% 
-  rename(assessed_at_cell_center = is_cell_center) %>% 
+  mutate(assessed_in_field = TRUE) %>% 
   filter(
     # don't include legacy sites except if grts_join_method is cell (also, note
     # that all 'bosinventarisatie' sites are considered legacy sites and are
@@ -821,7 +821,7 @@ valid_extra_popunits_cell_all_n2khab <-
     !legacy_site | grts_join_method == "cell",
     # require that cell_center-joined types have an assessment at the cell
     # center
-    grts_join_method == "cell_center" & assessed_at_cell_center |
+    grts_join_method == "cell_center" & is_cell_center |
       grts_join_method == "cell"
   ) %>% 
   # since the base sampling frame uses strata, not types, we must align
@@ -830,7 +830,7 @@ valid_extra_popunits_cell_all_n2khab <-
     typelevel_certain = is.na(expanded_to),
     stratum = factor(stratum, levels = levels(n2khab_strata$stratum))
   ) %>% 
-  select(-expanded_to, -grts_join_method, -legacy_site) %>% 
+  select(-expanded_to, -grts_join_method, -legacy_site, -is_cell_center) %>% 
   relocate(grts_address_drawn)
 ```
 
@@ -841,9 +841,16 @@ Checking that non-replaced GRTS addresses for cell-center types are unique.
 ```{r eval = mhq_data_available}
 stopifnot(
   valid_extra_popunits_cell_all_n2khab %>% 
+    inner_join(
+      n2khab_types_expanded_properties %>% 
+        select(type, grts_join_method),
+      join_by(stratum == type),
+      relationship = "many-to-one",
+      unmatched = c("error", "drop")
+    ) %>% 
     filter(
       grts_address_drawn == grts_address,
-      assessed_at_cell_center
+      grts_join_method == "cell_center"
     ) %>% 
     count(grts_address_drawn) %>% 
     filter(n > 1) %>% 
