@@ -221,7 +221,13 @@ stratum_grts_n2khab_collapsed <-
   # subtypes and main types that are attached to the same GRTS address, i.e.
   # were attached to the same habitatmap polygon, have induced duplicates. We
   # need to solve that:
-  distinct()
+  distinct() %>% 
+  # duplicates may differ in extra attributes compared to just stratum &
+  # grts_address, so we should pick one row:
+  filter(
+    assessed_in_field == max(assessed_in_field, na.rm = TRUE),
+    .by = c(stratum, grts_address)
+  )
 ```
 
 Checking that GRTS addresses occur only once in each stratum.
