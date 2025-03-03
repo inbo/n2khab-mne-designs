@@ -1,0 +1,628 @@
+---
+title: "Water Level Variograms: Mean Absolute Differential Difference"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Introduction
+
+## purpose
+
+Water levels of proximal observation wells can be offset,
+e.g. due to differences in `mTAW` reference calibration,
+or generally, slope.
+When calculating a variogram based on "mean absolute difference", these differences will affect the variogram by exaggerating difference.
+
+
+However, if two sites are coupled, the first temporal derivative of their water levels should also be coupled.
+In other words: if water level on one site changes, then the simultaneous change on the other site is expected to This can be quantified by calculating `MADD`, **Mean Absolute Differential Difference**, from the `MAD` (Mean Absolute Difference).
+
+
+:::{.callout-warinig}
+Note: 
+numeric differentials are horribly erratic. 
+Treat results with some caution.
+
+(Would be great to `savgol` the densely sampled timelines.)
+:::
+
+
+There are options for presentation of the output:
+
+- **time-agnostic:** ignore time interval, just take absolute differences -> `ddw`
+- **time-normalized** ("local tangent"): divide water level difference by time interval -> dtw
+- **time-filtered**: "filter" time dimension, e.g. take `dt` as an extra variogram axis (-> *not shown*)
+
+
+## Results
+
+See [@sec-variograms-ddw]:
+
+- only the time-agnostic analysis gives relatively acceptable outcomes
+- noise is much higher, as expected
+- **ranges are much shorter,** consistent with the fact that we use mTAW and the previously noted influence of slope
+- this could be extended to analyze temporal coupling of water levels!
+
+
+
+## libraries
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# data is loaded from cache
+source("./auxiliary_data_queries.R")
+
+progress <- TRUE
+reload <- FALSE
+ddiff_file <- paste0("_waterlevels_differentials.parquet", collapse = "")
+```
+
+## settings 
+
+```{r parameters}
+#| code-fold: false
+extent <- 512 # m
+bin_target <- 48 # alternative: observations per bin
+cap_ddw <- 8 # m # maximum accepted water level DIFFERENTIAL
+cap_dt <- 32 # d # maximum accepted time difference in days
+```
+
+
+# Data 
+## Loading
+
+
+```{r load-data}
+
+meta_data <- join_auxiliary_cache(label = "metadata") %>%
+  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
+  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+
+diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
+  filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
+
+diff_data <- diff_data %>%
+  select(pp_idx1, pp_idx2, date, w1, w2) %>%
+  arrange(pp_idx1, pp_idx2, date) 
+
+pairs <- diff_data %>%
+  select(pp_idx1, pp_idx2) %>%
+  distinct()
+```
+
+
+## Differentials
+
+The `lag` function should work fine, yet this is not the most efficient method.
+
+Applying the most simple split/loop/aggregate/save strategy:
+
+```{r differentials}
+
+if (reload) {
+  if (progress) pb <- txtProgressBar(min = 0, max = nrow(pairs),
+    initial = 0, style = 1)
+  
+  
+  pairwise_differential <- function(i){
+  
+    if (progress) setTxtProgressBar(pb,i)
+    pp1 <- pairs[[i, "pp_idx1"]]
+    pp2 <- pairs[[i, "pp_idx2"]]
+  
+    ddiff <- diff_data %>%
+      filter(pp_idx1 == pp1, pp_idx2 == pp2) %>% 
+      arrange(date) %>% 
+      mutate(
+        dt  = date - lag(date),
+        dw1 = w1   - lag(w1),
+        dw2 = w2   - lag(w2)
+      ) %>%
+      mutate(dt = as.integer(dt)/3600/24) %>% 
+      select(-w1, -w2) %>%
+      filter(!is.na(dt), dt > 0)
+  
+    return(ddiff)
+  }
+  
+  ddiff <- dplyr::bind_rows(
+    lapply(
+      1:nrow(pairs),
+      FUN = pairwise_differential
+    )
+  )
+  
+  if (progress) close(pb) # close the progress bar
+  
+  write_parquet(ddiff, sink = here::here("cache", ddiff_file))
+
+}
+
+ddiff <- read_parquet(here::here("cache", ddiff_file))
+# ddiff <- ddiff %>%  mutate(dt = as.integer(dt)/3600/24)
+# ddiff <- ddiff %>% filter(dt > 0)
+ddiff <- ddiff %>%
+  filter(abs(dw1) <= cap_ddw, abs(dw2) <= cap_ddw) %>% 
+  mutate(ddw = abs(dw2 - dw1), dtw = ddw/as.integer(abs(dt))) %>%
+  mutate(ddw = 1000*ddw, dtw = 1000*dtw)
+knitr::kable(head(ddiff, 32))
+```
+
+
+## join metadata
+
+
+```{r}
+
+meta_join <- meta_data %>%
+  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff
+         )
+
+diff_meta <- pairs %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+      dh = elevation_dhmv2-elevation_dhmv1,
+      dz = fdepth2-fdepth1,
+      damp = emd_ampsum2-emd_ampsum1,
+      dqdiff = emd_qdiff2-emd_qdiff1,
+      dwadi = wata_min_dist2-wata_min_dist1,
+      dslope = slope_r2.5m2-slope_r2.5m1,
+      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+      mslope = abs(dh) / ds
+  )
+
+```
+
+
+
+## Regression Procedure Wrapper
+
+```{r regression-wrapper}
+
+source("regression_tools.R") 
+
+
+fit_matern <- function(x, y, distweighted = FALSE, ...) {
+  target_fcn <- wrap_target_function
+  if (distweighted) {
+    target_fcn <- distweighted_target_function
+  }
+  optimizer_results <- optim(
+    fn = function(params) {
+      target_fcn(x, y, matern_function, params)
+    },
+    ...
+  )
+  
+  # store everything in one list;
+  # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$fcn <- matern_function
+  optimizer_results$regx <- x
+  optimizer_results$regy <- y
+
+  # wrap the function with the optimized parameters
+  optimizer_results$predict <- create_prediction_function(
+    matern_function,
+    optimizer_results
+  )
+
+
+  return(optimizer_results)
+}
+
+
+plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
+
+  # retrieve everything 
+  fcn <- optimizer_results$fcn
+  regx <- optimizer_results$regx
+  regy <- optimizer_results$regy
+  predict <- optimizer_results$predict
+
+  # extract parameters
+  scale <- optimizer_results$par[1]
+  range <- optimizer_results$par[2]
+  nugget <- optimizer_results$par[3]
+  sill <- scale + nugget
+
+
+  # plotting
+  plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
+  plotx <- plotx[plotx>0]
+  
+  g <- ggplot(NULL, aes(x = regx, y = regy)) +
+    geom_vline(xintercept = range, color = "darkgrey") +
+    geom_hline(yintercept = nugget, color = "darkgrey") +
+    geom_hline(yintercept = sill, color = "darkgrey") +
+    geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.2) +
+    geom_line(aes(x = plotx, y = predict(plotx))) +
+    labs(title = paste0("Matérn regression: ",
+      paste(round(optimizer_results$par, 4), collapse = ", "))) +
+    xlab("distance (m)") + ylab(y_label) +
+    theme_minimal()
+
+  return(g)
+}
+
+```
+
+
+```{r regression-matérn-general}
+# trafo <- function(x) log(1.+x) # feel free to try other transformations.
+trafo <- function(x) x
+
+regression_by_soilclass <- function(
+    regression_data, 
+    sc, reg_var,
+    maxx = extent, maxy = NULL, 
+    ...) {
+  diff_sc <- regression_data %>% filter(soilclass == sc)
+  
+  x <- diff_sc$ds
+  y <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y <- y[x > 0]
+  x <- x[x > 0]
+  y <- y[x <= maxx]
+  x <- x[x <= maxx]
+
+  if (is.null(maxy)) maxy <- max(y)
+  x <- x[y <= maxy]
+  y <- y[y <= maxy]
+  
+  x <- x[!is.na(y)]
+  y <- y[!is.na(y)]
+
+  # standardization helps function comprehension
+  # x <- x/max(x)
+  # y <- y / mean(y)
+  
+  
+  matern_fit <- fit_matern(x, y,
+    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
+    ...
+  )
+  
+  print_regression_results(matern_fit, label = "regression:")
+  ylabel <- "mean water level difference (pair-averaged)"
+  # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
+  g <- plot_matern(matern_fit, y_label = ylabel)
+
+  x_excl <- diff_sc$ds
+  y_excl <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y_excl <- y_excl[x_excl <= maxx]
+  x_excl <- x_excl[x_excl <= maxx]
+  x_excl <- x_excl[y_excl > maxy]
+  y_excl <- y_excl[y_excl > maxy]
+  g <- g + geom_point(aes(x = x_excl, y = y_excl),
+      size = 2.5, colour = "red", alpha = 0.2) 
+  return(g)
+}
+
+
+```
+
+
+## Binning
+
+
+[!] here comes the ddiff data
+
+
+```{r join-water}
+diff_all <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(ddiff,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% filter(abs(dt) <= cap_dt)
+# %>% filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# knitr::kable(t(sample_n(diff_all, 5)), decimals = 2)
+```
+
+
+
+```{r groupwise-binning}
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(ddw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    dt = mean(dt, na.rm = TRUE),
+    ddw = 1/(n_obs)*sum(abs(ddw), na.rm = TRUE),
+    dtw = 1/(n_obs)*sum(abs(dtw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds, dt) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ), # cut to equal sized bins
+    time_bin = cut(dt,
+      breaks = seq(0, cap_dt,
+        length.out = as.integer(floor(cap_dt/7.)+1)
+      ) # cut to 1d bins
+    )
+  ) %>%
+  ungroup
+
+
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dt = mean(dt), 
+    ddw = mean(ddw, na.rm = TRUE), 
+    dtw = mean(dtw, na.rm = TRUE), 
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+diff_timebinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dt = mean(dt), 
+    ddw = mean(ddw, na.rm = TRUE), 
+    dtw = mean(dtw, na.rm = TRUE), 
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, time_bin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+# glimpse(diff_equibinned)
+```
+
+
+Sample size:
+
+```{r equibin-samplesize-ds}
+#| label: fig-equibin-sample-size-ds
+#| fig-cap: ""
+
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step(stat = "ecdf") +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  theme_bw()
+```
+
+```{r equibin-samplesize-dt}
+#| label: fig-equibin-sample-size-dt
+#| fig-cap: ""
+
+diff_timebinned %>%
+  ggplot(aes(x = dt, y = cnt, color = soilclass)) +
+  geom_step(stat = "ecdf") +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/cap_dt, color = "darkgrey") +
+  theme_bw()
+```
+
+
+
+# Plain Vanilla Difference in Water Level Differentials {#sec-variograms-ddw}
+
+Using **time-agnostic** water level differential difference (MADD),
+i.e. the variant that is not time-interval-normalized.
+Time intervals are filtered to be below `{r} cap_dt` days, but for the rest `dt` is not taken into account.
+
+
+```{r dw-column}
+#| code-fold: false
+
+column <- "ddw"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+## heavy
+
+```{r dw-regression-heavy}
+#| label: fig-dw-regression-heavy-25m
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  # diff_equibinned %>% filter(time_bin == "(24,32]"),
+  # diff_equibinned %>% filter(time_bin == "(16,24]"),
+  # diff_equibinned %>% filter(time_bin == "(8,16]"),
+  #diff_equibinned %>% filter(time_bin == "(0,8]"),
+  sc = "heavy",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(10., 10, 10., 1.),
+  lower = c(0., 0., 0., 0.99),
+  upper = c(400., 250, 100., 1.01),
+  # upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, 1)
+
+```
+
+
+
+## light
+
+```{r dw-regression-light}
+#| label: fig-dw-regression-light-25m
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0., 0., 0., 0.99),
+  upper = c(400., 250, 100., 1.01),
+) 
+```
+
+
+
+
+
+## peat
+
+```{r dw-regression-peat-25m}
+#| label: fig-dw-regression-peat-25m
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0., 0., 0., 0.99),
+  upper = c(400., 250, 100., 1.01),
+) 
+```
+
+
+
+:::
+
+
+
+
+
+# Time-Normalized {#sec-variograms-dtw}
+
+Using **time-normalized** water level differential difference (MADD),
+i.e. true water level differentials, $\frac{dw_i}{dt}$.
+Time intervals are filtered to be below `{r} cap_dt` days.
+Water level differentials (i.e. temporal changes in water level) are normalized by the time interval over which they were observed.
+
+(Because water levels only vary within a certain range, this might be over-normalization, leading to an exaggerated influence of the short intervals. 
+The procedure will also amplify noise.)
+
+
+```{r dw-column-dtw}
+#| code-fold: false
+
+column <- "dtw"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+## heavy
+
+```{r dw-regression-heavy-dtw}
+#| label: fig-dw-regression-heavy-dtw
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  # diff_equibinned %>% filter(time_bin == "(24,32]"),
+  # diff_equibinned %>% filter(time_bin == "(16,24]"),
+  # diff_equibinned %>% filter(time_bin == "(8,16]"),
+  #diff_equibinned %>% filter(time_bin == "(0,8]"),
+  sc = "heavy",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(10., 10, 10., 1.),
+  lower = c(0., 0., 0., 0.99),
+  upper = c(40., 250, 10., 1.01),
+  # upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, 1)
+
+```
+
+
+## light
+
+```{r dw-regression-light-dtw}
+#| label: fig-dw-regression-light-dtw
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0., 0., 0., 0.99),
+  upper = c(40., 250, 10., 1.01),
+) 
+```
+
+
+
+## peat
+
+```{r dw-regression-peat-dtw}
+#| label: fig-dw-regression-peat-dtw
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = 256, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0., 0., 0., 0.99),
+  upper = c(40., 250, 10., 1.01),
+) 
+```
+
+
+:::
+
+
+
