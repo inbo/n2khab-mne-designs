@@ -432,12 +432,14 @@ mhq_sampled_types_per_domain <-
   select(-nunits)
 ```
 
-Determining the types, resp strata, for each module x domain x **scheme**, that are _not_ measured with a sample in the considered MHQ schemes (i.e. in the modules that do have MHQ schemes).
+Determining the types, resp strata, for each module x domain x  MHQ scheme, that are _not_ measured with a sample in the considered MHQ schemes (i.e. in the modules that do have MHQ schemes).
+Note that this object is restricted to types that are sampled in MHQ schemes at the Flemish level.
 
 ```{r}
 mhq_mod_dom_scheme_type_no_sample <-
   mhq_mod_dom_scheme_ssf_stratum_nunits_type %>%
   summarize(
+    # summing is wrt combining strata per type
     nunits = sum(nunits),
     .by = c(module, domain, scheme, type)
   ) %>%
@@ -460,11 +462,13 @@ all.equal(
 ```
 
 Determining the types, _for each module x domain_, that are _not_ measured with a sample in the considered MHQ schemes.
-This also includes the types that are not defined as part of any MHQ scheme.
+This also includes the types that are not defined as part of any MHQ scheme, but that are part of MNE schemes.
 Note that, for clarity, we don't exclude RIBs in the below object.
+The scheme is also added and is a mere attribute; it does not cause duplication: MHQ schemes have mutually exclusive target populations.
 
 ```{r}
 mhq_mod_dom_type_no_sample <-
+  # using the complete object, not restricted to MHQ:
   mod_dom_scheme_ssf_stratum_nunits %>%
   filter(str_detect(scheme, "^HQ")) %>%
   distinct(module, domain) %>%
