@@ -417,9 +417,16 @@ For these non-sampled types in MHQ (except RIBs) the whole target population is 
 mhq_sampled_types_per_domain <-
   mhq_mod_dom_scheme_ssf_stratum_nunits_type_category %>%
   summarize(
+    # summing is wrt combining strata per type
     nunits = sum(nunits),
-    .by = c(domain, scheme, type, category)
+    .by = c(module, domain, scheme, type, category)
   ) %>%
+  summarize(
+    # consider the largest population size (if different between modules: not at
+    # the time of coding)
+    nunits = max(nunits),
+    .by = c(domain, scheme, type, category)
+  ) %>% 
   # don't sample terrestrial units when area is smaller than 10 ha
   filter(nunits >= 10e4 / 32^2 | category != "terrestrial") %>%
   select(-nunits)
