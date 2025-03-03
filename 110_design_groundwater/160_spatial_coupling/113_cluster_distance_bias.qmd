@@ -1,0 +1,235 @@
+---
+title: "Cluster Distance Bias"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Bias?
+Thierry suggested to check whether some distance bins are biased by the representation of spatial clusters.
+This could be done by plotting one map of sites per cluster.
+However, I have an idea for a better overview.
+
+And, for some fait-divers, I prefer to do this in python/matplotlib.
+
+
+# venv preparation
+
+Setting up a `venv`:
+
+```{sh install-venv}
+#| eval: false
+python -m venv .clusterbias
+source .clusterbias/bin/activate.fish
+pip install --upgrade pip matplotlib pyarrow numpy pandas scipy Pillow tabulate
+pip freeze > requirements.txt
+python
+```
+
+... or re-loading it from the `pip freeze`:
+
+```{sh reload-venv}
+#| eval: false
+python -m venv .clusterbias
+source .clusterbias/bin/activate.fish
+pip install --upgrade -r requirements.txt
+python
+```
+
+Note that the venv also needs to be activated prior to `quarto render [...]`.
+
+
+# libraries
+
+```{python libraries}
+# import pyarrow.parquet as PQ
+import numpy as NP
+import pandas as PD
+import matplotlib as MP
+import matplotlib.pyplot as PLT
+```
+
+
+# load data
+
+```{python load-data}
+
+meta_data = PD.read_parquet("cache/_metadata.parquet", engine = "pyarrow") \
+    .loc[:, ["pp_idx", "cluster", "soilclass", "x", "y"]]
+for cat_col in ["pp_idx", "cluster", "soilclass"]:
+    meta_data[cat_col] = PD.Categorical(meta_data[cat_col])
+
+meta_data = meta_data.set_index("pp_idx")
+
+diff_data = PD.read_parquet("cache/_diffdata.parquet", engine = "pyarrow")
+for cat_col in ["pp_idx1", "pp_idx2"]:
+    diff_data[cat_col] = PD.Categorical(diff_data[cat_col])
+pairs = diff_data.loc[:, ["pp_idx1", "pp_idx2"]].drop_duplicates(inplace = False)
+
+print(meta_data.sample(4).T.to_markdown())
+```
+
+```{python join-data}
+data = pairs \
+  .join( \
+    meta_data,
+    on = "pp_idx1",
+    how = "left", rsuffix = "1",
+    validate = "m:1") \
+  .join(
+    meta_data,
+    on = "pp_idx2",
+    how = "left", lsuffix = "1", rsuffix = "2",
+    validate = "m:1")\
+  .drop(columns = ["cluster2", "soilclass2"], inplace = False) \
+  .rename(columns = {"cluster1": "cluster", "soilclass1": "soilclass"}, inplace = False) 
+
+print(data.sample(4).T.to_markdown())
+```
+
+# re-organize data
+
+```{python calculate-distance}
+Euclid = lambda row: NP.sqrt((row["x2"]-row["x1"])**2 + (row["y2"]-row["y1"])**2)
+data["ds"] = data.apply(Euclid, axis = 1)
+
+clusterstring = lambda idx: "{:04.0f}".format(int(idx))
+data["cluster"] = PD.Categorical(list(map(clusterstring, data["cluster"])))
+
+PLT.hist(data["ds"], bins = 128, color = "darkgrey");
+PLT.show()
+```
+
+count occurrences per cluster and bin
+
+```{python bin-cluster-dists}
+dists = [d for d in NP.arange(512)]
+dds = 1 # meter # distance bin width
+clusters = NP.unique(data["cluster"].values)
+hist_data = PD.DataFrame(columns = dists, index = clusters)
+
+filter_dists = lambda dist, dds = 1: NP.logical_and(
+    data["ds"].values >= dist,
+    data["ds"].values < dist + dds
+    )
+
+for dist in dists:
+    for cl_idx in clusters:
+        hist_data.loc[cl_idx, dist] = \
+            data.loc[NP.logical_and(data["cluster"].values == cl_idx, filter_dists(dist, dds))].shape[0]
+
+
+# hist_data / NP.sum(hist_data, axis = 0)
+```
+
+
+# plot
+
+## preparation
+```{python plt-settings}
+PLT.style.use("ggplot") # *g*
+
+the_font = {  \
+        'family': 'sans-serif'
+        , 'sans-serif': 'DejaVu Sans'
+        , 'size': 10#*1.27 \
+    }
+PLT.rc('font',**the_font)
+
+
+MP.rcParams['text.usetex'] = True
+# Tell Matplotlib how to ask TeX for this font.
+# MP.texmanager.TexManager.font_info['iwona'] = ('iwona', r'\usepackage[light,math]{iwona}')
+
+MP.rcParams['text.latex.preamble'] = " ".join([\
+              r'\usepackage{upgreek}'
+            , r'\usepackage{cmbright}'
+            , r'\usepackage{sansmath}'
+            ])
+
+MP.rcParams['pdf.fonttype'] = 42 # will make output TrueType (whatever that means)
+
+# axis cosmetics
+def PolishAx(ax):
+    ax.get_xaxis().set_tick_params(which='both', direction='out')
+    ax.get_yaxis().set_tick_params(which='both', direction='out')
+    ax.tick_params(top = False)
+    ax.tick_params(right = False)
+    ax.spines[['top', 'right']].set_visible(False)
+    ax.spines[['bottom', 'left']].set_visible(True)
+
+# ctd.
+```
+
+```{python prepare-plot}
+cm = 1./2.54
+figwidth  = 24 * cm
+figheight = 16 * cm
+dpi = 300
+
+fig = PLT.figure( \
+      figsize = (figwidth, figheight) \
+    , facecolor = None \
+    , dpi = dpi \
+    )
+# define axis spacing
+fig.subplots_adjust( \
+      top    = 0.98 \
+    , right  = 0.98 \
+    , bottom = 0.08 \
+    , left   = 0.08 \
+    , wspace = 0.02 # column spacing \
+    , hspace = 0.02 # row spacing \
+    )
+
+gs = MP.gridspec.GridSpec( \
+      len([1, 1]) \
+    , len([1, 1]) \
+    , height_ratios = [1, 5] \
+    , width_ratios = [6, 1] \
+    )
+
+```
+
+
+## visualize data
+
+
+```{python heatmap}
+
+ax = fig.add_subplot(gs[1, 0])
+ax.pcolor(NP.log10(NP.array(hist_data.values, dtype = int)), cmap = "Reds")
+ax.spines[["top", "right"]].set_visible(False)
+PolishAx(ax)
+ax.set_xlim([min(dists)-0.5, max(dists)+0.5]);
+ax.set_ylim([-0.5, len(clusters)+0.5]);
+
+ax.set_xlabel("distance (m)")
+ax.set_ylabel("cluster no.")
+
+
+ax_top = fig.add_subplot(gs[0, 0])
+ax_top.bar(dists, height = NP.sum(hist_data, axis = 0))
+ax_top.spines[["left", "top", "right"]].set_visible(False)
+ax_top.set_xlim([min(dists)-0.5, max(dists)+0.5]);
+ax_top.set_xticks([]);
+
+ax_right = fig.add_subplot(gs[1, 1])
+ax_right.barh(y = range(len(clusters)), width = NP.sum(hist_data, axis = 1))
+ax_right.spines[["bottom", "top", "right"]].set_visible(False)
+ax_right.set_ylim([-0.5, len(clusters)+0.5]);
+ax_right.set_yticks([]);
+
+fig.savefig("figures/clusterbias.png", dpi = dpi, transparent = False);
+
+PLT.close();
+```
+
+![Cluster bias in variograms: number of observed location pairs per cluster and distance bin.](figures/clusterbias.png)
