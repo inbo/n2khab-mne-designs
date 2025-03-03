@@ -253,7 +253,7 @@ stopifnot(
 
 
 
-### Apply bernouilli sampling to the collapsed base sampling frame, depending on phab value
+### Apply bernouilli sampling to the collapsed base sampling frame, depending on phab value {#phab-correction}
 
 #### Extend collapsed base sampling frame for cell-centered strata with phab column
 
@@ -305,20 +305,27 @@ stratum_grts_phab_cellcenter_n2khab_collapsed <-
 #### Substitute with assessed cell-centered population units (phab = 100)
 
 Updating the 'phab' data frame `stratum_grts_phab_cellcenter_n2khab_collapsed` by substituting with cell-centered cells from `valid_extra_popunits_cell_all_n2khab_tidy`, collapsing strata and setting those to phab = 100.
-This object is needed for bernouilli sampling.
+We don't yet include drawn GRTS-addresses that were replaced, since MHQ did not apply a phab-correction in composing samples.
+Below object is needed for bernouilli sampling.
 
 ```{r eval = mhq_data_available}
 stratum_grts_phab_cellcenter_n2khab_collapsed <- 
   bind_rows(
     valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% 
-      filter(grts_join_method == "cell_center") %>% 
+      filter(
+        grts_join_method == "cell_center",
+        is.na(replaced_by)
+      ) %>% 
       mutate(phab = 100) %>% 
       collapse_strata() %>% 
       select(stratum, grts_address, phab),
     stratum_grts_phab_cellcenter_n2khab_collapsed %>% 
       anti_join(
         valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% 
-          filter(grts_join_method == "cell_center"),
+          filter(
+            grts_join_method == "cell_center",
+            is.na(replaced_by)
+          ),
         join_by(stratum, grts_address)
       )
   )
@@ -331,8 +338,8 @@ Determining for each stratum which GRTS addresses are dropped by bernouilli samp
 Note that this step can be turned off with the `phab_correct` parameter.
 
 ```{r eval = params$phab_correct}
-stratum_grts_n2khab_collapsed_phabexcluded <- 
-  tibble(
+stratum_grts_phab_cellcenter_n2khab_collapsed_phabll <-  
+ tibble(
     grts_address = values(grts_mh_n2khab, na.rm = TRUE)[, 1],
     # lower limit (minimum threshold) for phab:
     phab_ll = read_raster_runif() %>% 
@@ -345,20 +352,73 @@ stratum_grts_n2khab_collapsed_phabexcluded <-
     join_by(grts_address),
     relationship = "one-to-many",
     unmatched = c("drop", "error")
-  ) %>% 
+  )
+# cell-center locations retained based on phab:
+stratum_grts_n2khab_collapsed_phabincluded <- 
+  stratum_grts_phab_cellcenter_n2khab_collapsed_phabll %>% 
+  filter(phab >= phab_ll) %>% 
+  select(grts_address, stratum)
+# cell-center locations dropped based on phab:
+stratum_grts_n2khab_collapsed_phabexcluded <- 
+  stratum_grts_phab_cellcenter_n2khab_collapsed_phabll %>% 
   filter(phab < phab_ll) %>% 
   select(grts_address, stratum)
 ```
 
 Constructing the phab-corrected collapsed base sampling frame.
+We don't include originally drawn locations of cell-center types if these were replaced but don't occur in the retained locations after bernouilli sampling.
+This is because those originally drawn locations from MHQ were not drawn with phab-correction, introducing bias.
 
 ```{r}
 stratum_grts_n2khab_phabcorrected <- 
   if (params$phab_correct) {
     stratum_grts_n2khab_collapsed %>% 
+      # add the grts_join attribute
+      inner_join(
+        n2khab_strata,
+        join_by(stratum),
+        relationship = "many-to-one",
+        unmatched = c("error", "drop")
+      ) %>% 
+      inner_join(
+        n2khab_types_expanded_properties %>% 
+          select(type, grts_join_method),
+        join_by(type),
+        relationship = "many-to-one",
+        unmatched = c("error", "drop")
+      ) %>% 
+      filter(
+        # only include replaced drawn GRTS addresses if they match GRTS addresses
+        # retained in stratum_grts_n2khab_collapsed_phabincluded
+        (
+          !is.na(replaced_by) & 
+            grts_join_method == "cell_center" &
+            str_c(stratum, grts_address) %in% str_c(
+              stratum_grts_n2khab_collapsed_phabincluded$stratum,
+              stratum_grts_n2khab_collapsed_phabincluded$grts_address
+            )
+        ) | (
+          # include all replaced drawn GRTS addresses for non-cell-center types
+          !is.na(replaced_by) & 
+            grts_join_method != "cell_center"
+          # include all non-replaced drawn GRTS addresses
+        ) | is.na(replaced_by)
+      ) %>% 
+      select(-type, -grts_join_method) %>% 
+      # exclude all cases that have been dropped in the bernouilli sampling
       anti_join(
         stratum_grts_n2khab_collapsed_phabexcluded,
         join_by(stratum, grts_address)
+      ) %>% 
+      mutate(
+        # don't refer elsewhere to replaced drawn GRTS addresses if the latter
+        # have been dropped
+        replacement_for = ifelse(
+          !is.na(replacement_for) & !(replacement_for %in% grts_address),
+          NA_integer_,
+          replacement_for
+        ),
+        .by = stratum
       )
   } else {
     # dummy step
