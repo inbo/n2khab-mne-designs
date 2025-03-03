@@ -32,7 +32,7 @@ rdata_set <- c(
   "sp_samplingframes",
   "sp_samplingframe_domain",
   "mhq_sampled_types_per_domain",
-  "mhq_mod_dom_scheme_type_no_sample",
+  "mhq_mod_dom_scheme_mhqsampletype_no_sample",
   "mhq_mod_dom_type_no_sample",
   "mod_dom_scheme_ssf_stratum_nunits",
   "module_domain_schemes",
