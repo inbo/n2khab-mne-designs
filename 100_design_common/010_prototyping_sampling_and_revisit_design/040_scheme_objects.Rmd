@@ -99,7 +99,7 @@ strata_gd2 <-
   semi_join(n2khab_strata_expanded, ., by = "type") %>%
   pull(stratum)
 stratum_grts_n2khab_phabc_1 <-
-  stratum_grts_n2khab_phabcorrected %>%
+  stratum_grts_n2khab_phabcorrected_no_replacements %>%
   group_by(grts_address) %>%
   mutate(
     to_restrict = stratum %in% strata_for_restriction_1,
@@ -112,7 +112,7 @@ stratum_grts_n2khab_phabc_1 <-
       gd2_in_cell |
       grts_address %in% sg_grts_n2khab
   ) %>%
-  select(stratum, grts_address)
+  select(!c(to_restrict, gd2, gd2_in_cell))
 ```
 
 - **Restriction 2**: _Restrict to zones with shallow groundwater (in reach of vegetation). Exclude aquatic (i.e. rivulet) forms of type 7220. Don't exclude locations with types that are '(almost) everywhere groundwater dependent' (GD2)_
@@ -130,7 +130,7 @@ grts_7220_allowed_2 <-
   filter(!is.na(GRTSmaster_habitats)) %>%
   pull(GRTSmaster_habitats)
 stratum_grts_n2khab_phabc_2 <-
-  stratum_grts_n2khab_phabcorrected %>%
+  stratum_grts_n2khab_phabcorrected_no_replacements %>%
   filter(stratum != "7220" | grts_address %in% grts_7220_allowed_2) %>%
   group_by(grts_address) %>%
   mutate(
@@ -139,7 +139,7 @@ stratum_grts_n2khab_phabc_2 <-
   ) %>%
   ungroup() %>%
   filter(gd2_in_cell | grts_address %in% sg_grts_n2khab) %>%
-  select(stratum, grts_address)
+  select(!c(gd2, gd2_in_cell))
 ```
 
 - **Restriction 3**: _Exclude terrestrial (i.e. mire) forms of type 7220, if applicable. Exclude locations where the surface water is not connected with (nor affected by) the phreatic aquifer_
@@ -160,7 +160,7 @@ grts_7220_allowed_3 <-
   filter(!is.na(GRTSmaster_habitats)) %>%
   pull(GRTSmaster_habitats)
 stratum_grts_n2khab_phabc_3 <-
-  stratum_grts_n2khab_phabcorrected %>%
+  stratum_grts_n2khab_phabcorrected_no_replacements %>%
   filter(stratum != "7220" | grts_address %in% grts_7220_allowed_3)
 ```
 
@@ -178,7 +178,7 @@ grts_8310_allowed_5 <-
   filter(!is.na(GRTSmaster_habitats)) %>%
   pull(GRTSmaster_habitats)
 stratum_grts_n2khab_phabc_5 <-
-  stratum_grts_n2khab_phabcorrected %>%
+  stratum_grts_n2khab_phabcorrected_no_replacements %>%
   filter(stratum != "8310" | grts_address %in% grts_8310_allowed_5)
 ```
 
@@ -189,7 +189,7 @@ stratum_grts_n2khab_phabc_5 <-
 sp_samplingframes <-
   tribble(
     ~sampling_frame_id, ~sampling_frame,
-    0L, stratum_grts_n2khab_phabcorrected,
+    0L, stratum_grts_n2khab_phabcorrected_no_replacements,
     1L, stratum_grts_n2khab_phabc_1,
     2L, stratum_grts_n2khab_phabc_2,
     3L, stratum_grts_n2khab_phabc_3,
