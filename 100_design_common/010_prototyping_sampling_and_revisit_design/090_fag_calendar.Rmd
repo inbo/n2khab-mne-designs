@@ -345,13 +345,15 @@ fag_stratum_grts_calendar_alladhoc <-
   arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
 ```
 
-## FAG calendar (subsampling and relaxing ADHOC FAGs)
+## FAG calendar (subsampling and relaxing ADHOC FAGs; adding assessment data)
 
 We implement the preset proportions to subsample ADHOC FAGs.
 Note that a maximum yearly frequency at stratum x location is enforced for each ADHOC FAG before subsampling, since that was the assumption of the subsampling proportions.
 
 Further, we relax the date intervals of the remaining ADHOC FAGs to take _one of the existing_ date intervals of non-ADHOC, non-biotic FAGs that have the same start date (in the same stratum x location).
 This is done in order to not limit ADHOC FAGs to their initial date interval of one month, but align them with existing date intervals.
+
+Also, we add assessment data including the replacement locations substituted in `grts_address_final`.
 
 ```{r}
 set.seed(20250127)
@@ -382,21 +384,22 @@ fag_stratum_grts_calendar <-
         proportion = samplingprop_surfadhocgaugereplace
       )
   ) %>%
-  arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
+  arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group) %>% 
+  add_assessment_data()
 ```
 
 Keeping ADHOC FAGs in the calendar is only done to not overlook this substantial investment.
 Of course, their actual occurrence in space and time will be different, so that when implementing this calendar the ADHOC FAGs will be dropped.
 
 Uncertainties in the sampling frame cause duplication of GRTS addresses in the (generated) sample because multiple strata can be connected to the same GRTS address.
-Below object makes abstraction of this and only keeps unique GRTS addresses.
+Below object makes abstraction of this and only keeps unique, final GRTS addresses.
 However, except for some types that can be combined at the same GRTS address, this reduction by GRTS address will not happen in reality since the sample sizes must be maintained!
 
 ```{r}
 fag_grts_calendar <-
   fag_stratum_grts_calendar %>% 
-  distinct(pick(-stratum)) %>%
-  arrange(grts_address, date_start, rank, date_end, field_activity_group)
+  distinct(pick(-stratum, -grts_address, -typelevel_certain, -assessed_in_field)) %>%
+  arrange(grts_address_final, date_start, rank, date_end, field_activity_group)
 ```
 
 ### Displaying an aggregation of the FAG calendar
