@@ -23,6 +23,8 @@ rdata_set <- c(
   "domain_grts_n2khab",
   "stratum_grts_n2khab",
   "stratum_grts_n2khab_collapsed",
+  "stratum_grts_n2khab_phabcorrected",
+  "stratum_grts_n2khab_phabcorrected_no_replacements",
   "domain_stratum_nunits",
   "domain_type_nunits",
   "scheme_targetpop_sets",
