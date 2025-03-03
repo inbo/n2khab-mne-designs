@@ -173,6 +173,34 @@ get_fpc_sample_size_difference <- function(x, n, pop) {
 }
 
 
+
+#' Add grts_address_final and other attributes to a stratum x grts_address
+#' object
+#'
+#' grts_address always refers to the GRTS address used in ranking and sampling,
+#' but some locations may not have the targeted stratum and are linked to a
+#' replacement site. This function adds the replacement site
+#' (grts_address_final) and some other attributes from
+#' stratum_grts_n2khab_phabcorrected_no_replacements.
+#'
+#' @param df Data frame holding a stratum and grts_address column.
+add_assessment_data <- function(df) {
+  df %>%
+  inner_join(
+    stratum_grts_n2khab_phabcorrected_no_replacements,
+    join_by(stratum, grts_address),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  mutate(
+    grts_address_final = ifelse(is.na(replaced_by), grts_address, replaced_by)
+  ) %>%
+  relocate(grts_address_final, .after = grts_address) %>%
+  select(-replaced_by)
+}
+
+
+
 #' Add point coordinate columns to a data frame with a GRTS address column
 add_point_coords_grts <- function(
     df,
