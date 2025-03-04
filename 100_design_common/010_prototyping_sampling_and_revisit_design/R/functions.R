@@ -300,6 +300,47 @@ add_col_in_aquatic_subset <- function(df, strata, type_properties) {
 
 
 
+
+#' Read and tidy csv file with MHQ samples
+read_csv_mhq_samples <- function(path,
+                                 grts_var = "grts_ranking_draw",
+                                 single_hab = NULL) {
+  if (is.null(single_hab)) {
+    read_delim(
+      file = path,
+      delim = ";",
+      col_types = cols_only(
+        {{ grts_var }} := col_integer(),
+        habitattype = col_character()
+      )
+    ) %>%
+      select(
+        stratum = habitattype,
+        grts_address = {{ grts_var }}
+      )
+  } else {
+    read_delim(
+      file = path,
+      delim = ";",
+      col_types = cols_only(
+        {{ grts_var }} := col_integer()
+      )
+    ) %>%
+      mutate(stratum = single_hab) %>%
+      select(
+        stratum,
+        grts_address = {{ grts_var }}
+      )
+  } %>%
+  mutate(
+      # shortcut a complication for forests, where > 1 type is sometimes noted
+      stratum = str_extract(stratum, "^\\w+(\\+$)?"),
+      stratum = parse_factor(stratum, levels = levels(n2khab_strata$stratum))
+    ) %>%
+    arrange(stratum, grts_address)
+}
+
+
 #' Choose optimal threshold to distribute sample sizes in a GRTS address series
 #'
 #' Given the sampling frame as a series of GRTS addresses and sizes of several
