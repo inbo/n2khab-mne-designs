@@ -1,0 +1,77 @@
+---
+title: "Sampling Frame Evaluations"
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+```{r libraries}
+library("dplyr")
+library("magrittr")
+```
+
+# scraping breadcrumbs
+
+Using the example sampling frame drawn by @FV.
+
+- load relevant data (stored via POC) 
+- get spatial coordinates for `scheme == "GW_03.3"`
+- combine with existing watina locations
+- cross-distance
+- plot cumulative number of location pairs at a given distance
+
+
+see also
+
+- <https://inbo.github.io/watina/reference/selectlocs_xg3.html>
+- <https://inbo.github.io/watina/reference/selectlocs_chem.html>
+
+
+Suggestions @FV
+
+- find `spsamples_gw_sf_panflpan5`?
+  - not in `objects_panflpan5.RData`, though that has a `samplinglocations_sf` (4514x2, grts_address and geometry)
+  -> is a `gpkg` files: `spsamples_gw_sf_panflpan5.rds` and `spsamples_gw_sf_panflpan5.gpkg`
+- filter `hydr_class != "HC3"`
+
+
+```{r}
+#| eval: false
+grts_mh_n2khab <- rast(
+  file.path(datapath, "binary/intermediate/grts_mh_n2khab.tif")
+)
+grts_mh_n2khab_index <- tibble(
+  id = seq_len(ncell(grts_mh_n2khab)),
+  grts_address = values(grts_mh_n2khab)[, 1]
+) %>%
+  filter(!is.na(grts_address))
+```
+
+
+```{r}
+#| eval: false
+sf::read_sf(file.path(datapath, "spsamples_gw_sf_panflpan5.gpkg"))
+domain_grts_n2khab <- readRDS(file.path(datapath, "spsamples_gw_sf_panflpan5.rds"))
+```
+
+# load
+
+```{r load-gpkg}
+datapath <- "/home/falk/Downloads/steekproef"
+
+# samples <- sf::read_sf(file.path(datapath, "spsamples_gw_sf_panflpan5.gpkg"))
+samples <- readRDS(file.path(datapath, "spsamples_gw_sf_panflpan5.rds"))
+samples <- cbind(sf::st_drop_geometry(samples), sf::st_coordinates(samples))
+
+samples %<>% dplyr::filter(hydr_class != "HC3")
+
+knitr::kable(t(dplyr::sample_n(samples, 4)))
+```
+
+
+"only" 978 locations left.
