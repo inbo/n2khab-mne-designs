@@ -46,6 +46,7 @@ rdata_set <- c(
   "mod_scheme_targetfieldmethod",
   "scheme_target_paneldesign",
   "mod_scheme_yrs_moco_ps",
+  "mhq_samples",
   "scheme_moco_ps_dom_stratum_sample_size",
   "scheme_moco_ps_stratum_dom_spsamples",
   "scheme_moco_ps_stratum_sppost_spsamples_spares",
