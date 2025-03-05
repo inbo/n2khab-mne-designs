@@ -350,7 +350,7 @@ query_to_cache <- function (query_function, store_filepath,
   # print(knitr::kable(head(result)))
 
   # store data to disk
-  write_parquet(result, sink = store_filepath)
+  arrow::write_parquet(result, sink = store_filepath)
 
   return(TRUE)
 }
@@ -375,14 +375,14 @@ combine_subfolder_data <- function (label, output_file = NA) {
   storage_path <- here::here(local_cache_folder, label)
   all_files <- list.files(storage_path)
   all_data <- lapply(all_files,
-    FUN = function(fi) read_parquet(here::here(local_cache_folder, label, fi))
+    FUN = function(fi) arrow::read_parquet(here::here(local_cache_folder, label, fi))
     )
 
   # save to disk
   if (is.na(output_file)) {
     output_file <- here::here(local_cache_folder, paste0("_", label, ".parquet", collapse = ""))
   }
-  write_parquet(dplyr::bind_rows(all_data), sink = output_file)
+  arrow::write_parquet(dplyr::bind_rows(all_data), sink = output_file)
 
   return(output_file)
 }
@@ -465,7 +465,8 @@ join_auxiliary_cache <- function(
 
   stopifnot(
     assertthat = require('assertthat'),
-    dplyr = require('dplyr')
+    dplyr = require('dplyr'),
+    arrow = require('arrow')
   )
 
   # if provided, data must be in a frame.
@@ -488,7 +489,7 @@ join_auxiliary_cache <- function(
 
   # load additional data
   fi <- paste0("_", label, ".parquet")
-  additional_data <- read_parquet(here::here(local_cache_folder, fi))
+  additional_data <- arrow::read_parquet(here::here(local_cache_folder, fi))
 
   # return or append and return data
   if (is.null(.data)) return(additional_data)
