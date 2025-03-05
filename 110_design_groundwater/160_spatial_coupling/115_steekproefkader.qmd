@@ -498,7 +498,7 @@ plot_param("k")
 Via bootstrapping, we can add confidence ranges:
 
 
-```{r plot-confidence}
+```{r confidence-lines}
 test_d <- seq(0, 128, length.out = 129)
 calculate_rs <- function (i) {
   test_r <- fitting_function(test_d, c(straps[i, "A"], straps[i, "k"]))
@@ -516,12 +516,27 @@ get_line <- function(perc){
   ))
 }
 # get_line(0.05)
+```
 
-ggplot(NULL) +
+
+
+```{r plot-confidence}
+#| label: fig-confidence
+#| fig-cap: "Distance-rule-dependent site re-use. The higher we set the distance threshold for inclusion of existing sites (x), the more existing watina locations would potentially be re-used for the MNM sampling frame. Black line: actual sampling frame; blue line: regression; grey: bootstrapping interval."
+
+h <- ggplot(NULL) +
   geom_ribbon(aes(x = test_d, ymin = get_line(0.02), ymax = get_line(0.98)),
               color = "gray", alpha = 0.3) +
   geom_step(aes(x = x, y = y), color = "black") +
   geom_step(aes(x = x, y = y_fit), color = "steelblue") +
+  labs(x = "distance (m)", y = "cumulated site re-use") +
+  xlim(0, 64) +
+  ylim(0, 1.05*fit_result$predict(64)) +
   theme_bw()
   
+suppressWarnings(
+  ggsave(paste0("figures/steekproefkader_sites_per_distance.png"), h, dpi = 300)
+)
+
+suppressWarnings(print(h))
 ```
