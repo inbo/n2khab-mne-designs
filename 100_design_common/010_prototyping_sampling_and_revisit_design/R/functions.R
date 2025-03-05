@@ -627,3 +627,37 @@ subsample_and_relax_adhocfag <- function(fag_cal,
 
 
 
+#' Set up an environment with lazy-loaded R-objects from RData file
+#'
+#' Based upon https://stackoverflow.com/a/8703024. Lazy-loading objects from a
+#' lazy-load database prevents loading all objects into memory, while being able
+#' to access them on-demand. Loading the DB only loads the index but not the
+#' contents. The function sets this up as in a specific environment, so that one
+#' can use `get("object_name", envir = an_environment)` and `ls(envir =
+#' en_environment)`.
+#'
+#' @param rdata_filepath File path to the RData file.
+#' @param new_envir_name String to be used as the name of the new environment.
+#' @param database_name String to be used as the internally known name of the
+#'   lazy-load database.
+prepare_lazy_get <- function(rdata_filepath,
+                             new_envir_name,
+                             database_name = new_envir_name) {
+  # populate a temporary environment with the objects
+  temp_env <- env_panflpan5_previous <- local({
+    load(rdata_filepath)
+    environment()
+  })
+  # make lazy-load database from temp_env and give it a local name
+  tools:::makeLazyLoadDB(temp_env, file.path(tempdir(), database_name))
+  # remove the temp environment
+  rm(temp_env)
+  gc()
+  # create the requested environment to access the lazy-load database
+  assign(new_envir_name, new.env(), envir = parent.env(environment()))
+  # lazy-load the R object database in the new environment
+  lazyLoad(file.path(tempdir(), database_name), eval(str2lang(new_envir_name)))
+  invisible(NULL)
+}
+
+
