@@ -333,6 +333,50 @@ mhq_samples <-
   arrange(stratum, grts_address)
 ```
 
+Do all strata conform to the ones used here?
+
+```{r}
+all(mhq_samples$stratum %in% n2khab_strata$stratum)
+```
+
+Normalizing the strata to get them in line, if needed.
+This code assumes that stratum mismatches are about main type codes that should be replaced by subtype codes.
+
+```{r}
+if (!all(mhq_samples$stratum %in% n2khab_strata$stratum)) {
+  mhq_samples <- 
+    mhq_samples %>% 
+    left_join(
+      read_types() %>% 
+        select(type, typelevel),
+      join_by(stratum == type)
+    ) %>% 
+    # expansion of main types to subtypes is needed for compatibility with MNE/MHQ
+    # target populations; those main types are subsequently removed. We don't
+    # expand subtypes to main types (that is only relevant in joining with some
+    # geospatial layers)
+    expand_types(type_var = "stratum", mark = TRUE) %>% 
+    filter(
+      !(expanded & typelevel == "main_type"),
+      is.na(expanded_to) | expanded_to != "main_type"
+    ) %>% 
+    # note: the result is actually just the dropping of some main type codes for
+    # which subtype codes were already present in the data frame
+    select(-typelevel, -expanded, -expanded_to)
+}
+```
+
+A warning may appear, which is due to the fact that `expand_types()` does not know about the strata that represent surface area classes.
+This is no problem as long as stratum mismatches only occur in other strata.
+
+Re-checking that all strata are known.
+
+```{r}
+stopifnot(
+  all(mhq_samples$stratum %in% n2khab_strata$stratum)
+)
+```
+
 
 ## Overview of most relevant objects in this chapter
 
