@@ -109,11 +109,13 @@ ggplot(NULL, aes(x = close_distances)) +
 
 ```
 
-(For reference, the diagonal of a 32x32 grid cell is `{r} sqrt(32^2+32^2)` m.)
+(For reference, the diagonal of a 32x32 grid cell is `{r} round(sqrt(32^2+32^2), 1)` m.)
 
 
-- As expected, there are a number of co-located samples. However, I would not expect so many.
 - Cross distances are quantized, totally consistent with the GRTS grid cell arrangement of 32m resolution.
+- As expected, there are a number of co-located samples. However, I would not have expected so many.
+
+This sample is the reference to be superimposed on the existing watina locations.
 
 
 # existing sites
@@ -132,8 +134,8 @@ ggplot(NULL, aes(x = watina_close_distances)) +
 
 ```
 
-Seems more evenly distributed.
-Now the interesting part: how are the new samples positioned relative to the existing ones.
+The watina location cross-distances seem more evenly distributed.
+Now the interesting part: how are the new samples positioned relative to the existing ones?
 
 
 # samples and existing sites
@@ -151,12 +153,17 @@ cross_distances <- Euclid2(
   y2 = samples$Y
 )
 
-print(nrow(cross_distances))
-print(ncol(cross_distances))
-print(cross_distances[1:6, 1:6])
+# print(nrow(cross_distances))
+# print(ncol(cross_distances))
+# print(cross_distances[1:6, 1:6])
 
 close_distances <- sub_threshold(cross_distances, 256)
+```
 
+
+```{r cross-distance}
+#| label: fig-cross-distance-count
+#| fig-cap: "Observed distances between existing watina locations and sampling frame draws."
 
 ggplot(NULL, aes(x = close_distances)) +
   geom_histogram(bins = 512, color = "black", fill = "lightgrey") +
@@ -191,7 +198,9 @@ cumulative_crossdistcount %>%
 ```
 
 
-Via regression of a polynomial, we can approximate the empirical cumulative distribution of potentially re-used sites, at least for low ranges.
+# cross-distance regression
+
+Via regression with a polynomial, we can approximate the empirical cumulative distribution of potentially re-used sites, at least for close distances.
 A working regression model to map the number of re-used sites `r` to the distance threshold `d` is:
 
 $$r = A\cdot d^{k}$$
@@ -275,6 +284,7 @@ y_fit <- fit_result$predict(x)
 ggplot(NULL) +
   geom_step(aes(x = x, y = y), color = "black") +
   geom_step(aes(x = x, y = y_fit), color = "steelblue") +
+  labs(x = "distance `d` (m)", y = "cumulated re-use `r`") +
   theme_bw()
 ```
 
@@ -288,13 +298,16 @@ n_sites <- predict_n_sites(test)
 print(n_sites)
 ```
 
+:::{.callout-note}
 For example...
 
 - If we set a coupling distance of `{r} 1` m, we can expect `{r} predict_n_sites(1)` locations within re-use range.
 - If we set a coupling distance of `{r} 10` m, we can expect `{r} predict_n_sites(10)` locations within re-use range.
 - If we set a coupling distance of `{r} test` m, we can expect `{r} predict_n_sites(test)` locations within re-use range.
 
-To put this into perspective: the total number of sites in the sampling frame is `{r} nrow(samples)`, so 10 sites would be about `{r} 100*10/nrow(samples)` % of the sample.
+:::
+
+To put this into perspective: the total number of sites in the sampling frame is `{r} nrow(samples)`, so 10 sites would be about `{r} round(100*10/nrow(samples), 1)` % of the sample.
 
 
 The regression equation can be inverted to calculate the distance for a given number of accepted site re-use.
@@ -370,13 +383,13 @@ knitr::kable(t(model_results))
 
 ```{r stan-trace-plot}
 #| label: fig-traceplot
-#| fig-cap: "traceplot of the sampling procedure."
+#| fig-cap: "Traceplot of the MCMC sampling procedure, using `rstan`."
 traceplot(model_fit)
 ```
 
 ```{r stan-forest-plot}
 #| label: fig-forestplot
-#| fig-cap: "Forest plot of model parameters."
+#| fig-cap: "Forest plot of model parameter posteriors."
 plot(model_fit,
   show_density = TRUE, ci_level = 0.95,
   fill_color = "grey", fill_alpha = 0.6
@@ -384,19 +397,22 @@ plot(model_fit,
 ```
 
 
-The fit for this particular sampling simulation is quite accurate, which leaves little flexibility for the regression parameters.
+The regression for this particular sampling simulation is "quite a good fit", thus leaves little flexibility for the regression parameters.
+
 
 However, this was just one particular sampling.
 
 
 # bootstrapping
 
+With bootstrapping, we can simulate a repeated sampling procedure and estimate the flexibility that the dataset leaves for the calculation of regression parameters.
+
+
 ```{r bootstrapping-extras}
 library("parallel") 
 ```
 
 ```{r regression_wrapper}
-
 
 regression_wrapper <- function(boot_distances) {
 
@@ -463,8 +479,6 @@ straps <- bind_rows(mclapply(
   mc.cores = detectCores()-2
   ))
 
-round(quantile(straps$A, probs = c(0.05, 0.5, 0.95)), 2)
-round(quantile(straps$k, probs = c(0.05, 0.5, 0.95)), 2)
 ```
 
 
@@ -486,16 +500,19 @@ plot_param <- function(param){
 }
 ```
 
+
 ```{r plot-A-distribution}
 plot_param("A")
+knitr::kable(t(round(quantile(straps$A, probs = c(0.05, 0.5, 0.95)), 2)))
 ```
 
 ```{r plot-k-distribution}
 plot_param("k")
+knitr::kable(t(round(quantile(straps$k, probs = c(0.05, 0.5, 0.95)), 2)))
 ```
 
 
-Via bootstrapping, we can add confidence ranges:
+Via bootstrapping, we can add confidence ranges to the plot above:
 
 
 ```{r confidence-lines}
@@ -529,9 +546,9 @@ h <- ggplot(NULL) +
               color = "gray", alpha = 0.3) +
   geom_step(aes(x = x, y = y), color = "black") +
   geom_step(aes(x = x, y = y_fit), color = "steelblue") +
-  labs(x = "distance (m)", y = "cumulated site re-use") +
-  xlim(0, 64) +
-  ylim(0, 1.05*fit_result$predict(64)) +
+  labs(x = "inclusion distance threshold (m)", y = "cumulative site re-use") +
+  xlim(0, 32) +
+  ylim(0, 1.05*fit_result$predict(32)) +
   theme_bw()
   
 suppressWarnings(
@@ -540,3 +557,19 @@ suppressWarnings(
 
 suppressWarnings(print(h))
 ```
+
+
+```{r check1}
+check_dist <- 5 # m
+check_r <- round(quantile(test_calculations[check_dist,], probs = c(0.05, 0.5, 0.95)), 1)
+knitr::kable(t(check_r))
+```
+At a distance of `{r} check_dist` m, we would expect between `{r} round(check_r[[1]])` and `{r} round(check_r[[3]])` sites to qualify for re-use.
+
+
+```{r check2}
+check_dist <- 8 # m
+check_r <- round(quantile(test_calculations[check_dist,], probs = c(0.05, 0.5, 0.95)), 1)
+knitr::kable(t(check_r))
+```
+At a distance of `{r} check_dist` m, we would expect between `{r} round(check_r[[1]])` and `{r} round(check_r[[3]])` sites to qualify for re-use.
