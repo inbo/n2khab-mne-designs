@@ -13,6 +13,11 @@ knitr:
 ```{r libraries}
 library("dplyr")
 library("magrittr")
+library("ggplot2")
+
+# data is loaded from cache
+source("./auxiliary_data_queries.R")
+source("regression_tools.R") 
 ```
 
 # scraping breadcrumbs
@@ -75,3 +80,207 @@ knitr::kable(t(dplyr::sample_n(samples, 4)))
 
 
 "only" 978 locations left.
+
+
+# samples by themselves
+
+
+```{r cross-difference}
+# compute the difference of all elements of one vector to each other
+self_difference <- function (vec) outer(X = vec, Y = vec, FUN = function(X, Y)  Y-X)
+
+# Calculate the Euclidean distance of the x and y columns in a data frame.
+Euclid <- function (x, y) sqrt(self_difference(x)^2 + self_difference(y)^2 )
+
+# return the lower triangle of a matrix, unpacking it into a vector of unique values
+extract_lower_triangle <- function (mat) mat[lower.tri(mat)]
+
+# retrieve elements of a vector which are below a given threshold
+sub_threshold <- function (vec, thresh) vec[vec < thresh]
+
+# cross distance of sampling frame locations
+self_distances <- Euclid(samples$X, samples$Y)
+# print(extract_lower_triangle(self_distances[1:6, 1:6]))
+close_distances <- sub_threshold(extract_lower_triangle(self_distances), 256)
+ggplot(NULL, aes(x = close_distances)) +
+  geom_histogram(bins = 512, color = "black", fill = "lightgrey") +
+  scale_x_continuous(name = "cross distance (m)", breaks = seq(0, 256, length.out = 17)) +
+  theme_bw()
+
+```
+
+(For reference, the diagonal of a 32x32 grid cell is `{r} sqrt(32^2+32^2)` m.)
+
+
+- As expected, there are a number of co-located samples. However, I would not expect so many.
+- Cross distances are quantized, totally consistent with the GRTS grid cell arrangement of 32m resolution.
+
+
+# existing sites
+
+```{r load-watina}
+watina_data <- join_auxiliary_cache(label = "metadata")
+
+watina_cross_distances <- Euclid(watina_data$x, watina_data$y)
+watina_close_distances <- sub_threshold(extract_lower_triangle(watina_cross_distances), 256)
+
+ggplot(NULL, aes(x = watina_close_distances)) +
+  geom_histogram(bins = 512, color = "black", fill = "lightgrey") +
+  scale_x_continuous(name = "cross distance (m)", breaks = seq(0, 256, length.out = 17)) +
+  scale_y_log10() +
+  theme_bw()
+
+```
+
+Seems more evenly distributed.
+Now the interesting part: how are the new samples positioned relative to the existing ones.
+
+
+# samples and existing sites
+
+
+```{r cross-distance}
+
+cross_difference <- function (v1, v2) outer(X = v1, Y = v2, FUN = function(X, Y)  Y-X)
+Euclid2 <- function (x1, y1, x2, y2) sqrt(cross_difference(x1, x2)^2 + cross_difference(y1, y2)^2 )
+
+cross_distances <- Euclid2(
+  x1 = watina_data$x,
+  y1 = watina_data$y,
+  x2 = samples$X,
+  y2 = samples$Y
+)
+
+print(nrow(cross_distances))
+print(ncol(cross_distances))
+print(cross_distances[1:6, 1:6])
+
+close_distances <- sub_threshold(cross_distances, 256)
+
+
+ggplot(NULL, aes(x = close_distances)) +
+  geom_histogram(bins = 512, color = "black", fill = "lightgrey") +
+  scale_x_continuous(name = "cross distance (m)", breaks = seq(0, 256, length.out = 17)) +
+  theme_bw()
+
+```
+
+
+For testing any hypothetical coupling rule, we can use the cumulated empirical distribution.
+
+```{r cumulated-distances}
+#| label: fig-cumulated-count
+#| fig-cap: "Cumulated count of observed distances between existing watina locations and sampling frame draws."
+
+count_threshold <- function (thresh){
+  n <- length(sub_threshold(close_distances, thresh))
+  return(tibble(distance = thresh, cumulated_count = n))
+}
+
+cumulative_crossdistcount <- bind_rows(
+  lapply(
+    seq(0, 256, length.out = 257),
+    FUN = count_threshold)
+)
+
+cumulative_crossdistcount %>%
+  ggplot(aes(x = distance, y = cumulated_count)) +
+  geom_step() +
+  theme_bw()
+  
+```
+
+
+Via regression of a polynomial, we can approximate the empirical cumulative distribution of potentially re-used sites, at least for low ranges.
+
+
+```{r fitting-definition}
+# fitting_function <- function(d, parameters) {
+#   A <- parameters[1]
+#   b <- parameters[2]
+#   k <- parameters[3]
+#   s <- 1
+#   result <- A * b^(k*d/s)-1.0
+#   return(result)
+# }
+
+fitting_function <- function(d, parameters) {
+  A <- parameters[1]
+  k <- parameters[2]
+  result <- A * d^k
+  return(result)
+}
+
+fit_fitting <- function(x, y, ...) {
+  target_fcn <- wrap_target_function
+  optimizer_results <- optim(
+    fn = function(params) {
+      target_fcn(x, y, fitting_function, params)
+    },
+    ...
+  )
+  
+  # store everything in one list;
+  # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$fcn <- fitting_function
+  optimizer_results$regx <- x
+  optimizer_results$regy <- y
+
+  # wrap the function with the optimized parameters
+  optimizer_results$predict <- create_prediction_function(
+    fitting_function,
+    optimizer_results
+  )
+
+
+  return(optimizer_results)
+}
+
+print_regression_results <- function(orsl) {
+  par <- paste(round(orsl$par, 4), collapse = ", ")
+  conv <- orsl$convergence
+  eps <- orsl$value
+
+  print(
+    sprintf("fit: conv %i at (%s), mse %.1f", conv, par, eps)
+  )
+}
+
+x <- cumulative_crossdistcount$distance
+y <- cumulative_crossdistcount$cumulated_count
+cap <- 128.
+y <- y[x<=cap]
+x <- x[x<=cap]
+fit_result <- fit_fitting(x, y,
+  method = "Nelder-Mead", # "L-BFGS-B",
+  par = c(0.25, 1.8),
+  control = list("fnscale" = 1e-4)
+)
+
+print_regression_results(fit_result)
+
+predict_n_sites <- function (val) round(fit_result$predict(val), 0)
+
+y_fit <- fit_result$predict(x)
+
+ggplot(NULL) +
+  geom_step(aes(x = x, y = y), color = "black") +
+  geom_step(aes(x = x, y = y_fit), color = "steelblue") +
+  theme_bw()
+```
+
+
+With this, we can predict how many sites are potentially re-used:
+
+```{r test-coupling}
+#| code-fold: false
+test <- 32 # m
+n_sites <- predict_n_sites(test)
+print(n_sites)
+```
+
+For example...
+
+- If we set a coupling distance of `{r} 1` m, we can expect `{r} predict_n_sites(1)` locations within re-use range.
+- If we set a coupling distance of `{r} 10` m, we can expect `{r} predict_n_sites(10)` locations within re-use range.
+- If we set a coupling distance of `{r} test` m, we can expect `{r} predict_n_sites(test)` locations within re-use range.
