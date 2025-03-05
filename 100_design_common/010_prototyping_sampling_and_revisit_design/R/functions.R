@@ -302,6 +302,11 @@ add_col_in_aquatic_subset <- function(df, strata, type_properties) {
 
 
 #' Read and tidy csv file with MHQ samples
+#'
+#' @param path File path.
+#' @param grts_var Column name to be used as GRTS address.
+#' @param single_type Optional string to set a single type that represents all
+#'   rows.
 read_csv_mhq_samples <- function(path,
                                  grts_var = "grts_ranking_draw",
                                  single_type = NULL) {
