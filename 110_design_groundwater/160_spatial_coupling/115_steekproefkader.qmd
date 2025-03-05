@@ -192,6 +192,11 @@ cumulative_crossdistcount %>%
 
 
 Via regression of a polynomial, we can approximate the empirical cumulative distribution of potentially re-used sites, at least for low ranges.
+A working regression model to map the number of re-used sites `r` to the distance threshold `d` is:
+
+$$r = A\cdot d^{k}$$
+
+... with scale `A` and exponent `k`.
 
 
 ```{r fitting-definition}
@@ -207,8 +212,11 @@ Via regression of a polynomial, we can approximate the empirical cumulative dist
 fitting_function <- function(d, parameters) {
   A <- parameters[1]
   k <- parameters[2]
-  result <- A * d^k
-  return(result)
+  return(A * d^k)
+}
+
+invert_fitting_function <- function(params){
+  return(function(val) (val/params[1])^(1/params[2]))
 }
 
 fit_fitting <- function(x, y, ...) {
@@ -223,6 +231,7 @@ fit_fitting <- function(x, y, ...) {
   # store everything in one list;
   # do I sense a smidgen of OOP here? No, not really.
   optimizer_results$fcn <- fitting_function
+  optimizer_results$ifcn <- invert_fitting_function(optimizer_results$par)
   optimizer_results$regx <- x
   optimizer_results$regy <- y
 
@@ -231,7 +240,6 @@ fit_fitting <- function(x, y, ...) {
     fitting_function,
     optimizer_results
   )
-
 
   return(optimizer_results)
 }
@@ -242,7 +250,7 @@ print_regression_results <- function(orsl) {
   eps <- orsl$value
 
   print(
-    sprintf("fit: y = %.2f x^%.2f (conv %i, mse %.1f)", par[1], par[2], conv, eps)
+    sprintf("fit: r = %.2f d^%.2f (conv %s, mse %.1f)", par[1], par[2], conv==0, eps)
   )
 }
 
@@ -260,8 +268,9 @@ fit_result <- fit_fitting(x, y,
 print_regression_results(fit_result)
 
 predict_n_sites <- function (val) round(fit_result$predict(val), 0)
+inverse_predict_distance <- function(val) (val/fit_result$par[1])^(1/fit_result$par[2])
 
-y_fit <- fit_result$predict(x)
+y_fit <- fit_result$predict(x) 
 
 ggplot(NULL) +
   geom_step(aes(x = x, y = y), color = "black") +
@@ -284,3 +293,234 @@ For example...
 - If we set a coupling distance of `{r} 1` m, we can expect `{r} predict_n_sites(1)` locations within re-use range.
 - If we set a coupling distance of `{r} 10` m, we can expect `{r} predict_n_sites(10)` locations within re-use range.
 - If we set a coupling distance of `{r} test` m, we can expect `{r} predict_n_sites(test)` locations within re-use range.
+
+To put this into perspective: the total number of sites in the sampling frame is `{r} nrow(samples)`, so 10 sites would be about `{r} 100*10/nrow(samples)` % of the sample.
+
+
+The regression equation can be inverted to calculate the distance for a given number of accepted site re-use.
+
+
+$$d = \left(\frac{r}{A}\right)^{\frac{1}{k}}$$
+
+
+For example, the re-use of `{r} 10` sites corresponds to a distance threshold of approximately `{r} round(inverse_predict_distance(10), 0)` m.
+
+
+
+# Bayesian uncertainty
+
+Just a quick glimpse at how sure we are about these regression parameters.
+
+```{r load-rstan}
+library("rstan")
+
+
+```
+
+```{r model-definition}
+
+stan_model_definition <- paste0(
+" data {
+  int n;
+  vector[n] r; // re-use site observations
+  vector[n] d; // observed distances
+  }",
+" parameters {
+  real <lower = 0> A; // scale
+  real <lower = 0> k; // exponent
+  real<lower = 0> residual;
+  }",
+" model {
+  A ~ normal(0.25, 0.1);
+  k ~ normal(1.8, 0.2);
+
+  residual~ cauchy( 0.0, 1.0); // model residual
+
+  // 'likelihood' / 'posterior'
+  r ~ normal(A*(d^k), residual); 
+  }",
+""
+)
+
+model <- rstan::stan_model(
+  model_code = stan_model_definition,
+  model_name = "polynomial model",
+)
+```
+
+```{r model-sampling}
+#| eval: true
+model_fit <- rstan::sampling(
+  model,
+  list(
+    n = length(x),
+    d = x,
+    r = y
+    ),
+  iter = 2^14,
+  chains = 8,
+  cores = 8
+  )
+
+# model_fit
+model_results <- as.data.frame(summary(model_fit)$summary)
+knitr::kable(t(model_results))
+```
+
+
+```{r stan-trace-plot}
+#| label: fig-traceplot
+#| fig-cap: "traceplot of the sampling procedure."
+traceplot(model_fit)
+```
+
+```{r stan-forest-plot}
+#| label: fig-forestplot
+#| fig-cap: "Forest plot of model parameters."
+plot(model_fit,
+  show_density = TRUE, ci_level = 0.95,
+  fill_color = "grey", fill_alpha = 0.6
+  )
+```
+
+
+The fit for this particular sampling simulation is quite accurate, which leaves little flexibility for the regression parameters.
+
+However, this was just one particular sampling.
+
+
+# bootstrapping
+
+```{r bootstrapping-extras}
+library("parallel") 
+```
+
+```{r regression_wrapper}
+
+
+regression_wrapper <- function(boot_distances) {
+
+  boot_threshold <- function (thresh){
+    n <- length(sub_threshold(boot_distances, thresh))
+    return(data.frame(distance = thresh, cumulated_count = n))
+  }
+  
+  boot_cumcrossdistcount <- bind_rows(
+    lapply(
+      seq(0, 128, length.out = 129),
+      FUN = boot_threshold)
+  )
+
+
+  fit_result <- fit_fitting(
+    x = boot_cumcrossdistcount$distance,
+    y = boot_cumcrossdistcount$cumulated_count,
+    method = "Nelder-Mead", # "L-BFGS-B",
+    par = c(0.25, 1.8)
+    # lower = c(0.01, 1.0),
+    # upper = c(1.0, 10.0),
+    # control = list("fnscale" = 1e-6)
+  )
+  return(fit_result)
+} 
+
+```
+
+
+## reference regression
+
+```{r regression-reference}
+even_closer_distances <- close_distances[close_distances <= 128]
+reference <- regression_wrapper(even_closer_distances)
+reference["A"] <- reference$par[1]
+reference["k"] <- reference$par[2]
+print_regression_results(reference)
+```
+
+
+```{r}
+bootstrap_function <- function(i){
+
+  boot_distances <- sample(
+    even_closer_distances,
+    as.integer(length(even_closer_distances)),
+    replace = TRUE)
+
+  result <- regression_wrapper(boot_distances)
+  return(as.data.frame(list(
+      "i" = i,
+      "conv" = result$convergence == 0,
+      "rmse" = result$value,
+      "A" = result$par[1],
+      "k" = result$par[2]
+    )))
+}
+
+n_iterations <- 2^12
+straps <- bind_rows(mclapply(
+  1:n_iterations,
+  bootstrap_function,
+  mc.cores = detectCores()-2
+  ))
+
+round(quantile(straps$A, probs = c(0.05, 0.5, 0.95)), 2)
+round(quantile(straps$k, probs = c(0.05, 0.5, 0.95)), 2)
+```
+
+
+```{r}
+
+plot_param <- function(param){
+  h <- straps %>%
+    mutate(param = straps[, param]) %>% 
+    ggplot(aes(x = param)) +
+    geom_histogram(bins = 256, width = 1.05,
+                   color = NA, fill = "darkgray",
+                   alpha = 1., position = "identity") +
+    geom_vline(xintercept = reference[[param]]) +
+    xlab(param) +
+    theme_bw()
+
+  ggsave(paste0("figures/spk_bootstrap_", param, ".png"), h, dpi = 300)
+  return(h)
+}
+```
+
+```{r}
+plot_param("A")
+```
+
+```{r}
+plot_param("k")
+```
+
+
+Via bootstrapping, we can add confidence ranges:
+
+
+```{r plot-confidence}
+test_d <- seq(0, 128, length.out = 129)
+calculate_rs <- function (i) {
+  test_r <- fitting_function(test_d, c(straps[i, "A"], straps[i, "k"]))
+  return(test_r)
+}
+test_calculations <- sapply(
+  1:nrow(straps),
+  FUN = calculate_rs
+)
+get_line <- function(perc){
+  as.numeric(sapply(1:nrow(test_calculations),
+    FUN = function (i) {
+      quantile(test_calculations[i,], probs = c(perc))
+      }
+  ))
+}
+get_line(0.05)
+
+ggplot(NULL) +
+  geom_step(aes(x = x, y = y), color = "black") +
+  geom_step(aes(x = x, y = y_fit), color = "steelblue") +
+  geom_line(aes(x = test_d, y = get_line(0.02)), color = "gray") +
+  geom_line(aes(x = test_d, y = get_line(0.98)), color = "gray") 
+  
+```
