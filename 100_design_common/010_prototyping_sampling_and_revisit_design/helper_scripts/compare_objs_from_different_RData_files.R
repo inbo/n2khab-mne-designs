@@ -21,7 +21,8 @@ prepare_lazy_get(
 
 ls(envir = panflpan5_nophabcorrection)
 
-# investigating the effect of adding MHQ assessments (terrestrial) in the sampling frame
+
+# investigating effect of adding MHQ assessments (terrestrial) in the bsf ------
 
 get("scheme_moco_ps_dom_stratum_sample_size", envir = panflpan5_nophabcorrection) %>%
   anti_join(
@@ -56,3 +57,41 @@ get("scheme_moco_ps_stratum_dom_spsamples", envir = panflpan5_nophabcorrection) 
   ) %>%
   add_assessment_data() %>%
   count(assessed_in_field)
+
+
+
+
+# investigating the effect of phab-correction -----------------------------
+
+# types with < 1 units in a domain can get lost:
+
+get("domain_stratum_nunits", envir = panflpan5_nophabcorrection) %>%
+  anti_join(
+    get("domain_stratum_nunits", envir = panflpan5),
+    join_by(domain, stratum)
+  )
+
+get("module_domain_scheme_stratum_sample_size", envir = panflpan5_nophabcorrection) %>%
+  anti_join(
+    get("module_domain_scheme_stratum_sample_size", envir = panflpan5),
+    join_by(module, domain, scheme, stratum)
+  ) %>%
+  select(domain, scheme, stratum)
+
+get("scheme_moco_ps_dom_stratum_sample_size", envir = panflpan5_nophabcorrection) %>%
+  anti_join(
+    get("scheme_moco_ps_dom_stratum_sample_size", envir = panflpan5),
+    join_by(scheme, module_combo_code, panel_split, sampling_frame_id, cycle_duration_y, domain, stratum)
+  )
+
+# large shifts in both directions wrt locations (> 1/3), and leading to a net
+# increase in number of locations after phab-correction
+
+get("scheme_moco_ps_stratum_sppost_spsamples_sf", envir = panflpan5_nophabcorrection) %>%
+  st_drop_geometry() %>%
+  anti_join(
+    get("scheme_moco_ps_stratum_sppost_spsamples_sf", envir = panflpan5) %>%
+      st_drop_geometry(),
+    .,
+    join_by(scheme, module_combo_code, panel_split, stratum, sp_poststratum, grts_address)
+  )
