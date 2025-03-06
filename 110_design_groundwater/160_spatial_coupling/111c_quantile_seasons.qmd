@@ -17,8 +17,18 @@ knitr:
 In this derived workbook, I filter for paired observations of water levels which fall in certain quantile ranges of all water levels of that year.
 Observations are only included if *both* sites were within their respecive quantile ranges.
 
+I also apply the slope filter which seems to have a huge effect, since we measure mean absolute difference of mTAW.
 
 
+| soilclass  | all in | low water | high water |
+|:-----------|-------:|----------:|-----------:|
+| `(filter)` |   `NA` |  `<= q30` |   `>= q70` |
+| (N/1000)   |   6168 |      1462 |       1438 |
+| heavy      | 10.0 m |     9.2 m |     10.7 m |
+| light      | 12.1 m |    11.0 m |     13.8 m |
+| peat       | 17.7 m |    14.8 m |     14.8 m |
+
+<!--
 | soilclass  | all in | low water | high water |
 |:-----------|-------:|----------:|-----------:|
 | `(filter)` |   `NA` |  `<= q30` |   `>= q70` |
@@ -26,6 +36,7 @@ Observations are only included if *both* sites were within their respecive quant
 | heavy      |  1.4 m |     1.4 m |      1.2 m |
 | light      |  1.0 m |     0.9 m |      0.8 m |
 | peat       | 11.1 m |    11.4 m |      9.1 m |
+-->
 
 
 # Preparation
@@ -61,9 +72,10 @@ n_bins <- as.integer(extent/4) # the number of bins...
 bin_target <- 128 # ... and the preferred alternative: observations per bin
 
 cap_dw <- 8 # m # maximum accepted water level difference
+slope_threshold <- 0.01/1 # 1 cm per meter
 
 
-# quantile selection
+# quantile selection; choose anything in steps of 5%
 lower_quantile <- "q030"
 upper_quantile <- "q070"
 
@@ -122,6 +134,9 @@ diff_meta <- diff_data %>%
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
       mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
       mslope = abs(dh) / ds
+  ) %>%
+  filter(
+    mslope < slope_threshold # slope filter
   )
 
 ```
@@ -143,6 +158,32 @@ diff_data <- diff_data %>%
   select(-lq, -hq)
 
 knitr::kable(sample_n(diff_data, 5))
+```
+
+
+
+```{r count-all}
+diff_all <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+count_all <- nrow(diff_all)
+print(count_all)
 ```
 
 
@@ -288,12 +329,6 @@ filter_columns <- c("lq1", "lq2")
 some_diff_data <- diff_data %>%
   filter(if_all(filter_columns))
 
-paste0(
-  "selected ", nrow(some_diff_data), " / ",
-  nrow(diff_data), " location pairs (",
-  round(100*nrow(some_diff_data)/nrow(diff_data)), "%)."
-)
-    
 ```
 
 
@@ -323,6 +358,13 @@ diff_all <- diff_meta %>%
   filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
 
 # knitr::kable(t(head(diff_all, 3)), decimals = 2)
+
+paste0(
+  "selected ", nrow(diff_all), " / ",
+  count_all, " location pairs (",
+  round(100*nrow(diff_all)/count_all), "%)."
+)
+    
 ```
 
 
@@ -365,7 +407,12 @@ diff_equibinned <- diff_equigrouped %>%
 ```
 
 
-Sample size:
+Cumulative binning:
+
+```{r lq-samplesize-per-soilclass}
+knitr::kable(diff_equibinned %>% count(soilclass))
+```
+
 
 ```{r lq-equibin-samplesize}
 #| label: fig-lq-equibin-sample-size
@@ -456,6 +503,7 @@ regression_by_soilclass(
 :::
 
 
+
 <hr>
 
 # High Waters
@@ -468,12 +516,6 @@ filter_columns <- c("hq1", "hq2")
 some_diff_data <- diff_data %>%
   filter(if_all(filter_columns))
 
-paste0(
-  "selected ", nrow(some_diff_data), " / ",
-  nrow(diff_data), " location pairs (",
-  round(100*nrow(some_diff_data)/nrow(diff_data)), "%)."
-)
-    
 ```
 
 
@@ -503,6 +545,14 @@ diff_all <- diff_meta %>%
   filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
 
 # knitr::kable(t(head(diff_all, 3)), decimals = 2)
+
+
+paste0(
+  "selected ", nrow(diff_all), " / ",
+  count_all, " location pairs (",
+  round(100*nrow(diff_all)/count_all), "%)."
+)
+    
 ```
 
 
@@ -545,7 +595,7 @@ diff_equibinned <- diff_equigrouped %>%
 ```
 
 
-Sample size:
+Cumulative Binning:
 
 ```{r hq-equibin-samplesize}
 #| label: fig-hq-equibin-sample-size
