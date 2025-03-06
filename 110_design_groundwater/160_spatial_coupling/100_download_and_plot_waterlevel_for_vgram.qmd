@@ -1134,7 +1134,7 @@ Retrieving all pairs of observation wells
 which are below a certain distance,
 
 ```{r pairing}
-extent <- 512 # m
+extent <- 1536 # m
 
 # meta_data %>% count(cluster)
 
@@ -1185,21 +1185,23 @@ query_measurement <- function (pp1, pp2){
 
   w1 <- tbl(watina_dwh, "FactPeilMeting") %>%
     filter(PeilpuntWID == pp1) %>%
-    select(PeilpuntWID, DatumWID, mTAW, PeilmetingStatusCode) %>%
+    select(PeilpuntWID, DatumWID, mTAW, mMaaiveld, PeilmetingStatusCode) %>%
     rename(
       pp_idx1 = PeilpuntWID,
       date1 = DatumWID,
       w1 = mTAW,
+      m1 = mMaaiveld,
       pm_vld1 = PeilmetingStatusCode
     )
 
   w2 <- tbl(watina_dwh, "FactPeilMeting") %>%
     filter(PeilpuntWID == pp2) %>%
-    select(PeilpuntWID, DatumWID, mTAW, PeilmetingStatusCode) %>%
+    select(PeilpuntWID, DatumWID, mTAW, mMaaiveld, PeilmetingStatusCode) %>%
     rename(
       pp_idx2 = PeilpuntWID,
       date2 = DatumWID,
       w2 = mTAW,
+      m2 = mMaaiveld,
       pm_vld2 = PeilmetingStatusCode
     )
 
@@ -1211,10 +1213,11 @@ query_measurement <- function (pp1, pp2){
     collect %>%
     mutate(
       across(date1, function(x) as.Date(as.character(x), format = "%Y%m%d")),
-      dw = w2 - w1
+      dw = w2 - w1,
+      dm = m2 - m1,
     ) %>%
     rename(date = date1) %>%
-    select(pp_idx1, pp_idx2, pm_vld1, pm_vld2, date, w1, w2, dw)
+    select(pp_idx1, pp_idx2, pm_vld1, pm_vld2, date, w1, w2, dw, m1, m2, dm)
 
   return(pair_diff)
 }

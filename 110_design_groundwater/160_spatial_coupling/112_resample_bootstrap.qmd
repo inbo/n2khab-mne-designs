@@ -30,6 +30,10 @@ library("parallel")  |> void() # parallel processing
 # data is loaded from cache
 source("./auxiliary_data_queries.R")
 
+# regression has been done before
+source("regression_tools.R") 
+
+
 # for reference
 # metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
 # cluster_dist <- 3400 # m # parameter for clustering, used on data loading
@@ -39,13 +43,15 @@ source("./auxiliary_data_queries.R")
 
 ```{r parameters}
 #| code-fold: false
-extent <- 1024 # m
-bin_target <- 128 # alternative: observations per bin
-cap_dw <- 8 # m # maximum accepted water level difference
+extent <- 1536 # m
+maxx <- 512 # for regression
 
-wadi_threshold     <- units::set_units(Inf, "m")
+bin_target <- 128 # alternative: observations per bin
+cap_dw <- 4 # m # maximum accepted water level difference
+
 slope_threshold    <- 0.01/1 # 1 cm per meter
-dfdepth_threshold  <- 1 # m # Inf
+wadi_threshold     <- units::set_units(Inf, "m")
+dfdepth_threshold  <- Inf # m # Inf
 
 n_bootstraps <- 2**16 # number of bootstrapping iterations
 ```
@@ -105,6 +111,7 @@ diff_meta <- diff_data %>%
   )
 
 
+
 diff_meta %>% count(soilclass1)
 
 ```
@@ -141,15 +148,17 @@ diff_meta <- diff_meta %>%
     )
   ) 
 
-diff_all <- diff_meta %>% 
+
+diff_joined <- diff_meta %>% 
   left_join(diff_data,
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
   ) %>% 
   filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
 
-# glimpse(diff_all)
+# glimpse(diff_joined)
 
+# diff_meta %>% select(cluster1, pp_idx1, pp_idx2, ds, mslope) %>% arrange(-ds) %>% head
 ```
 
 
@@ -159,13 +168,23 @@ diff_all <- diff_meta %>%
 ```{r equibin-preparation}
 #| code-fold: false
 
-diff_equigrouped <- diff_all %>%
+
+# test <- diff_joined %>%
+#   summarize(
+#     n_obs = sum(as.integer(!is.na(dw))),
+#     soilclass = first(soilclass1),
+#     cluster = first(cluster1),
+#     ds = mean(ds, na.rm = TRUE),
+#     dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+#     .by = pair 
+#   ) %>% ungroup %>% arrange(-ds)
+
+diff_equigrouped <- diff_joined %>%
   summarize(
     n_obs = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
-    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
     dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
     .by = pair 
   ) %>% ungroup %>% arrange(ds) %>%
@@ -173,7 +192,6 @@ diff_equigrouped <- diff_all %>%
   mutate(
     distance_equibin = ggplot2::cut_number(
       ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
-      # ds, as.integer(min(c(floor(n()/8), extent/2)))
     ) # cut to equal sized bins
   ) %>%
   ungroup
@@ -211,9 +229,6 @@ diff_equibinned %>%
 
 ```{r regression-wrapper}
 #| code-fold: true
-
-source("regression_tools.R") 
-
 
 matern_function <- function(d, parameters) {
   scale <- parameters[1] # related to semivariance
@@ -328,8 +343,8 @@ regression_wrapper <- function(
 ## all in: getting starting values
 
 ```{r regression-reference}
-lower_limits = c(0.0,   0.0, 0.0)# 0.1)
-upper_limits = c(4.0, extent, 4.0)#16.01)
+lower_limits = c(0.0,  0.0, 0.0)# 0.1)
+upper_limits = c(4.0, maxx, 4.0)#16.01)
 reference <- regression_wrapper(
   regression_data = diff_equibinned,
   regression_variable = "dw",

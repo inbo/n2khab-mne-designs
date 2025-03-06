@@ -114,3 +114,123 @@ matern_function <- function(d, parameters) {
   result[is.na(result)] <- 0
   return(result)
 }
+
+
+
+#_______________________________________________________________________________
+# Matern-specific
+
+
+fit_matern <- function(x, y, distweighted = FALSE, ...) {
+  target_fcn <- wrap_target_function
+  if (distweighted) {
+    target_fcn <- distweighted_target_function
+  }
+  optimizer_results <- optim(
+    fn = function(params) {
+      target_fcn(x, y, matern_function, params)
+    },
+    ...
+  )
+
+  # store everything in one list;
+  # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$fcn <- matern_function
+  optimizer_results$regx <- x
+  optimizer_results$regy <- y
+
+  # wrap the function with the optimized parameters
+  optimizer_results$predict <- create_prediction_function(
+    matern_function,
+    optimizer_results
+  )
+
+
+  return(optimizer_results)
+}
+
+
+plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
+
+  # retrieve everything
+  fcn <- optimizer_results$fcn
+  regx <- optimizer_results$regx
+  regy <- optimizer_results$regy
+  predict <- optimizer_results$predict
+
+  # extract parameters
+  scale <- optimizer_results$par[1]
+  range <- optimizer_results$par[2]
+  nugget <- optimizer_results$par[3]
+  sill <- scale + nugget
+
+
+  # plotting
+  plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
+  plotx <- plotx[plotx>0]
+
+  g <- ggplot(NULL, aes(x = regx, y = regy)) +
+    geom_vline(xintercept = range, color = "darkgrey") +
+    geom_hline(yintercept = nugget, color = "darkgrey") +
+    geom_hline(yintercept = sill, color = "darkgrey") +
+    geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.2) +
+    geom_line(aes(x = plotx, y = predict(plotx))) +
+    labs(title = paste0("Matérn regression: ",
+      paste(round(optimizer_results$par, 4), collapse = ", "))) +
+    xlab("distance (m)") + ylab(y_label) +
+    theme_minimal()
+
+  return(g)
+}
+
+
+trafo <- function(x) x
+
+regression_by_soilclass <- function(
+    regression_data,
+    sc, reg_var,
+    maxx = extent, maxy = NULL,
+    ...) {
+  diff_sc <- regression_data %>% filter(soilclass == sc)
+
+  x <- diff_sc$ds
+  y <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y <- y[x > 0]
+  x <- x[x > 0]
+  y <- y[x <= maxx]
+  x <- x[x <= maxx]
+
+  if (is.null(maxy)) maxy <- max(y)
+  x <- x[y <= maxy]
+  y <- y[y <= maxy]
+
+  x <- x[!is.na(y)]
+  y <- y[!is.na(y)]
+
+  # standardization helps function comprehension
+  # x <- x/max(x)
+  # y <- y / mean(y)
+
+
+  matern_fit <- fit_matern(x, y,
+    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
+    ...
+  )
+
+  print_regression_results(matern_fit, label = "regression:")
+  ylabel <- "mean water level difference (pair-averaged)"
+  # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
+  g <- plot_matern(matern_fit, y_label = ylabel)
+
+  x_excl <- diff_sc$ds
+  y_excl <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y_excl <- y_excl[x_excl <= maxx]
+  x_excl <- x_excl[x_excl <= maxx]
+  x_excl <- x_excl[y_excl > maxy]
+  y_excl <- y_excl[y_excl > maxy]
+  g <- g + geom_point(aes(x = x_excl, y = y_excl),
+      size = 2.5, colour = "red", alpha = 0.2)
+  return(g)
+}

@@ -202,14 +202,14 @@ diff_meta <- diff_meta %>%
     )
   ) 
 
-diff_all <- diff_meta %>% 
+diff_joined <- diff_meta %>% 
   left_join(diff_data,
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
   ) %>% 
   filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
 
-# glimpse(diff_all)
+# glimpse(diff_joined)
 
 ```
 
@@ -221,7 +221,7 @@ Given a maximum filter depth of 8m, extent (i.e. maximum pair distance) of 512 m
 
 
 ```{r widegroup-data}
-diff_widegroup <- diff_all %>%
+diff_widegroup <- diff_joined %>%
   summarize(
     cnt = n(),
     #cnt = sum(as.integer(!is.na(dw))),
@@ -232,7 +232,7 @@ diff_widegroup <- diff_all %>%
     dw = 1/(cnt)*sum(abs(dw), na.rm = TRUE),
     # dw = mean(abs(dw), na.rm = TRUE)
     .by = c(pair, distance_widebin)
-  ) %>% ungroup %>% arrange(ds)
+  ) %>% arrange(ds)
 ```
 
 
@@ -250,14 +250,14 @@ diff_widegroup %>%
 
 
 
-# ridge plots
+# ridgeline plots
 
 ... with the little "extra" to regular difference-distance plots.
 
 
 ```{r diff-ridges-dw}
 #| label: fig-ridges
-#| fig-cap: "Visualization of distance-dependent difference with ridges. With increasing distance (y-axis), the distribution of water level differences (x-axis, grey density distributions) increases (indicated by quantile lines)."
+#| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (y-axis), the distribution of water level differences (x-axis, grey density distributions) increases (indicated by quantile lines)."
 diff_widegroup %>%
   ggplot(aes(x = dw, y = distance_widebin)) +
   geom_density_ridges(rel_min_height = 0.05,
@@ -296,7 +296,7 @@ Re-applying the groups with more fine-grained binning.
 
 ```{r bin-data}
 
-diff_grouped <- diff_all %>%
+diff_grouped <- diff_joined %>%
   summarize(
     n_obs = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
@@ -306,7 +306,7 @@ diff_grouped <- diff_all %>%
     dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
     # dw = mean(abs(dw), na.rm = TRUE)
     .by = c(pair, distance_bin)
-  ) %>% ungroup %>% arrange(ds)
+  ) %>% arrange(ds)
 
 
 combine_grouped <- function (val, cnt) sum(val*cnt, na.rm = TRUE)/sum(cnt, na.rm = TRUE)
@@ -321,7 +321,7 @@ diff_binned <- diff_grouped %>%
     semivar_all = combine_grouped(semivar, n_obs),
     semivar_groups = mean(semivar, na.rm = TRUE),
     .by = c(distance_bin, soilclass)
-  ) %>% ungroup %>% arrange(ds)
+  ) %>% arrange(ds)
 
 
 knitr::kable(rbind(head(diff_binned, 5), tail(diff_binned, 5)))
@@ -423,7 +423,7 @@ Wider bins caused trouble by undersampling of the proximal areas.
 ```{r equibin-preparation}
 #| code-fold: false
 
-diff_equigrouped <- diff_all %>%
+diff_equigrouped <- diff_joined %>%
   summarize(
     n_obs = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
@@ -432,7 +432,7 @@ diff_equigrouped <- diff_all %>%
     semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
     dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
     .by = pair 
-  ) %>% ungroup %>% arrange(ds) %>%
+  ) %>% arrange(ds) %>%
   group_by(soilclass) %>% 
   mutate(
     distance_equibin = cut_number(
@@ -453,7 +453,7 @@ diff_equibinned <- diff_equigrouped %>%
     semivar_groups = mean(semivar, na.rm = TRUE),
     .by = c(distance_equibin, soilclass)
   ) %>%
-  ungroup %>% arrange(ds)
+  arrange(ds)
 
 ```
     
@@ -747,15 +747,7 @@ regression_by_soilclass("peat",
 ) + ylim(0, 2)
 ```
 
-<!--
-::: {.callout-warning}
-Capped: $<= 2$ (see [@sec-peat-outliers])
 :::
--->
-
-
-:::
-
 
 
 
