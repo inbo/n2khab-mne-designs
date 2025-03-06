@@ -2,6 +2,8 @@
 title: "Effects of phab-correction on the relation between MNE base sampling frame + samples and MHQ samples"
 date: today
 published-title: Date
+csl: "`r if (curl::has_internet()) 'https://raw.githubusercontent.com/citation-style-language/styles/master/research-institute-for-nature-and-forest.csl' else system.file('research-institute-for-nature-and-forest.csl', package = 'INBOmd')`"
+bibliography: ../../../refs_mne_design.yaml
 params:
   lang: nl
 engine: knitr
@@ -60,7 +62,7 @@ our_kbl <- function(df) {
 ```
 
 
-## Data setup
+## Data setup {-}
 
 The two involved RData files have been created by running following shell commands in the `010_prototyping_sampling_and_revisit_design` directory at commit `ee267a53`.
 
@@ -98,7 +100,9 @@ n2khab_types <-
   distinct(type) %>%
   arrange(type)
 n2khab_strata <- get("n2khab_strata", envir = panflpan5)
-active_strata <- get("module_targetpops_strata", envir = panflpan5) %>% distinct(stratum)
+active_strata <- get("module_targetpops_strata", envir = panflpan5) %>%
+  filter(!str_detect(scheme, "^HQ")) %>% 
+  distinct(stratum)
 ```
 
 Reading a separate source of considered terrestrial population units in MHQ (`mhq_terr_popunits`).
@@ -126,9 +130,15 @@ mhq_terr_popunits <-
 
 ## Introduction
 
-In this notebook we compare the effect
+When generating the MNE base sampling frame, phab-based bernouilli sampling of population units is applied to correct the base sampling frame.
+The bernouilli sampling is done for (terrestrial) types which use the cell-center method in joining the `GRTSmaster_habitats` data source with habitatmap polygons.
+This bernouilli sampling is done to prevent bias in the base sampling frame, that would otherwise arise from the presence of polygons (hence raster cells = population units) with quite different phab values within each terrestrial type.
+In effect, it has been seen that after phab-based bernouilli sampling the number of achieved population units closely resembles the calculated population size of the types (strata), confirming the advantage of this strategy.
 
-We specifically consider this for the samples generated when following modules are active:
+In this notebook we specifically look at the effect of bernouilli sampling (vs. not applying this correction) on the overlap between the Flemish MHQ samples with the MNE base sampling frame and the MNE samples.
+If this correction were the only difference between the sampling strategy of MHQ and MNE (MHQ does not apply bernouilli sampling; see @westra_monitoring_2022), then one would expect far less overlap, hence synergy, when phab-based bernouilli sampling is performed in MNE.
+
+The considered MNE samples are those that have been generated for the following MNE modules (hence also a selection of schemes):
 
 ```{r}
 #| echo: FALSE
@@ -137,17 +147,23 @@ modules %>%
   our_kbl()
 ```
 
+Note that the `pan_effectmon_sac5_custommeas` module also contains biotic schemes inside five Special Areas of Conservation.
+Since the samples of these are currently not yet finished, we will exclude them from the MNE samples.
+
+The MNE base sampling frame overarches all MNE schemes, but here we will restrict it to the same strata, used in the above modules (and excluding biotic schemes).
+
+Further, only the terrestrial types are of interest for this comparison.
 
 ## Comparing the base sampling frame with the Flemish MHQ samples
 
-Current MHQ samples, restricted to those sampled by a GRTS (alike) strategy, were acquired and copied under `data/text/raw/mhq_samples`.
+Current MHQ samples, restricted to the locations sampled by a GRTS (alike) strategy, were received and copied under `data/text/raw/mhq_samples`.
 The essential information has been integrated into a single data frame:
 
 ```{r}
 glimpse(mhq_samples)
 ```
 
-Both columns are also represented in the phab-corrected and uncorrected base sampling frame.
+Both columns are also represented in the phab-corrected and uncorrected base sampling frame of MNE.
 
 We only consider terrestrial types to make comparisons, so we restrict all objects to these.
 We also restrict strata to the ones covered by the active modules (this essentially removes RIBs from the base sampling frame).
@@ -167,7 +183,8 @@ restrict_to_active_terrestrial_strata <- function(df) {
         filter(hydr_class != "HC3"),
       join_by(type)
     ) %>% 
-    select(-type)
+    select(-type) %>% 
+    arrange(stratum, grts_address)
 }
 mhq_samples_terr <- restrict_to_active_terrestrial_strata(mhq_samples)
 bsf_corrected_terr <- restrict_to_active_terrestrial_strata(bsf_corrected)
@@ -184,15 +201,20 @@ mhq_samples_terr %>%
   our_kbl()
 ```
 
+Some very small sample sizes appear.
+This may be due to the fact that for some types, like forests, already existing locations from another (non-GRTS) sampling strategy are present.
+However this may not explain everything.
+An effect can also be expected from a different strategy applied in MHQ to distribute a main type's sample size over its subtypes (strata), notably by keeping the sampling proportion (the complement of the finite population correction) constant between strata [@westra_monitoring_2022], rather than aiming at equal standard errors for these strata.
+
 A short note on terminology.
-In MHQ, small clusters of a few strata, or a single stratum, corresponds to a single scheme.
-This is why we talk about 'samples' (plural): one sample corresponds to a single scheme.
+In MHQ, the target population of a single scheme is defined by just a few strata, or by a single stratum.
+This is why we talk about 'MHQ samples' (plural); one sample corresponds to a single scheme.
 Moreover, one stratum can belong to only one scheme in the case of MHQ, unlike MNE.
 The term 'stratum' comes from the MNE schemes, where each scheme mostly consists of many strata, for which a stratified design is made.
 Since the same entities (types or subdivisions thereof) are used in both MHQ and MNE, we just use the term stratum in this case.
 In the case of terrestrial types, the stratum level equals the type level, so that both terms can be used interchangeably.
 
-Several (remaining) types in the sampling frame are not present in the considered MHQ samples:
+Several (remaining) types in the MNE base sampling frames are not present in the considered MHQ samples:
 
 ```{r}
 bsf_uncorrected_terr %>% 
@@ -201,7 +223,7 @@ bsf_uncorrected_terr %>%
   our_kbl()
 ```
 
-Are all types of the MHQ samples are present in the sampling frame?
+Are all (remaining) types of the MHQ samples present in the MNE sampling frame?
 
 ```{r}
 bsf_uncorrected_terr %>% 
