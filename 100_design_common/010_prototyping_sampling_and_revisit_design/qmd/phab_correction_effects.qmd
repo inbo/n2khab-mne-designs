@@ -43,6 +43,7 @@ library(tidyr)
 library(stringr)
 library(forcats)
 library(purrr)
+library(ggplot2)
 library(sf)
 library(units)
 library(lubridate)
@@ -191,7 +192,7 @@ bsf_corrected_terr <- restrict_to_active_terrestrial_strata(bsf_corrected)
 bsf_uncorrected_terr <- restrict_to_active_terrestrial_strata(bsf_uncorrected)
 ```
 
-### Matching of types (regardless of phab correction)
+### Matching of types (regardless of phab correction) {#sec-bsf-types}
 
 The (remaining) types covered by the Flemish MHQ samples are:
 
@@ -234,7 +235,7 @@ bsf_uncorrected_terr %>%
 
 To make comparisons, we only consider types that are present in both data sources.
 
-### Matching of sampling units
+### Matching of sampling units {#sec-bsf-units}
 
 The distribution of all (unique) stratum x GRTS address combinations from the MHQ samples is calculated, regarding their membership in each of the base samplingframe (bsf) variants.
 
@@ -299,7 +300,160 @@ This introduces no bias in the sampling frame, since these are genuine matches a
 
 
 
+## Comparing the MNE samples with the Flemish MHQ samples
+
+We use MNE spatial samples integrated over modules and schemes, limited to terrestrial, active strata (but excluding biotic schemes), just as in the MHQ samples.
+
+```{r}
+mne_samples_corrected <- 
+  get("scheme_moco_ps_stratum_sppost_spsamples", envir = panflpan5) %>%
+  filter(!str_detect(scheme, "^HQ")) %>% 
+  unnest(sp_poststr_samples) %>% 
+  distinct(stratum, grts_address) %>% 
+  restrict_to_active_terrestrial_strata()
+mne_samples_uncorrected <- 
+  get("scheme_moco_ps_stratum_sppost_spsamples", envir = panflpan5_nophabcorrection) %>%
+  filter(!str_detect(scheme, "^HQ")) %>% 
+  unnest(sp_poststr_samples) %>% 
+  distinct(stratum, grts_address) %>% 
+  restrict_to_active_terrestrial_strata()
+```
+
+### Matching of types (regardless of phab correction)
+
+Several types in the MNE samples are not present in the considered MHQ samples:
+
+```{r}
+mne_samples_uncorrected %>% 
+  count(stratum, sort = TRUE) %>% 
+  anti_join(mhq_samples_terr %>% distinct(stratum), join_by(stratum)) %>% 
+  our_kbl()
+```
+
+This outcome coincides well with the pattern observed when comparing with the sampling frame (@sec-bsf-types).
+
+Are all (remaining) types of the MHQ samples present in the MNE samples?
+
+```{r}
+mne_samples_uncorrected %>% 
+  distinct(stratum) %>% 
+  anti_join(mhq_samples_terr %>% distinct(stratum), ., join_by(stratum)) %>% 
+  nrow() == 0
+```
+
+To make comparisons, in next sections we will only consider types that are present in both data sources.
+
+```{r}
+common_sampled_strata <- 
+  mhq_samples_terr %>% 
+  distinct(stratum) %>% 
+  inner_join(
+    mne_samples_uncorrected %>% 
+      distinct(stratum),
+    join_by(stratum),
+    relationship = "one-to-one",
+    unmatched = "drop"
+  ) %>% 
+  pull(stratum)
+```
 
 
+### Comparison of spatial sample sizes per type
+
+This serves as a rough interpretation background for the next section.
+
+```{r}
+samplesize_comparison <- 
+  mhq_samples_terr %>% 
+  count(stratum, name = "n_mhq") %>% 
+  inner_join(
+    mne_samples_uncorrected %>% 
+      count(stratum, name = "n_mne_uncorrected"),
+    join_by(stratum),
+    relationship = "one-to-one",
+    unmatched = "drop"
+  ) %>% 
+  left_join(
+    mne_samples_corrected %>% 
+      count(stratum, name = "n_mne_corrected"),
+    join_by(stratum)
+  )
+
+samplesize_comparison %>% 
+  our_kbl()
+```
+
+```{r}
+samplesize_comparison %>% 
+  pivot_longer(starts_with("n_"), names_to = "samples", values_to = "n") %>% 
+  mutate(samples = fct(samples)) %>% 
+  ggplot(aes(x = stratum, y = n, fill = samples)) +
+  geom_col(position = "dodge") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4),
+    legend.position = "top",
+    legend.title = element_blank()
+  )
+```
+
+A note on the uneven distribution among strata:
+
+- in MNE, within a scheme different sample sizes per stratum are only due to finite population correction (FPC), hence driven by the relative population sizes of strata.
+Before applying FPC, sample sizes are distributed evenly between strata for the infinite population case, within a scheme.
+This pattern is then compounded by the fact that different schemes apply different total samples sizes and have only partly overlapping target populations, meaning that one stratum may also have a lower sample size than another merely because it is not part of a scheme where sample size per stratum is higher.
+- in MHQ, sample sizes between strata are the consequence of FPC, population size driven sample size distribution over strata within the same main type and the spatial distribution of strata inside and outside of Special Areas of Conservation.
+Further, it was chosen to reduce the number of locations (except forest) by almost 50% compared to the first monitoring cycle, while also shortening the cycle by 50% (from 12 y to 6 y) [@westra_monitoring_2022].
+
+Some differences between MNE and MHQ may also arise due to differences in the determination of population sizes of strata, e.g. by using different interpretations of the habitat map (`habitatmap_stdized` vs. `habitatmap_terr`?), and different versions therein.
+
+### Matching of sampling units
+
+The distribution of all (unique) stratum x GRTS address combinations from the MHQ samples is calculated, regarding their membership in each of the variants of the integrated MNE samples.
+
+```{r}
+mne_samples_match_counts <- 
+  mhq_samples_terr %>% 
+  filter(stratum %in% common_sampled_strata) %>% 
+  left_join(
+    mne_samples_uncorrected %>% 
+      filter(stratum %in% common_sampled_strata) %>% 
+      select(stratum, grts_address) %>% 
+      mutate(in_mne_samples_uncorrected = TRUE),
+    join_by(stratum, grts_address)
+  ) %>% 
+  left_join(
+    mne_samples_corrected %>% 
+      filter(stratum %in% common_sampled_strata) %>% 
+      select(stratum, grts_address) %>% 
+      mutate(in_mne_samples_corrected = TRUE),
+    join_by(stratum, grts_address)
+  ) %>% 
+  mutate(across(contains("in_mne_samples"), \(x) if_else(x, TRUE, FALSE, FALSE))) %>% 
+  count(pick(contains("in_mne_samples")))
+
+mne_samples_match_counts %>% 
+  mutate(pct = round(n / sum(n) * 100, 1)) %>% 
+  our_kbl()
+```
+
+It appears that many MHQ sampling units are not present in the MNE samples.
+Several reasons will be involved.
+
+- First of all, about 250 MHQ sampling units were already missing from the base sampling frame for no clear reason; see @sec-bsf-units.
+This means they cannot end up in the MNE samples.
+- For the remaining missing MHQ sampling units, several reasons may explain the difference.
+  - Where MHQ sample size of a stratum is larger than in MNE (this is a minority of the strata), the surplus locations in MHQ relative to MNE are inevitably missing in MNE.
+  - In the other case (the majority), the cause should be the difference in the used GRTS address series for a stratum.
+  One possible explanation could be differences between the MHQ vs MNE sampling frames of a stratum as a consequence of different interpretations and uptake of habitatmap layers, as well as different versions therein.
+  Another is that polygons with phab < 10% have been excluded from the GRTS address series in MHQ (even though for some types this represents > 10%, sometimes > 20% of the type's total area).
+
+Apart from this, the effect of phab-correction, compared to not correcting, is that _more_ matches arise with the MHQ samples!
+This favours the hypothesis that the GRTS address series of strata differ between MNE and MHQ, and may actually be shorter (hence smaller population sizes) in the latter.
+
+In **conclusion**, and assuming that the used data sources are correct, the phab-corrected base sampling frame has a better match with the MHQ samples than the uncorrected one, matching ± 60% of the MHQ locations compared to ± 45%.
 
 
+## References {-}
+
+::: {#refs}
+:::
