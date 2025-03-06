@@ -1,0 +1,283 @@
+---
+title: "Effects of phab-correction on the relation between MNE base sampling frame + samples and MHQ samples"
+date: today
+published-title: Date
+params:
+  lang: nl
+engine: knitr
+format:
+  html:
+    embed-resources: true
+    include-in-header: ../../../header_qmd.html
+    theme: cosmo
+    keep-md: true
+    number-sections: true
+    code-fold: true
+    fig-width: 10
+    fig-height: 5
+    df-print: paged
+    toc: true
+    toc-location: left
+    toc-expand: true
+---
+
+```{r setup, message = FALSE}
+options(scipen = 999)
+conflictRules("n2khab", exclude = c("read_schemes", "read_scheme_types"))
+conflictRules("git2rdata", exclude = c("pull", "meta"))
+conflictRules("tidyr", exclude = "extract")
+conflictRules("knitr", exclude = "spin")
+conflictRules("kableExtra", exclude = "group_rows")
+lang <- params$lang
+library(rprojroot)
+projroot <- find_root(is_rstudio_project)
+gitroot <- find_root(is_git_root)
+source(file.path(projroot, "R/functions.R"))
+datapath <- file.path(projroot, "data")
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(forcats)
+library(purrr)
+library(sf)
+library(units)
+library(lubridate)
+library(terra)
+library(git2rdata)
+library(n2khab)
+library(n2khabmon)
+opts_chunk$set(
+  echo = TRUE,
+  dpi = 300
+)
+our_kbl <- function(df) {
+  df %>% 
+    kbl(table.attr = 'data-quarto-disable-processing="true"') %>% 
+    kable_styling(full_width = FALSE, bootstrap_options = "striped")
+}
+```
+
+
+## Data setup
+
+The two involved RData files have been created by running following shell commands in the `010_prototyping_sampling_and_revisit_design` directory at commit `ee267a53`.
+
+```bash
+Rscript -e 'bookdown::render_book("index.Rmd", "bookdown::html_document2", params = list(regenerate_binary_files = FALSE, active_modules = c("pan_effectmon_flanders", "pan_effectmon_sac5_custommeas"), update_spatiotemp_gsheet = FALSE, save_rdata = TRUE))'
+
+Rscript -e 'bookdown::render_book("index.Rmd", "bookdown::html_document2", params = list(regenerate_binary_files = FALSE, active_modules = c("pan_effectmon_flanders", "pan_effectmon_sac5_custommeas"), update_spatiotemp_gsheet = FALSE, save_rdata = TRUE, phab_correct = FALSE))'
+```
+
+Lazy loading the objects of these RData files in separate environments.
+
+```{r}
+prepare_lazy_get(
+  file.path(datapath, "binary/results/objects_panflpan5.RData"),
+  new_envir_name = "panflpan5"
+)
+prepare_lazy_get(
+  file.path(datapath, "binary/results/objects_panflpan5_nophabcorrection.RData"),
+  new_envir_name = "panflpan5_nophabcorrection"
+)
+```
+
+Loading specific objects in the global environment.
+
+```{r}
+# ls(envir = panflpan5)
+modules <- get("modules", envir = panflpan5)
+mhq_samples <- get("mhq_samples", envir = panflpan5)
+bsf_corrected <- get("stratum_grts_n2khab_phabcorrected", envir = panflpan5)
+bsf_uncorrected <- get("stratum_grts_n2khab_phabcorrected", envir = panflpan5_nophabcorrection)
+n2khab_types_expanded_properties <- get("n2khab_types_expanded_properties", envir = panflpan5)
+n2khab_targetpops <- get("n2khab_targetpops", envir = panflpan5)
+n2khab_types <-
+  n2khab_targetpops %>%
+  distinct(type) %>%
+  arrange(type)
+n2khab_strata <- get("n2khab_strata", envir = panflpan5)
+active_strata <- get("module_targetpops_strata", envir = panflpan5) %>% distinct(stratum)
+```
+
+Reading a separate source of considered terrestrial population units in MHQ (`mhq_terr_popunits`).
+
+```{r}
+mhq_terr_datapath <- file.path(
+  dirname(gitroot),
+  "n2khab-sample-admin/data/mhq_terr/rapportage2025"
+)
+mhq_terr_popunits <-
+  read_vc("mhq_terr_popunits", root = mhq_terr_datapath) %>%
+  as_tibble() %>% 
+  mutate(
+    type = factor(type, levels = levels(n2khab_types$type)),
+    source = factor(source),
+    across(where(is.numeric), as.integer)
+  ) %>% 
+  select(-sac, -phab, -polygon_id) %>% 
+  rename(
+    grts_address = grts_ranking,
+    grts_address_drawn = grts_ranking_draw
+  )
+```
+
+
+## Introduction
+
+In this notebook we compare the effect
+
+We specifically consider this for the samples generated when following modules are active:
+
+```{r}
+#| echo: FALSE
+modules %>% 
+  select(module, shortname_nl) %>% 
+  our_kbl()
+```
+
+
+## Comparing the base sampling frame with the Flemish MHQ samples
+
+Current MHQ samples, restricted to those sampled by a GRTS (alike) strategy, were acquired and copied under `data/text/raw/mhq_samples`.
+The essential information has been integrated into a single data frame:
+
+```{r}
+glimpse(mhq_samples)
+```
+
+Both columns are also represented in the phab-corrected and uncorrected base sampling frame.
+
+We only consider terrestrial types to make comparisons, so we restrict all objects to these.
+We also restrict strata to the ones covered by the active modules (this essentially removes RIBs from the base sampling frame).
+
+```{r}
+restrict_to_active_terrestrial_strata <- function(df) {
+  df %>% 
+    semi_join(active_strata, join_by(stratum)) %>% 
+    inner_join(
+      n2khab_strata,
+      join_by(stratum),
+      relationship = "many-to-one",
+      unmatched = c("error", "drop")
+    ) %>% 
+    semi_join(
+      n2khab_types_expanded_properties %>% 
+        filter(hydr_class != "HC3"),
+      join_by(type)
+    ) %>% 
+    select(-type)
+}
+mhq_samples_terr <- restrict_to_active_terrestrial_strata(mhq_samples)
+bsf_corrected_terr <- restrict_to_active_terrestrial_strata(bsf_corrected)
+bsf_uncorrected_terr <- restrict_to_active_terrestrial_strata(bsf_uncorrected)
+```
+
+### Matching of types (regardless of phab correction)
+
+The (remaining) types covered by the Flemish MHQ samples are:
+
+```{r}
+mhq_samples_terr %>% 
+  count(stratum, sort = TRUE) %>% 
+  our_kbl()
+```
+
+A short note on terminology.
+In MHQ, small clusters of a few strata, or a single stratum, corresponds to a single scheme.
+This is why we talk about 'samples' (plural): one sample corresponds to a single scheme.
+Moreover, one stratum can belong to only one scheme in the case of MHQ, unlike MNE.
+The term 'stratum' comes from the MNE schemes, where each scheme mostly consists of many strata, for which a stratified design is made.
+Since the same entities (types or subdivisions thereof) are used in both MHQ and MNE, we just use the term stratum in this case.
+In the case of terrestrial types, the stratum level equals the type level, so that both terms can be used interchangeably.
+
+Several (remaining) types in the sampling frame are not present in the considered MHQ samples:
+
+```{r}
+bsf_uncorrected_terr %>% 
+  count(stratum, sort = TRUE) %>% 
+  anti_join(mhq_samples_terr %>% distinct(stratum), join_by(stratum)) %>% 
+  our_kbl()
+```
+
+Are all types of the MHQ samples are present in the sampling frame?
+
+```{r}
+bsf_uncorrected_terr %>% 
+  distinct(stratum) %>% 
+  anti_join(mhq_samples_terr %>% distinct(stratum), ., join_by(stratum)) %>% 
+  nrow() == 0
+```
+
+To make comparisons, we only consider types that are present in both data sources.
+
+### Matching of sampling units
+
+The distribution of all (unique) stratum x GRTS address combinations from the MHQ samples is calculated, regarding their membership in each of the base samplingframe (bsf) variants.
+
+```{r}
+bsf_match_counts <- 
+  mhq_samples_terr %>% 
+  left_join(
+    bsf_uncorrected_terr %>% 
+      select(stratum, grts_address) %>% 
+      mutate(in_bsf_uncorrected = TRUE),
+    join_by(stratum, grts_address)
+  ) %>% 
+  left_join(
+    bsf_corrected_terr %>% 
+      select(stratum, grts_address) %>% 
+      mutate(in_bsf_corrected = TRUE),
+    join_by(stratum, grts_address)
+  ) %>% 
+  mutate(across(contains("in_bsf"), \(x) if_else(x, TRUE, FALSE, FALSE))) %>% 
+  count(pick(contains("in_bsf")))
+
+bsf_match_counts %>% 
+  mutate(pct = round(n / sum(n) * 100, 1)) %>% 
+  our_kbl()
+```
+
+- About 80% has a match in both the uncorrected and the corrected base sampling frame.
+- About 5% is dropped in the corrected base sampling frame.
+- The remaining 15% are sampling units missed by each base sampling frame.
+
+We find (below) that quite a lot of MHQ sampling units is not present in the separate MHQ source `mhq_terr_popunits`.
+This is a probable cause of sampling units missing in both variants of the (MNE) base sampling frame.
+That is because it is the `mhq_terr_popunits` data source, notably its assessed data (constrained to cell-center assessments for most terrestrial types), that has been used to augment the base sampling frame in MNE with MHQ data.
+The mismatch has been [reported as an issue](https://github.com/inbo/n2khab-sample-admin/issues/49).
+
+Number of rows in the MHQ samples missing from `mhq_terr_popunits`:
+
+```{r}
+mhq_samples_terr %>% 
+  anti_join(
+    mhq_terr_popunits,
+    # we used the drawn GRTS address in the MHQ samples to identify the units,
+    # so we need to join accordingly
+    join_by(stratum == type, grts_address == grts_address_drawn)
+  ) %>% 
+  nrow()
+```
+
+When comparing both variants of the base sampling frame, it makes more sense to ignore these missing locations.
+
+```{r}
+bsf_match_counts %>% 
+  filter(in_bsf_uncorrected | in_bsf_corrected) %>% 
+  mutate(pct = round(n / sum(n) * 100, 1)) %>% 
+  our_kbl()
+```
+
+We conclude that the phab-correction leads to a loss of only about 6% of MHQ sampling locations in the sampling frame.
+Hence, most that were still available for sampling, remain available for sampling after phab-correction.
+This is due to the fact that non-replaced GRTS addresses have been set to phab = 100 at the level of the specific unit.
+This introduces no bias in the sampling frame, since these are genuine matches at those locations, for which the local setting of phab = 100 is correct.
+
+
+
+
+
+
+
