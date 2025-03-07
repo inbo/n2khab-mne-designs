@@ -46,7 +46,8 @@ library(ggplot2)
 library(git2rdata)
 opts_chunk$set(
   echo = TRUE,
-  dpi = 300
+  dpi = 300,
+  fig.align = "center"
 )
 our_kbl <- function(df) {
   df %>% 
@@ -233,7 +234,7 @@ To make comparisons, we only consider types that are present in both data source
 The distribution of all (unique) stratum x GRTS address combinations from the MHQ samples is calculated, regarding their membership in each of the base samplingframe (bsf) variants.
 
 ```{r}
-bsf_match_counts <- 
+bsf_matches <- 
   mhq_samples_terr %>% 
   left_join(
     bsf_uncorrected_terr %>% 
@@ -247,10 +248,10 @@ bsf_match_counts <-
       mutate(in_bsf_corrected = TRUE),
     join_by(stratum, grts_address)
   ) %>% 
-  mutate(across(contains("in_bsf"), \(x) if_else(x, TRUE, FALSE, FALSE))) %>% 
-  count(pick(contains("in_bsf")))
+  mutate(across(contains("in_bsf"), \(x) if_else(x, TRUE, FALSE, FALSE)))
 
-bsf_match_counts %>% 
+bsf_matches %>% 
+  count(pick(contains("in_bsf"))) %>% 
   mutate(pct = round(n / sum(n) * 100, 1)) %>% 
   our_kbl()
 ```
@@ -280,10 +281,26 @@ mhq_samples_terr %>%
 Another reason that probably explains a part of MHQ sampling units being missing in the base sampling frame, is that the MHQ sampling units also comprise locations (such as legacy sites and several (other) local replacements) that were not assessed at the cell center (for types where we require this).
 Consequently, the corresponding drawn GRTS address has not been allowed in the base sampling frame, and the sampling unit is missing in the comparison.
 
+A plot per stratum may shed some more light on potential sources.
+
+```{r}
+#| fig.width: 7
+#| fig.height: 9
+#| out.width: "70%"
+bsf_matches %>% 
+  count(pick(stratum, contains("in_bsf"))) %>% 
+  unite("in_uncorrected | in_corrected", contains("in_bsf"), sep = " | ") %>% 
+  mutate(stratum = fct_rev(stratum)) %>% 
+  ggplot(aes(x = stratum, y = n, fill = `in_uncorrected | in_corrected`)) +
+  geom_col() +
+  coord_flip()
+```
+
 When comparing both variants of the base sampling frame, it makes more sense to ignore these missing locations.
 
 ```{r}
-bsf_match_counts %>% 
+bsf_matches %>% 
+  count(pick(contains("in_bsf"))) %>% 
   filter(in_bsf_uncorrected | in_bsf_corrected) %>% 
   mutate(pct = round(n / sum(n) * 100, 1)) %>% 
   our_kbl()
@@ -408,7 +425,7 @@ Some differences between MNE and MHQ may also arise due to differences in the de
 The distribution of all (unique) stratum x GRTS address combinations from the MHQ samples is calculated, regarding their membership in each of the variants of the integrated MNE samples.
 
 ```{r}
-mne_samples_match_counts <- 
+mne_samples_matches <- 
   mhq_samples_terr %>% 
   filter(stratum %in% common_sampled_strata) %>% 
   left_join(
@@ -425,10 +442,10 @@ mne_samples_match_counts <-
       mutate(in_mne_samples_corrected = TRUE),
     join_by(stratum, grts_address)
   ) %>% 
-  mutate(across(contains("in_mne_samples"), \(x) if_else(x, TRUE, FALSE, FALSE))) %>% 
-  count(pick(contains("in_mne_samples")))
+  mutate(across(contains("in_mne_samples"), \(x) if_else(x, TRUE, FALSE, FALSE)))
 
-mne_samples_match_counts %>% 
+mne_samples_matches %>% 
+  count(pick(contains("in_mne_samples"))) %>% 
   mutate(pct = round(n / sum(n) * 100, 1)) %>% 
   our_kbl()
 ```
@@ -458,6 +475,21 @@ Consequently, less matching between MHQ and MNE is expected in the uncorrected c
 This effect is smaller though with increasing phab value.
 But we shouldn't forget that this reasoning about phab values still neglects other sources that cause differences between the MNE and MHQ sampling frames.
 All of this makes clear that those other sources (e.g. those referred to before) most probably also contribute to these differences.
+
+A plot per stratum may shed some more light on potential sources.
+
+```{r}
+#| fig.width: 7
+#| fig.height: 9
+#| out.width: "70%"
+mne_samples_matches %>% 
+  count(pick(stratum, contains("in_mne_samples"))) %>% 
+  unite("in_uncorrected | in_corrected", contains("in_mne_samples"), sep = " | ") %>% 
+  mutate(stratum = fct_rev(stratum)) %>% 
+  ggplot(aes(x = stratum, y = n, fill = `in_uncorrected | in_corrected`)) +
+  geom_col() +
+  coord_flip()
+```
 
 It would require more investigation and backtracing than currently done, to really unravel the different sources of these differences and their contribution therein.
 This might prove quite complicated.
