@@ -190,8 +190,18 @@ regression_by_soilclass <- function(
     regression_data,
     sc, reg_var,
     maxx = extent, maxy = NULL,
+    label = "",
     ...) {
   diff_sc <- regression_data %>% filter(soilclass == sc)
+
+  diff_sc <- diff_sc %>%
+    filter(ds > 0, ds < maxx) %>%
+    select(ds, !!reg_var)
+
+
+  sink_path <- here::here("cache", "regression")
+  sink_file <- sprintf("%s_%s_%s.parquet", label, reg_var, sc)
+  write_parquet(diff_sc, sink = paste0(sink_path, sink_file, collapse = ""))
 
   x <- diff_sc$ds
   y <- trafo(diff_sc %>% pull(!!reg_var))
@@ -217,6 +227,9 @@ regression_by_soilclass <- function(
     method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
     ...
   )
+
+  sink_file <- sprintf("%s_%s_%s.rds", label, reg_var, sc)
+  saveRDS(matern_fit, file = paste0(sink_path, sink_file, collapse = ""))
 
   print_regression_results(matern_fit, label = "regression:")
   ylabel <- "mean water level difference (pair-averaged)"

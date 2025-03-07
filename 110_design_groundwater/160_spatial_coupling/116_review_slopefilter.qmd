@@ -19,7 +19,10 @@ knitr:
 :::
 
 
-- this is a form of de-trending?
+- TODO this is a form of soft de-trending?
+
+
+TODO add `mMaaiveld` repetition
 
 
 # Preparation
@@ -72,9 +75,6 @@ meta_data <- join_auxiliary_cache(label = "metadata") %>%
   join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
   join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
-diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
-  filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
-
 meta_join <- meta_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
@@ -83,6 +83,10 @@ meta_join <- meta_data %>%
          emd_qdiff, emd_residual_qdiff,
          pp_vld, mp_vld
          )
+
+
+diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
+  filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
 
 diff_meta <- diff_data %>%
   select(pp_idx1, pp_idx2) %>%
@@ -100,19 +104,19 @@ diff_meta <- diff_data %>%
     suffix = c("1", "2")
   ) %>%
   mutate(
-      validated1 = as.integer(pp_vld1 == "VLD") * as.integer(mp_vld1 == "VLD"),
-      validated2 = as.integer(pp_vld2 == "VLD") * as.integer(mp_vld2 == "VLD"),
-      validated = as.logical(validated1 * validated2),
-      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
-      dh = elevation_dhmv2-elevation_dhmv1,
-      dz = fdepth2-fdepth1,
-      damp = emd_ampsum2-emd_ampsum1,
-      dqdiff = emd_qdiff2-emd_qdiff1,
-      dwadi = wata_min_dist2-wata_min_dist1,
-      dslope = slope_r2.5m2-slope_r2.5m1,
-      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
-      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
-      mslope = abs(dh) / ds
+    validated1 = as.integer(pp_vld1 == "VLD") * as.integer(mp_vld1 == "VLD"),
+    validated2 = as.integer(pp_vld2 == "VLD") * as.integer(mp_vld2 == "VLD"),
+    validated = as.logical(validated1 * validated2),
+    ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+    dh = elevation_dhmv2-elevation_dhmv1,
+    dz = fdepth2-fdepth1,
+    damp = emd_ampsum2-emd_ampsum1,
+    dqdiff = emd_qdiff2-emd_qdiff1,
+    dwadi = wata_min_dist2-wata_min_dist1,
+    dslope = slope_r2.5m2-slope_r2.5m1,
+    melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+    mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+    mslope = abs(dh) / ds
   )
 
 ```
@@ -244,6 +248,7 @@ regression_by_soilclass(
   sc = "heavy",
   reg_var = column,
   maxx = maxx, maxy = Inf,
+  label = "allin",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -263,6 +268,7 @@ regression_by_soilclass(
   sc = "light",
   reg_var = column,
   maxx = maxx, maxy = Inf,
+  label = "allin",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -282,6 +288,7 @@ regression_by_soilclass(
   sc = "peat",
   reg_var = column,
   maxx = maxx, maxy = Inf,
+  label = "allin",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -417,6 +424,7 @@ regression_by_soilclass(
   sc = "heavy",
   reg_var = column,
   maxx = maxx, maxy = Inf,
+  label = "slopefilter",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -436,6 +444,7 @@ regression_by_soilclass(
   sc = "light",
   reg_var = column,
   maxx = maxx, maxy = Inf,
+  label = "slopefilter",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -457,12 +466,181 @@ regression_by_soilclass(
   sc = "peat",
   reg_var = column,
   maxx = maxx, maxy = Inf,
+  label = "slopefilter",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 480, 0.48, 1.01)
 ) + ylim(0, 1.6)
 ```
+
+
+:::
+
+
+# Relative Ground Level with `mMaaiveld`
+
+
+In all previous analyses, we used `mTAW` ("Tweede Algemene Waterpassing", 1947-1968).
+For comparison, the relative water level (below field) can be used by querying `mMaaiveld`.
+
+
+## Filter
+
+This information is stored in the column `dm`.
+Slope will be filtered as above, or not; both is kind of interesting.
+
+```{r filter-maaiveld-data}
+column <- "dm"
+
+slope_threshold <- Inf # 0.01/1 # 1 cm per meter
+    
+somediff_meta <- diff_meta %>%
+  filter(
+    mslope < slope_threshold
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+
+## Binning
+
+
+```{r all-join-diffdate}
+diff_joined <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(if_all(c(m1, m2, dm), ~ !is.na(.x))) %>% 
+  filter(abs(dm) <= ds, abs(dm) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_joined, 3)), decimals = 2)
+
+paste0(
+  "selected ", nrow(diff_joined), " / ",
+  count_all, " observations (",
+  round(100*nrow(diff_joined)/(count_all)), "%)."
+)
+```
+
+
+
+```{r all-groupwise-binning}
+
+diff_equibinned <- diff_joined %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dm))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dm = mean(dm, na.rm = TRUE), 
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+
+## variograms {#sec-vgrams}
+
+using water level difference (MAD)
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r all-regression-heavy}
+#| label: fig-all-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dm\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "heavy",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = "maaiveld",
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### light
+
+```{r all-regression-light}
+#| label: fig-all-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dm\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = "maaiveld",
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+```
+
+
+
+### peat
+
+```{r all-regression-peat}
+#| label: fig-all-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dm\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = "maaiveld",
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+```
+
 
 
 :::
