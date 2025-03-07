@@ -177,6 +177,7 @@ mhq_terr_assessments %>%
   pivot_wider(names_from = n_repeated, values_from = n, values_fill = 0)
 
 # contradictions between changed GRTS address and change_location?
+# no, see https://github.com/inbo/n2khab-sample-admin/issues/46
 assessment_replacement <-
   mhq_terr_assessments %>%
   select(assessment_date, point_code, type, is_present, change_location) %>%
@@ -200,6 +201,18 @@ assessment_replacement %>%
   semi_join(assessment_replacement, ., join_by(point_code)) %>%
   arrange(grts_ranking, grts_ranking_draw, type, point_code) %>%
   print(n = 25)
+
+
+# change_location should not have 'is_centroid'. Checking it.
+mhq_terr_assessments %>%
+  inner_join(
+    mhq_terr_refpoints,
+    join_by(point_code),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  count(is_centroid, change_location)
+
 
 # mhq_terr_measurements ---------------------------------------------------
 
