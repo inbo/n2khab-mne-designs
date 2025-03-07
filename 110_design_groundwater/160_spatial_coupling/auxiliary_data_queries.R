@@ -244,7 +244,7 @@ wrap_query_to_join <- function (query_function) {
 # split-apply-cache-combine
 #_______________________________________________________________________________
 
-local_cache_folder <- "cache"
+local_cache_folder = "./cache"
 
 #' Splitting data by a categorical into equal-sized groups
 #'
