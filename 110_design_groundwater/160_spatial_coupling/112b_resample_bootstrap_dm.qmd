@@ -42,7 +42,7 @@ source("regression_tools.R")
 soilclass_colors <- c(
   "heavy" = "sienna",
   "light" = "lightgoldenrod",
-  "peat" = "navyblue",
+  "peat" = "darkseagreen",
   "unknown" = "slategray"
 )
 
@@ -180,11 +180,12 @@ diff_joined <- diff_meta %>%
 
 # test <- diff_joined %>%
 #   summarize(
-#     n_obs = sum(as.integer(!is.na(dw))),
+#     n_obs = sum(as.integer( (!is.na(dw)) & (!is.na(dm)) )),
 #     soilclass = first(soilclass1),
 #     cluster = first(cluster1),
 #     ds = mean(ds, na.rm = TRUE),
 #     dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+#     dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
 #     .by = pair 
 #   ) %>% ungroup %>% arrange(-ds)
 
@@ -230,6 +231,8 @@ diff_equibinned %>%
   geom_step(stat = "ecdf") +
   geom_hline(yintercept = 0, color = "darkgrey") +
   geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  scale_fill_manual(values = soilclass_colors) +
+  scale_color_manual(values = soilclass_colors) +
   theme_bw()
 ```
 
@@ -241,7 +244,7 @@ diff_equibinned %>%
 ```{r regression-wrapper}
 #| code-fold: true
 
-matern_function <- function(d, parameters) {
+matern_function_3p <- function(d, parameters) {
   scale <- parameters[1] # related to semivariance
   sigma <- parameters[2] # related to actual range; turning point
   nugget <- parameters[3]
@@ -287,19 +290,22 @@ regression_wrapper <- function(
   ## using L-BFGS-B to get the optimizer close
   pre_ <- optim(
     fn = function(params) {
-      distweighted_target_function(x, y, matern_function, params)
-      # wrap_target_function(x, y, matern_function, params)
+      distweighted_target_function(x, y, matern_function_3p, params)
+      # wrap_target_function(x, y, matern_function_3p, params)
     },
-    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
-    ...
+    # par = par,
+    # upper = upper,
+    # lower = lower,
+    ...,
+    method = "L-BFGS-B" # "Nelder-Mead" # "L-BFGS-B"
   )
 
   ## then performing a local Nelder-Mead adjustment
   optimizer_results <- pre_
   # optimizer_results <- optim(
   #   fn = function(params) {
-  #     distweighted_target_function(x, y, matern_function, params)
-  #     # wrap_target_function(x, y, matern_function, params)
+  #     distweighted_target_function(x, y, matern_function_3p, params)
+  #     # wrap_target_function(x, y, matern_function_3p, params)
   #   },
   #   par = pre_$par,
   #   method = "L-BFGS-B",
@@ -308,8 +314,8 @@ regression_wrapper <- function(
   # )
   # optimizer_results <- optim(
   #   fn = function(params) {
-  #     distweighted_target_function(x, y, matern_function, params)
-  #     # wrap_target_function(x, y, matern_function, params)
+  #     distweighted_target_function(x, y, matern_function_3p, params)
+  #     # wrap_target_function(x, y, matern_function_3p, params)
   #   },
   #   par = pre_$par,
   #   method = "Nelder-Mead" # "L-BFGS-B"
@@ -318,18 +324,22 @@ regression_wrapper <- function(
   # store everything in one list;
   # do I sense a smidgen of OOP here? No, not really.
   optimizer_results$pre_par <- pre_$par
-  optimizer_results$fcn <- matern_function
+  optimizer_results$fcn <- matern_function_3p
   optimizer_results$regx <- x
   optimizer_results$regy <- y
 
   # wrap the function with the optimized parameters
   optimizer_results$predict <- create_prediction_function(
-    matern_function,
+    matern_function_3p,
     optimizer_results
   )
 
   # calculate 1cm threshold
-  optimizer_results$threshold <- calculate_limit(optimizer_results, threshold = 0.01)
+  optimizer_results$threshold <- calculate_limit(optimizer_results, threshold = 0.01, fcn = matern_function_3p)
+
+  # par <- optimizer_results$par
+  # par[3] <- 0 # no nugget
+  # threshold = 0.01
 
   return(optimizer_results)
 }
@@ -359,10 +369,16 @@ upper_limits = c(4.0, maxx, 4.0)#16.01)
 reference <- regression_wrapper(
   regression_data = diff_equibinned,
   regression_variable = "dm",
-  par = c(0.5, 10., 0.1), # 1.0)
+  par = c(0.5, 10., 0.1), 
   lower = lower_limits,
   upper = upper_limits
 )
+
+
+g <- ggplot(NULL) %>% 
+  add_regression_to_plot(reference, color = "darkgrey")
+g + xlab("distance (m)") + ylab("mean absolute difference (m)") +
+  theme_minimal()
 ```
 
 
@@ -401,7 +417,7 @@ datawrap_bootstrap <- function(reference, pass_data) {
     
     # jittering the observations
     # see https://influentialpoints.com/Training/properties-of-bootstrap_estimators.htm#howm
-    boot_sample$dw <- jitter(boot_sample$dw, amount = 0.1*sd(boot_sample$dw))
+    boot_sample$dm <- jitter(boot_sample$dm, amount = 0.1*sd(boot_sample$dm))
 
     result <- regression_wrapper(
       regression_data = boot_sample,
@@ -467,7 +483,7 @@ subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
 
 ```
 
-```{r soil-subset-data}
+```{r soil-subset-bootstrap}
 
 all_dolled_up <- list()
 for (sc in c("heavy", "light", "peat")) {
@@ -518,9 +534,9 @@ print(summary(sub_boots))
 plot_param <- function(param, limit_x = NA){
   h <- sub_boots %>%
     mutate(param = sub_boots[, param]) %>% 
-    ggplot(aes(x = param, fill = soilclass, color = soilclass)) +
+    ggplot(aes(x = param, fill = soilclass)) +
+    geom_histogram(bins = 256, width = 1.05, color = NA, alpha = 0.67, position = "identity") +
     geom_vline(xintercept = ref_boots[,param]) +
-    geom_histogram(bins = 256, width = 1.05, alpha = 0.5, position = "identity") +
     xlab(param) +
     scale_fill_manual(values = soilclass_colors) +
     scale_color_manual(values = soilclass_colors) +
@@ -541,14 +557,30 @@ plot_param <- function(param, limit_x = NA){
 ```
 
 
+Quantiles for `threshold`:
+
+```{r threshold-quantiles}
+threshold_quantiles <- sub_boots %>%
+  summarize(
+    q02 = quantile(threshold, c(0.02)),
+    median = quantile(threshold, c(0.50)),
+    q98 = quantile(threshold, c(0.98)),
+    .by = soilclass 
+  ) 
+knitr::kable(threshold_quantiles, digits = 1)
+```
+
+
+Plots:
+
 ```{r plot-all-parameters}
 silence <- suppressWarnings
 print(plot_param("threshold", limit_x = 32) |> silence())
 print(plot_param("rmse") |> silence())
-print(plot_param("scale", limit_x = 2) |> silence())
-print(plot_param("sigma", limit_x = 500) |> silence())
+print(plot_param("scale", limit_x = 0.5) |> silence())
+print(plot_param("sigma", limit_x = 200) |> silence())
 print(plot_param("nugget") |> silence())
-print(plot_param("sill", limit_x = 2) |> silence())
+print(plot_param("sill", limit_x = 0.6) |> silence())
 
 ```
 

@@ -77,9 +77,11 @@ reload <- FALSE | !file.exists(here::here("cache", ddiff_file))
 
 ```{r parameters}
 #| code-fold: false
-extent <- 512 # m
-bin_target <- 48 # alternative: observations per bin
-cap_ddw <- 8 # m # maximum accepted water level DIFFERENTIAL
+extent <- 500 # m # data included
+maxx <- 1000 # 768 # upper limit for regression
+
+bin_target <- 100 # alternative: observations per bin
+cap_ddw <- 4 # m # maximum accepted water level DIFFERENTIAL
 cap_dt <- 32 # d # maximum accepted time difference in days
 ```
 
@@ -203,7 +205,8 @@ diff_meta <- pairs %>%
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
       mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
       mslope = abs(dh) / ds
-  )
+  ) %>%
+  filter(ds <= extent)
 
 ```
 
@@ -288,7 +291,7 @@ trafo <- function(x) x
 regression_by_soilclass <- function(
     regression_data, 
     sc, reg_var,
-    maxx = extent, maxy = NULL, 
+    maxx = maxx, maxy = NULL, 
     ...) {
   diff_sc <- regression_data %>% filter(soilclass == sc)
   
@@ -481,7 +484,7 @@ regression_by_soilclass(
   #diff_equibinned %>% filter(time_bin == "(0,8]"),
   sc = "heavy",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = maxx, maxy = Inf,
   distweighted = TRUE,
   par = c(10., 10, 10., 1.),
   lower = c(0., 0., 0., 0.99),
@@ -502,7 +505,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = maxx, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0., 0., 0., 0.99),
@@ -523,7 +526,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "peat",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = maxx, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0., 0., 0., 0.99),
@@ -573,7 +576,7 @@ regression_by_soilclass(
   #diff_equibinned %>% filter(time_bin == "(0,8]"),
   sc = "heavy",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = maxx, maxy = Inf,
   distweighted = TRUE,
   par = c(10., 10, 10., 1.),
   lower = c(0., 0., 0., 0.99),
@@ -593,7 +596,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = maxx, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0., 0., 0., 0.99),
@@ -612,7 +615,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "peat",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = maxx, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0., 0., 0., 0.99),

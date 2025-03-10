@@ -48,7 +48,10 @@ According to "all-inclusive" variogram models, the $1 cm$ threshold would be exc
 Note that these have explorative and educational purpose, and serve as a first reference.
 There are many more (reasonable) filter settings to explore which affect the data (e.g. slope), and measurement uncertainty will be assessed by bootstrapping.
 
-More to be found in the other notebooks.
+
+The core purpose of this notebook is to establish the choices for binning and difference parameter.
+Fine-grained comparisons are found in the other notebooks.
+
 :::
 
 
@@ -94,6 +97,15 @@ metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
 
 # for reference
 cluster_dist <- 3400 # m # parameter for clustering, used on data loading
+
+
+# for a uniform look
+soilclass_colors <- c(
+  "heavy" = "sienna",
+  "light" = "burlywood",
+  "peat" = "darkseagreen",
+  "unknown" = "slategray"
+)
 ```
 
 
@@ -159,9 +171,11 @@ First and foremost, data is filtered to include spatial distance of up to `exten
 
 ```{r parameters}
 #| code-fold: false
-extent <- 512 # m # data will be filtered to that range
+extent <- 500 # m # data included
+maxx <- 1000 # 768 # upper limit for regression
+
 n_bins <- 32 # number of bins in default binning
-bin_target <- 128 # alternative: observations per bin
+bin_target <- 100 # alternative: observations per bin
 cap_dw <- 8 # m # maximum accepted water level difference
 ```
 
@@ -251,6 +265,8 @@ diff_widegroup %>%
   ggplot(aes(x = ds, y = log(1.0+dw),
          color = soilclass)) +
   geom_point(aes(cex = sqrt(cnt)), alpha = 0.16) +
+  scale_fill_manual(values = soilclass_colors) +
+  scale_color_manual(values = soilclass_colors) +
   theme_bw()
 ```
 
@@ -363,7 +379,10 @@ $$ \gamma = \frac{1}{2N} \sum\limits_{i,j} \left(z_j - z_i\right)^2 $$
 #| fig-cap: "Semivariance-distance plot: the increase with distance is not as pronounced on the semivariance measure. Log scale for better visualization."
 diff_binned %>%
   ggplot(aes(x = ds, y = log(1+semivar_groups), color = soilclass)) +
-  geom_point() 
+  geom_point() +
+  scale_fill_manual(values = soilclass_colors) +
+  scale_color_manual(values = soilclass_colors) +
+  theme_bw()
 ```
 
 This equation has the typical structure of "sum of square differences", the normalization with sample size $N$ effectively makes it an average. 
@@ -380,7 +399,10 @@ $$ \langle dw\rangle = \frac{1}{N} \sum\limits_{i,j} \left| z_j - z_i\right| $$
 #| fig-cap: "Difference-distance plot: rough top-down visualization to inspect if water level differences increases with distance. Apparently, it does. Log scale for better visualization."
 diff_binned %>%
   ggplot(aes(x = ds, y = log(1+dw_groups), color = soilclass)) +
-  geom_point() 
+  geom_point() +
+  scale_fill_manual(values = soilclass_colors) +
+  scale_color_manual(values = soilclass_colors) +
+  theme_bw()
 ```
 
 
@@ -473,6 +495,8 @@ diff_equibinned %>%
   geom_step(stat = "ecdf") +
   geom_hline(yintercept = 0, color = "darkgrey") +
   geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  scale_fill_manual(values = soilclass_colors) +
+  scale_color_manual(values = soilclass_colors) +
   theme_bw()
 ```
 
@@ -581,9 +605,11 @@ fit_matern <- function(x, y, distweighted = FALSE, ...) {
 }
 
 
-plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
+plot_matern <- function(optimizer_results,
+                        y_label = "mean absolute difference (m)",
+                        color = "darkgrey") {
 
-  # retrieve everything 
+  # retrieve everything
   fcn <- optimizer_results$fcn
   regx <- optimizer_results$regx
   regy <- optimizer_results$regy
@@ -599,13 +625,14 @@ plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
   # plotting
   plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
   plotx <- plotx[plotx>0]
-  
+
   g <- ggplot(NULL, aes(x = regx, y = regy)) +
-    geom_vline(xintercept = range, color = "darkgrey") +
-    geom_hline(yintercept = nugget, color = "darkgrey") +
-    geom_hline(yintercept = sill, color = "darkgrey") +
-    geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.2) +
-    geom_line(aes(x = plotx, y = predict(plotx))) +
+    geom_vline(xintercept = range, color = "grey") +
+    geom_hline(yintercept = nugget, color = "grey") +
+    geom_hline(yintercept = sill, color = "grey") +
+    geom_point(size = 2.5, color = color, fill = "white", alpha = 0.2) +
+    geom_line(aes(x = plotx, y = predict(plotx)),
+              color = color, linewidth = 1.2) +
     labs(title = paste0("Matérn regression: ",
       paste(round(optimizer_results$par, 4), collapse = ", "))) +
     xlab("distance (m)") + ylab(y_label) +
@@ -624,7 +651,7 @@ plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
 trafo <- function(x) x
 
 regression_by_soilclass <- function(
-    sc, reg_var, maxx = extent, maxy = NULL, use_equibin = TRUE,
+    sc, reg_var, maxx = maxx, maxy = NULL, use_equibin = TRUE,
     ...) {
   if (use_equibin) {
     diff_sc <- diff_equibinned %>% filter(soilclass == sc)
@@ -662,8 +689,10 @@ regression_by_soilclass <- function(
   
   print_regression_results(matern_fit, label = "regression:")
   ylabel <- "mean water level difference (pair-averaged)"
+  sc_color <- soilclass_colors[sc]
   # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
-  g <- plot_matern(matern_fit, y_label = ylabel)
+
+  g <- plot_matern(matern_fit, y_label = ylabel, color = sc_color)
 
   x_excl <- diff_sc$ds
   y_excl <- trafo(diff_sc %>% pull(!!reg_var))
@@ -673,7 +702,7 @@ regression_by_soilclass <- function(
   x_excl <- x_excl[y_excl > maxy]
   y_excl <- y_excl[y_excl > maxy]
   g <- g + geom_point(aes(x = x_excl, y = y_excl),
-      size = 2.5, colour = "red", alpha = 0.2) 
+      size = 2.5, color = "red", alpha = 0.2) 
   return(g)
 }
 
@@ -709,13 +738,13 @@ Selected here are the most plausible settings (MAD, equal-sized bins, distance w
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'heavy' soil."
 regression_by_soilclass("heavy",
   reg_var = target_column,
-  maxx = extent, maxy = Inf,
+  maxx = maxx, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 100, 0.48, 1.01)
-) + ylim(0, 2)
+) + ylim(0, 1.6)
 
 ```
 
@@ -727,13 +756,13 @@ regression_by_soilclass("heavy",
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'light' soil."
 regression_by_soilclass("light",
   reg_var = target_column,
-  maxx = extent, maxy = Inf,
+  maxx = maxx, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 100, 0.48, 1.01)
-) + ylim(0, 2)
+) + ylim(0, 1.6)
 ```
 
 
@@ -744,13 +773,13 @@ regression_by_soilclass("light",
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
 regression_by_soilclass("peat",
   reg_var = target_column,
-  maxx = extent, maxy = Inf,
+  maxx = maxx, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
   upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, 2)
+) + ylim(0, 1.6)
 ```
 
 :::

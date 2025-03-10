@@ -1,6 +1,13 @@
 
 
 
+soilclass_colors <- c(
+  "heavy" = "sienna",
+  "light" = "burlywood",
+  "peat" = "darkseagreen",
+  "unknown" = "slategray"
+)
+
 
 # wrap a regression function to generate residuals
 # the result is the parameter to be minimized.
@@ -29,12 +36,13 @@ create_prediction_function <- function(regressor, results) {
   return(fcn)
 }
 
-calculate_limit <- function(orsl, threshold = 0.01) {
+calculate_limit <- function(orsl, threshold = 0.01, fcn = matern_function) {
   par <- orsl$par
   par[3] <- 0 # no nugget
   # par[4] <- 1. # regular shape
   test_x <- seq(0., par[2], length.out = 1000)
-  test_y <- matern_function(test_x, par)
+  test_y <- fcn(test_x, par)
+  # plot(test_x, test_y)
   limit <- test_x[min(which(test_y > threshold))]
   return(limit)
 }
@@ -150,7 +158,9 @@ fit_matern <- function(x, y, distweighted = FALSE, ...) {
 }
 
 
-plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
+plot_matern <- function(optimizer_results,
+                        y_label = "mean absolute difference (m)",
+                        color = "darkgrey") {
 
   # retrieve everything
   fcn <- optimizer_results$fcn
@@ -170,11 +180,12 @@ plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
   plotx <- plotx[plotx>0]
 
   g <- ggplot(NULL, aes(x = regx, y = regy)) +
-    geom_vline(xintercept = range, color = "darkgrey") +
-    geom_hline(yintercept = nugget, color = "darkgrey") +
-    geom_hline(yintercept = sill, color = "darkgrey") +
-    geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.2) +
-    geom_line(aes(x = plotx, y = predict(plotx))) +
+    geom_vline(xintercept = range, color = "grey") +
+    geom_hline(yintercept = nugget, color = "grey") +
+    geom_hline(yintercept = sill, color = "grey") +
+    geom_point(size = 2.5, colour = color, fill = "white", alpha = 0.2) +
+    geom_line(aes(x = plotx, y = predict(plotx)),
+              color = color, linewidth = 1.2) +
     labs(title = paste0("Matérn regression: ",
       paste(round(optimizer_results$par, 4), collapse = ", "))) +
     xlab("distance (m)") + ylab(y_label) +
@@ -233,8 +244,10 @@ regression_by_soilclass <- function(
 
   print_regression_results(matern_fit, label = "regression:")
   ylabel <- "mean water level difference (pair-averaged)"
+  sc_color <- soilclass_colors[sc]
   # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
-  g <- plot_matern(matern_fit, y_label = ylabel)
+
+  g <- plot_matern(matern_fit, y_label = ylabel, color = sc_color)
 
   x_excl <- diff_sc$ds
   y_excl <- trafo(diff_sc %>% pull(!!reg_var))
@@ -246,4 +259,40 @@ regression_by_soilclass <- function(
   g <- g + geom_point(aes(x = x_excl, y = y_excl),
       size = 2.5, colour = "red", alpha = 0.2)
   return(g)
+}
+
+
+
+
+add_regression_to_plot <- function(h, optimizer_results, color = "black") {
+
+  # optimizer_results <- reference
+
+  # retrieve everything
+  fcn <- optimizer_results$fcn
+  regx <- optimizer_results$regx
+  regy <- optimizer_results$regy
+  predict <- optimizer_results$predict
+
+  # extract parameters
+  scale <- optimizer_results$par[1]
+  range <- optimizer_results$par[2]
+  nugget <- optimizer_results$par[3]
+  sill <- scale + nugget
+
+  # plotting
+  plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
+  plotx <- plotx[plotx>0]
+
+  h <- h +
+    geom_vline(xintercept = range, color = color, alpha = 0.5) +
+    geom_hline(yintercept = nugget, color = color, alpha = 0.5) +
+    geom_hline(yintercept = sill, color = color, alpha = 0.5) +
+    geom_point(aes(x = regx, y = regy),
+      size = 2.5, color = color, alpha = 0.6) +
+    geom_line(aes(x = plotx, y = predict(plotx)),
+              color = color, linewidth = 1.2)
+
+  return(h)
+
 }
