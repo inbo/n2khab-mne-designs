@@ -21,8 +21,9 @@ knitr:
 
 - TODO this is a form of soft de-trending?
 
-
-TODO add `mMaaiveld` repetition
+`mMaaiveld` repetition:
+- results seem consistent (slope filter necessary), but *sill* is different
+- `peat` looses sill completely; suddenly matches the others!
 
 
 # Preparation
@@ -53,10 +54,10 @@ source("regression_tools.R")
 
 ```{r parameters}
 #| code-fold: false
-extent <- 1024 # m
-maxx <- 512 # for regression
+extent <- 500 # m # data included
+maxx <- 1000 # 768 # upper limit for regression
 
-bin_target <- 128 # ... and the preferred alternative: observations per bin
+bin_target <- 100 # ... and the preferred alternative: observations per bin
 
 column <- "dw"
 cap_dw <- 4 # m # maximum accepted water level difference within a pair
@@ -117,7 +118,8 @@ diff_meta <- diff_data %>%
     melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
     mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
     mslope = abs(dh) / ds
-  )
+  ) %>%
+  filter(ds <= extent)
 
 ```
 
@@ -493,7 +495,7 @@ Slope will be filtered as above, or not; both is kind of interesting.
 ```{r filter-maaiveld-data}
 column <- "dm"
 
-slope_threshold <- Inf # 0.01/1 # 1 cm per meter
+slope_threshold <- 0.01/1 # 1 cm per meter # Inf #
     
 somediff_meta <- diff_meta %>%
   filter(
@@ -512,7 +514,7 @@ paste0(
 ## Binning
 
 
-```{r all-join-diffdate}
+```{r mM-join-diffdate}
 diff_joined <- somediff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
@@ -544,7 +546,7 @@ paste0(
 
 
 
-```{r all-groupwise-binning}
+```{r mM-groupwise-binning}
 
 diff_equibinned <- diff_joined %>%
   summarize(
@@ -576,17 +578,17 @@ diff_equibinned <- diff_joined %>%
 
 
 
-## variograms {#sec-vgrams}
+## variograms {#sec-maaiveld}
 
-using water level difference (MAD)
+using water level difference (MAD) of `mMaaiveld`
 
 
 ::: {.panel-tabset group="soilclass"}
 
 ### heavy
 
-```{r all-regression-heavy}
-#| label: fig-all-regression-heavy
+```{r mM-regression-heavy}
+#| label: fig-mM-regression-heavy
 #| fig-cap: "Matérn regression of water level distance $\\langle dm\\rangle$ (m) on 'heavy' soil."
 regression_by_soilclass(
   diff_equibinned,
@@ -605,8 +607,8 @@ regression_by_soilclass(
 
 ### light
 
-```{r all-regression-light}
-#| label: fig-all-regression-light
+```{r mM-regression-light}
+#| label: fig-mM-regression-light
 #| fig-cap: "Matérn regression of water level distance $\\langle dm\\rangle$ (m) on 'light' soil."
 regression_by_soilclass(
   diff_equibinned,
@@ -625,8 +627,8 @@ regression_by_soilclass(
 
 ### peat
 
-```{r all-regression-peat}
-#| label: fig-all-regression-peat
+```{r mM-regression-peat}
+#| label: fig-mM-regression-peat
 #| fig-cap: "Matérn regression of water level distance $\\langle dm\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
 regression_by_soilclass(
   diff_equibinned,

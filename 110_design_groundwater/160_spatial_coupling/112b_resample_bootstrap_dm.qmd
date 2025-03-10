@@ -1,0 +1,583 @@
+---
+title: "Water Level Variograms: Resampling/Bootstrapping"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# preparation
+
+... the usual.
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("ggplot2")   |> void() # for cut_number
+library("arrow")     |> void() # writing parquet files
+library("parallel")  |> void() # parallel processing
+
+# if (getOption("browser") == "") options(browser = "librewolf") 
+
+# data is loaded from cache
+source("./auxiliary_data_queries.R")
+
+# regression has been done before
+source("regression_tools.R") 
+
+
+# for reference
+# metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
+# cluster_dist <- 3400 # m # parameter for clustering, used on data loading
+
+
+soilclass_colors <- c(
+  "heavy" = "sienna",
+  "light" = "lightgoldenrod",
+  "peat" = "navyblue",
+  "unknown" = "slategray"
+)
+
+```
+
+
+```{r parameters}
+#| code-fold: false
+extent <- 500 # m
+maxx <- 1000 # for regression
+
+bin_target <- 100 # alternative: observations per bin
+cap_dw <- 4 # m # maximum accepted water level difference
+
+slope_threshold    <- 0.01/1 # 1 cm per meter
+wadi_threshold     <- units::set_units(Inf, "m")
+dfdepth_threshold  <- Inf # m # Inf
+
+n_bootstraps <- 2**16 # number of bootstrapping iterations
+```
+
+
+
+```{r load-data}
+
+meta_data <- join_auxiliary_cache(label = "metadata") %>%
+  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
+  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+
+diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
+  filter(if_all(c(w1, w2, dw, m1, m2, dm), ~ !is.na(.x)))
+
+meta_join <- meta_data %>%
+  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff
+         )
+
+diff_meta <- diff_data %>%
+  select(pp_idx1, pp_idx2) %>%
+  distinct() %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+      dh = elevation_dhmv2-elevation_dhmv1,
+      dz = fdepth2-fdepth1,
+      damp = emd_ampsum2-emd_ampsum1,
+      dqdiff = emd_qdiff2-emd_qdiff1,
+      dwadi = wata_min_dist2-wata_min_dist1,
+      dslope = slope_r2.5m2-slope_r2.5m1,
+      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+      mslope = abs(dh) / ds
+  ) %>%
+  filter(
+    ds <= extent,
+    wata_min_dist1 < wadi_threshold,
+    wata_min_dist2 < wadi_threshold,
+    mslope < slope_threshold,
+    abs(dz) < dfdepth_threshold
+  )
+
+
+
+diff_meta %>% count(soilclass1)
+
+```
+
+
+:::{.callout-warning}
+- water distance was filtered to be below `{r} wadi_threshold`.
+- Pairs with an elevation difference of more than `{r} slope_threshold` m per m distance were removed.
+- Filterdepth difference was limited to observations below `{r} dfdepth_threshold`.
+
+After that, `{r} nrow(diff_meta)` location pairs remain, counting `{r} nrow(diff_data)` simultaneous water level measurements.
+:::
+
+
+
+
+```{r glimpse-data}
+
+# diff_meta %>% glimpse
+# diff_data %>% glimpse
+
+diff_meta <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, # damp,
+      # dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) 
+
+
+diff_joined <- diff_meta %>% 
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw, abs(dm) <= cap_dw) # remove outliers
+
+# glimpse(diff_joined)
+
+# diff_meta %>% select(cluster1, pp_idx1, pp_idx2, ds, mslope) %>% arrange(-ds) %>% head
+```
+
+
+
+# grouping and binning
+
+```{r equibin-preparation}
+#| code-fold: false
+
+
+# test <- diff_joined %>%
+#   summarize(
+#     n_obs = sum(as.integer(!is.na(dw))),
+#     soilclass = first(soilclass1),
+#     cluster = first(cluster1),
+#     ds = mean(ds, na.rm = TRUE),
+#     dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+#     .by = pair 
+#   ) %>% ungroup %>% arrange(-ds)
+
+diff_equigrouped <- diff_joined %>%
+  summarize(
+    n_obs = sum(as.integer( (!is.na(dw)) & (!is.na(dm)) )),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = ggplot2::cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+    
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    n_obs = sum(n_obs),
+    dw = mean(dw, na.rm = TRUE), 
+    dm = mean(dm, na.rm = TRUE), 
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+```
+
+
+```{r equibin-samplesize}
+#| label: fig-equibin-sample-size
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step(stat = "ecdf") +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  theme_bw()
+```
+
+
+
+
+## Regression Procedure Wrapper
+
+```{r regression-wrapper}
+#| code-fold: true
+
+matern_function <- function(d, parameters) {
+  scale <- parameters[1] # related to semivariance
+  sigma <- parameters[2] # related to actual range; turning point
+  nugget <- parameters[3]
+  nu <- 1 # parameters[4]
+
+  sill <- scale + nugget
+  z <- sqrt(2 * nu) * d / sigma
+  K <- suppressWarnings(besselK(z, nu))
+  matern <- (z)^nu * K / (2^(nu - 1) * gamma(nu))
+  result <- sill - scale * matern
+  
+  result[is.na(result)] <- 0
+  return(result)
+}
+
+
+fit_matern <- function(x, y, ...) {
+}
+```
+
+
+
+```{r regression-matérn-general}
+trafo <- function(x) x
+
+regression_wrapper <- function(
+    regression_data, 
+    regression_variable = "dm",
+    ...) {
+  
+  x <- regression_data$ds
+  y <- trafo(regression_data %>% pull(!!regression_variable))
+
+  y <- y[x > 0]
+  x <- x[x > 0]
+  y <- y[x <= extent]
+  x <- x[x <= extent]
+
+  x <- x[!is.na(y)]
+  y <- y[!is.na(y)]
+
+ 
+  ## using L-BFGS-B to get the optimizer close
+  pre_ <- optim(
+    fn = function(params) {
+      distweighted_target_function(x, y, matern_function, params)
+      # wrap_target_function(x, y, matern_function, params)
+    },
+    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
+    ...
+  )
+
+  ## then performing a local Nelder-Mead adjustment
+  optimizer_results <- pre_
+  # optimizer_results <- optim(
+  #   fn = function(params) {
+  #     distweighted_target_function(x, y, matern_function, params)
+  #     # wrap_target_function(x, y, matern_function, params)
+  #   },
+  #   par = pre_$par,
+  #   method = "L-BFGS-B",
+  #   lower = lower_limits, upper = upper_limits,
+  #   control = list("fnscale" = 1000)
+  # )
+  # optimizer_results <- optim(
+  #   fn = function(params) {
+  #     distweighted_target_function(x, y, matern_function, params)
+  #     # wrap_target_function(x, y, matern_function, params)
+  #   },
+  #   par = pre_$par,
+  #   method = "Nelder-Mead" # "L-BFGS-B"
+  # )
+  
+  # store everything in one list;
+  # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$pre_par <- pre_$par
+  optimizer_results$fcn <- matern_function
+  optimizer_results$regx <- x
+  optimizer_results$regy <- y
+
+  # wrap the function with the optimized parameters
+  optimizer_results$predict <- create_prediction_function(
+    matern_function,
+    optimizer_results
+  )
+
+  # calculate 1cm threshold
+  optimizer_results$threshold <- calculate_limit(optimizer_results, threshold = 0.01)
+
+  return(optimizer_results)
+}
+
+
+```
+
+
+
+
+# variograms {#sec-variograms}
+... in repeated execution.
+
+
+
+
+
+# bootstrapping
+- <https://www.modernstatisticswithr.com/modchapter.html#a-general-approach>
+
+
+## all in: getting starting values
+
+```{r regression-reference}
+lower_limits = c(0.0,  0.0, 0.0)# 0.1)
+upper_limits = c(4.0, maxx, 4.0)#16.01)
+reference <- regression_wrapper(
+  regression_data = diff_equibinned,
+  regression_variable = "dm",
+  par = c(0.5, 10., 0.1), # 1.0)
+  lower = lower_limits,
+  upper = upper_limits
+)
+```
+
+
+```{r parallel-bootstrap}
+
+# straps <- bind_rows(mclapply(
+#   1:n_iterations,
+#   datawrap_bootstrap("all", diff_equibinned),
+#   mc.cores = detectCores()-1
+#   ))
+# 
+# straps %>%
+#   filter(conv == 0) %>% 
+#   ggplot(aes(x = threshold)) +
+#   geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+#   labs(x = "threshold", y = "bootstrap", title = sc) +
+#   theme_bw()
+    
+```
+
+# wrapping by soilclass
+
+## bootstrap function
+```{r bootstrap}
+
+
+datawrap_bootstrap <- function(reference, pass_data) {
+
+  bootstrap_function <- function(i){
+    # Draw row numbers for the bootstrap sample:
+    row_numbers <- sample(1:nrow(pass_data), as.integer(nrow(pass_data)),
+                          replace = TRUE)
+    
+    # Obtain the bootstrap sample:
+    boot_sample <- pass_data[row_numbers,]
+    
+    # jittering the observations
+    # see https://influentialpoints.com/Training/properties-of-bootstrap_estimators.htm#howm
+    boot_sample$dw <- jitter(boot_sample$dw, amount = 0.1*sd(boot_sample$dw))
+
+    result <- regression_wrapper(
+      regression_data = boot_sample,
+      regression_variable = "dm",
+      # par = reference$par,
+      par = c(0.5, 10., 0.1),
+      lower = lower_limits,
+      upper = upper_limits
+    )
+    return(as.data.frame(list(
+        "i" = i,
+        "conv" = result$convergence,
+        "rmse" = result$value,
+        "scale" = result$par[1],
+        "sigma" = result$par[2],
+        "nugget" = result$par[3],
+        # "nu" = result$par[4],
+        "threshold" = result$threshold
+      )))
+  }
+  return(bootstrap_function)
+}
+
+
+```
+
+
+## subset
+
+```{r subset-bootstrap}
+
+ref_store <- list()
+
+subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
+  reference <- regression_wrapper(
+    regression_data = sub_data,
+    par = c(0.5, 10, 0.1), # 1.0)
+    lower = lower_limits,
+    upper = upper_limits,
+    control = list("fnscale" = 1000)
+  )
+
+
+  ref_store[[sc]] <<- as.data.frame(list(
+      "i" = 0,
+      "conv" = reference$convergence,
+      "rmse" = reference$value,
+      "scale" = reference$par[1],
+      "sigma" = reference$par[2],
+      "nugget" = reference$par[3],
+      # "nu" = reference$par[4],
+      "threshold" = reference$threshold,
+      "soilclass" = sc
+    ))
+
+  straps <- bind_rows(mclapply(
+    1:n_iterations,
+    datawrap_bootstrap(reference, sub_data),
+    mc.cores = detectCores()-2
+    ))
+  return (straps)
+}
+
+```
+
+```{r soil-subset-data}
+
+all_dolled_up <- list()
+for (sc in c("heavy", "light", "peat")) {
+  sub_data <- diff_equibinned %>% filter(soilclass == sc)
+  straps <- subset_bootstrap(sc, sub_data, n_iterations = n_bootstraps)
+  straps$soilclass <- sc
+  all_dolled_up[[sc]] <- straps
+}
+
+all_dolled_up[["ref"]] <- bind_rows(ref_store)
+all_dolled_up <- bind_rows(all_dolled_up)
+all_dolled_up <- all_dolled_up %>%
+  mutate(sill = nugget + scale)
+
+# save bootstraps
+arrow::write_parquet(all_dolled_up, sink = "./data/bootstrapping_dm_soilclass.parquet")
+
+```
+
+
+```{r count}
+
+# count failed regressions
+all_dolled_up %>% count(conv)
+
+```
+
+
+
+
+```{r one-parameter}
+
+ref_boots <- all_dolled_up %>%
+  filter(i == 0)
+sub_boots <- all_dolled_up %>%
+  filter(conv == 0, i > 0, if_all(everything(), ~ !is.na(.x)))
+
+# param <- "threshold"
+knitr::kable(t(ref_boots))
+
+# knitr::kable(t(head(sub_boots)))
+print(summary(sub_boots))
+```
+
+
+
+```{r plot-one-parameter}
+plot_param <- function(param, limit_x = NA){
+  h <- sub_boots %>%
+    mutate(param = sub_boots[, param]) %>% 
+    ggplot(aes(x = param, fill = soilclass, color = soilclass)) +
+    geom_vline(xintercept = ref_boots[,param]) +
+    geom_histogram(bins = 256, width = 1.05, alpha = 0.5, position = "identity") +
+    xlab(param) +
+    scale_fill_manual(values = soilclass_colors) +
+    scale_color_manual(values = soilclass_colors) +
+    theme_bw()
+
+  # if (param == "threshold") h <- h + xlim(0, 50)
+  # if (param == "scale") h <- h + xlim(lower_limits[1], upper_limits[1])
+  # if (param == "sigma") h <- h + xlim(lower_limits[2], upper_limits[2])
+  # if (param == "nugget") h <- h + xlim(lower_limits[3], upper_limits[3])
+
+  # if (TRUE) h <- h + ylim(0, 100) # ARRRR! R blanks bars above the ylim 8(
+  if (!is.na(limit_x)) h <- h + xlim(0, limit_x)
+
+  ggsave(paste0("figures/bootstrap_dm_", param, ".png"), h, dpi = 300)
+  return(h)
+}
+
+```
+
+
+```{r plot-all-parameters}
+silence <- suppressWarnings
+print(plot_param("threshold", limit_x = 32) |> silence())
+print(plot_param("rmse") |> silence())
+print(plot_param("scale", limit_x = 2) |> silence())
+print(plot_param("sigma", limit_x = 500) |> silence())
+print(plot_param("nugget") |> silence())
+print(plot_param("sill", limit_x = 2) |> silence())
+
+```
+
+
+
+# Preliminary Status Quo (20250210)
+
+After *a lot* of trial-and-error, I note the following:
+
+- The default bootstrap regression (L-BFGS-N, with sensible limits) returns bimodal outcomes on the bootstraps if started with the reference outcome.
+- Yet these depend on start values, bins, *et cetera*. With the default, some parameters come out at the limits; threshold (as a parameter mainly derived from sigma) is heavily quantized depending on secondary fit params.
+- This is especially obvious for the peat subset.
+- BFGS followed by Nelder-Mead seems stable; Nelder-Mead seems to find a result in a Normal range, yet values are relatively meaningless (sigma > limits, some nuggets < 0, ...).
+- Filtered for water distance, slope, filter depth difference; `{r} round(100*4801/18741, 1)` \% of the observations pass all criteria.
+- Binning plays a role, but is kept dynamic.
+- Distance weighting of the regression RMSE might be influential; applied here together with the `fnscale` control parameter.
+- Regressions are convergent because of the start values (low, then running into the lowest local minimum).
+
+# Preliminary Status Quo (20250310)
+
+After *even more* trial, little less error:
+
+- start values are more robust
+- ranges adjusted -> no more quantization
+- filtering for `slope` is default
+- binning improved
+- distance weighting retained
+- confirmation when using `mMaaiveld`
+- still, several outcomes are bimodal (scales <- discussion Thierry)
+
+
+seems (technically) robust now.

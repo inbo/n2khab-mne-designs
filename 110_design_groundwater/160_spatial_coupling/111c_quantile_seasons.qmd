@@ -23,9 +23,9 @@ I also apply the slope filter which seems to have a huge effect, since we measur
 | soilclass  | all in | low water | high water |
 |:-----------|-------:|----------:|-----------:|
 | `(filter)` |   `NA` |  `<= q30` |   `>= q70` |
-| (N/1000)   |   6168 |      1462 |       1438 |
-| heavy      | 10.0 m |     9.2 m |     10.7 m |
-| light      | 12.1 m |    11.0 m |     13.8 m |
+| (N/1000)   |   6138 |      1462 |       1438 |
+| heavy      | 10.1 m |     9.2 m |     10.7 m |
+| light      | 16.1 m |    11.0 m |     13.8 m |
 | peat       | 17.7 m |    14.8 m |     14.8 m |
 
 <!--
@@ -68,7 +68,6 @@ source("./auxiliary_data_queries.R")
 #| code-fold: false
 extent <- 512 # m
 
-n_bins <- as.integer(extent/4) # the number of bins...
 bin_target <- 128 # ... and the preferred alternative: observations per bin
 
 cap_dw <- 8 # m # maximum accepted water level difference
@@ -136,6 +135,7 @@ diff_meta <- diff_data %>%
       mslope = abs(dh) / ds
   ) %>%
   filter(
+    ds <= extent,
     mslope < slope_threshold # slope filter
   )
 
@@ -385,8 +385,6 @@ diff_equigrouped <- diff_all %>%
   mutate(
     distance_equibin = cut_number(
       ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
-      # ds, n_bins
-      # ds, as.integer(min(c(floor(n()/8), n_bins)))
     ) # cut to equal sized bins
   ) %>%
   ungroup
@@ -573,8 +571,6 @@ diff_equigrouped <- diff_all %>%
   mutate(
     distance_equibin = cut_number(
       ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
-      # ds, n_bins
-      # ds, as.integer(min(c(floor(n()/8), n_bins)))
     ) # cut to equal sized bins
   ) %>%
   ungroup

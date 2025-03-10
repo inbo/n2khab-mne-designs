@@ -38,15 +38,23 @@ source("regression_tools.R")
 # metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
 # cluster_dist <- 3400 # m # parameter for clustering, used on data loading
 
+
+soilclass_colors <- c(
+  "heavy" = "sienna",
+  "light" = "lightgoldenrod",
+  "peat" = "navyblue",
+  "unknown" = "slategray"
+)
+
 ```
 
 
 ```{r parameters}
 #| code-fold: false
-extent <- 1536 # m
-maxx <- 512 # for regression
+extent <- 500 # m
+maxx <- 1000 # for regression
 
-bin_target <- 128 # alternative: observations per bin
+bin_target <- 100 # alternative: observations per bin
 cap_dw <- 4 # m # maximum accepted water level difference
 
 slope_threshold    <- 0.01/1 # 1 cm per meter
@@ -66,7 +74,7 @@ meta_data <- join_auxiliary_cache(label = "metadata") %>%
   join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
 diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
-  filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
+  filter(if_all(c(w1, w2, dw, m1, m2, dm), ~ !is.na(.x)))
 
 meta_join <- meta_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
@@ -104,6 +112,7 @@ diff_meta <- diff_data %>%
       mslope = abs(dh) / ds
   ) %>%
   filter(
+    ds <= extent,
     wata_min_dist1 < wadi_threshold,
     wata_min_dist2 < wadi_threshold,
     mslope < slope_threshold,
@@ -120,7 +129,7 @@ diff_meta %>% count(soilclass1)
 :::{.callout-warning}
 - water distance was filtered to be below `{r} wadi_threshold`.
 - Pairs with an elevation difference of more than `{r} slope_threshold` m per m distance were removed.
-- Filterdepth difference was limited to observations below `{m} dfdepth_threshold`.
+- Filterdepth difference was limited to observations below `{r} dfdepth_threshold`.
 
 After that, `{r} nrow(diff_meta)` location pairs remain, counting `{r} nrow(diff_data)` simultaneous water level measurements.
 :::
@@ -154,7 +163,7 @@ diff_joined <- diff_meta %>%
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
   ) %>% 
-  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw, abs(dm) <= cap_dw) # remove outliers
 
 # glimpse(diff_joined)
 
@@ -171,21 +180,23 @@ diff_joined <- diff_meta %>%
 
 # test <- diff_joined %>%
 #   summarize(
-#     n_obs = sum(as.integer(!is.na(dw))),
+#     n_obs = sum(as.integer( (!is.na(dw)) & (!is.na(dm)) )),
 #     soilclass = first(soilclass1),
 #     cluster = first(cluster1),
 #     ds = mean(ds, na.rm = TRUE),
 #     dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+#     dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
 #     .by = pair 
 #   ) %>% ungroup %>% arrange(-ds)
 
 diff_equigrouped <- diff_joined %>%
   summarize(
-    n_obs = sum(as.integer(!is.na(dw))),
+    n_obs = sum(as.integer( (!is.na(dw)) & (!is.na(dm)) )),
     soilclass = first(soilclass1),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
     .by = pair 
   ) %>% ungroup %>% arrange(ds) %>%
   group_by(soilclass) %>% 
@@ -203,6 +214,7 @@ diff_equibinned <- diff_equigrouped %>%
     ds = mean(ds), 
     n_obs = sum(n_obs),
     dw = mean(dw, na.rm = TRUE), 
+    dm = mean(dm, na.rm = TRUE), 
     .by = c(distance_equibin, soilclass)
   ) %>%
   ungroup %>% arrange(ds)
@@ -348,7 +360,7 @@ upper_limits = c(4.0, maxx, 4.0)#16.01)
 reference <- regression_wrapper(
   regression_data = diff_equibinned,
   regression_variable = "dw",
-  par = c(1., 10., 0.), # 1.0)
+  par = c(0.5, 10., 0.1), # 1.0)
   lower = lower_limits,
   upper = upper_limits
 )
@@ -396,7 +408,7 @@ datawrap_bootstrap <- function(reference, pass_data) {
       regression_data = boot_sample,
       regression_variable = "dw",
       # par = reference$par,
-      par = c(1., 10., 0.),
+      par = c(0.5, 10., 0.1),
       lower = lower_limits,
       upper = upper_limits
     )
@@ -427,7 +439,7 @@ ref_store <- list()
 subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
   reference <- regression_wrapper(
     regression_data = sub_data,
-    par = c(1., 10, 0.), # 1.0)
+    par = c(0.5, 10, 0.1), # 1.0)
     lower = lower_limits,
     upper = upper_limits,
     control = list("fnscale" = 1000)
@@ -456,7 +468,7 @@ subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
 
 ```
 
-```{r soil-subset-data}
+```{r soil-subset-bootstrap}
 
 all_dolled_up <- list()
 for (sc in c("heavy", "light", "peat")) {
@@ -472,7 +484,7 @@ all_dolled_up <- all_dolled_up %>%
   mutate(sill = nugget + scale)
 
 # save bootstraps
-arrow::write_parquet(all_dolled_up, sink = "./data/bootstrapping_soilclass.parquet")
+arrow::write_parquet(all_dolled_up, sink = "./data/bootstrapping_dw_soilclass.parquet")
 
 ```
 
@@ -504,13 +516,15 @@ print(summary(sub_boots))
 
 
 ```{r plot-one-parameter}
-plot_param <- function(param){
+plot_param <- function(param, limit_x = NA){
   h <- sub_boots %>%
     mutate(param = sub_boots[, param]) %>% 
-    ggplot(aes(x = param, fill = soilclass)) +
+    ggplot(aes(x = param, fill = soilclass, color = soilclass)) +
     geom_vline(xintercept = ref_boots[,param]) +
-    geom_histogram(bins = 256, width = 1.05, color = NA, alpha = 0.67, position = "identity") +
+    geom_histogram(bins = 256, width = 1.05, alpha = 0.5, position = "identity") +
     xlab(param) +
+    scale_fill_manual(values = soilclass_colors) +
+    scale_color_manual(values = soilclass_colors) +
     theme_bw()
 
   # if (param == "threshold") h <- h + xlim(0, 50)
@@ -519,8 +533,9 @@ plot_param <- function(param){
   # if (param == "nugget") h <- h + xlim(lower_limits[3], upper_limits[3])
 
   # if (TRUE) h <- h + ylim(0, 100) # ARRRR! R blanks bars above the ylim 8(
+  if (!is.na(limit_x)) h <- h + xlim(0, limit_x)
 
-  ggsave(paste0("figures/bootstrap_", param, ".png"), h, dpi = 300)
+  ggsave(paste0("figures/bootstrap_dw_", param, ".png"), h, dpi = 300)
   return(h)
 }
 
@@ -528,12 +543,13 @@ plot_param <- function(param){
 
 
 ```{r plot-all-parameters}
-print(plot_param("threshold"))
-print(plot_param("rmse"))
-print(plot_param("scale"))
-print(plot_param("sigma"))
-print(plot_param("nugget"))
-print(plot_param("sill"))
+silence <- suppressWarnings
+print(plot_param("threshold", limit_x = 32) |> silence())
+print(plot_param("rmse") |> silence())
+print(plot_param("scale", limit_x = 2) |> silence())
+print(plot_param("sigma", limit_x = 500) |> silence())
+print(plot_param("nugget") |> silence())
+print(plot_param("sill", limit_x = 2) |> silence())
 
 ```
 
@@ -551,3 +567,18 @@ After *a lot* of trial-and-error, I note the following:
 - Binning plays a role, but is kept dynamic.
 - Distance weighting of the regression RMSE might be influential; applied here together with the `fnscale` control parameter.
 - Regressions are convergent because of the start values (low, then running into the lowest local minimum).
+
+# Preliminary Status Quo (20250310)
+
+After *even more* trial, little less error:
+
+- start values are more robust
+- ranges adjusted -> no more quantization
+- filtering for `slope` is default
+- binning improved
+- distance weighting retained
+- confirmation when using `mMaaiveld`
+- still, several outcomes are bimodal (scales <- discussion Thierry)
+
+
+seems (technically) robust now.

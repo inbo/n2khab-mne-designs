@@ -36,14 +36,19 @@ We attempted this analysis in various forms before, and there are subtle differe
 
 Summary of the outcome ([@sec-variograms]):
 
-- *light* soil is most variable, i.e. higher differences are expected to occur at closer distance (shortest range to $1 cm$ difference threshold: $\approx 0.8 m$)
-- confirmative evidence that *heavy* soil shows wider range of spatial correlation ($\approx 1.35 m$ distance to find $1 cm$ difference)
-- *peat* data fits a comparatively long range ($> 7.8 m$ to $1 cm$ threshold) 
-- In the limit, the $\langle dw\rangle$ (y-axis range) of *heavy* and *light* soil are similar ($\approx 0.47 m$)
+- *light* soil is most variable, i.e. higher differences are expected to occur at closer distance (shortest range to $1 cm$ difference threshold: $\approx 1.0 m$)
+- confirmative evidence that *heavy* soil shows slightly wider range of spatial correlation ($\approx 1.5 m$ distance to find $1 cm$ difference)
+- *peat* data fits a comparatively long range ($14.6 m$ to $1 cm$ threshold) 
+- in the limit, the value range of $\langle dw\rangle$ (y-axis range) of *heavy* and *light* soil are similar (sill $\approx 0.5 m$; nugget of $\approx 0.1$); seemingly similar values for peat 
 
 ::: {.callout-tip icon=false}
 ## Thresholds
-According to these variogram models, the $1 cm$ threshold would be exceeded at distances of $1.4 m$ ("heavy" soil), $1.0 m$ ("light" soil), and $11.1 m$ ("peat"), respectively.
+According to "all-inclusive" variogram models, the $1 cm$ threshold would be exceeded at distances of $1.5 m$ ("heavy" soil), $1.0 m$ ("light" soil), and $14.6 m$ ("peat"), respectively.
+
+Note that these have explorative and educational purpose, and serve as a first reference.
+There are many more (reasonable) filter settings to explore which affect the data (e.g. slope), and measurement uncertainty will be assessed by bootstrapping.
+
+More to be found in the other notebooks.
 :::
 
 
@@ -140,7 +145,7 @@ diff_meta <- diff_data %>%
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
       mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
       mslope = abs(dh) / ds
-  )
+  ) 
 
 ```
 
@@ -154,8 +159,8 @@ First and foremost, data is filtered to include spatial distance of up to `exten
 
 ```{r parameters}
 #| code-fold: false
-extent <- 512 # m
-n_bins <- 32
+extent <- 512 # m # data will be filtered to that range
+n_bins <- 32 # number of bins in default binning
 bin_target <- 128 # alternative: observations per bin
 cap_dw <- 8 # m # maximum accepted water level difference
 ```
@@ -175,6 +180,7 @@ More on that below.
 # diff_data %>% glimpse
 
 diff_meta <- diff_meta %>%
+  filter(ds <= extent) %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
@@ -703,7 +709,7 @@ Selected here are the most plausible settings (MAD, equal-sized bins, distance w
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'heavy' soil."
 regression_by_soilclass("heavy",
   reg_var = target_column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
   par = c(1., 10, 0., 1.),
@@ -721,7 +727,7 @@ regression_by_soilclass("heavy",
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'light' soil."
 regression_by_soilclass("light",
   reg_var = target_column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
   par = c(1., 10, 0., 1.),
@@ -738,7 +744,7 @@ regression_by_soilclass("light",
 #| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
 regression_by_soilclass("peat",
   reg_var = target_column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   use_equibin = TRUE,
   par = c(1., 10, 0., 1.),

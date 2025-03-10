@@ -36,17 +36,13 @@ __Overview of distance to 0.01m difference threshold:__
 | soilclass     | all in |      slope | water distance | water distance | filter depth | validation |
 |:--------------|-------:|-----------:|---------------:|---------------:|-------------:|------------|
 | `(threshold)` |   `NA` | ` < 0.01 ` |      ` < 50 m` |      ` < 25 m` |     ` < 1 m` | `TRUE`     |
-| (N sites)     |  35457 |      31960 |          14705 |      [☇]  6540 |        30078 | 18531      |
-| (N/1000)      |   6888 |       6168 |           2680 |      [☇]  1103 |         6049 | 4832       |
-| heavy         |  1.4 m |     10.0 m |          3.6 m |        (4.5 m) |        1.4 m | 1.7        |
-| light         |  1.0 m |     12.1 m |          1.7 m |        (5.2 m) |        1.2 m | 1.0        |
-| peat          | 11.1 m |     17.7 m |         14.4 m |       (18.7 m) |       15.9 m | 17.2       |
+| (N sites)     |  35433 |      31939 |          14693 |      [☇]  6537 |        30054 | 18531      |
+| (N/1000)      |   6853 |       6138 |           2665 |      [☇]  1099 |         6009 | 4846       |
+| heavy         |  1.5 m |     10.1 m |          5.8 m |        (9.0 m) |        1.5 m | 1.8        |
+| light         |  1.0 m |     16.1 m |          4.8 m |       (10.1 m) |        1.2 m | 1.0        |
+| peat          | 14.6 m |     17.7 m |         16.6 m |       (19.0 m) |       15.9 m | 17.2       |
 
 
-<!--As might be expected, homogenizing the data will increase the `range` of spatial co-variation.
-
-The results from an inclusive variogram analysis can be considered "conservative"/"cautious" estimates.
--->
 
 # Preparation
 
@@ -75,7 +71,7 @@ source("./auxiliary_data_queries.R")
 
 ```{r parameters}
 #| code-fold: false
-extent <- 512 # m
+extent <- 256 # m
 
 n_bins <- as.integer(extent/4) # the number of bins...
 bin_target <- 128 # ... and the preferred alternative: observations per bin
@@ -137,7 +133,8 @@ diff_meta <- diff_data %>%
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
       mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
       mslope = abs(dh) / ds
-  )
+  ) %>% 
+  filter(ds <= extent)
 
 ```
 
@@ -453,7 +450,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "heavy",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -472,7 +469,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -493,7 +490,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "peat",
   reg_var = column,
-  maxx = 512, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -660,7 +657,7 @@ regression_by_soilclass(
   diff_equibinned,
   "heavy",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -680,7 +677,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -701,7 +698,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "peat",
   reg_var = column,
-  maxx = 256, maxy = 2,
+  maxx = extent, maxy = 2,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -863,7 +860,7 @@ regression_by_soilclass(
   diff_equibinned,
   "heavy",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -883,7 +880,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -904,7 +901,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "peat",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -1063,7 +1060,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "heavy",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -1082,7 +1079,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -1103,7 +1100,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "peat",
   reg_var = column,
-  maxx = 512, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -1263,7 +1260,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "heavy",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -1282,7 +1279,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "light",
   reg_var = column,
-  maxx = 256, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -1303,7 +1300,7 @@ regression_by_soilclass(
   diff_equibinned,
   sc = "peat",
   reg_var = column,
-  maxx = 512, maxy = Inf,
+  maxx = extent, maxy = Inf,
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
