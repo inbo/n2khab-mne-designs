@@ -14,7 +14,7 @@ load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
 #   filter(n > 1)
 
 spsamples_sf_vmm <-
-  scheme_moco_ps_stratum_sppost_spsamples_sf %>%
+  scheme_moco_ps_stratum_sppost_spsamples_spares_sf %>%
   filter(str_detect(scheme, "^(GW|SURF|SOIL)")) %>%
   select(-grts_address_final) %>%
   # join date intervals of target FAGs, for the locations in the sample
