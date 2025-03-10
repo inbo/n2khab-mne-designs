@@ -61,6 +61,8 @@ spsamples_sf_vmm <-
       filter(is_core_scheme),
     join_by(scheme)
   ) %>%
+  # no SURF schemes
+  filter(!str_detect(scheme, "^SURF")) %>%
   # adding scheme metadata
   inner_join(
     read_schemes(lang = "nl") %>%
@@ -86,12 +88,16 @@ spsamples_sf_vmm <-
         type_name,
         type_shortname,
         typeclass,
-        typeclass_name
+        typeclass_name,
+        hydr_class
       ),
     join_by(type),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
+  # drop aquatic types
+  filter(hydr_class != "HC3") %>%
+  select(-hydr_class) %>%
   relocate(geometry, .after = last_col())
 
 saveRDS(
