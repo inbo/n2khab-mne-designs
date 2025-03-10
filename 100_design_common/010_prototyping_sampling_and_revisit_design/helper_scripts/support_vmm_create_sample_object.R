@@ -16,7 +16,37 @@ load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
 spsamples_sf_vmm <-
   scheme_moco_ps_stratum_sppost_spsamples_sf %>%
   filter(str_detect(scheme, "^(GW|SURF|SOIL)")) %>%
-  select(-module_combo_code, -panel_split) %>%
+  select(-grts_address_final) %>%
+  # join date intervals of target FAGs, for the locations in the sample
+  left_join(
+    scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
+      arrange(date_interval) %>%
+      summarize(
+        date_intervals = str_flatten(
+          date_interval %>% unique(),
+          collapse = ", "
+        ),
+        .by = c(
+          scheme,
+          module_combo_code,
+          panel_split,
+          sp_poststratum,
+          stratum,
+          grts_address
+        )
+      ),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      sp_poststratum,
+      stratum,
+      grts_address
+    ),
+    relationship = "one-to-one"
+  ) %>%
+  select(-module_combo_code, -panel_split, -typelevel_certain, -assessed_in_field) %>%
+  mutate(date_intervals = factor(date_intervals)) %>%
   # convert 'Flanders' to 'Flanders_remainder' (since 'Flanders' is for strata
   # that are only outside of the 5 SACs):
   mutate(sp_poststratum = fct_recode(
