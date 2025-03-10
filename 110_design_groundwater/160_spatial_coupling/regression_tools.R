@@ -212,7 +212,7 @@ regression_by_soilclass <- function(
 
   sink_path <- here::here("cache", "regression")
   sink_file <- sprintf("%s_%s_%s.parquet", label, reg_var, sc)
-  write_parquet(diff_sc, sink = paste0(sink_path, sink_file, collapse = ""))
+  write_parquet(diff_sc, sink = here::here(sink_path, sink_file))
 
   x <- diff_sc$ds
   y <- trafo(diff_sc %>% pull(!!reg_var))
@@ -240,7 +240,7 @@ regression_by_soilclass <- function(
   )
 
   sink_file <- sprintf("%s_%s_%s.rds", label, reg_var, sc)
-  saveRDS(matern_fit, file = paste0(sink_path, sink_file, collapse = ""))
+  saveRDS(matern_fit, file = here::here(sink_path, sink_file))
 
   print_regression_results(matern_fit, label = "regression:")
   ylabel <- "mean water level difference (pair-averaged)"
