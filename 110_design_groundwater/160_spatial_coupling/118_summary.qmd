@@ -124,11 +124,11 @@ Categories and parameters to consider:
 - topographic continuity
   - no obvious discontinuities, e.g. in soil type
   - e.g. distance from surface water bodies
-  - elevation and slope (see below): max. $0.01 m$ difference per meter distance
+  - elevation difference (see below): max. $0.1 m$ difference 
 - common sense framing:
   - if there is an existing site half a meter from target, obviously use it
   - if there is a site three kilometers further, that is obviously not close enough 
-  - GRTS raster constraint: address cells are $32 m$ resolution, and there are advantages to stay within that range (@florisvdh are there?)
+  - GRTS raster constraint: address cells are $32 m$ resolution, and there are advantages to stay within that range (&#64;florisvdh are there?)
 - bias avoidance:
   - our spatial sample is intentionally random
   - existing sites might introduce implicit, unmeasurable bias to the monitoring
@@ -213,8 +213,9 @@ knitr::kable(t(sample_n(meta_data, 5)), decimals = 2)
 The parameters which turn out to have a relevant influence are **soilclass** and **slope**. 
 We filtered site pairs to share the same soil classification in the rough categories of "heavy soil", "light soil", and "peat". 
 The analyses below were applied separately for each soilclass.
-The influence of slope is mechanistically obvious, because we use meters "TAW"[^3] as water level units.
-This system references a coordinate origin at sea level, and as a consequence elevation is a direct component of water levels (think of a point close to the sea, *versus* one in the Flemish Ardennes).
+The influence of slope is mechanistically obvious.
+Slope is the difference in elevation per unit distance, and we use meters "TAW"[^3] as water level units.
+The TAW system references a coordinate origin at sea level, and as a consequence elevation is a direct component of water levels (think of a point close to the sea, *versus* one in the Flemish Ardennes).
 The tolerable threshold for slope applied herein is $1 cm$ per meter distance, 
 i.e. a pair of sites $10 m$ apart will be excluded if they differ more than $0.1 m$ in elevation.
 
@@ -353,7 +354,7 @@ Via bootstrapping, the uncertainty of that threshold can be quantified.
 ::: {.panel-tabset group="parameter"}
 ### mTAW
 
-```{r reload-bootstrap}
+```{r reload-bootstrap-dw}
 bootstrap_data <- arrow::read_parquet("./data/bootstrapping_dw_soilclass.parquet")
 ref_boots <- bootstrap_data %>%
   filter(i == 0)
@@ -363,7 +364,7 @@ sub_boots <- bootstrap_data %>%
 
 ```
 
-```{r plot-bootstrap}
+```{r plot-bootstrap-dw}
 sub_boots %>%
     ggplot(aes(x = threshold, fill = soilclass)) +
     geom_histogram(bins = 256, width = 1.05, color = NA, alpha = 0.67, position = "identity") +
@@ -375,7 +376,7 @@ sub_boots %>%
     theme_bw()
 ```
 
-```{r table-bootstrap}
+```{r table-bootstrap-dw}
 threshold_quantiles <- sub_boots %>%
   summarize(
     q02 = quantile(threshold, c(0.02)),
@@ -388,7 +389,7 @@ knitr::kable(threshold_quantiles, digits = 1)
 
 ### mMaaiveld
 
-```{r reload-bootstrap}
+```{r reload-bootstrap-dm}
 bootstrap_data <- arrow::read_parquet("./data/bootstrapping_dm_soilclass.parquet")
 ref_boots <- bootstrap_data %>%
   filter(i == 0)
@@ -398,7 +399,7 @@ sub_boots <- bootstrap_data %>%
 
 ```
 
-```{r plot-bootstrap}
+```{r plot-bootstrap-dm}
 sub_boots %>%
     ggplot(aes(x = threshold, fill = soilclass)) +
     geom_histogram(bins = 256, width = 1.05, color = NA, alpha = 0.67, position = "identity") +
@@ -410,7 +411,7 @@ sub_boots %>%
     theme_bw()
 ```
 
-```{r table-bootstrap}
+```{r table-bootstrap-dm}
 threshold_quantiles <- sub_boots %>%
   summarize(
     q02 = quantile(threshold, c(0.02)),
@@ -426,7 +427,7 @@ knitr::kable(threshold_quantiles, digits = 1)
 
 :::{.callout-warning}
 For practical simplicity, a re-use threshold of $10 m$ seems appropriate,
-given that the measurement sites in question differ by less than $10 cm$ in elevation (via slope filter).
+given that the measurement sites in question differ by less than $10 cm$ in elevation (via elevation difference rule).
 :::
 
 
@@ -447,36 +448,77 @@ We calculate all cross-distances between (A) those hypothetical sites, and (B) a
 A histogram of these distances is one particular realization of the global probability distribution of site distances.
 Taking the **cumulative cross-distance distribution**, again approximated by a regression and boot-strapped to determine uncertainty, provides a good estimate of re-use ratio as a function of distance threshold.
 
-TODO figure
+![Distance-dependent site re-use.](figures/steekproefkader_sites_per_distance.png)
+*Distance-rule-dependent site re-use. The higher we set the distance threshold for inclusion of existing sites (x), the more existing watina locations would potentially be re-used for the MNM sampling frame. Black line: actual sampling frame; blue line: regression; grey: bootstrapping interval.*
+
+
+```{r load-spk-regression}
+model_results <- readRDS(here::here("cache", "regression", "steekproefkader_bayesian.rds"))
+
+calculate_n_sites <- function(distance, col = "mean") {
+  A <- model_results["A", col]
+  k <- model_results["k", col]
+
+  return(round(A*distance^k, 1))
+}
+# calculate_n_sites(distance = 10, col = "2.5%")
+mean_n_sites <- calculate_n_sites(distance = 10, col = "mean")
+```
 
 
 :::{.callout-warning}
-Given the re-use threshold of $10 m$, we anticipate XXXXXX $\pm$ sites to be applicable re-use, or ZZZZ % of the planned MNE sites.
+Given the re-use threshold of $10 m$, we anticipate `{r} mean_n_sites` $\left[\right.$ `{r} calculate_n_sites(distance = 10, col = "2.5%")`, `{r} calculate_n_sites(distance = 10, col = "97.5%")` $\left.\right]$ sites to be applicable for inclusion in the MNE data set (`{r} round(100*mean_n_sites / 978, 1)` % of the planned MNE sites).
 :::
 
-(Note that this is only a rough estimate, neglecting slope threshold and other exclusion criteria which will effectively lower the actual re-use ratio.)
+(Note that this is only a rough estimate, agnostic to slope filter and other exclusion criteria which could effectively lower the actual re-use ratio.)
 
 
-## Effect of Validation- and Slope Filter
+## Effect of Slope Filter and Elevation
 
-Optionally turning on one or turning off the other critical filter will obviously affect the shape of the difference-distance curve.
+:::{.callout-note}
+Terminology:
 
+- *slope filter* refers to filtering location pairs prior to variogram calculation
+- *elevation difference rule* refers to excluding potential re-use locations from MNE because of a certain difference in elevation
 
-
-## Ground Level 
-
-Our evaluation of the slope effect receives (TODO: or not??) further support from the use of relative ground level for water level comparison.
-Instead of `mTAW`, we can query the relative level `mMaaiveld` and repeat the whole procedure.
-
-TODO
+I use those consistently in this notebook, but might have confused them elsewhere.
+:::
 
 
-## Wet and Dry Season
+Optionally turning on one or turning off the **slope filter** will affect the shape of the difference-distance curve.
+With the slope filter *off*, difference thresholds are reached within about a meter.
+With the slope filter *on*, difference thresholds are in the order of *ten meters*.
 
-TODO slope filter applied?
+Of all the possible analysis design choices, this seems to be the most far-reaching one.
+A brief collection of arguments for evaluation.
+
+- slope **linked to** elevation
+  - slope filter is justified because we use `mTAW`: elevations is part of this water level measurement
+  - this is obvious when comparing to `mMaaiveld` (results are consistent, yet see `sill`)
+  - soilclass `peat` is intrinsically slope-filtered; however, it keeps rising with `mTAW` (whereas it goes flat with `mMaaiveld`) -> elevation difference is a confounding effect
+  - problem of "volatile regression" for peat due to narrow data ranges and similarity (water as buffer; too few close distance pairs)
+- **bootstrapping:**
+  - distribution *width*: $1 m$ would be far more accurate than allowed by our analysis method
+  - indicates *bimodal* outcomes for range parameters
+  - this means that subsets of the data are non-homogeneous (different "scales", clusters, ...)
+- exclusion by **elevation difference rule**
+  - we have a separate exclusion rule for elevation differences
+  - suggestion: only include if *elevation difference $< 10cm$*
+  - distance-independent for within the $10 m$ radius (practicality: futile to measure $\approx 1 cm$ elevation on short distances)
 
 
-# Minor Considerations
 
+# Open Discussion Points
+
+- scales: multi-modal variograms (bootstrapping!), this is plausible
 - bias in existing data -> no options
-- scales: multi-modal variograms
+- Wet and Dry Season: not much difference
+- including unvalidated data: too tempting to ignore (sample size!!); consistent with filtered data
+
+
+![Cluster bias. We see it, but it is hard to avoid.](figures/clusterbias.png)
+*Cluster bias. We see it, but it is hard to avoid. At least, the influential clusters are evenly distributed across distances (visual evaluation).*
+
+
+
+
