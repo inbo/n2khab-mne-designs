@@ -20,21 +20,21 @@ spsamples_sf_vmm <-
   # join date intervals of target FAGs, for the locations in the sample
   left_join(
     scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
+      distinct(
+        scheme,
+        module_combo_code,
+        panel_split,
+        sp_poststratum,
+        stratum,
+        grts_address,
+        date_interval
+      ) %>%
       arrange(date_interval) %>%
-      summarize(
-        date_intervals = str_flatten(
-          date_interval %>% unique(),
-          collapse = ", "
-        ),
-        .by = c(
-          scheme,
-          module_combo_code,
-          panel_split,
-          sp_poststratum,
-          stratum,
-          grts_address
-        )
-      ),
+      nest(date_interval_nested = date_interval) %>%
+      mutate(date_intervals = map_chr(
+        date_interval_nested,
+        function(din) str_flatten(unique(din$date_interval), collapse = ", ")
+        )),
     join_by(
       scheme,
       module_combo_code,
@@ -106,6 +106,7 @@ saveRDS(
 )
 
 write_sf(
-  spsamples_sf_vmm,
+  spsamples_sf_vmm %>%
+    select(-date_interval_nested),
   file.path(datapath, "binary/results/spsamples_sf_vmm.gpkg")
 )
