@@ -33,14 +33,14 @@ Then, the variogram procedure is repeated.
 __Overview of distance to 0.01m difference threshold:__
 
 
-| soilclass     | all in |      slope | water distance | water distance | filter depth | validation |
-|:--------------|-------:|-----------:|---------------:|---------------:|-------------:|------------|
-| `(threshold)` |   `NA` | ` < 0.01 ` |      ` < 50 m` |      ` < 25 m` |     ` < 1 m` | `TRUE`     |
-| (N sites)     |  34868 |      31389 |          14543 |      [☇]  6487 |        29574 | 18236      |
-| (N/1000)      |   6730 |       6017 |           2630 |      [☇]  1088 |         5906 | 4764       |
-| heavy         |  1.5 m |     10.0 m |          5.9 m |        (8.7 m) |        1.5 m | 1.7        |
-| light         |  0.9 m |     12.7 m |      [☇] 2.3 m |        (5.9 m) |        1.1 m | 0.8        |
-| peat          | 13.0 m |     16.7 m |         16.4 m |       (19.4 m) |       15.0 m | 15.5       |
+| soilclass     | all in |      slope | water distance | water distance | filter depth | validation | slope and fdepth |
+|:--------------|-------:|-----------:|---------------:|---------------:|-------------:|------------|------------------|
+| `(threshold)` |   `NA` | ` < 0.01 ` |      ` < 50 m` |      ` < 25 m` |     ` < 1 m` | `TRUE`     | `<0.01 & <1m`    |
+| (N sites)     |  34868 |      31389 |          14543 |      [☇]  6487 |        29574 | 18236      | 26724            |
+| (N/1000)      |   6730 |       6017 |           2630 |      [☇]  1088 |         5906 | 4764       | 5287             |
+| heavy         |  1.5 m |     10.0 m |          5.9 m |        (8.7 m) |        1.5 m | 1.7        | 10.8             |
+| light         |  0.9 m |     12.7 m |      [☇] 2.3 m |        (5.9 m) |        1.1 m | 0.8        | 16.9             |
+| peat          | 13.0 m |     16.7 m |         16.4 m |       (19.4 m) |       15.0 m | 15.5       | 16.7             |
 
 
 
@@ -1203,6 +1203,217 @@ regression_by_soilclass(
 
 
 :::
+
+# Slope AND Filterdepth
+## Filters
+
+
+- ~~`slope_r2.5m` < 0.05~~
+- `mslope` < 0.01 m/m
+
+:::{.callout-warning}
+We now interpret slope pairwise: 
+difference in elevation, normalized by distance.
+:::
+
+
+```{r slope-and-fdepth-distribution}
+# slope_threshold <- Inf #0.05
+slope_threshold <- 0.01/1 # 1 cm per meter
+dfdepth_threshold <- 1 # Inf # m
+
+diff_meta %>%
+  select(mslope, dz) %>%
+  mutate(filltered = (mslope < slope_threshold)&(dz < dfdepth_threshold)) %>% 
+  ggplot(aes(log10(mslope), fill = filltered, color = filltered)) +
+  geom_histogram(bins = 256) +
+  theme_bw()
+    
+```
+
+
+```{r slope-and-fdepth-filter}
+somediff_meta <- diff_meta %>%
+  filter(
+    # slope_r2.5m1 < slope_threshold,
+    # slope_r2.5m2 < slope_threshold
+    mslope < slope_threshold,
+    dz < dfdepth_threshold
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+## Binning
+
+
+```{r slope-and-fdepth-join}
+diff_joined <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_joined, 3)), decimals = 2)
+
+paste0(
+  "selected ", nrow(diff_joined), " / ",
+  count_all, " observations (",
+  round(100*nrow(diff_joined)/(count_all)), "%)."
+)
+```
+
+
+
+```{r slope-and-fdepth-groupwise-binning}
+
+diff_equigrouped <- diff_joined %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      # ds, n_bins
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+
+diff_equibinned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw_groups = mean(dw, na.rm = TRUE), 
+    semivar_groups = mean(semivar, na.rm = TRUE),
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+Sample size:
+
+```{r slope-and-fdepth-equibin-samplesize}
+#| label: fig-slope-and-fdepth-equibin-sample-size
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
+diff_equibinned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step(stat = "ecdf") +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+  scale_fill_manual(values = soilclass_colors) +
+  scale_color_manual(values = soilclass_colors) +
+  theme_bw()
+```
+
+
+## variograms {#sec-slope-and-fdepth}
+
+using water level difference (MAD)
+
+
+```{r slope-and-fdepth-dw-column}
+#| code-fold: false
+
+column <- "dw_groups"
+# column <- "dw_all"
+```
+
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-slope-and-fdepth-regression-heavy}
+#| label: fig-slope-and-fdepth-dw-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "heavy",
+  reg_var = column,
+  maxx = extent, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### light
+
+```{r dw-slope-and-fdepth-regression-light}
+#| label: fig-slope-and-fdepth-dw-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, 1.6)
+```
+
+
+
+
+
+### peat
+
+```{r dw-slope-and-fdepth-regression-peat}
+#| label: fig-slope-and-fdepth-dw-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+```
+
+
+
+:::
+
 
 
 # Archive

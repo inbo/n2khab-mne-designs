@@ -36,16 +36,58 @@ create_prediction_function <- function(regressor, results) {
   return(fcn)
 }
 
-calculate_limit <- function(orsl, threshold = 0.01, fcn = matern_function) {
+
+
+# turns an optimization result of the 4-parameter Matérn
+# into a parameter array for a zero-fixed 4-parameter Matérn
+#    scale <- parameters[1] # related to the difference parameter
+#    sigma <- parameters[2] # related to actual range; turning point
+#    nugget <- parameters[3] # nugget (zero intercept)
+#    nu <- parameters[4] # shape parameter
+shift_nugget_matern4p <- function(orsl){
   par <- orsl$par
+  # WRONG: # par[1] <- par[1] - par[3]
+  # no need to shift the SCALE down by the nugget
   par[3] <- 0 # no nugget
   # par[4] <- 1. # regular shape
-  test_x <- seq(0., par[2], length.out = 1000)
-  test_y <- fcn(test_x, par)
+  return(par)
+}
+
+# turns an optimization result of the *3-parameter* Matérn
+# into a parameter array for a zero-fixed 4-parameter Matérn
+shift_nugget_matern3p <- function(orsl){
+  par <- orsl$par
+  par[3] <- 0 # no nugget
+  par[4] <- 1. # regular shape
+  return(par)
+}
+
+
+# caclulating the distance at which a given difference threshold is broken,
+# slightly adjusting the Matérn outcome.
+calculate_limit <- function(
+      orsl,
+      threshold = 0.01,
+      fit_fcn = matern_function,
+      prep_fcn = NULL
+    ) {
+
+  if (is.null(prep_fcn)) {
+    par <- orsl$par
+  } else {
+    par <- prep_fcn(orsl)
+  }
+
+  test_x <- seq(0., par[2], length.out = 1001)
+  test_y <- fit_fcn(test_x, par)
   # plot(test_x, test_y)
-  limit <- test_x[min(which(test_y > threshold))]
+  exceeds <- which(test_y > threshold)
+  if (0 == length(exceeds)) return(NA)
+  limit <- test_x[min(exceeds)]
   return(limit)
 }
+
+
 
 # a uniform way to print results
 print_regression_results <- function(orsl, label = "", indicate_threshold = TRUE) {
@@ -59,7 +101,12 @@ print_regression_results <- function(orsl, label = "", indicate_threshold = TRUE
   )
 
   if (indicate_threshold) {
-    threshold <- calculate_limit(orsl)
+    threshold <- calculate_limit(
+      orsl,
+      threshold = 0.01,
+      fit_fcn = matern_function,
+      prep_fcn = shift_nugget_matern4p
+    )
     print(
       sprintf("==> Threshold of dw > 1cm reached at %.3f m distance.", threshold)
 
