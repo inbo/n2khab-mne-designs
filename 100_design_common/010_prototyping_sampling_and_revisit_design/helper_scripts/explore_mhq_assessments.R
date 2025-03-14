@@ -212,6 +212,57 @@ mhq_terr_assessments %>%
     unmatched = c("error", "drop")
   ) %>%
   count(is_centroid, change_location)
+# however this isn't TRUE, see https://github.com/inbo/n2khab-sample-admin/issues/46
+
+# contrasting change_location, local_replacement and is_centroid
+assessment_popunits_points <-
+  assessment_replacement %>%
+  rename(grts_address_shift = local_replacement) %>%
+  filter(is_present) %>%
+  inner_join(
+    mhq_terr_refpoints %>%
+      select(point_code, is_centroid),
+    join_by(point_code),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
+
+assessment_popunits_points %>%
+  filter(change_location) %>%
+  count(change_location, is_centroid, grts_address_shift)
+
+assessment_popunits_points %>%
+  filter(change_location, is_centroid, !grts_address_shift)
+
+mhq_terr_popunits %>%
+  filter(point_code == "101169_1")
+
+# contrasting change_location and grts_address_shift
+assessment_popunits_points %>%
+  filter(grts_address_shift) %>%
+  count(grts_address_shift, change_location)
+
+assessment_popunits_points %>%
+  filter(grts_address_shift, !change_location) %>%
+  count(grts_address_shift, change_location, is_centroid)
+
+
+
+# some assessed locations in mhq_terr_popunits seem to be absent from mhq_terr_assessments
+#
+mhq_terr_popunits %>%
+  filter(str_detect(source, "assessment")) %>%
+  select(point_code, grts_ranking, grts_ranking_draw, type, source) %>%
+  anti_join(
+    mhq_terr_assessments %>%
+      select(assessment_date, point_code, type, is_present) %>%
+      filter(is_present),
+    join_by(point_code, type)
+  )
+
+
+
+
 
 
 # mhq_terr_measurements ---------------------------------------------------
