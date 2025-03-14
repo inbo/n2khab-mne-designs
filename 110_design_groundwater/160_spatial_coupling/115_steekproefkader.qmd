@@ -23,7 +23,7 @@ source("regression_tools.R")
 
 # scraping breadcrumbs
 
-Using the example sampling frame drawn by @FV.
+Using the example sampling drawn from the sampling frame by @FV.
 
 - load relevant data (stored via POC) 
 - get spatial coordinates for `scheme == "GW_03.3"`
@@ -99,7 +99,7 @@ extract_lower_triangle <- function (mat) mat[lower.tri(mat)]
 # retrieve elements of a vector which are below a given threshold
 sub_threshold <- function (vec, thresh) vec[vec < thresh]
 
-# cross distance of sampling frame locations
+# cross distance of sampling locations
 self_distances <- Euclid(samples$X, samples$Y)
 # print(extract_lower_triangle(self_distances[1:6, 1:6]))
 close_distances <- sub_threshold(extract_lower_triangle(self_distances), 256)
@@ -114,7 +114,7 @@ ggplot(NULL, aes(x = close_distances)) +
 
 
 - Cross distances are quantized, totally consistent with the GRTS grid cell arrangement of 32m resolution.
-- As expected, there are a number of co-located samples. However, I would not have expected so many.
+- As expected, there are a number of co-located samples. These are the same raster addresses sampled for different habitat types or compartments, which might happen often on the priority locations with lower GRTS addresses, or due to monitoring network inter-dependencies.
 
 This sample is the reference to be superimposed on the existing watina locations.
 
@@ -164,7 +164,7 @@ close_distances <- sub_threshold(cross_distances, 256)
 
 ```{r cross-distance}
 #| label: fig-cross-distance-count
-#| fig-cap: "Observed distances between existing watina locations and sampling frame draws."
+#| fig-cap: "Observed distances between existing watina locations and sampling draws."
 
 ggplot(NULL, aes(x = close_distances)) +
   geom_histogram(bins = 512, color = "black", fill = "lightgrey") +
@@ -178,7 +178,7 @@ For testing any hypothetical coupling rule, we can use the cumulated empirical d
 
 ```{r cumulated-distances}
 #| label: fig-cumulated-count
-#| fig-cap: "Cumulated count of observed distances between existing watina locations and sampling frame draws."
+#| fig-cap: "Cumulated count of observed distances between existing watina locations and sampling draws."
 
 count_threshold <- function (thresh){
   n <- length(sub_threshold(close_distances, thresh))
@@ -283,9 +283,11 @@ inverse_predict_distance <- function(val) (val/fit_result$par[1])^(1/fit_result$
 y_fit <- fit_result$predict(x) 
 
 ggplot(NULL) +
-  geom_step(aes(x = x, y = y), color = "black") +
-  geom_step(aes(x = x, y = y_fit), color = "steelblue") +
+  geom_step(aes(x = x, y = y, color = "simulated sample re-use")) +
+  geom_line(aes(x = x, y = y_fit, color = "regression with $y=a x^k$"),
+    linetype = "dashed", linewidth = 1.5) +
   labs(x = "distance `d` (m)", y = "cumulated re-use `r`") +
+  scale_color_manual(name = "cumulative location re-use", values = c("simulated sample re-use" = "black", "regression with $y=a x^k$" = "steelblue")) +
   theme_bw()
 ```
 
@@ -308,7 +310,7 @@ For example...
 
 :::
 
-To put this into perspective: the total number of sites in the sampling frame is `{r} nrow(samples)`, so 10 sites would be about `{r} round(100*10/nrow(samples), 1)` % of the sample.
+To put this into perspective: the total number of sites in the sampling is `{r} nrow(samples)`, so 10 sites would be about `{r} round(100*10/nrow(samples), 1)` % of the sample.
 
 
 The regression equation can be inverted to calculate the distance for a given number of accepted site re-use.
@@ -407,7 +409,13 @@ However, this was just one particular sampling.
 
 # bootstrapping
 
+We have seen the word "sampling" herein as referring to a simulated sample from the MNE sampling frame.
+We have seen sampling in the context of MCMC sampling for probabilistic inference.
+To fulfill confusion, we can also sample from the sample and could than MCMC sample model parameters for the sample's sample model ("bootstrapping").
+
+
 With bootstrapping, we can simulate a repeated sampling procedure and estimate the flexibility that the dataset leaves for the calculation of regression parameters.
+(Culprit: this is just re-sampling of this particular sample; if it co-incidentally had few re-use locations, those will remain few.)
 
 
 ## technical wrap-up
@@ -546,13 +554,14 @@ get_line <- function(perc){
 
 ```{r plot-confidence}
 #| label: fig-confidence
-#| fig-cap: "Distance-rule-dependent site re-use. The higher we set the distance threshold for inclusion of existing sites (x), the more existing watina locations would potentially be re-used for the MNM sampling frame. Black line: actual sampling frame; blue line: regression; grey: bootstrapping interval."
+#| fig-cap: "Distance-rule-dependent site re-use. The higher we set the distance threshold for inclusion of existing sites (x), the more existing watina locations would potentially be re-used for the MNM sampling. Black line: actual sampling; blue dashed line: regression; grey: bootstrapping interval."
 
 h <- ggplot(NULL) +
   geom_ribbon(aes(x = test_d, ymin = get_line(0.02), ymax = get_line(0.98)),
               color = "gray", alpha = 0.3) +
   geom_step(aes(x = x, y = y), color = "black") +
-  geom_step(aes(x = x, y = y_fit), color = "steelblue") +
+  geom_line(aes(x = x, y = y_fit), color = "steelblue",
+    linetype = "dashed", linewidth = 1.5) +
   labs(x = "inclusion distance threshold (m)", y = "cumulative site re-use") +
   xlim(0, 32) +
   ylim(0, 1.05*fit_result$predict(32)) +

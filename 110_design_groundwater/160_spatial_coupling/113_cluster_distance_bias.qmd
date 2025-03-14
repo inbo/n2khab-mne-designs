@@ -114,7 +114,7 @@ PLT.show()
 count occurrences per cluster and bin
 
 ```{python bin-cluster-dists}
-dists = [d for d in NP.arange(512)]
+dists = [d for d in NP.arange(extent)]
 dds = 1 # meter # distance bin width
 clusters = NP.unique(data["cluster"].values)
 hist_data = PD.DataFrame(columns = dists, index = clusters)
@@ -209,7 +209,15 @@ gs = MP.gridspec.GridSpec( \
 ```{python heatmap}
 
 ax = fig.add_subplot(gs[1, 0])
-ax.pcolor(NP.log10(NP.array(hist_data.values, dtype = int)), cmap = "Reds")
+Z = NP.array(hist_data.values, dtype = float)
+
+# masked array
+Z_ = NP.ma.array(Z, mask=NP.logical_or(NP.isnan(Z), Z == 0))
+cmap = MP.cm.rainbow
+cmap.set_bad('grey',1.)
+
+# https://matplotlib.org/stable/gallery/images_contours_and_fields/pcolor_demo.html#pcolor-with-a-log-scale
+pcolor_handle = ax.pcolor(NP.log(Z_), shading = "auto", cmap = cmap)
 ax.spines[["top", "right"]].set_visible(False)
 PolishAx(ax)
 ax.set_xlim([min(dists)-0.5, max(dists)+0.5]);
@@ -219,21 +227,38 @@ ax.set_xlabel("distance (m)")
 ax.set_ylabel("cluster no.")
 
 
-ax_top = fig.add_subplot(gs[0, 0])
-ax_top.bar(dists, height = NP.sum(hist_data, axis = 0))
+ax_top = fig.add_subplot(gs[0, 0])#, sharex = ax)
+ax_top.bar(dists, height = NP.sum(hist_data, axis = 0), color = "0.1")
 ax_top.spines[["left", "top", "right"]].set_visible(False)
 ax_top.set_xlim([min(dists)-0.5, max(dists)+0.5]);
 ax_top.set_xticks([]);
 
-ax_right = fig.add_subplot(gs[1, 1])
-ax_right.barh(y = range(len(clusters)), width = NP.sum(hist_data, axis = 1))
+ax_right = fig.add_subplot(gs[1, 1])#, sharey = ax)
+ax_right.barh(y = range(len(clusters)), width = NP.sum(hist_data, axis = 1), color = "0.1")
 ax_right.spines[["bottom", "top", "right"]].set_visible(False)
 ax_right.set_ylim([-0.5, len(clusters)+0.5]);
 ax_right.set_yticks([]);
 
-fig.savefig("figures/clusterbias.png", dpi = dpi, transparent = False);
+ax_legend = fig.add_subplot(gs[0, 1])
+ax_legend.axis("off");
+ticks = [2, 4, 8, 16, 32]
+cax = ax_legend.inset_axes([0.15, 0.05, 0.5, 0.9])
+cax.axis("off");
+cbar = fig.colorbar(pcolor_handle, \
+                    # ax = ax_legend, \
+                    ax = cax, \
+                    ticks=[NP.log(i) for i in ticks], \
+                    # location = "left", \
+                    # orientation = "horizontal", \
+                    fraction = 1.0,
+                    aspect = 4,
+                    label = "number of\nlocation pairs"
+                    )
+cbar.ax.set_yticklabels([f'{i}' for i in ticks]) # for vertical cbar!
+
+fig.savefig("figures/113_clusterbias.png", dpi = dpi, transparent = False);
 
 PLT.close();
 ```
 
-![Cluster bias in variograms: number of observed location pairs per cluster and distance bin.](figures/clusterbias.png)
+![Cluster bias in variograms: number of observed location pairs per cluster and distance bin.](figures/113_clusterbias.png)
