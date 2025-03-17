@@ -1,0 +1,571 @@
+---
+title: "Closter LOO"
+subtitle: "Leave-One-Out of the big, potentially influential clusters."
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+    embed-resources: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Summary
+
+- Some of the big clusters contain locations of one or two soilclasses.
+- Filtering them out affects those soilclass regressions to some extent (most obvious: `peat`).
+
+Yet overall, this seems plausible and expected.
+
+
+As a bonus, some clusters are plotted on maps.
+
+
+# Preparation
+
+## libraries
+... the usual.
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("units")     |> void() # someone decided to store water distance in meters...
+# library("mapview")   |> void() # showing cluster locations on a map
+library("sf")        |> void() # organizing spatial objects (map plotting)
+library("terra")     |> void() # raster elevation map plotting
+library("inbospatial") |> void() # query elevation data
+
+# if (getOption("browser") == "") options(browser = "librewolf") 
+
+# data is loaded from cache
+source("./auxiliary_data_queries.R")
+# metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
+```
+
+
+## parameters
+
+```{r parameters}
+#| code-fold: false
+extent <- 500 # m # data included
+maxx <- 1000 # 768 # upper limit for regression
+
+n_bins <- as.integer(extent/4) # the number of bins...
+bin_target <- 100 # ... and the preferred alternative: observations per bin
+
+cap_dw <- 8 # m # maximum accepted water level difference
+
+# difference collumn used for variogram
+diff_column <- "dw" # using water level difference (MAD)
+```
+
+
+## data
+
+The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to assemble the data set loaded here.
+
+
+```{r load-data}
+
+meta_data <- join_auxiliary_cache(label = "metadata") %>%
+  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
+  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+
+diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
+  filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
+
+meta_join <- meta_data %>%
+  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff,
+         pp_vld, mp_vld
+         )
+
+diff_meta <- diff_data %>%
+  select(pp_idx1, pp_idx2) %>%
+  distinct() %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+      validated1 = as.integer(pp_vld1 == "VLD") * as.integer(mp_vld1 == "VLD"),
+      validated2 = as.integer(pp_vld2 == "VLD") * as.integer(mp_vld2 == "VLD"),
+      validated = as.logical(validated1 * validated2),
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+      dh = elevation_dhmv2-elevation_dhmv1,
+      dz = fdepth2-fdepth1,
+      damp = emd_ampsum2-emd_ampsum1,
+      dqdiff = emd_qdiff2-emd_qdiff1,
+      dwadi = wata_min_dist2-wata_min_dist1,
+      dslope = slope_r2.5m2-slope_r2.5m1,
+      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+      mslope = abs(dh) / ds
+  ) %>% 
+  filter(ds <= extent)
+
+```
+
+
+
+```{r count-all}
+diff_joined <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, damp,
+      dqdiff, dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+count_all <- nrow(diff_joined)
+print(count_all)
+```
+
+
+## Regression Procedure Wrapper
+
+```{r regression-wrapper}
+
+source("regression_tools.R") 
+
+```
+
+*(... has been outsourced)*
+
+
+# Putatively Influential Clusters 
+
+```{r sort-clusters}
+cluster_count <- diff_meta %>% 
+  count(cluster1) %>% 
+  rename(c("cluster" = cluster1)) %>% 
+  arrange(desc(n))
+big_clusters <- cluster_count %>% filter(n > 500)
+knitr::kable(big_clusters)
+```
+
+  
+```{r show-clustersizes}
+cluster_count %>% 
+  ggplot(aes(x = 1:length(cluster), y = n)) +
+  geom_vline(xintercept = nrow(big_clusters)) +
+  geom_step()
+```
+
+
+# Procedure 
+
+```{r filter}
+
+i <- 1
+cluster_idx <- as.integer(big_clusters[i, "cluster"][[1]])
+```
+
+```{r map-cluster}
+
+map_cluster <- function(cluster_idx){
+
+  message(cluster_idx)
+
+  if (cluster_idx == 0){
+    map_data <- diff_meta %>%
+      sf::st_as_sf(coords = c("x1", "y1"), crs = 31370)
+  } else {
+    map_data1 <- diff_meta %>%
+      filter(cluster1 == cluster_idx)  %>%
+      mutate(x = x1, y = y1, idx = pp_idx1, code = pp_code1) %>%
+      select(x, y, idx, code)
+    map_data2 <- diff_meta %>%
+      filter(cluster1 == cluster_idx, !(pp_idx2 %in% map_data1$idx) ) %>%
+      mutate(x = x2, y = y2, idx = pp_idx2, code = pp_code2) %>%
+      select(x, y, idx, code)
+
+    map_data <- bind_rows(list(map_data1, map_data2)) %>% 
+      mutate(
+        region = substring(code, first = 1, last = 3)
+      ) %>% 
+      sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+  }
+
+  regions <- paste(unique(map_data$region), collapse = ", ")
+
+  # map_data %>% 
+  #   mapview(cex = 3)
+  coords <- sf::st_coordinates(map_data)
+
+  # margin may not be too large, otherwise wcs query may fail
+  # 200m seemed still okay
+  bbox <- sf::st_bbox(
+     c(xmin = min(coords[, 1]) - 0.4*extent,
+       xmax = max(coords[, 1]) + 0.4*extent,
+       ymin = min(coords[, 2]) - 0.4*extent,
+       ymax = max(coords[, 2]) + 0.4*extent),
+     crs = sf::st_crs(31370)
+  )
+
+
+  # cache raster
+  filename <- here::here("cache", "maps",
+                         paste0(
+                           sprintf("map_cl%04.0f", cluster_idx),
+                           ".raster"
+                         ))
+  if (file.exists(filename)){
+    map_raster <- terra::readRDS(filename)
+  } else {
+    map_raster <- inbospatial::get_coverage_wcs(
+      wcs = "dhmv",
+      bbox = bbox,
+      layername = "DHMVII_DTM_1m",
+      version = "2.0.1",
+      wcs_crs = "EPSG:31370",
+      resolution = 1
+    )
+    terra::saveRDS(map_raster, filename)
+  }
+
+
+  # other locations in range
+  other_data <- diff_meta %>%
+    filter(cluster1 != cluster_idx) %>% 
+    sf::st_as_sf(coords = c("x1", "y1"), crs = 31370) %>% 
+    sf::st_intersection(sf::st_as_sfc(bbox))
+  other_coords <- sf::st_coordinates(other_data)
+  
+  # plot map
+  plot(map_raster, col = gray.colors(256),
+       ylab = sprintf("cluster %i (%s)", cluster_idx, regions)
+       )
+  points(coords[, 1], coords[, 2], pch = 21, col = "black")
+  points(coords[, 1], coords[, 2], pch = 16, col = "yellow")
+  points(other_coords[, 1], other_coords[, 2], pch = 4, col = "darkorange")
+  # title(sprintf("cluster %i", cluster_idx))
+
+}
+
+# map_cluster(cluster_idx)
+# map_cluster(30) # one with critical size for wcs query
+```
+
+
+```{r map-cluster-loop}
+for (i in 1:nrow(big_clusters)) suppressWarnings(
+  map_cluster(as.integer(big_clusters[i, "cluster"][[1]]))
+  )
+
+```
+
+
+## Binning
+
+
+```{r join-diff-data}
+join_diff_data_excluding <- function(exclude_cluster_idx) {
+
+  somediff_meta <- diff_meta %>%
+    filter(
+      !(cluster1 == exclude_cluster_idx)
+    )
+  
+  paste0(
+    "selected ", nrow(somediff_meta), " / ",
+    nrow(diff_meta), " location pairs (",
+    round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+  )
+  
+  diff_joined <- somediff_meta %>%
+    select(pp_idx1, pp_idx2, cluster1,
+        x1, y1, x2, y2, 
+        soilclass1, wata_dist_class1, wata_dist_class2,
+        ds, dh, dz, damp,
+        dqdiff, dwadi, dslope,
+        melevation, mslope
+    ) %>%
+    mutate(
+      pair = factor(paste0(
+        as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+      )
+    ) %>%
+    left_join(diff_data,
+      by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+      relationship = "one-to-many"
+    ) %>% 
+    filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+  
+  # knitr::kable(t(head(diff_joined, 3)), decimals = 2)
+  
+  paste0(
+    "selected ", nrow(diff_joined), " / ",
+    count_all, " observations (",
+    round(100*nrow(diff_joined)/(count_all)), "%)."
+  )
+
+  diff_equigrouped <- diff_joined %>%
+    summarize(
+      n_obs = sum(as.integer(!is.na(dw))),
+      soilclass = first(soilclass1),
+      cluster = first(cluster1),
+      ds = mean(ds, na.rm = TRUE),
+      semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
+      dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+      n_pairs = 1,
+      .by = pair 
+    ) %>% ungroup %>% arrange(ds) %>%
+    group_by(soilclass) %>% 
+    mutate(
+      distance_equibin = cut_number(
+        ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+        # ds, n_bins
+      ) # cut to equal sized bins
+    ) %>%
+    ungroup
+  
+  
+  diff_equibinned <- diff_equigrouped %>%
+    summarize(
+      cnt = n(),
+      ds = mean(ds, na.rm = TRUE), 
+      dw = mean(dw, na.rm = TRUE), 
+      n_obs = sum(n_obs),
+      n_pairs = sum(n_pairs),
+      .by = c(distance_equibin, soilclass)
+    ) %>%
+    ungroup %>% arrange(ds)
+  
+  return(diff_equibinned)
+}
+
+diff_equibinned <- join_diff_data_excluding(cluster_idx)
+```
+
+
+
+
+Sample size:
+
+```{r equibin-samplesize}
+#| label: fig-equibin-sample-size
+#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
+
+plot_sample_size <- function(diff_equibinned) {
+  diff_equibinned %>%
+    ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+    geom_step(stat = "ecdf") +
+    geom_hline(yintercept = 0, color = "darkgrey") +
+    geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
+    scale_fill_manual(values = soilclass_colors) +
+    scale_color_manual(values = soilclass_colors) +
+    theme_bw()
+}
+
+plot_sample_size(diff_equibinned)
+```
+
+
+```{r}
+plot_regression <- function(diff_equibinned, soilclass) {
+  regression_by_soilclass(
+    diff_equibinned,
+    sc = soilclass,
+    reg_var = diff_column,
+    maxx = extent, maxy = Inf,
+    return_fit = FALSE,
+    distweighted = TRUE,
+    par = c(1., 10, 0., 1.),
+    lower = c(0.0, 0.0, 0., 0.99),
+    upper = c(4., 200, 0.5, 1.01)
+  ) + ylim(0, 1.6)
+
+}
+
+
+perform_regression <- function(diff_equibinned, soilclass) {
+  fit <- regression_by_soilclass(
+    diff_equibinned,
+    sc = soilclass,
+    reg_var = diff_column,
+    maxx = extent, maxy = Inf,
+    return_fit = TRUE,
+    distweighted = TRUE,
+    par = c(1., 10, 0., 1.),
+    lower = c(0.0, 0.0, 0., 0.99),
+    upper = c(4., 200, 0.5, 1.01)
+  ) 
+  return(fit)
+}
+```
+
+
+## variograms {#sec-example}
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dw-regression-heavy}
+#| label: fig-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+
+plot_regression(diff_equibinned, "heavy")
+
+```
+
+
+### light
+
+```{r dw-regression-light}
+#| label: fig-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+
+plot_regression(diff_equibinned, "light")
+```
+
+
+
+
+
+### peat
+
+```{r dw-regression-peat}
+#| label: fig-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+
+plot_regression(diff_equibinned, "peat")
+```
+
+:::
+
+
+# Iterated Calculation
+
+## Procedure
+
+```{r quick_regression}
+
+collect_regression <- function(i){
+  collection <- list()
+  if (i == 0) {
+  cluster_idx <- 0
+  } else {
+  cluster_idx <- as.integer(big_clusters[i, "cluster"][[1]])
+  }
+
+  collection["cluster_idx"] <- cluster_idx
+  # map_cluster(cluster_idx)
+
+  diff_equibinned <- join_diff_data_excluding(cluster_idx)
+  # plot_sample_size(diff_equibinned)
+  collection["n"] <- sum(diff_equibinned$n_obs)
+  collection["n_pairs"] <- sum(diff_equibinned$n_pairs)
+
+  for (sc in c("heavy", "light", "peat")){
+    fit <- perform_regression(diff_equibinned, sc)
+    # print_regression_results(fit)
+    # 
+    diff_sc <- diff_equibinned %>% filter(soilclass == sc)
+    collection[paste0(sc, "_bins")] <- fit$regn
+    collection[paste0(sc, "_pairs")] <- sum(diff_sc$n_pairs)
+    collection[paste0(sc, "_n")] <- sum(diff_sc$n_obs)
+    collection[paste0(sc, "_threshold")] <- calculate_limit(fit, 0.01,
+      matern_function,
+      prep_fcn = shift_nugget_matern4p)
+    collection[paste0(sc, "_scale")] <- fit$par[1]
+    collection[paste0(sc, "_sigma")] <- fit$par[2]
+    collection[paste0(sc, "_nugget")] <- fit$par[3]
+  }
+  return(as.data.frame(collection))
+}
+
+results <- bind_rows(lapply(
+  0:nrow(big_clusters),
+  FUN = collect_regression
+))
+```
+
+
+## overview {#sec-overview}
+
+```{r table-results}
+# knitr::kable(results, digits = 2)
+```
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r table-heavy}
+
+knitr::kable(results %>%
+  select(cluster_idx, starts_with("heavy_")) %>%
+  mutate(heavy_percent = heavy_pairs / results[1, "heavy_pairs"])
+  ,
+  digits = 2)
+
+```
+
+
+### light
+
+```{r table-regression-light}
+
+knitr::kable(results %>%
+  select(cluster_idx, starts_with("light_")) %>%
+  mutate(heavy_percent = heavy_pairs / results[1, "light_pairs"])
+  ,
+  digits = 2)
+```
+
+
+### peat
+
+```{r table-peat}
+
+knitr::kable(results %>%
+  select(cluster_idx, starts_with("peat_")) %>%
+  mutate(heavy_percent = heavy_pairs / results[1, "peat_pairs"])
+  ,
+  digits = 2)
+```
+
+:::
+
+
+:::{.callout-note}
+- cluster `0` is the reference result for "all clusters included"
+- the other lines show results with one cluster filtered, respectively
+- "*_pairs" are the number of location pairs included in calculation
+
+:::

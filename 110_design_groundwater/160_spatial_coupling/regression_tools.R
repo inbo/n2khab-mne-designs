@@ -193,6 +193,7 @@ fit_matern <- function(x, y, distweighted = FALSE, ...) {
   optimizer_results$fcn <- matern_function
   optimizer_results$regx <- x
   optimizer_results$regy <- y
+  optimizer_results$regn <- length(y)
 
   # wrap the function with the optimized parameters
   optimizer_results$predict <- create_prediction_function(
@@ -249,7 +250,13 @@ regression_by_soilclass <- function(
     sc, reg_var,
     maxx = extent, maxy = NULL,
     label = "",
+    return_fit = FALSE,
     ...) {
+
+
+  stopifnot("arrow" = require("arrow"),
+            "dplyr" = require("dplyr"))
+
   diff_sc <- regression_data %>% filter(soilclass == sc)
 
   diff_sc <- diff_sc %>%
@@ -286,10 +293,13 @@ regression_by_soilclass <- function(
     ...
   )
 
+  if (return_fit) return(matern_fit)
+
   sink_file <- sprintf("%s_%s_%s.rds", label, reg_var, sc)
   saveRDS(matern_fit, file = here::here(sink_path, sink_file))
 
   print_regression_results(matern_fit, label = "regression:")
+
   ylabel <- "mean water level difference (pair-averaged)"
   sc_color <- soilclass_colors[sc]
   # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
