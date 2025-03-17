@@ -142,8 +142,26 @@ mhq_terr_popunits %>%
   ) %>%
   invisible()
 
+# different point codes can be used at the same GRTS address
+mhq_terr_refpoints %>%
+  filter(grts_ranking == 1466998)
 
+# but this is also the case for centroid points
+mhq_terr_refpoints %>%
+  filter(is_centroid) %>%
+  count(grts_ranking) %>%
+  filter(n > 1)
 
+# there are row duplicates
+mhq_terr_refpoints %>%
+  distinct() %>%
+  nrow() == nrow(mhq_terr_refpoints)
+
+# so different point codes can be in use with the same coordinates
+mhq_terr_refpoints %>%
+  distinct() %>%
+  count(x, y) %>%
+  filter(n > 1)
 
 
 # mhq_terr_assessments ----------------------------------------------------
@@ -295,6 +313,20 @@ mhq_terr_popunits %>%
   )
 
 
+# negative observations in mhq_terr_assessments that appear in mhq_terr_popunits
+
+mhq_terr_assessments %>%
+  filter(assessment_date == max(assessment_date), .by = point_code) %>%
+  filter(!is_present) %>%
+  select(point_code, assessment_date, is_present, type) %>%
+  inner_join(
+    mhq_terr_popunits %>%
+      select(point_code, grts_ranking_draw, grts_ranking, type, source),
+    join_by(point_code, type),
+    relationship = "many-to-many",
+    unmatched = "drop"
+  ) %>%
+  arrange(type, grts_ranking_draw)
 
 
 
