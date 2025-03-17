@@ -759,7 +759,12 @@ mhq_terr_popunits <-
 mhq_terr_refpoints <-
   read_vc("mhq_terr_refpoints", root = mhq_terr_datapath) %>%
   as_tibble() %>% 
-  select(point_code, is_cell_center = is_centroid)
+  distinct() %>% 
+  select(
+    point_code,
+    grts_address = grts_ranking,
+    is_cell_center = is_centroid
+  )
 mhq_terr_assessments <-
   read_vc("mhq_terr_assessments", root = mhq_terr_datapath) %>%
   as_tibble() %>% 
@@ -818,7 +823,8 @@ valid_extra_popunits_cell_all_n2khab <-
   ) %>% 
   # include whether a location is assessed at the cell center
   inner_join(
-    mhq_terr_refpoints,
+    mhq_terr_refpoints %>% 
+      select(point_code, is_cell_center),
     join_by(point_code),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
@@ -1094,6 +1100,128 @@ stopifnot(
     nrow() == nrow(valid_extra_popunits_cell_all_n2khab_tidy)
 )
 ```
+
+
+#### Assessed type absences
+
+`mhq_terr_assessments` also contains information about types being absent from a location.
+This information can be used to drop some population units from the base sampling frame.
+
+As a precaution, we only consider the assessments that are not older than 'current year - 5'.
+
+```{r eval = mhq_data_available}
+absent_popunits_cell_all_n2khab <- 
+  mhq_terr_assessments %>% 
+  # we DON'T yet filter by `!is_present` because in some cases, the point_code
+  # has multiple values for the same GRTS address, so this must be filtered and
+  # summarized at the GRTS address level
+  filter(
+    !is.na(type),
+    !is.na(is_present),
+    year(assessment_date) >= year(today()) - 5
+  ) %>% 
+  select(point_code, type, is_present, assessment_date) %>% 
+  inner_join(
+    read_types() %>% 
+      select(type, typelevel, hydr_class),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # expansion of main types to subtypes is needed for compatibility with MNE/MHQ
+  # target populations; those main types are subsequently removed. With regard
+  # to absences, the concept is simple: if a main type is assessed as absent, it
+  # is safe to replace this by 'all its subtypes are absent'. We don't expand
+  # subtypes to main types (that is only relevant in joining with some
+  # geospatial layers)
+  expand_types(mark = TRUE) %>% 
+  # at the time of writing, the net operation is just the removal of main types,
+  # since their subtypes were already present:
+  filter(
+    !(expanded & typelevel == "main_type"),
+    is.na(expanded_to) | expanded_to != "main_type"
+  ) %>% 
+  select(-typelevel, -expanded, -expanded_to) %>% 
+  # add grts_address & include whether a location is assessed at the cell center
+  inner_join(
+    mhq_terr_refpoints,
+    join_by(point_code),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # some aquatic types seemed to be included:
+  filter(hydr_class != "HC3") %>% 
+  select(-hydr_class) %>% 
+  inner_join(
+    n2khab_types_expanded_properties %>% 
+      select(type, grts_join_method) %>% 
+      filter(str_detect(grts_join_method, "cell")),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  select(-point_code) %>% 
+  # require that cell_center-joined types have an assessment at the cell
+  # center in order to accept this as an absence
+  filter(
+    grts_join_method == "cell_center" & is_cell_center |
+      grts_join_method == "cell"
+  ) %>% 
+  select(-grts_join_method, -is_cell_center) %>% 
+  # since the base sampling frame uses strata, not types, we must align
+  rename(stratum = type) %>% 
+  # we can only honour stratum absences if these apply the same (main type /
+  # subtype) level as in the base sampling frame. At the time of coding, and due
+  # to the expansion operation above, this caused no further change.
+  semi_join(
+    n2khab_strata,
+    join_by(stratum)
+  ) %>% 
+  # since multiple point_codes can occur within one type x GRTS address, we must
+  # resolve this to a single outcome
+  slice_max(assessment_date, by = c(stratum, grts_address)) %>% 
+  select(-assessment_date) %>% 
+  # to avoid potential multiple values of is_present at the same assessment date
+  summarize(
+    is_present = any(is_present),
+    .by = c(stratum, grts_address)
+  ) %>% 
+  # only keep the absences
+  filter(!is_present) %>% 
+  select(-is_present) %>% 
+  mutate(stratum = factor(stratum, levels = levels(n2khab_strata$stratum)))
+```
+
+We don't expect absences to be present in `valid_extra_popunits_cell_all_n2khab`.
+Listing violations for further enquiry.
+
+```{r eval = mhq_data_available}
+present_absences_cell_all <- 
+  absent_popunits_cell_all_n2khab %>% 
+  semi_join(
+    valid_extra_popunits_cell_all_n2khab,
+    join_by(grts_address, stratum)
+  ) %>% 
+  arrange(stratum, grts_address)
+present_absences_cell_all
+```
+
+As a safety precaution, we don't consider these locations as true absences.
+
+Applying a temporary fix for those cases: dropping them from `absent_popunits_cell_all_n2khab`.
+
+<!-- XXXXXX To be revisited! -->
+
+```{r eval = mhq_data_available}
+absent_popunits_cell_all_n2khab <- 
+  absent_popunits_cell_all_n2khab %>% 
+  anti_join(
+    present_absences_cell_all,
+    join_by(stratum, grts_address)
+  )
+```
+
+
 
 ### Substituting assessed population units in the base sampling frame
 
