@@ -129,13 +129,14 @@ dom_stratum_grtspart_threshold <-
   inner_join(
     sp_samplingframe_domain %>% 
       filter(sampling_frame_id == 0L) %>% 
-      pluck("sampling_frame_domain", 1),
+      pluck("sampling_frame_domain", 1) %>% 
+      # dropping extra attributes; to be joined afterwards for fieldwork
+      # planning
+      select(domain, stratum, grts_address),
     join_by(domain, stratum),
     relationship = "one-to-many",
     unmatched = c("error", "drop")
   ) %>% 
-  # dropping extra attributes; to be joined afterwards for fieldwork planning
-  select(-typelevel_certain, -assessed_in_field, -replaced_by) %>% 
   nest(grts_addresses = grts_address) %>% 
   # now determine threshold for each domain x stratum combination
   mutate(

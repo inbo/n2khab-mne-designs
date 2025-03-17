@@ -45,7 +45,14 @@ spsamples_sf_vmm <-
     ),
     relationship = "one-to-one"
   ) %>%
-  select(-module_combo_code, -panel_split, -typelevel_certain, -assessed_in_field) %>%
+  select(
+    -module_combo_code,
+    -panel_split,
+    -typelevel_certain,
+    -assessed_in_field,
+    -assessment_date,
+    -inaccessible
+  ) %>%
   mutate(date_intervals = factor(date_intervals)) %>%
   # convert 'Flanders' to 'Flanders_remainder' (since 'Flanders' is for strata
   # that are only outside of the 5 SACs):
