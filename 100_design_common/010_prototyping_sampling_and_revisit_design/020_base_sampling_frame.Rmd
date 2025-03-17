@@ -679,6 +679,8 @@ stratum_grts_n2khab <-
   mutate(
     typelevel_certain = NA,
     assessed_in_field = FALSE,
+    assessment_date = NA_Date_,
+    inaccessible = factor(NA, levels = c("short term", "long term")),
     replaced_by = NA_integer_,
     replacement_for = NA_integer_ 
   ) %>% 
@@ -758,6 +760,14 @@ mhq_terr_refpoints <-
   read_vc("mhq_terr_refpoints", root = mhq_terr_datapath) %>%
   as_tibble() %>% 
   select(point_code, is_cell_center = is_centroid)
+mhq_terr_assessments <-
+  read_vc("mhq_terr_assessments", root = mhq_terr_datapath) %>%
+  as_tibble() %>% 
+  filter(assessment_date == max(assessment_date), .by = point_code) %>%
+  select(point_code, assessment_date, type, is_present, inaccessible) %>% 
+  mutate(
+    inaccessible = factor(inaccessible, levels = c("short term", "long term"))
+  )
 mhq_watersurfaces_assessments <-
   read_vc("mhq_watersurfaces_assessments", root = mhq_watersurfaces_datapath) %>%
   as_tibble()
@@ -811,6 +821,14 @@ valid_extra_popunits_cell_all_n2khab <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
+  left_join(
+    mhq_terr_assessments %>% 
+      filter(is_present) %>% 
+      select(-is_present),
+    join_by(point_code, type),
+    relationship = "one-to-one",
+    unmatched = "drop"
+  ) %>% 
   select(-point_code, -hydr_class) %>% 
   mutate(assessed_in_field = TRUE) %>% 
   filter(
@@ -831,7 +849,13 @@ valid_extra_popunits_cell_all_n2khab <-
     stratum = factor(stratum, levels = levels(n2khab_strata$stratum))
   ) %>% 
   select(-expanded_to, -grts_join_method, -legacy_site, -is_cell_center) %>% 
-  relocate(grts_address_drawn)
+  relocate(grts_address_drawn) %>% 
+  relocate(
+    assessed_in_field,
+    assessment_date,
+    inaccessible,
+    .after = last_col()
+  )
 ```
 
 #### Sanity checks and temporary fixes {#mhqterr-fixes}
