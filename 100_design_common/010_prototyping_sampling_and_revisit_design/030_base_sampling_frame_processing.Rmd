@@ -12,6 +12,8 @@ Create SpatRaster layers that are masked with the 3 vector layers plus assessed 
 
 In spatial processing operations, this form (with much less integer values) has shown to be a bit faster to process than `grts_mh`.
 
+Note that we don't subtract the absences from `absent_popunits_cell_all_n2khab`, because we would have to implement it in every subdataset used below to generate a SpatRaster layer.
+
 First create some preparatory objects in order to cater for extra population units from assessments.
 
 ```{r}
@@ -89,6 +91,8 @@ global(grts_mh_cellcenter_extra, "notNA")
 # compare to length(valid_extra_popunits_cell_n2khab_grts)
 global(grts_mh_cell_extra, "notNA")
 # compare to stratum_grts_n2khab %>% distinct(grts_address) %>% nrow
+# Note that this is no longer expected to match, since stratum_grts_n2khab has 
+# been shrinked due to assessed absences of specific population units
 global(grts_mh_n2khab, "notNA")
 ```
 
@@ -340,6 +344,9 @@ stratum_grts_phab_cellcenter_n2khab_collapsed <-
       )
   )
 ```
+
+Also note that this object does not take into account the assessed absences of specific population units.
+This is not needed since this object, after applying bernouilli sampling, will only be used to _drop_ more population units from the collapsed base sampling frame, which already takes into account assessed absences.
 
 
 #### Apply bernouilli sampling
