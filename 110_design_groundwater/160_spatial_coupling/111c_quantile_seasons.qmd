@@ -21,23 +21,15 @@ Observations are only included if *both* sites were within their respecive quant
 I also apply the slope filter which seems to have a huge effect, since we measure mean absolute difference of mTAW.
 
 
-| soilclass  | all in | low water | high water |
-|:-----------|-------:|----------:|-----------:|
-| `(filter)` |   `NA` |  `<= q30` |   `>= q70` |
-| (N/1000)   |   6017 |      1428 |       1404 |
-| heavy      |  9.9 m |     9.0 m |     10.6 m |
-| light      | 13.6 m |    13.6 m |     15.6 m |
-| peat       | 16.7 m |    14.4 m |     14.6 m |
+| soilclass  | very low | low water |  all in | high water |     very |
+|:-----------|---------:|----------:|--------:|-----------:|---------:|
+| `(filter)` | `<= q20` |  `<= q30` | `(all)` |   `>= q70` | `>= q80` |
+| (N/1000)   |      938 |      1428 |    6017 |       1404 |      905 |
+| heavy      |    8.9 m |     9.0 m |   9.9 m |     10.6 m |   10.6 m |
+| light      |   15.0 m |    13.6 m |  13.6 m |     15.6 m |   14.2 m |
+| peat       |   14.2 m |    14.4 m |  16.7 m |     14.6 m |   14.6 m |
 
-<!--
-| soilclass  | all in | low water | high water |
-|:-----------|-------:|----------:|-----------:|
-| `(filter)` |   `NA` |  `<= q30` |   `>= q70` |
-| (N/1000)   |   7044 |      1648 |       1626 |
-| heavy      |  1.4 m |     1.4 m |      1.2 m |
-| light      |  1.0 m |     0.9 m |      0.8 m |
-| peat       | 11.1 m |    11.4 m |      9.1 m |
--->
+*(These values were noted by setting quantiles below; only one of them is displayed at a time.)*
 
 
 # Preparation
@@ -77,8 +69,8 @@ slope_threshold <- 0.01/1 # 1 cm per meter
 
 
 # quantile selection; choose anything in steps of 5%
-lower_quantile <- "q030"
-upper_quantile <- "q070"
+lower_quantile <- "q025"
+upper_quantile <- "q075"
 
 
 ```
@@ -279,8 +271,7 @@ diff_equibinned <- diff_equigrouped %>%
   summarize(
     cnt = n(),
     ds = mean(ds), 
-    dw_groups = mean(dw, na.rm = TRUE), 
-    semivar_groups = mean(semivar, na.rm = TRUE),
+    dw = mean(dw, na.rm = TRUE), 
     n_obs = sum(n_obs),
     .by = c(distance_equibin, soilclass)
   ) %>%
@@ -322,7 +313,7 @@ using water level difference (MAD)
 ```{r lq-dw-column}
 #| code-fold: false
 
-column <- "dw_groups"
+column <- "dw"
 # column <- "dw_all"
 ```
 
@@ -340,7 +331,7 @@ regression_by_soilclass(
   "heavy",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "lowquantile",
+  label = paste0("lowquantile", lower_quantile),
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -360,7 +351,7 @@ regression_by_soilclass(
   sc = "light",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "lowquantile",
+  label = paste0("lowquantile", lower_quantile),
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -380,7 +371,7 @@ regression_by_soilclass(
   sc = "peat",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "lowquantile",
+  label = paste0("lowquantile", lower_quantile),
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -470,8 +461,7 @@ diff_equibinned <- diff_equigrouped %>%
   summarize(
     cnt = n(),
     ds = mean(ds), 
-    dw_groups = mean(dw, na.rm = TRUE), 
-    semivar_groups = mean(semivar, na.rm = TRUE),
+    dw = mean(dw, na.rm = TRUE), 
     n_obs = sum(n_obs),
     .by = c(distance_equibin, soilclass)
   ) %>%
@@ -508,7 +498,7 @@ using water level difference (MAD)
 ```{r hq-dw-column}
 #| code-fold: false
 
-column <- "dw_groups"
+column <- "dw"
 # column <- "dw_all"
 ```
 
@@ -526,7 +516,7 @@ regression_by_soilclass(
   "heavy",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "highquantile",
+  label = paste0("highquantile", upper_quantile),
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -546,7 +536,7 @@ regression_by_soilclass(
   sc = "light",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "highquantile",
+  label = paste0("highquantile", upper_quantile),
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -566,7 +556,7 @@ regression_by_soilclass(
   sc = "peat",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "highquantile",
+  label = paste0("highquantile", upper_quantile),
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),

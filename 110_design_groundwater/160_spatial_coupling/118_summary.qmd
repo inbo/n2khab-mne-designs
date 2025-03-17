@@ -112,6 +112,7 @@ The question to be tackled in this summary is:
 
 
 More specifically, we strive to define a ruleset, based on prior data, which guides this critical field decision[^1].
+These rules apply equally in cases of self-motivation re-use, as well as hard-limiting the leeway to external stakeholder conciliation.
 
 [^1]: Re-use might require re-freshment, which we expect to be the favorable option compared to *de-novo* installation in a vast majority of cases.
 
@@ -121,22 +122,22 @@ More specifically, we strive to define a ruleset, based on prior data, which gui
 Categories and parameters to consider:
 
 - **spatial distance**
-- type and status of the existing installation
+- type and status of the existing installation ("location quality")
 - topographic continuity
   - no obvious discontinuities, e.g. in soil type
   - e.g. distance from surface water bodies
   - elevation difference (see below): max. $0.1 m$ difference 
-- common sense framing:
-  - if there is an existing site half a meter from target, obviously use it
-  - if there is a site three kilometers further, that is obviously not close enough 
-  - GRTS raster constraint: address cells are $32 m$ resolution, and there are advantages to stay within that range (&#64;florisvdh are there?)
 - bias avoidance:
   - our spatial sample is intentionally random
-  - existing sites might introduce implicit, unmeasurable bias to the monitoring
+  - existing sites introduce implicit, unmeasurable bias to the monitoring
   - example: if observation wells were always placed next to existing trails (micro-habitat bias)
   - the only solution to implicit bias is *fully random placement*
+- common sense framing:
+  - if there is an existing site half a meter from target, obviously use it
+  - if there is a site fifty meters further, that is obviously not close enough 
+  - (GRTS raster: address cells are $32 m$ resolution, ~~and~~ but there are _no_ obvious advantages to stay within that range)
 - cost savings from re-using an installation
-- external constraints: site accessibility and land owner's interests
+- external constraints: site accessibility and land owner's interests (conciliation)
 
 
 
@@ -188,6 +189,7 @@ at which we would expect a difference in water levels of more than $0.01 m$, i.e
 
 
 This threshold of $1 cm$ is what we define a "just tolerable" difference.
+"Tolerable" does proximally refer to us, the analysts, but ultimately to drought tolerance of vegetation and therefore ecosystems (by expert judgement).
 To re-iterate: water level here partly serve as a proxy for other measures of interest, 
 which is why a rather strict difference of $1 cm$ is justified.
 
@@ -217,8 +219,9 @@ The analyses below were applied separately for each soilclass.
 The influence of slope is mechanistically obvious.
 Slope is the difference in elevation per unit distance, and we use meters "TAW"[^3] as water level units.
 The TAW system references a coordinate origin at sea level, and as a consequence elevation is a direct component of water levels (think of a point close to the sea, *versus* one in the Flemish Ardennes).
-The tolerable threshold for slope applied herein is $1 cm$ per meter distance, 
-i.e. a pair of sites $10 m$ apart will be excluded if they differ more than $0.1 m$ in elevation.
+The analysis filter for slope applied herein is $1 cm$ per meter distance, 
+i.e. a pair of sites $5 m$ apart will be excluded from analysis if they differ more than $0.05 m$ in elevation.
+There are no further rules applied for slopes $> 1\%$; this limit simply prohibits re-use.
 
 [^3]: "Tweede Algemene Waterpassing", *cf.* <https://nl.wikipedia.org/wiki/Tweede_Algemene_Waterpassing>
 
@@ -228,10 +231,10 @@ Though we re-ran the analysis procedure on only validated data, non-validated da
 Conversely, including unvalidated measurements doubles sample size (!), which is crucial for the rather fine data segments and the high sample size demand of variogram binning, and for the high accuracy we would like to achieve.
 A possible explanation (as in: speculation by the author) is that the main reason for non-validation is not data quality, but lack of workforce for the validation procedure (which we did not evaluate or judge; we took a purely data-driven perspective).
 
-Parameters which we considered, but which showed no relevant[^4] influence on the outcome, are distance to surface water, filter depth (a physical installation characteristic), 
+Parameters which we considered, but which showed no determinable relevance[^4] for the outcome, are: distance to surface water, filter depth (a physical installation characteristic), 
 or oscillatory characteristics of the water levels themselves.
 
-[^4]: "Non-relevance" might also be indicated by data set stratification and consequently too low subset sample sizes.
+[^4]: Note that the complement of "no determinable relevance" includes both "non-relevance" and "undetermined" effects. For example, a symptom might be data set stratification and consequently too low subset sample sizes.
 
 
 On the background of these considerations, we queried all available data from WATINA, clustered and paired sites, and calculated the differences.
@@ -242,8 +245,11 @@ Too wide bins will deter the accuracy of the regression result by coarse absciss
 For variograms, it is rather important to have well-filled bins (i.e. sufficient number of pairs per bin), whereas bin width is of minor importance due to the subsequent regression step.
 We chose to compute bins of variable width, yet approximately similar (high) number of entries.
 
+Readers interested in the general workings of variogram analysis may refer to [a tutorial](https://github.com/inbo/tutorials/pull/352) written alongside this analysis.
+
+
 The uncertainty of regression parameters was determined by bootstrapping, following the procedure outlined [here](https://www.modernstatisticswithr.com/modchapter.html#bootstrap).
-Details of all calculation and selection procedures can be found in the accompanying notebooks.
+Details of all calculation and selection procedures can be found in the accompanying notebooks (see "List of Analysis Files" at the end of this summary, [@sec-notebooks]).
 
 
 # Results {#sec-results}
@@ -253,6 +259,7 @@ Details of all calculation and selection procedures can be found in the accompan
 Given:
 
 - a measurement of mean absolute difference in `mTAW` water levels
+- or, for comparison, the same measurement relative to surface (`mMaaiveld`, tab-switch below), which is also on the scale of meters but with *a non-fixed, i.e. local coordinate origin*
 - averaging repeated measures per site pair
 - grouping for soilclass, filtering for elevation difference per distance of $0.01 m / m$
 - variable-width binning to approximately 128 site pairs per bin
@@ -437,8 +444,8 @@ given that the measurement sites in question differ by less than $10 cm$ in elev
 :::
 
 
-This distance is conform with the common sense criterion (communication to land owners, cost saving).
-Bootstrapping indicates an accuracy of less than $\pm 10 m$.
+This distance is conform with the common sense criterion and other constraints listed above (communication to land owners, cost saving).
+Bootstrapping indicates an uncertainty of $\pm 10 m$.
 With this threshold, re-use would usually stay in the target GRTS raster cell.
 
 
@@ -451,11 +458,12 @@ To quantify what this threshold would mean for practical roll-out of the monitor
 The sample was provided by Floris Vanderhaeghe (&#64;florisvdh) on Feb. 3rd, 2025, and contains 978 potential site locations.
 
 We calculate all cross-distances between (A) those hypothetical sites, and (B) all existing watina locations.
-A histogram of these distances is one particular realization of the global probability distribution of site distances.
+In other words, for each site from the hypothetical sample, we calculate the spatial distance in meters to each reference location; this does *not* include pairwise distances within the set of sample locations.
+A histogram of "sample sites to watina" cross-distances is one particular realization (one sample) of the global probability distribution of site distances.
 Taking the **cumulative cross-distance distribution**, again approximated by a regression and boot-strapped to determine uncertainty, provides a good estimate of re-use ratio as a function of distance threshold.
 
 ![Distance-dependent site re-use.](figures/steekproefkader_sites_per_distance.png)
-*Distance-rule-dependent site re-use. The higher we set the distance threshold for inclusion of existing sites (x), the more existing watina locations would potentially be re-used for the MNM sampling. Black line: actual sampling; blue dashed line: regression; grey: bootstrapping interval.*
+*Distance-rule-dependent site re-use. The higher we set the distance threshold for inclusion of existing sites (x), the more existing watina locations would potentially be re-used for the MNM sampling. Black line: actual sampling; blue dashed line: regression; grey: bootstrapping interval of the regression. X-axis limited to short distances.*
 
 
 ```{r load-spk-regression}
@@ -484,50 +492,117 @@ Given the re-use threshold of $10 m$, we anticipate `{r} mean_n_sites` $\left[\r
 :::{.callout-note}
 Terminology:
 
-- *slope filter* refers to filtering location pairs prior to variogram calculation
-- *elevation difference rule* refers to excluding potential re-use locations from MNE because of a certain difference in elevation
+- *Elevation difference rule* refers to excluding potential re-use locations from MNE because of a certain difference in elevation. In application, this filter is *an absolute threshold* for practicality (suggestion: prohibit re-use for elevation difference $>10 cm$).
+- *Slope filter* refers to filtering location pairs prior to variogram calculation; in application, this filter is *relative to distance* ($1\%$).
 
-I use those consistently in this notebook, but might have confused them elsewhere.
+I use these terms consistently in this notebook, but might have confused them elsewhere.
 :::
 
+**Elevation difference is targeted at field implementation rules.**
+Implementation of a lump $10 cm$ elevation difference would mean that sites with a slope of $>1\%$ could be re-used (e.g. sites $2 m$ apart, $0.08 m$ elevation difference, $4\%$ slope). 
+However, it is unlikely that these extremely local differences mirror in the groundwater levels and chemistry; it is doubtful that GPS instrumentation has sufficient accuracy with reasonable measurement effort. 
+Admitting $10 cm$ difference across board also gives field personnell a determined, reasonable margin within which to re-use.
 
-Optionally turning on one or turning off the **slope filter** will affect the shape of the difference-distance curve.
+
+**Slope filter is targeted at analysis filters, more specifically for variogram-based analysis.**
+Optionally turning on or off the slope filter will affect the shape of the difference-distance curve.
 With the slope filter *off*, difference thresholds are reached within about a meter.
 With the slope filter *on*, difference thresholds are in the order of *ten meters*.
 
 Of all the possible analysis design choices, this seems to be the most far-reaching one.
 A brief collection of arguments for evaluation.
 
-- slope **linked to** elevation
+- slope is **linked to** elevation
   - slope filter is justified because we use `mTAW`: elevations is part of this water level measurement
   - this is obvious when comparing to `mMaaiveld` (results are consistent, yet see `sill`)
-  - soilclass `peat` is intrinsically slope-filtered; however, it keeps rising with `mTAW` (whereas it goes flat with `mMaaiveld`) -> elevation difference is a confounding effect
+  - soilclass `peat` is intrinsically slope-filtered (i.e. "flat", i.e. little elevation difference anyways within cluster area); however, it keeps rising with `mTAW` (whereas it goes flat with `mMaaiveld`) -> elevation difference is a confounding effect[^5]
   - problem of "volatile regression" for peat due to narrow data ranges and similarity (water as buffer; too few close distance pairs)
 - **bootstrapping:**
   - distribution *width*: $1 m$ would be far more accurate than allowed by our analysis method
-  - indicates *bimodal* outcomes for range parameters
+  - indicates *bimodal* outcomes for range parameters ("all in" regression usually co-incides with the more conservative peak)
   - this means that subsets of the data are non-homogeneous (different "scales", clusters, ...)
 - exclusion by **elevation difference rule**
   - we have a separate exclusion rule for elevation differences
   - suggestion: only include if *elevation difference $< 10cm$*
-  - distance-independent for within the $10 m$ radius (practicality: futile to measure $\approx 1 cm$ elevation on short distances)
+  - distance-independent for within the $10 m$ radius (practicality: futile to measure $\approx 1 cm$ elevation on short distances due to GPS measurement accuracy, vegetation, tractor tracks, ...)
+
+[^5]: The influence of elevation in peat habitats is visible when comparing the *sill* on variograms of `mTAW` difference ($sill \approx 0.5 m$) with `mMaaiveld` difference ($sill \approx 0.1 m$). Relative to surface, there generally seems to be little water level difference in well-water-buffered peat systems. However, in `mTAW`, difference is introduced by considering elevation, and its influence yields a somewhat artificial spatial coupling range.
 
 
 Note that we did run the complementary analysis, i.e. filtering *out* all pairs with an elevation difference (=slope) below $1\%$.
 As expected, spatial independence rises (shorter range in the variogram fit), which is due to the difference measure (`mTAW`) being directly affected by elevation.
 
 
+## Temporal Subsets: Dry and Wet Season
+
+Overall water level differences might be of reduced relevance for the long-term projection of a natural system, if that system is determined by the extre time points, rather than by the average.
+For example, an extended period of low water levels (drought) might cause critical physical pressure on the vegetation of a protected area.
+In past analyses, these environmental constraints have often been emulated by analyzing *LG3* and *HG3* (*low* and *high* water, defined as the mean of the three most extremal measurements in a bi-weekly revisit scheme within one hydrological year).
+
+
+To mimic `xG3` analysis, we determined water level quantiles within a hydroyear, thereby enabling a user filter for quantile ranges of interest.
+
+
+In periods of low water levels, as well as in periods of high water levels, the variogram ranges and distance to $1 cm$ threshold lie within the credible intervals of the default analysis displayed above. 
+In other words, there is no evidence that focus on periods of low or high water levels would change our elaboration about a re-use criterion.
+For details, interested readers are referred to notebook `111c_quantile_seasons`.
+
+```{r load-regressions-lg}
+data_lq <- list(
+  "heavy" = load_fitdata("lowquantileq025", "heavy", "dw"),
+  "light" = load_fitdata("lowquantileq025", "light", "dw"),
+  "peat" = load_fitdata("lowquantileq025", "peat", "dw")
+)
+
+
+```
+
+
+```{r plot-regressions-lg}
+#| label: fig-regression-lg
+#| fig-cap: "Matérn regression of water level difference $\\langle dw\\rangle$ (mTAW) on different soil classes (brown: heavy; yellow: light; green: peat) *during times of low water*, i.e. when both locations in a pair are within their lower 25% quantile."
+
+g <- ggplot(NULL)
+for (sc in names(data_lq)) {
+  regression_result <- data_lq[[sc]]
+  g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc])
+}
+g + xlab("distance (m)") + ylab("mean absolute difference (mTAW)") +
+  ylim(0, 1.6) +
+  theme_minimal()
+
+```
+
+
 # Other Discussion Points
 
 - scales: multi-modal variograms (bootstrapping!), this is plausible (discussed and acknowledged 20250313)
 - bias in existing data -> no options (discussed and acknowledged 20250313)
-- Wet and Dry Season: not much difference (interest anticipated; will be refined)
+- Wet and Dry Season: not much difference (interest anticipated; refined/see above)
 - including unvalidated data: too tempting to ignore (sample size!!); consistent with filtered data (discussed and acknowledged 20250313)
+- nugget handling in threshold calculation: confirmed that nugget was removed from the matern function (set to zero), which equally reduces the sill
 
 
 ![Cluster bias. We see it, but it is hard to avoid.](figures/113_clusterbias.png)
-*Cluster bias. We see it, but it is hard to avoid. At least, the influential clusters are evenly distributed across distances (visual evaluation).*
+*Cluster bias. We see it, but it is hard to avoid. At least, the influential clusters are evenly distributed across distances (visual evaluation). Details are found in workbook `113b_cluster_loo`.*
 
 
+# List of Analysis Files {#sec-notebooks}
+
+| file                                         | purpose                                                                                                                      |
+|:---------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------|
+| `100_download_and_plot_waterlevel_for_vgram` | Data download and storage to `cache` folder (for overnight execution).                                                       |
+| `110_variograms_daily_waterlevel`            | Initial exploration of water level variograms; includes general procedural definitions and choices (e.g. Matérn regression, Mean Absolute Difference, ...). |
+| `111a_waterlevel_subsets`                    | (Filtered) subset variograms with respect to slope, water distance and filter depth difference.                              |
+| `111b_waterlevel_complements`                | The complementary subset variograms.                                                                                         |
+| `111c_quantile_seasons`                      | Filtered waterlevel by quantiles (high and  low water level subsets).                                                        |
+| `112a_resample_bootstrap_dw`                 | Bootstrapping by resampling (`mTAW` variograms).                                                                             |
+| `112b_resample_bootstrap_dm`                 | Bootstrapping by resampling (`mMaaiveld` variograms).                                                                        |
+| `113a_cluster_distance_bias`                 | Cluster bias figure: how do clusters contribute to certain distance bins?                                                    |
+| `113b_cluster_loo`                           | "Leave-One-Out" analysis, filtering the larger of clusters.                                                                  |
+| `114_waterlevel_differentials`               | Variogram on temporal derivatives of water levels (obsolete/unmaintained: technical challenges of differentials).            |
+| `115_steekproefkader`                        | Analysis of the preliminary sample locations.                                                                                |
+| `116_review_slopefilter`                     | Technical file to refine filters and binning choices.                                                                        |
+| `118_summary`                                | This overview.                                                                                                               |
 
 
