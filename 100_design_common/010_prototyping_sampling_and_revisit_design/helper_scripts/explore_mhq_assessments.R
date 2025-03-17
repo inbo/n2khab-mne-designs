@@ -248,6 +248,40 @@ assessment_popunits_points %>%
 
 
 
+
+
+# recreate object to also contain the legacy_site attribute
+assessment_popunits_points_legacystatus <-
+  mhq_terr_assessments %>%
+  select(assessment_date, point_code, type, is_present, change_location) %>%
+  inner_join(
+    mhq_terr_popunits %>%
+      filter(str_detect(source, "assessment")) %>%
+      select(point_code, grts_ranking, grts_ranking_draw, type, legacy_site),
+    join_by(point_code, type),
+    relationship = "many-to-one",
+    unmatched = c("drop", "error")
+  ) %>%
+  filter(is_present) %>%
+  mutate(grts_address_shift = grts_ranking != grts_ranking_draw) %>%
+  relocate(grts_address_shift, .before = grts_ranking) %>%
+  inner_join(
+    mhq_terr_refpoints %>%
+      select(point_code, is_centroid),
+    join_by(point_code),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
+
+assessment_popunits_points_legacystatus %>%
+  filter(grts_address_shift, !change_location) %>%
+  count(grts_address_shift, change_location, legacy_site, is_centroid)
+
+assessment_popunits_points_legacystatus %>%
+  filter(grts_address_shift, !change_location, !legacy_site) %>%
+  count(type, sort = TRUE)
+
+
 # some assessed locations in mhq_terr_popunits seem to be absent from mhq_terr_assessments
 #
 mhq_terr_popunits %>%
