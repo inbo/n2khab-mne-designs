@@ -34,17 +34,19 @@ We group all possible such pairs of wells by distance ("binning"), use pair-aver
 To determine a range at which the average water level difference exceeds a given threshold (i.e. a range at which we would expect observation wells to yield more independent data), we use regression with a Matérn function.
 
 
+This procedure is in line with the general algorithm of variograms ([see here](https://github.com/inbo/tutorials/pull/352)), but deviates in some design choices to what is conventionally understood as "variogram".
+The most important differences are the choice of difference measure (mean absolute difference instead of semivariance), and adjustments to binning (homogeneous bin fill, but variable bin width).
+In detail:
 
-We attempted this analysis in various forms before, and there are subtle differences compared to previous `xG3` analysis:
-
-- Daily water levels were used (watina `PeilMeting`); no extraction of LG3 and HG3. (We get back to "seasonal" high and low values in another notebook via quantiles.)
+- Daily water levels were used (watina `PeilMeting`)
+- Use **mean absolute difference** ($\langle dw \rangle$), instead of (semi)variance ($\gamma$, [@sec-parameters]).
 - Categories for pooling/averaging ([@sec-pooling]), in the following order:
   - observation pairs 
   - distance bins
   - soilclass
-- Use **mean absolute difference** ($\langle dw \rangle$), instead of (semi)variance ($\gamma$, [@sec-parameters]).
 - Variable bin width to achieve homogeneous sample size per bin ([@sec-equalbins]).
 - No de-trending whatsoever was applied.
+- No extraction of LG3 and HG3. (We get back to "seasonal" high and low values in another notebook via quantiles.)
 - No "random intercept", as suggested by Floris: this is not applicable here because we disregarded the "modeling" approach (even de-trending).
 
 
@@ -53,7 +55,7 @@ Summary of the outcome ([@sec-variograms]):
 - *light* soil is most variable, i.e. higher differences are expected to occur at closer distance (shortest range to $1 cm$ difference threshold: $\approx 0.9 m$)
 - confirmative evidence that *heavy* soil shows slightly wider range of spatial correlation ($\approx 1.5 m$ distance to find $1 cm$ difference)
 - *peat* data fits a comparatively long range ($13.0 m$ to $1 cm$ threshold) 
-- in the limit, the value range of $\langle dw\rangle$ (y-axis range) of *heavy* and *light* soil are similar (sill $\approx 0.5 m$; nugget of $\approx 0.1$); seemingly similar values for peat 
+- in the limit, the value range of $\langle dw\rangle$ (y-axis range) of *heavy* and *light* soil are similar (sill $\approx 0.5 m$; nugget of $\approx 0.1$); we retrieve seemingly similar values for peat; in part this is due to using `mTAW` as the reference coordinate units.
 
 
 
@@ -64,14 +66,15 @@ The latest findings on an exciting journey.
 
 - semivariance is calculated differently than what I thought, i.e. not via R's `var` (see [@sec-parameters])
 - $\langle dw \rangle$ is the more practical choice (semivariance has problems with pooling squared values; $\langle dw \rangle$ is easier to interpret, e.g. because of units)
-- Sample size per bin must be monitored, "equal" are better and "sufficiently large" is preferrable.
-- Sample size per bin should be generous, sufficient to stabilize the vgram.
-- Outliers, especially on short distance, have a major drag on the regression (but none shall remain when bins are sufficiently large). 
+- Sample size per bin must be monitored, "equal" work better and "sufficiently large" is preferrable.
+- Sample size per bin should be generous, sufficient to stabilize the vgram (i.e. minimize variance between bins, while retaining a sufficient number of bins for unambiguous regression).
+- Outliers, especially on short distance, have a major drag on the regression (but few of these shall remain when bins are sufficiently large). 
 - Data loading must be serialized. Even if the computer manages to load the data once, no guarantee it will work again.
 
 :::
 
 The outcome ([@sec-variograms]) are variograms with Matérn regressions, which provide evidence about spatial coupling of water levels.
+To re-iterate: this notebook sets the stage for further detailed analyses to come.
 
 
 # preparation
@@ -169,7 +172,10 @@ diff_meta <- diff_data %>%
 
 Binning and joining the data is necessary, yet there is some procedural flexibility in how to apply it.
 
-First and foremost, data is filtered to include spatial distance of up to `extent` ($512 m$).
+First and foremost, data is filtered to include spatial distance of up to `extent` ($500 m$).
+Because that does not suffice to reach the inversion point of some curves, regression is allowed to reach longer distances (`maxx`).
+We also set the `bin_target`, i.e. the bin fill aspiration, to $100$ observations per bin.
+
 
 ```{r parameters}
 #| code-fold: false
@@ -181,7 +187,7 @@ bin_target <- 100 # alternative: observations per bin
 cap_dw <- 8 # m # maximum accepted water level difference
 ```
 
-Binning is optional, with `n_bins =` `{r} n_bins` giving the number of bins (equally-spaced at `{r} extent/n_bins` m); note however that the most relevant binning strategies might be two others:
+Binning is flexible, and we compare the differences below, with `n_bins =` `{r} n_bins` giving the number of equally-spaced bins (at `{r} extent/n_bins` m); note however that the most relevant binning strategies might be two others:
 
 1. Binning with fixed bin width of `1 m`.
 2. Binning with variable bin width, to achieve **equal sample size per bin**.
@@ -238,7 +244,8 @@ diff_joined <- diff_meta %>%
 :::{.callout-warning}
 All single observations with a difference in water level of *more than 8m* were filtered out.
 
-Given a maximum filter depth of 8m, extent (i.e. maximum pair distance) of 512 m, and the flatness of Belgian topography, values exceeding that magnitude are not plausible.
+Given a maximum filter depth of $8 m$, extent (i.e. maximum pair distance) of $500 m$, and the flatness of Belgian topography, values exceeding that magnitude are not plausible.
+Even $4 m$ requires ambitious justification, which is why on other scripts we occasionally use that as a stricter difference filter threshold.
 :::
 
 
@@ -262,7 +269,7 @@ Briefly inspecting the wide bins, sample size (circle extent) is balanced; none 
 
 ```{r glimpse-data}
 #| label: fig-bubbletea
-#| fig-cap: "An irrelevant bubble tea plot. The size of the bubbles scales with the number of observations. Yes, this was only a humble first glimpse at the data; yes, I used `sqrt` as a 'cheat' to limit bubble size differences; yes, we will do better below. But the colors are nice."
+#| fig-cap: "An irrelevant ''bubble tea plot''™. The size of the bubbles scales with the number of observations. Yes, this was only a humble first glimpse at the data; yes, I used `sqrt` as a 'cheat' to limit bubble size differences; yes, we will do better below. But the colors are nice."
 diff_widegroup %>%
   ggplot(aes(x = ds, y = log(1.0+dw),
          color = soilclass)) +
@@ -308,7 +315,7 @@ diff_widegroup %>%
   theme_bw()
 ```
 
-This is a promising pattern. 
+This is a promising pattern: differences are lowest on short distances, and increase with distance. 
 We better expect to re-capture it in the analysis below.
 
 
@@ -378,7 +385,7 @@ $$ \gamma = \frac{1}{2N} \sum\limits_{i,j} \left(z_j - z_i\right)^2 $$
 
 ```{r plot-semivariance-distance}
 #| label: fig-semivariance-difference-plot
-#| fig-cap: "Semivariance-distance plot: the increase with distance is not as pronounced on the semivariance measure. Log scale for better visualization."
+#| fig-cap: "Semivariance-distance plot: the increase with distance is not too pronounced on the semivariance measure, despite the log scale for better visualization."
 diff_binned %>%
   ggplot(aes(x = ds, y = log(1+semivar_groups), color = soilclass)) +
   geom_point() +
@@ -388,7 +395,7 @@ diff_binned %>%
 ```
 
 This equation has the typical structure of "sum of square differences", the normalization with sample size $N$ effectively makes it an average. 
-Yet the "square" is not inverted by a "square root", which has some pitfalls [@sec-semivar-binning].
+Yet the "square" is not inverted by a "square root", which has some pitfalls ([@sec-semivar-binning]).
 
 
 Therefore, I suggest a simpler variant: **mean absolute difference** (MAD) in water level.
@@ -437,6 +444,7 @@ diff_binned %>%
 
 There are some *rather empty* bins touching the axis; they probably account at least in part for potential outliers.
 "Misery loves company:" some other bins are *spikes*, probably due to pseudo-replication (repeated sampling at high frequency).
+This ruggedness is a problem, considering a bias potentially introduced by location clusters which were installed for an unknown research purpose and do not fit our "randomness" assumption (cf. notebooks `113a_cluster_distance_bias` and `113b_cluster_loo`).
 
 
 How about using equal-sized bins, i.e. buckets of variable width which are all filled (by design) with approximately equal number of observations?
@@ -446,7 +454,9 @@ Crucially, we'll have to group by location pair first because otherwise repeated
 :::{.callout-warning}
 After feedback by Thierry, I try to stabilize the variograms by widening bins,
 aspiring to get approximately `{r} bin_target` observations per bin.
-Wider bins caused trouble by undersampling of the proximal areas.
+Even wider bins caused trouble by undersampling of the proximal areas.
+The number of $100$ still seems to be a good allocation for most combinations of settings.
+However, on some filter analyses in other notebooks the required bin fill (`bin_target`) can be reduced.
 :::
 
 
@@ -502,16 +512,17 @@ diff_equibinned %>%
   theme_bw()
 ```
 
-Seems more balanced, let's see the outcome.
+Seems more balanced, let's see what to do with these bins.
 
 
 # regression {#sec-regression}
 
-Here come the general toolkit for regression, based on `optim` ([docs](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim)).
+Here comes a blunt appearance of a general toolkit for regression, based on `optim` ([docs](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim)), which is thrown into the R script file `regression_tools.R` for convenient DRY re-use in this and the following notebooks.
+It is derived in some more detail [here](https://github.com/inbo/tutorials/pull/352).
 
 Note that root-mean square difference (RMSD) is optionally distance-weighted, by dividing each observed `prediction-actual` difference by square root of the distance.
+This effectively gives extra relevance to the proximal bins.
 
-Regression tools are collected in a script file for convenient re-use. 
 
 ```{r regression-tools}
 
@@ -520,7 +531,7 @@ source("regression_tools.R")
 ```
 
 
-The Matérn parametrization below is related to the parametrs on semivariogram plots:
+The Matérn parametrization below is related to the parameters on (semi-)variogram plots:
 
 ```
       ^
@@ -537,7 +548,9 @@ Nugget| Cor.: Uncor.
       |              lag distance
 ```
 
-We get:
+Most notably, $\gamma$ on the y-axis is called "semivariance", lending its name to this specific type of visualization.
+
+We parametrize a bit differently, by using the difference in semivariance, $d\gamma$:
 $$ d\gamma = \gamma_{max} - \gamma_{min}$$
 $$ \gamma = \gamma_{max} - d\gamma \cdot \left( \frac{\sqrt{2\nu}}{\sigma} x \right)^{\nu} \cdot K_{\nu}\left( \frac{\sqrt{2\nu}}{\sigma} x \right) \cdot \frac{1}{2^{\nu - 1} \cdot \Gamma\left(\nu\right)} $$
 
@@ -712,6 +725,8 @@ regression_by_soilclass <- function(
 
 ```
 
+These functions can also be found in the accompanying `regression_tools.R` script.
+
 
 # variograms {#sec-variograms}
 
@@ -729,6 +744,14 @@ target_column <- "dw_groups"
 
 There are also axis upper limits, start values, parameter limits, RMSD weighting, and binning to choose.
 Selected here are the most plausible settings (MAD, equal-sized bins, distance weighted, with sensible parameter starts and limits).
+
+
+Note that a crucial outcome determinant reported below is the **distance to $0.01 m$ threshold**.
+We determin this by using the raw shape of the fit Matérn, deducing the nugget, and evaluating at what distance two hypothetical locations would be expected to differ by more than a centimeter in water level.
+This distance is always lower than (but related to) the $\sigma$ range used for Matérn parametrization.
+
+
+**Behold: The Variograms.**
 
 
 ::: {.panel-tabset group="soilclass"}
@@ -787,6 +810,9 @@ regression_by_soilclass("peat",
 :::
 
 
+As mentioned, these are just an initial shot at the data. 
+The remaining design choices are evaluated at length in the following notebooks.
+Impatient readers are welcome to skip to `118_summary`.
 
 
 <hr>
@@ -1064,7 +1090,7 @@ outlier_observations %>%
 Conclusion:
 
 Removed observations with `dw > ` `{r} cap_dw`.
-Even if there were good ones in there, 
+Even **if** there were good ones in there, 
 they are a minority.
 :::
 

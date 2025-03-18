@@ -17,8 +17,8 @@ knitr:
 
 In this notebook, I filter the data for relevant subgroups in the following parameters:
 
-- `wata_min_dist`: Water distance is measured on various water-related zenodo sources, and is known to suffer some inaccuracy (e.g. from water body dynamics).
 - `mslope` (`dh/ds`): Slope is defined as the difference in elevation within a pair of wells, normalized by their distance.
+- `wata_min_dist`: Water distance is measured on various water-related zenodo sources, and is known to suffer some inaccuracy (e.g. from water body dynamics).
 - `dz` difference in filter depth: Difference in filter depth is what it says: the difference in filter depth.
 - `pp_vld & mp_vld` validation status of the site/obswell
 
@@ -31,7 +31,8 @@ Then, the variogram procedure is repeated.
 :::
 
 
-__Overview of distance to 0.01m difference threshold:__
+__Overview of distance to $0.01 m$ difference threshold.__ 
+Lightning symbols and brackets mark low sample size observations (should not be taken too critical).
 
 
 | soilclass     | all in |      slope | water distance | water distance | filter depth | validation | slope and fdepth |
@@ -39,9 +40,9 @@ __Overview of distance to 0.01m difference threshold:__
 | `(threshold)` |   `NA` | ` < 0.01 ` |      ` < 50 m` |      ` < 25 m` |     ` < 1 m` | `TRUE`     | `<0.01 & <1m`    |
 | (N sites)     |  34868 |      31389 |          14543 |      [☇]  6487 |        29574 | 18236      | 26724            |
 | (N/1000)      |   6730 |       6017 |           2630 |      [☇]  1088 |         5906 | 4764       | 5287             |
-| heavy         |  1.5 m |     10.0 m |          5.9 m |        (8.7 m) |        1.5 m | 1.7        | 10.8             |
-| light         |  0.9 m |     12.7 m |      [☇] 2.3 m |        (5.9 m) |        1.1 m | 0.8        | 16.9             |
-| peat          | 13.0 m |     16.7 m |         16.4 m |       (19.4 m) |       15.0 m | 15.5       | 16.7             |
+| heavy         |  1.5 m |     10.0 m |          5.9 m |        (8.7 m) |        1.5 m | 1.7 m      | 10.8 m           |
+| light         |  0.9 m |     12.7 m |      [☇] 2.3 m |        (5.9 m) |        1.1 m | 0.8 m      | 16.9 m           |
+| peat          | 13.0 m |     16.7 m |         16.4 m |       (19.4 m) |       15.0 m | 15.5 m     | 16.7 m           |
 
 
 
@@ -182,13 +183,18 @@ source("regression_tools.R")
 # Slope 
 ## Filters
 
+There are two ways to determine slope. 
+One is the local slope (surface normal) at the locations.
+The other is the average slope between two locations.
 
-- ~~`slope_r2.5m` < 0.05~~
-- `mslope` < 0.01 m/m
+Here are potential thresholds:
+
+- ~~`slope_r2.5m < 0.05`~~
+- `mslope < 0.01 m/m`
 
 :::{.callout-warning}
 We now interpret slope pairwise: 
-difference in elevation, normalized by distance.
+difference in elevation, normalized by distance, of two locations.
 :::
 
 
@@ -198,8 +204,8 @@ slope_threshold <- 0.01/1 # 1 cm per meter
 
 diff_meta %>%
   select(mslope) %>%
-  mutate(filltered = mslope < slope_threshold) %>% 
-  ggplot(aes(log10(mslope), fill = filltered, color = filltered)) +
+  mutate(included = mslope < slope_threshold) %>% 
+  ggplot(aes(log10(mslope), fill = included, color = included)) +
   geom_histogram(bins = 256) +
   theme_bw()
     
@@ -221,6 +227,8 @@ paste0(
 )
 ```
 
+This confirms that most of Flanders (`{r} round(100*nrow(somediff_meta)/nrow(diff_meta))` %) is flat (`< 1%` slope).
+(Admittedly, Flanders is more than Watina locations.)
 
 ## Binning
 
@@ -363,9 +371,6 @@ regression_by_soilclass(
 ```
 
 
-
-
-
 ### peat
 
 ```{r dw-slope-regression-peat}
@@ -388,13 +393,18 @@ regression_by_soilclass(
 :::
 
 
+:::{.callout-note}
+Using a slope filter generally increases the distances to $0.01 m$ threshold.
+Locations become more homogeneous, i.e. more of the spatially related location pairs remain.
+:::
+
 
 
 # Water Distance I: 50m
 ## Filters
 
-Note: when filtering for location pairs "close" to water, only 298/18467 pairs would remain.
--> using "close" and "mid", i.e. distance <= 50m
+Note: when filtering for location pairs "close" to water ($< 5 m$ water distance), only 298/18467 pairs would remain.
+Therefore, we are using both "close" and "mid" categories, i.e. distance <= 50m
 
 
 ```{r water-distribution}
@@ -402,8 +412,8 @@ water_threshold <- units::set_units(50, "m")
 
 diff_meta %>%
   select(wata_min_dist1) %>%
-  mutate(filltered = wata_min_dist1 < water_threshold) %>% 
-  ggplot(aes(wata_min_dist1, fill = filltered, color = filltered)) +
+  mutate(included = wata_min_dist1 < water_threshold) %>% 
+  ggplot(aes(wata_min_dist1, fill = included, color = included)) +
   geom_histogram(bins = 256) +
   theme_bw()
     
@@ -424,6 +434,8 @@ paste0(
 )
 
 ```
+
+(Keep in mind that the filter may apply differently to the different soilclasses.)
 
 
 ## Binning
@@ -609,8 +621,8 @@ water_threshold <- units::set_units(25, "m")
 
 diff_meta %>%
   select(wata_min_dist1) %>%
-  mutate(filltered = wata_min_dist1 < water_threshold) %>% 
-  ggplot(aes(wata_min_dist1, fill = filltered, color = filltered)) +
+  mutate(included = wata_min_dist1 < water_threshold) %>% 
+  ggplot(aes(wata_min_dist1, fill = included, color = included)) +
   geom_histogram(bins = 256) +
   theme_bw()
     
@@ -816,8 +828,8 @@ dfdepth_threshold <- 1 # Inf # m
 
 diff_meta %>%
   select(dz) %>%
-  mutate(filltered = abs(dz) < dfdepth_threshold) %>% 
-  ggplot(aes(abs(dz), fill = filltered, color = filltered)) +
+  mutate(included = abs(dz) < dfdepth_threshold) %>% 
+  ggplot(aes(abs(dz), fill = included, color = included)) +
   geom_histogram(bins = 256) +
   theme_bw()
     
@@ -1012,8 +1024,9 @@ Validation, validation, validation.
 
 In an effort to build on as broad a foundation as possible, I experimentally included unvalidated data.
 "Unvalidated" does not mean "wrong" or "excluded", after all.
+Here, we test this choice to see what comes out of the analysis pipeline if we *would* filter:
 
-- `validated` == TRUE
+- `validated == TRUE`
 
 
 ```{r vali-distribution}
@@ -1209,12 +1222,13 @@ regression_by_soilclass(
 ## Filters
 
 
-- ~~`slope_r2.5m` < 0.05~~
-- `mslope` < 0.01 m/m
+- `mslope < 0.01 m/m`
+- `validated == TRUE`
 
 :::{.callout-warning}
-We now interpret slope pairwise: 
-difference in elevation, normalized by distance.
+Because slope filter has become the new default, 
+it might be relevant to see where filter depth difference restrictions would lead us.
+We do that by filtering both at the same time.
 :::
 
 
@@ -1225,8 +1239,8 @@ dfdepth_threshold <- 1 # Inf # m
 
 diff_meta %>%
   select(mslope, dz) %>%
-  mutate(filltered = (mslope < slope_threshold)&(dz < dfdepth_threshold)) %>% 
-  ggplot(aes(log10(mslope), fill = filltered, color = filltered)) +
+  mutate(included = (mslope < slope_threshold)&(dz < dfdepth_threshold)) %>% 
+  ggplot(aes(log10(mslope), fill = included, color = included)) +
   geom_histogram(bins = 256) +
   theme_bw()
     
