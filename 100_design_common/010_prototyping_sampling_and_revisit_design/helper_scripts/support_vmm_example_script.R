@@ -1,5 +1,7 @@
 library(dplyr)
 library(tidyr)
+library(stringr)
+library(purrr)
 library(sf)
 library(mapview)
 library(googledrive)
