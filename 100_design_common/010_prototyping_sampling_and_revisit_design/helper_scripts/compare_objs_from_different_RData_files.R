@@ -95,3 +95,64 @@ get("scheme_moco_ps_stratum_sppost_spsamples_sf", envir = panflpan5_nophabcorrec
     .,
     join_by(scheme, module_combo_code, panel_split, stratum, sp_poststratum, grts_address)
   )
+
+
+
+
+
+
+# investigating changes in MHQ schemes in pan2124 module ------------------
+
+
+# RData file created by following shell command on 2025-02-12 and then renamed.
+# Rscript -e 'bookdown::render_book("index.Rmd", "bookdown::html_document2", params = list(regenerate_binary_files = FALSE, update_spatiotemp_gsheet = FALSE, save_rdata = TRUE))''
+prepare_lazy_get(
+  file.path(datapath, "binary/results/objects_panflpan5pan2124mbaa_previous.RData"),
+  new_envir_name = "all_previous"
+)
+# RData file created by following shell command at tag poc_0.4.0.
+# Rscript -e 'bookdown::render_book("index.Rmd", "bookdown::html_document2", params = list(regenerate_binary_files = FALSE, update_spatiotemp_gsheet = FALSE, save_rdata = TRUE))'
+prepare_lazy_get(
+  file.path(datapath, "binary/results/objects_panflpan5pan2124mbaa.RData"),
+  new_envir_name = "all"
+)
+
+ls(envir = all)
+
+get("mhq_sampled_types_per_domain", envir = all_previous) %>%
+  anti_join(
+    get("mhq_sampled_types_per_domain", envir = all)
+  )
+
+get("module_domain_scheme_designattr", envir = all_previous) %>%
+  anti_join(
+    get("module_domain_scheme_designattr", envir = all),
+    join_by(module, domain, scheme)
+  )
+
+get("module_domain_schemes", envir = all_previous) %>%
+  anti_join(
+    get("module_domain_schemes", envir = all),
+    join_by(module, domain, scheme)
+  )
+
+get("mod_dom_scheme_ssf_stratum_nunits", envir = all_previous) %>%
+  anti_join(
+    get("mod_dom_scheme_ssf_stratum_nunits", envir = all),
+    join_by(scheme)
+  )
+
+get("sp_samplingframe_domain", envir = all_previous) %>%
+  pluck("sampling_frame_domain", 1) %>%
+  count(domain, stratum) %>%
+  filter(str_detect(stratum, "7140")) %>%
+  inner_join(
+    get("sp_samplingframe_domain", envir = all) %>%
+      pluck("sampling_frame_domain", 1) %>%
+      count(domain, stratum, name = "n_all"),
+    join_by(domain, stratum)
+  )
+
+get("domain_stratum_nunits", envir = all_previous) %>%
+  filter(str_detect(stratum, "7140"))
+
