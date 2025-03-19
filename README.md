@@ -46,6 +46,10 @@ What _you_ have to do is explained in the following **vignette** - read it! :
 vignette("v020_datastorage", package = "n2khab")
 ```
 
+Further the [n2khabmon](https://github.com/inbo/n2khabmon) package provides additional functions and resources aimed at N2KHAB monitoring.
+
+For more information on the relation with associated repositories, have a look at the README of repo [n2khab-monitoring](https://github.com/inbo/n2khab-monitoring).
+
 
 ## How to contribute to this repository?
 
@@ -71,7 +75,7 @@ MNE aims at drawing conclusions on both state and trend of environmental charact
 The programme will allow to prioritize, underpin and evaluate environment-oriented nature policy measures at the Flemish scale by generating representative long-term data of known quality.
 Hence, its primary function is to provide quantitative diagnostics of relevant environmental issues.
 In addition, the monitoring results will aid in assessing the environmental subcriteria of the conservation status of habitats and provide reliable information for the monitoring reports for the European Commission (Habitats Directive article 17).
-To this end, each environmental compartment (groundwater, surface water, atmosphere and soil) will be served by a specific MNE monitoring subprogramme aligned with the six-year cycles of the Natura 2000 policy.
+To this end, each environmental compartment (groundwater, surface water, inundation water, atmosphere and soil) will be served by a specific MNE monitoring subprogramme aligned with the six-year cycles of the Natura 2000 policy.
 
 MNE will provide solid conclusions for (groups of) habitat types at the Flemish scale, but will be based on a selection of sites in space and time.
 Therefore, a statistical approach is needed to achieve the desired (or acceptable) level of precision, significance and power.
