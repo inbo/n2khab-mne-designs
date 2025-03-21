@@ -82,20 +82,18 @@ load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
 n2khab_targetpops <-
   read_scheme_types() %>%
   select(scheme, type)
-n2khab_targetpops_expanded <-
+n2khab_types <-
   n2khab_targetpops %>%
-  group_by(scheme) %>%
-  expand_types(strict = FALSE) %>%
-  ungroup()
-n2khab_types_expanded <-
-  n2khab_targetpops_expanded %>%
   distinct(type) %>%
   arrange(type)
 
 wsh <- read_watersurfaces_hab(interpreted = TRUE)
 wsh_occ <-
   wsh$watersurfaces_types %>%
-  semi_join(n2khab_types_expanded, join_by(type))
+  # in general we restrict types using an expanded type list tailored to the
+  # type levels present in data sources, but for the aquatic types expansion and
+  # subsequent collapse of types are redundant steps
+  semi_join(n2khab_types, join_by(type))
 wsh_pol <-
   wsh$watersurfaces_polygons %>%
   semi_join(wsh_occ, join_by(polygon_id)) %>%
