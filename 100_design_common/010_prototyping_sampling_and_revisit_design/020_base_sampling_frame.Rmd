@@ -793,6 +793,11 @@ valid_extra_popunits_cell_all_n2khab <-
   mhq_terr_popunits %>% 
   # only consider assessment data:
   filter(str_detect(source, "assessment")) %>% 
+  # expansion of main types to subtypes is needed for compatibility with MNE/MHQ
+  # target populations; those main types are subsequently removed. We don't
+  # expand subtypes to main types (that is only relevant in joining with some
+  # geospatial layers)
+  expand_types(mark = TRUE) %>% 
   inner_join(
     read_types() %>% 
       select(type, typelevel, hydr_class),
@@ -800,16 +805,11 @@ valid_extra_popunits_cell_all_n2khab <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>% 
-  # expansion of main types to subtypes is needed for compatibility with MNE/MHQ
-  # target populations; those main types are subsequently removed. We don't
-  # expand subtypes to main types (that is only relevant in joining with some
-  # geospatial layers)
-  expand_types(mark = TRUE) %>% 
   filter(
-    !(expanded & typelevel == "main_type"),
-    is.na(expanded_to) | expanded_to != "main_type"
+    !(has_been_expanded & typelevel == "main_type"),
+    !added_by_expansion | (added_by_expansion & typelevel == "subtype")
   ) %>% 
-  select(-typelevel, -expanded, -source) %>% 
+  select(-typelevel, -has_been_expanded, -source) %>% 
   # at the time of coding, 2 records from lhs needed to be dropped because
   # they are not cell-based types (but aquatic)
   filter(!(hydr_class %in% c("HC3"))) %>% 
@@ -854,10 +854,10 @@ valid_extra_popunits_cell_all_n2khab <-
   # since the base sampling frame uses strata, not types, we must align
   rename(stratum = type) %>% 
   mutate(
-    typelevel_certain = is.na(expanded_to),
+    typelevel_certain = !added_by_expansion,
     stratum = factor(stratum, levels = levels(n2khab_strata$stratum))
   ) %>% 
-  select(-expanded_to, -grts_join_method, -legacy_site, -is_cell_center) %>% 
+  select(-added_by_expansion, -grts_join_method, -legacy_site, -is_cell_center) %>% 
   relocate(grts_address_drawn) %>% 
   relocate(
     assessed_in_field,
@@ -1122,13 +1122,6 @@ absent_popunits_cell_all_n2khab <-
     year(assessment_date) >= year(today()) - 5
   ) %>% 
   select(point_code, type, is_present, assessment_date) %>% 
-  inner_join(
-    read_types() %>% 
-      select(type, typelevel, hydr_class),
-    join_by(type),
-    relationship = "many-to-one",
-    unmatched = c("error", "drop")
-  ) %>% 
   # expansion of main types to subtypes is needed for compatibility with MNE/MHQ
   # target populations; those main types are subsequently removed. With regard
   # to absences, the concept is simple: if a main type is assessed as absent, it
@@ -1136,13 +1129,20 @@ absent_popunits_cell_all_n2khab <-
   # subtypes to main types (that is only relevant in joining with some
   # geospatial layers)
   expand_types(mark = TRUE) %>% 
+  inner_join(
+    read_types() %>% 
+      select(type, typelevel, hydr_class),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
   # at the time of writing, the net operation is just the removal of main types,
   # since their subtypes were already present:
   filter(
-    !(expanded & typelevel == "main_type"),
-    is.na(expanded_to) | expanded_to != "main_type"
+    !(has_been_expanded & typelevel == "main_type"),
+    !added_by_expansion | (added_by_expansion & typelevel == "subtype")
   ) %>% 
-  select(-typelevel, -expanded, -expanded_to) %>% 
+  select(-typelevel, -has_been_expanded, -added_by_expansion) %>% 
   # add grts_address & include whether a location is assessed at the cell center
   inner_join(
     mhq_terr_refpoints,
