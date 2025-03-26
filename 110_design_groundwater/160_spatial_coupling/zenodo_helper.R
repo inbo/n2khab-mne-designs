@@ -23,10 +23,11 @@ get_zenodo_library <- function() {
             n2khab = require('n2khab')
             )
 
+  flanders <- c(FALSE, "10.5281/zenodo.3386224")
   habitatmap <- c(FALSE, "10.5281/zenodo.3354381")
   habitatmap_stdized <- c(TRUE, "10.5281/zenodo.3355192")
   habitatmap_terr <- c(TRUE, "10.5281/zenodo.3468948")
-  habitatsprings <- c(TRUE, "10.5281/zenodo.3550994")
+  habitatsprings <- c(FALSE, "10.5281/zenodo.3550994")
   habitatstreams <- c(FALSE, "10.5281/zenodo.3386245") # type 3260
   habitatquarries <- c(FALSE, "10.5281/zenodo.4072967")
 
@@ -41,6 +42,7 @@ get_zenodo_library <- function() {
   soilmap_simple <- c(TRUE, "10.5281/zenodo.3732903")
 
   zl <- t(data.frame(
+    flanders,
     habitatmap,
     habitatmap_stdized,
     habitatmap_terr,
