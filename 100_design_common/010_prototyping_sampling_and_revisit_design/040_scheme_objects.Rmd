@@ -679,15 +679,18 @@ mhq_proportions_sac_subset5 <-
       filter(module == "pan_effectmon_sac5_custommeas", sample_size_predetermined),
     by = "domain"
   ) %>%
-  # count the number of types that is sampled in each scheme
+  # count the number of types that is sampled in each scheme and per domain
   mutate(
     type_count_mhq_sampling = n(),
     .by = c(domain, scheme)
   ) %>%
+  # give each type x domain equal weight within the type category (where the
+  # weights sum to 1)
   mutate(
     prop_domaintype_per_cat = 1 / n(),
     .by = category
   ) %>%
+  # sum the weights per scheme, domain and category
   summarize(
     prop_mhq_domainscheme_per_cat = sum(prop_domaintype_per_cat),
     .by = c(domain, scheme, category, type_count_mhq_sampling)
