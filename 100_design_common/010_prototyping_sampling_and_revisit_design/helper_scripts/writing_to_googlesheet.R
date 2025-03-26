@@ -202,6 +202,26 @@ module_domain_scheme_stratum_sample_size %>%
   )
 
 module_domain_scheme_stratum_sample_size %>%
+  distinct(
+    module,
+    domain,
+    scheme,
+    cycle_duration_y,
+    type,
+    sp_sample_size_all_panels_type
+  ) %>%
+  arrange(module, domain, scheme, type) %>%
+  pivot_wider(
+    names_from = domain,
+    values_from = sp_sample_size_all_panels_type
+  ) %>%
+  arrange(module, scheme, type) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "mod_dom_scheme_type_smplsize_cross"
+  )
+
+module_domain_scheme_stratum_sample_size %>%
   select(
     module,
     domain,
