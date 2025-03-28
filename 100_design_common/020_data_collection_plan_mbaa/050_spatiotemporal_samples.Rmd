@@ -1,0 +1,258 @@
+# Meetplannen voor het MBAG in de eerste implementatiefase {#meetplan}
+
+Een meetplan dient, zoals reeds vermeld in de inleiding (hoofdstuk \@ref(inleiding)), informatie aan te leveren over waar, wanneer, waarover en hoe de monitoring wordt uitgevoerd.
+De voorliggende meetplannen voor het drukmeetnet in het MBAG beschrijven deze aspecten voor de monitoring van het natuurlijk milieu met behulp van de ruimtelijke steekproef, de milieu- en meetvariabelen en de protocollen.
+Het temporele aspect, zoals beschreven in het ontwerp van de meetnetten voor MBAG (zie hoofdstuk \@ref(samplesizecyclerevisit)), benodigt het vastleggen van een temporele design (welke meetfrequentie is nodig?).
+Daarnaast is een revisit design nodig om de spatiale en temporele design te koppelen.
+Deze bestaat uit een panel design (volgens welk herbezoekpatroon worden locaties aan tijdstippen gekoppeld?) en een membership design (hoe worden locaties toegewezen aan panels?). [^panel]
+De temporele en revisit design worden nog verder geoptimaliseerd.
+
+[^panel]: Een panel is een set van locaties die in dezelfde perioden herbezocht worden.
+
+## Ruimtelijke steekproef
+
+Uit het steekproefkader beschreven in hoofdstuk \@ref(steekproefkader) werden steekproeven getrokken per meetnet volgens de steekproefgroottes vermeld in hoofdstuk \@ref(samplesizecyclerevisit).
+De locaties van de getrokken eenheden in de meetnetspecifieke steekproeven worden ruimtelijk weergegeven.
+We bekijken bovendien de verdeling van de ruimtelijke steekproef over eenheden gelegen binnen versus buiten het netwerk van Speciale Beschermingszones van de Habitatrichtlijn (SBZ-H-netwerk).
+
+
+### Geografische verspreiding per typegroep in elk meetnet
+
+De geografische verspreiding van de steekproefeenheden over Vlaanderen is per meetnet weergegeven in:
+
+- Figuur \@ref(fig:spsample-map-GW-03-3) voor het meetnet eutrofiëring via het grondwater (`GW_03.3`);
+- Figuur \@ref(fig:spsample-map-GW-05-1-aq) voor het deelmeetnet verdroging via het grondwater - aquatische types (`GW_05.1_aq`);
+- Figuur \@ref(fig:spsample-map-GW-05-1-quarries) voor het deelmeetnet verdroging via het grondwater - mergelgroeven (`GW_05.1_quarries`);
+- Figuur \@ref(fig:spsample-map-GW-05-1-terr) voor het deelmeetnet verdroging via het grondwater - terrestrische types (`GW_05.1_terr`);
+- Figuur \@ref(fig:spsample-map-SOIL-03-2) voor het meetnet eutrofiëring via de bodem (`SOIL_03.2`);
+- Figuur \@ref(fig:spsample-map-SURF-03-4-lentic) voor het deelmeetnet eutrofiëring via het oppervlaktewater - lentische types (`SURF_03.4_lentic`); en
+- Figuur \@ref(fig:spsample-map-SURF-03-4-lotic) voor het deelmeetnet eutrofiëring via het oppervlaktewater - lotische types (`SURF_03.4_lotic`).
+
+De ruimtelijke steekproef is telkens weergegeven opgedeeld per typegroep, met vermelding van het aantal locaties en het aantal types in de typegroepen.
+Het deelmeetnet `GW_05.1_quarries` vormt hierop een uitzondering want het heeft geen typegroepen.
+
+```{r prepare-spsample-maps}
+type_spsamplesizes <-
+  module_domain_scheme_stratum_sample_size %>%
+  distinct(scheme, type, sp_sample_size_all_panels_type)
+
+scheme_types_attr <-
+  mne_scheme_types %>%
+  inner_join(type_spsamplesizes, join_by(scheme, type)) %>%
+  mutate(
+    typegroup_name2 = str_c(
+      coalesce(typegroup_shortname, ""),
+      " (",
+      n(),
+      " type",
+      ifelse(n() == 1, "", "s"),
+      ", ",
+      sum(sp_sample_size_all_panels_type) %>% as.integer(),
+      " locs)"
+    ) %>%
+      str_trim(),
+    .by = c(scheme, typegroup)
+  ) %>%
+  mutate(
+    typegroup_name2 = typegroup_name2 %>%
+      fct_reorder(coalesce(as.numeric(typegroup), 0))
+  ) %>%
+  select(scheme, type, typegroup_name2)
+
+spsamples <-
+  scheme_domain_stratum_spsamples %>%
+  select(-domain) %>%
+  inner_join(n2khab_strata, join_by(stratum)) %>%
+  inner_join(scheme_types_attr, join_by(scheme, type))
+
+spsamples_points <- add_point_coords_grts(spsamples)
+```
+
+```{r spsample-maps, results="asis"}
+spsamples_points %>%
+  nest(data = -scheme) %>%
+  {
+    walk2(.$scheme, .$data, function(sch, d) {
+      p <- ggplot() +
+        geom_sf(data = provinces, fill = "white", colour = "grey70") +
+        geom_sf(data = d, size = 0.25, colour = inbocol_3) +
+        facet_wrap(~typegroup_name2, ncol = 2) +
+        ggtitle(sch) +
+        our_update_theme_facets() +
+        our_update_theme_maps() +
+        our_update_theme_maps_in_facets() +
+        theme(plot.title = element_text(size = 12, hjust = 0.5))
+      if (interactive()) {
+        print(p)
+      } else {
+        schemename <- str_replace_all(sch, "_|\\.", "-")
+        ntg <- n_distinct(d$typegroup_name2)
+        knit_expand(text = c(
+          paste0(
+            "```{r spsample-map-{{schemename}}, ",
+            "fig.cap = 'Kaart van de ruimtelijke ",
+            "steekproef van meetnet {{sch}}",
+            if (ntg > 1) {
+              ", opgedeeld volgens typegroepen"
+            },
+            ". Elke eenheid ",
+            "is op deze weergave geabstraheerd ",
+            "tot een punt (midden van een rastercel).', ",
+            "fig.dim = figdim(c(9, ceiling(ntg / 2) * 2 + 0.8))}"
+          ),
+          "print(p)",
+          "```"
+        )) %>%
+          {
+            knit_child(
+              text = .,
+              quiet = TRUE,
+              envir = environment()
+            )
+          } %>%
+          cat(sep = "\n")
+      }
+    })
+  }
+```
+
+### Verdeling binnen en buiten het SBZ-H-netwerk
+
+Om na te gaan hoe sterk het SBZ-H-netwerk vertegenwoordigd is in de steekproeven van elk van de (sub)meetnetten, werd voor elk (sub)meetnet de steekproefgrootte opgedeeld tussen binnen en buiten het SBZ-H-netwerk.
+Hiermee beantwoorden we de vraag om voldoende aandacht te schenken aan het SBZ-H-netwerk.
+Figuur \@ref(fig:sacnetwork-subpop-graph) toont het aantal en het aandeel van steekproefeenheden binnen en buiten het SBZ-H-netwerk op (sub)meetnetniveau.
+De ruimtelijke steekproefeenheden gelegen binnen het SBZ-H-netwerk zijn goed voor **49 tot 71% van de totale steekproefgrootte**.
+Het aantal ruimtelijke steekproefeenheden opgesplitst per typegroep is weergegeven in Tabel \@ref(tab:sacnetwork-subpop-table).
+Deze verdeling komt bij benadering overeen met het overeenkomstige optreden van de types binnen en buiten het SBZ-H-netwerk in het steekproefkader.
+
+```{r prepare-sacnetwork-subpop}
+scheme_sacnetwork_stratum_spsamples <-
+  domain_grts_n2khab %>%
+  filter(domain == "SAC_network") %>%
+  select(grts_address) %>%
+  mutate(in_sac_network = TRUE) %>%
+  left_join(
+    scheme_domain_stratum_spsamples %>%
+      select(-domain),
+    .,
+    join_by(grts_address)
+  ) %>%
+  inner_join(n2khab_strata, join_by(stratum)) %>%
+  inner_join(
+    mne_scheme_types %>%
+      select(scheme, type, typegroup_name),
+    join_by(scheme, type)
+  )
+```
+
+(ref:sacnetwork-subpop-graph) Grootte van de ruimtelijke steekproef binnen vs. buiten het SBZ-H-netwerk, voor elk meetnet. De getallen in de balken betreffen het aantal steekproefeenheden.
+
+```{r sacnetwork-subpop-graph, fig.cap="(ref:sacnetwork-subpop-graph)", fig.dim = figdim(c(10, 4))}
+scheme_sacnetwork_stratum_spsamples %>%
+  mutate(in_sac_chr = ifelse(
+    !in_sac_network | is.na(in_sac_network),
+    "Buiten SBZ-H-netwerk",
+    "SBZ-H-netwerk"
+  )) %>%
+  count(scheme, in_sac_chr) %>%
+  mutate(scheme = fct_rev(scheme)) %>%
+  ggplot(aes(x = n, y = scheme, fill = in_sac_chr, label = n)) +
+  geom_col(position = position_fill()) +
+  geom_text(
+    size = 3.5,
+    position = position_fill(vjust = .5),
+    colour = inbocol_2_contrast
+  ) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c(inbocol_2_light, inbocol_2)) +
+  labs(
+    x = "Relatief aantal steekproefeenheden",
+    y = "Meetnet",
+    fill = "Domein"
+  ) +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+```
+
+(ref:sacnetwork-subpop-table) De verdeling van de steekproef in elk meetnet en typegroep over de tweedeling binnen vs. buiten het netwerk van habitatrichtlijngebieden (SBZ-H). 
+
+```{r sacnetwork-subpop-table}
+scheme_sacnetwork_stratum_spsamples %>%
+  mutate(in_sac_chr = ifelse(
+    !in_sac_network | is.na(in_sac_network),
+    "Buiten SBZ-H-netwerk",
+    "Binnen SBZ-H-netwerk"
+  )) %>%
+  count(
+    Meetnet = scheme,
+    Typegroep = typegroup_name,
+    in_sac_chr
+  ) %>%
+  pivot_wider(
+    names_from = in_sac_chr,
+    values_from = n
+  ) %>%
+  kbl_bt(
+    align = "llcc",
+    caption = "(ref:sacnetwork-subpop-table)"
+  ) %>%
+  our_column_spec(column = 1:4, width = str_c(c(3, 5, 2.5, 2.5), "cm")) %>%
+  collapse_rows(columns = 1, valign = "top", latex_hline = "major") %>%
+  kable_styling(full_width = FALSE)
+```
+
+De steekproeven buiten het SBZ-H-netwerk zijn echter verspreid over een grotere oppervlakte dan die binnen het SBZ-H-netwerk.
+We kunnen hiermee rekening houden door de densiteit van de steekproeven (het aantal steekproefeenheden per oppervlakte-eenheid) te vergelijken tussen binnen en buiten het SBZ-H-netwerk (Figuur \@ref(fig:sacnetwork-subpop-graph-dens)).
+De densiteit van de steekproeven in het SBZ-H-netwerk is **12 tot 30 keer hoger** dan de densiteit buiten het SBZ-H-netwerk.
+Hieruit blijkt dat per oppervlakte-eenheid het SBZ-H-netwerk veel malen sterker vertegenwoordigd is in de steekproeven dan het gebied buiten het SBZ-H-netwerk.
+Dit is een weerspiegeling van de hogere densiteit aan populatie-eenheden in de steekproefkaders binnen SBZ-H dan buiten SBZ-H.
+
+(ref:sacnetwork-subpop-graph-dens) Densiteit van de ruimtelijke steekproef binnen vs. buiten het SBZ-H-netwerk, voor elk meetnet. De aangegeven ratio is de verhouding tussen beide densiteiten per meetnet ($d_{binnen}/d_{buiten}$).
+
+```{r sacnetwork-subpop-graph-dens, fig.cap="(ref:sacnetwork-subpop-graph-dens)", fig.dim = figdim(c(9, 9))}
+install_unit("100km^2", "100 km^2")
+domain_areas <-
+  domains %>%
+  filter(domain %in% c("Flanders", "SAC_network")) %>%
+  mutate(area = st_area(.)) %>%
+  st_drop_geometry()
+area_outside <- with(domain_areas, area[1] - area[2]) %>% set_units("100km^2")
+area_inside <- domain_areas$area[2] %>% set_units("100km^2")
+scheme_sacnetwork_stratum_spsamples %>%
+  mutate(in_sac_chr = ifelse(
+    !in_sac_network | is.na(in_sac_network),
+    "Buiten SBZ-H-netwerk",
+    "SBZ-H-netwerk"
+  )) %>%
+  count(scheme, in_sac_chr) %>%
+  mutate(
+    dens = ifelse(
+      in_sac_chr == "SBZ-H-netwerk",
+      n / area_inside,
+      n / area_outside
+    ),
+    ratio = (dens[str_detect(in_sac_chr, "^SBZ")] /
+               dens[str_detect(in_sac_chr, "^Buiten")]) %>%
+      round(1),
+    scheme_ratio = str_c(scheme, "\n(ratio: ", ratio, ")"),
+    .by = scheme
+  ) %>%
+  ggplot(aes(x = dens, y = in_sac_chr, fill = in_sac_chr)) +
+  geom_col(position = "dodge") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c(inbocol_2_light, inbocol_2)) +
+  facet_grid2(
+    scheme_ratio ~ .,
+    scales = "free_x",
+    independent = "x"
+  ) +
+  labs(
+    x = "Densiteit van steekproefeenheden (aantal per 10 x 10 km²)",
+    y = "Domein",
+    fill = "Domein"
+  ) +
+  our_update_theme_facets() +
+  our_update_theme_bars_in_horfacets()
+```
