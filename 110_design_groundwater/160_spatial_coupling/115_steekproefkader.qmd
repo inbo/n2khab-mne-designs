@@ -380,7 +380,9 @@ model_fit <- rstan::sampling(
 
 # model_fit
 model_results <- as.data.frame(summary(model_fit)$summary)
-saveRDS(model_results, here::here("cache", "regression", "steekproefkader_bayesian.rds"))
+saveRDS(model_results,
+  here::here("cache", "regression", "steekproefkader_bayesian.rds")
+)
 knitr::kable(t(model_results))
 ```
 
@@ -400,6 +402,10 @@ plot(model_fit,
   )
 ```
 
+
+```{r result-bayesian}
+y_bayesian <-  fitting_function(x, c(model_results["A", "mean"], model_results["k", "mean"])) 
+```
 
 The regression for this particular sampling simulation is "quite a good fit", thus leaves little flexibility for the regression parameters.
 
@@ -502,7 +508,8 @@ plot_param <- function(param){
     geom_histogram(bins = 256, width = 1.05,
                    color = NA, fill = "darkgray",
                    alpha = 1., position = "identity") +
-    geom_vline(xintercept = reference[[param]]) +
+    geom_vline(xintercept = reference[[param]], color = "steelblue", linetype = "dashed") +
+    geom_vline(xintercept = model_results[param, "mean"], color = "darkred", linetype = "dotted") +
     xlab(param) +
     theme_bw()
 
@@ -514,12 +521,19 @@ plot_param <- function(param){
 ## parameter `A` (scale)
 
 ```{r plot-A-distribution}
+print(paste0(c("Frequentist: ", reference["A"]), collapse = ""))
+print(paste0(c("Bayesian: ", model_results["A", "mean"]), collapse = ""))
+
 plot_param("A")
 knitr::kable(t(round(quantile(straps$A, probs = c(0.05, 0.5, 0.95)), 2)))
 ```
 
+
 ## parameter `k` (exponent)
 ```{r plot-k-distribution}
+print(paste0(c("Frequentist: ", reference["k"]), collapse = ""))
+print(paste0(c("Bayesian: ", model_results["k", "mean"]), collapse = ""))
+
 plot_param("k")
 knitr::kable(t(round(quantile(straps$k, probs = c(0.05, 0.5, 0.95)), 2)))
 ```
@@ -554,7 +568,7 @@ get_line <- function(perc){
 
 ```{r plot-confidence}
 #| label: fig-confidence
-#| fig-cap: "Distance-rule-dependent site re-use. The higher we set the distance threshold for inclusion of existing sites (x), the more existing watina locations would potentially be re-used for the MNM sampling. Black line: actual sampling; blue dashed line: regression; grey: bootstrapping interval."
+#| fig-cap: "Distance-rule-dependent site re-use. The higher we set the distance threshold for inclusion of existing sites (x), the more existing watina locations would potentially be re-used for the MNM sampling. Black line: actual sampling; blue dashed line: regression; red dotted line: Bayesian regression (mean); grey: bootstrapping interval."
 
 h <- ggplot(NULL) +
   geom_ribbon(aes(x = test_d, ymin = get_line(0.02), ymax = get_line(0.98)),
@@ -562,6 +576,8 @@ h <- ggplot(NULL) +
   geom_step(aes(x = x, y = y), color = "black") +
   geom_line(aes(x = x, y = y_fit), color = "steelblue",
     linetype = "dashed", linewidth = 1.5) +
+  geom_line(aes(x = x, y = y_bayesian), color = "darkred",
+    linetype = "dotted", linewidth = 0.5) +
   labs(x = "inclusion distance threshold (m)", y = "cumulative site re-use") +
   xlim(0, 32) +
   ylim(0, 1.05*fit_result$predict(32)) +
@@ -578,17 +594,30 @@ suppressWarnings(print(h))
 Translated to specific examples:
 
 
-```{r check1}
-check_dist <- 5 # m
-check_r <- round(quantile(test_calculations[check_dist,], probs = c(0.05, 0.5, 0.95)), 1)
-knitr::kable(t(check_r))
-```
-At a distance of `{r} check_dist` m, we would expect between `{r} round(check_r[[1]])` and `{r} round(check_r[[3]])` sites to qualify for re-use.
-
-
 ```{r check2}
-check_dist <- 8 # m
+check_dist <- 10 # m
 check_r <- round(quantile(test_calculations[check_dist,], probs = c(0.05, 0.5, 0.95)), 1)
 knitr::kable(t(check_r))
 ```
 At a distance of `{r} check_dist` m, we would expect between `{r} round(check_r[[1]])` and `{r} round(check_r[[3]])` sites to qualify for re-use.
+
+
+Overview:
+
+```{r check1}
+CheckDistance <- function(check_dist){
+  check_r <- round(quantile(test_calculations[check_dist,], probs = c(0.05, 0.5, 0.95)), 1)
+  check <- list(
+    "distance" = check_dist,
+    "q0.05" = check_r[[1]],
+    "q0.50" = check_r[[2]],
+    "q0.95" = check_r[[3]]
+    )
+  return(as.data.frame(check))
+}
+
+
+knitr::kable(bind_rows(lapply(c(1, 2, 4, 8, 10, 16, 32, 64, 100), FUN = CheckDistance)))
+
+```
+
