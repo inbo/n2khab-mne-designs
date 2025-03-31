@@ -30,6 +30,9 @@ source("./auxiliary_data_queries.R")
 
 # uniform regression tools and plot helpers
 source("./regression_tools.R")
+
+local_cache_folder <- "cache_old"
+message("WARNING: using the old cache folder! TODO: update before final render.")
 ```
 
 :::{.callout-note}
@@ -43,7 +46,7 @@ Please ensure that the data is up to date.
 
 soilclasses <- c("heavy", "light", "peat")
 
-combine_path <- function(filepath) here::here("cache", "regression", filepath)
+combine_path <- function(filepath) here::here(local_cache_folder, "regression", filepath)
 stitch_filepath <- function(label, sc, reg_var, extension = "parquet") {
   # examples: 
   #   label = "allin", "slopefilter", "maaiveld"
@@ -456,8 +459,15 @@ Yet how many locations would be affected?
 
 ## Application to a Simulated Spatial Sample of the Groundwater Monitoring Network of MNE
 
+```{r sp-samples}
+spsamples <- readRDS(file.path(local_cache_folder, "spsamples_gw_sf_panflpan5.rds")) %>% 
+  cbind(sf::st_drop_geometry(.), sf::st_coordinates(.)) %>%
+  dplyr::filter(hydr_class != "HC3")
+
+```
+
 To quantify what this threshold would mean for practical roll-out of the monitoring network, we can take a hypothetical ("work in progress") draw of locations ("sample") from the sampling frame (see "Proof Of Concept").
-The sample was provided by Floris Vanderhaeghe (&#64;florisvdh) on Feb. 3rd, 2025, and contains 978 potential location sites.
+The sample was provided by Floris Vanderhaeghe (&#64;florisvdh) on March 21st, 2025, and contains `{r} nrow(spsamples)` potential location sites.
 
 We calculate all cross-distances between (A) those hypothetical locations, and (B) all existing watina locations.
 In other words, for each location from the hypothetical sample, we calculate the spatial distance in meters to each reference location; this does *not* include pairwise distances within the set of sample locations.
@@ -469,7 +479,7 @@ Taking the **cumulative cross-distance distribution**, again approximated by a r
 
 
 ```{r load-spk-regression}
-model_results <- readRDS(here::here("cache", "regression", "steekproefkader_bayesian.rds"))
+model_results <- readRDS(here::here(local_cache_folder, "regression", "steekproefkader_bayesian.rds"))
 
 calculate_n_sites <- function(distance, col = "mean") {
   A <- model_results["A", col]
@@ -608,3 +618,9 @@ g + xlab("distance (m)") + ylab("mean absolute difference (mTAW)") +
 | `118_summary`                                | This overview.                                                                                                               |
 
 
+
+# System
+
+```{r session-info}
+sessionInfo()
+```
