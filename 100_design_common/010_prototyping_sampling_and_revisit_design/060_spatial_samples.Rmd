@@ -44,6 +44,7 @@ However for synergy with schemes from other compartments, we will still use it i
 This choice is also because it's better to generate thresholds further apart than too close together for certain schemes.
 
 Defining the GRTS partition number, based on the module combo **rank** and panel split, for each domain and stratum, hence across schemes.
+We only take into account sample sizes larger than zero.
 
 ```{r}
 moco_dom_stratum_grtspart <- 
@@ -57,6 +58,8 @@ moco_dom_stratum_grtspart <-
     sp_sample_size_all_panels_stratum,
     nunits
   ) %>%
+  # drop sample sizes of zero
+  filter(sp_sample_size_all_panels_stratum > 0) %>% 
   # for MNE, non-core schemes are dropped, except for specifically added types
   # for those non-core-schemes.
   filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
@@ -259,6 +262,7 @@ including_domain <- unique(domain_relations_spsamples$included_by)
 ```
 
 Determining the sample sizes at module combo instead of module level.
+Since this object is going to be used to draw actual samples and spare units, sample sizes of zero are dropped.
 
 ```{r}
 scheme_moco_ps_dom_stratum_sample_size <- 
@@ -305,7 +309,8 @@ scheme_moco_ps_dom_stratum_sample_size <-
       domain,
       stratum
     )
-  )
+  ) %>% 
+  filter(sp_sample_size_all_panels_stratum > 0)
 ```
 
 Inspecting the obtained sample sizes once more, by aggregating.
