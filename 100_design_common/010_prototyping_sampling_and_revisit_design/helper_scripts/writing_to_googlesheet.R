@@ -61,15 +61,42 @@ domain_scheme_stats %>%
 # - mod_dom_scheme_ssf_stratum_nunits
 # - non_core_types_per_module_and_compartment
 
-module_domains %>%
+domain_type_nunits_attribs <-
+  module_domains %>%
   filter(sample_size_predetermined) %>%
   semi_join(domain_type_nunits, ., by = "domain") %>%
   arrange(type) %>%
   semi_join(targetpops %>% distinct(type), by = "type") %>%
+  inner_join(
+    read_types() %>%
+      mutate(
+        is_habitat = !str_detect(type, "^rbb"),
+        in_aquatic_subset = case_when(
+          hydr_class == "HC3" ~ list(TRUE),
+          hydr_class == "HC23" ~ list(c(TRUE, FALSE)),
+          .default = list(FALSE)
+        )
+      ) %>%
+      unnest(in_aquatic_subset) %>%
+      select(type, in_aquatic_subset, is_habitat, typeclass),
+    join_by(type),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  )
+domain_type_nunits_attribs %>%
   pivot_wider(names_from = domain, values_from = nunits) %>%
+  arrange(type, in_aquatic_subset) %>%
   write_sheet(
     ss = gs_id,
     sheet = "domain_type_nunits"
+  )
+domain_type_nunits_attribs %>%
+  filter(is_habitat, !in_aquatic_subset) %>%
+  pivot_wider(names_from = domain, values_from = nunits) %>%
+  arrange(type, in_aquatic_subset) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "domain_type_nunits_terrhab"
   )
 
 module_targetpops %>%
