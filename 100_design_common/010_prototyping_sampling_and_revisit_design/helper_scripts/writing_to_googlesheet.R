@@ -98,6 +98,15 @@ domain_type_nunits_attribs %>%
     ss = gs_id,
     sheet = "domain_type_nunits_terrhab"
   )
+# calculate total surface area for terrestrial habitat per SAC
+domain_type_nunits_attribs %>%
+  filter(is_habitat, !in_aquatic_subset) %>%
+  filter(str_detect(domain, "^BE")) %>%
+  mutate(is_forest = typeclass == "FS") %>%
+  summarize(
+    area = sum(nunits) * 1024 %>% set_units("m^2") %>% set_units("ha"),
+    .by = is_forest
+  )
 
 module_targetpops %>%
   distinct(module, type) %>%
@@ -283,6 +292,23 @@ mhq_mod_dom_type_no_sample %>%
   write_sheet(
     ss = gs_id,
     sheet = "MHQ_mod_dom_type_NOTSAMPLED_nunits"
+  )
+# calculate corresponding surface area for terrestrial habitat per SAC in pan5
+mhq_mod_dom_type_no_sample %>%
+  filter(
+    str_detect(domain, "^BE"),
+    module == "pan_effectmon_sac5_custommeas"
+  ) %>%
+  inner_join(
+    read_types(),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  mutate(is_forest = typeclass == "FS") %>%
+  summarize(
+    area = sum(nunits) * 1024 %>% set_units("m^2") %>% set_units("ha"),
+    .by = is_forest
   )
 
 
