@@ -13,17 +13,18 @@ knitr:
 ---
 
 ::: {.callout-warning icon=false}
-## Thresholds
-According to "all-inclusive" variogram models, the $1 cm$ threshold would be exceeded at distances of $1.5 m$ ("heavy" soil), $0.9 m$ ("light" soil), and $13.0 m$ ("peat"), respectively.
+This notebook provides an introduction to a more complex analysis of the spatial coupling of groundwater level measurements.
 
-Note that these have explorative and educational purpose, and serve as a first reference.
-There are many more (reasonable) filter settings to explore which affect the data (e.g. slope), and measurement uncertainty will be assessed by bootstrapping.
+According to "all-inclusive" variogram models derived below, a $1 cm$ difference threshold in the water level of two WATINA locations would be exceeded at distances of $1.5 m$ ("heavy" soil), $0.9 m$ ("light" soil), and $13.0 m$ ("peat"), respectively.
+Although these calculations serve as a first reference, the remnant value of this notebook is explorative and educational.
+Many more (reasonable) filter settings which affect the data (e.g. slope) remain to be explored in the following notebooks, and measurement uncertainty will be assessed by bootstrapping.
 
 
-The core purpose of this notebook is to establish the choices for binning and difference parameter.
+The core purpose of *this* notebook is to establish the choices for binning and difference parameters, showcase the general technique, and introduce vocabulary.
 Fine-grained comparisons are found in the other notebooks.
 
 :::
+
 
 
 # summary (tl;dr)
@@ -34,7 +35,7 @@ We group all possible such pairs of wells by distance ("binning"), use pair-aver
 To determine a range at which the average water level difference exceeds a given threshold (i.e. a range at which we would expect observation wells to yield more independent data), we use regression with a Matérn function.
 
 
-This procedure is in line with the general algorithm of variograms ([see here](https://github.com/inbo/tutorials/pull/352)), but deviates in some design choices to what is conventionally understood as "variogram".
+This procedure is in line with the general algorithm of variograms ([see here](https://tutorials.inbo.be/tutorials/spatial_variograms)), but deviates in some design choices to what is conventionally understood as "variogram".
 The most important differences are the choice of difference measure (mean absolute difference instead of semivariance), and adjustments to binning (homogeneous bin fill, but variable bin width).
 In detail:
 
@@ -288,7 +289,7 @@ diff_widegroup %>%
 
 ```{r diff-ridges-dw}
 #| label: fig-ridges
-#| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (y-axis), the distribution of water level differences (x-axis, grey density distributions) increases (indicated by quantile lines)."
+#| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (x-axis), the distribution of water level differences (y-axis, grey density distributions) increases (indicated by quantile lines)."
 diff_widegroup %>%
   ggplot(aes(x = dw, y = distance_widebin)) +
   geom_density_ridges(rel_min_height = 0.05,
@@ -297,7 +298,8 @@ diff_widegroup %>%
   # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
   labs(x = "mean water level difference", y = "pair distance") +
   xlim(0, pi) +
-  theme_bw()
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
 ```
 
 
@@ -518,10 +520,10 @@ Seems more balanced, let's see what to do with these bins.
 # regression {#sec-regression}
 
 Here comes a blunt appearance of a general toolkit for regression, based on `optim` ([docs](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/optim)), which is thrown into the R script file `regression_tools.R` for convenient DRY re-use in this and the following notebooks.
-It is derived in some more detail [here](https://github.com/inbo/tutorials/pull/352).
+It is derived in some more detail [here](https://tutorials.inbo.be/tutorials/spatial_variograms).
 
 Note that root-mean square difference (RMSD) is optionally distance-weighted, by dividing each observed `prediction-actual` difference by square root of the distance.
-This effectively gives extra relevance to the proximal bins.
+This effectively gives extra relevance to the proximal bins (which would otherwise be outnumbered).
 
 
 ```{r regression-tools}
@@ -531,7 +533,8 @@ source("regression_tools.R")
 ```
 
 
-The Matérn parametrization below is related to the parameters on (semi-)variogram plots:
+The Matérn parametrization below is related to the parameters on (semi-)variogram plots.
+Some vocabulary:
 
 ```
       ^
@@ -543,7 +546,7 @@ Sill  |     :____,model
  IOG  |  /  :
  RAM  | /   :
       |/    :
-Nugget| Cor.: Uncor.
+Nugget| Cor.: Uncorrelated
      _|_____:___________>
       |              lag distance
 ```
@@ -812,7 +815,7 @@ regression_by_soilclass("peat",
 
 As mentioned, these are just an initial shot at the data. 
 The remaining design choices are evaluated at length in the following notebooks.
-Impatient readers are welcome to skip to `118_summary`.
+Impatient readers are welcome to skip to the notebook `118_summary`.
 
 
 <hr>
