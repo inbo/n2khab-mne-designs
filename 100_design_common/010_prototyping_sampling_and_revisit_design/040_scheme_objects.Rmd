@@ -708,10 +708,13 @@ mne_core_proportions_sac_subset5 <-
   filter(!str_detect(scheme, "^HQ")) %>%
   inner_join(n2khab_strata, by = "stratum") %>%
   distinct(domain, scheme, type) %>%
+  # give each domain x type equal weight per scheme; sum to one per scheme
   mutate(
     prop_domaintype_per_mne_scheme = 1 / n(),
     .by = scheme
   ) %>%
+  # aggregate weights per domain x scheme, in order to distribute sample size
+  # over domains within a scheme
   summarize(
     prop_domain_per_mne_scheme = sum(prop_domaintype_per_mne_scheme),
     .by = c(domain, scheme)
