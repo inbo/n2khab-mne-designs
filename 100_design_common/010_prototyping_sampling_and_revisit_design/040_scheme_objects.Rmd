@@ -625,8 +625,14 @@ non_core_types_per_module_and_compartment <-
     by = "module"
   ) %>%
   inner_join(
+    submodules,
+    join_by(module),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>% 
+  inner_join(
     scheme_targetpop_sets %>%
-      select(stset_id, scheme_set, targetpops_strata) %>%
+      select(stset, scheme_set, targetpops_strata) %>%
       mutate(
         scheme_targetpop = map2(
           scheme_set, targetpops_strata, function(ss, tp) {
@@ -636,8 +642,9 @@ non_core_types_per_module_and_compartment <-
         .keep = "unused"
       ) %>%
       unnest(cols = scheme_targetpop),
-    by = "stset_id"
+    by = "stset"
   ) %>%
+  distinct(pick(-submodule, -stset)) %>% 
   inner_join(n2khab_strata, by = "stratum") %>%
   filter(programme == "MNE") %>%
   select(
