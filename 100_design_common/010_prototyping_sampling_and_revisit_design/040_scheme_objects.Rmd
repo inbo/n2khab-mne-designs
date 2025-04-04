@@ -22,15 +22,16 @@ scheme_targetpop_sets <-
 Flattening the target populations per module, using strata.
 
 ```{r paged.print=FALSE}
-module_targetpops_strata <-
-  modules %>%
-  select(module, stset_id) %>%
+submodule_targetpops_strata <-
+  submodules %>%
   inner_join(
     scheme_targetpop_sets %>%
-      select(stset_id, targetpops_strata),
-    by = "stset_id"
+      select(stset, targetpops_strata),
+    join_by(stset),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
   ) %>%
-  select(-stset_id) %>%
+  select(-stset) %>%
   unnest(targetpops_strata)
 ```
 
@@ -341,34 +342,46 @@ scheme_ssf_domain_stratum_nunits <-
 Each module has a restricted set of schemes, associated target populations, and domains.
 
 ```{r}
-mod_dom_scheme_ssf_stratum_nunits <-
+submod_dom_scheme_ssf_stratum_nunits <-
   scheme_ssf_domain_stratum_nunits %>%
   inner_join(
     module_domains %>% select(module, domain),
     .,
-    by = "domain",
-    relationship = "many-to-many"
+    join_by(domain),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>% 
+  # Restricting to target populations per submodule; adding the latter. Also,
+  # the target populations themselves are restricted by the domain-stratum
+  # relation.
+  inner_join(
+    submodule_targetpops_strata,
+    join_by(module, scheme, stratum),
+    relationship = "many-to-many",
+    unmatched = "drop"
   ) %>%
-  semi_join(module_targetpops_strata, by = c("module", "scheme", "stratum")) %>%
+  relocate(submodule, .after = module) %>% 
   # adding the is_core_scheme variable, which is module x scheme specific
   inner_join(
-    modules %>%
-      select(module, stset_id) %>%
+    submodules %>%
+      select(module, stset) %>%
       inner_join(
         scheme_targetpop_sets %>%
-          select(stset_id, scheme_set) %>%
+          select(stset, scheme_set) %>%
           unnest(scheme_set) %>%
-          select(stset_id, scheme, is_core_scheme),
-        by = "stset_id",
-        relationship = "many-to-many"
+          select(stset, scheme, is_core_scheme),
+        join_by(stset),
+        relationship = "many-to-many",
+        unmatched = c("error", "drop")
       ) %>%
-      select(-stset_id),
-    by = c("module", "scheme")
+      select(-stset) %>% 
+      distinct(),
+    join_by(module, scheme)
   ) %>%
   relocate(is_core_scheme, .after = scheme)
 ```
 
-Note that we will update `mod_dom_scheme_ssf_stratum_nunits` once again after the restriction of MHQ schemes below.
+Note that we will update `submod_dom_scheme_ssf_stratum_nunits` once again after the restriction of MHQ schemes below.
 
 ### Restriction of MHQ schemes and associated types per domain based on required surface area
 
@@ -377,11 +390,12 @@ Module-specific rules can apply to exclude some types or schemes from the MHQ pr
 In fact, those excluded types (see objects below) are measured in other ways, but we don't consider them in the sampling and revisit design.
 This choice is also made because for several of such types this rule had already been applied at the Flemish level in MHQ which makes them not even appear in `read_scheme_types()`, hence they were already absent from objects like `targetpops` and `scheme_targetpop_sets`.
 
-Creating some helper objects that add types and categories to `mod_dom_scheme_ssf_stratum_nunits` partim MHQ.
+Creating some helper objects that add types and categories to `submod_dom_scheme_ssf_stratum_nunits` partim MHQ.
 
 ```{r}
 mhq_mod_dom_scheme_ssf_stratum_nunits_type <-
-  mod_dom_scheme_ssf_stratum_nunits %>%
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  distinct(pick(-submodule)) %>% 
   semi_join(
     module_domains %>% filter(sample_size_predetermined),
     join_by(module, domain)
@@ -472,7 +486,7 @@ The scheme is also added and is a mere attribute; it does not cause duplication:
 ```{r}
 mhq_mod_dom_type_no_sample <-
   # using the complete object, not restricted to MHQ:
-  mod_dom_scheme_ssf_stratum_nunits %>%
+  submod_dom_scheme_ssf_stratum_nunits %>%
   filter(str_detect(scheme, "^HQ")) %>%
   distinct(module, domain) %>%
   inner_join(
@@ -495,18 +509,18 @@ mhq_mod_dom_type_no_sample <-
 
 ### Applying the MHQ restriction for module x domain x scheme x stratum to the complete set
 
-Updating `mod_dom_scheme_ssf_stratum_nunits`.
+Updating `submod_dom_scheme_ssf_stratum_nunits`.
 
 ```{r}
-mod_dom_scheme_ssf_stratum_nunits <-
-  mod_dom_scheme_ssf_stratum_nunits %>%
+submod_dom_scheme_ssf_stratum_nunits <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
   anti_join(
     mhq_mod_dom_scheme_mhqsamplestratum_no_sample,
     by = c("module", "domain", "scheme", "stratum")
   )
 ```
 
-## Determining schemes and population sizes per domain for each module
+## Determining schemes and population sizes per domain for each (sub)module
 
 We restrict all schemes based on the presence of strata in domains.
 Some of the domains also play a role in scheme implementation (see \@ref(domains-per-module)).
@@ -517,7 +531,7 @@ Hence from here on, we only consider sampling approaches.
 
 ```{r}
 module_domain_schemes <-
-  mod_dom_scheme_ssf_stratum_nunits %>%
+  submod_dom_scheme_ssf_stratum_nunits %>%
   distinct(module, domain, scheme, is_core_scheme)
 ```
 
@@ -546,8 +560,8 @@ for (objectname in c(
 Calculating statistics of the population size per **stratum**, per module x domain x scheme.
 
 ```{r}
-module_domain_scheme_stratumstats <-
-  mod_dom_scheme_ssf_stratum_nunits %>%
+submodule_domain_scheme_stratumstats <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
   summarize(
     stratum_count = n(),
     stratum_nunits_min = min(nunits),
@@ -555,18 +569,26 @@ module_domain_scheme_stratumstats <-
     stratum_nunits_q2 = quantile(nunits, 0.5),
     stratum_nunits_q3 = quantile(nunits, 0.75),
     stratum_nunits_max = max(nunits),
-    .by = c(module, domain, scheme)
+    .by = c(module, submodule, domain, scheme)
   ) %>%
-  arrange(module, domain, scheme)
+  arrange(module, submodule, domain, scheme)
 ```
 
 Calculating statistics of the population size per **type**, per module x domain x scheme.
 
 ```{r}
-module_domain_scheme_typestats <-
-  mod_dom_scheme_ssf_stratum_nunits %>%
-  inner_join(n2khab_strata, by = "stratum") %>%
-  summarize(nunits = sum(nunits), .by = c(module, domain, scheme, type)) %>%
+submodule_domain_scheme_typestats <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  summarize(
+    nunits = sum(nunits),
+    .by = c(module, submodule, domain, scheme, type)
+  ) %>%
   summarize(
     type_count = n(),
     type_nunits_min = min(nunits),
@@ -574,9 +596,9 @@ module_domain_scheme_typestats <-
     type_nunits_q2 = quantile(nunits, 0.5),
     type_nunits_q3 = quantile(nunits, 0.75),
     type_nunits_max = max(nunits),
-    .by = c(module, domain, scheme)
+    .by = c(module, submodule, domain, scheme)
   ) %>%
-  arrange(module, domain, scheme)
+  arrange(module, submodule, domain, scheme)
 ```
 
 <!-- XXXXX Note that quite some polygons have been dropped in domain_hmt_pol_grts after the join with hmt_pol_grts_cellcenter was added, leading to a clearly lower number of units; this may be because of the clipping effect of grts_mh (which is too small) and also because of dropping small polygons (small=FALSE), i.e. that didn't intersect any cell center. -->
