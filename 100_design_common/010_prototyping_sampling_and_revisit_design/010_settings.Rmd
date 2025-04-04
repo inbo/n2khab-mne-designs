@@ -97,6 +97,38 @@ targetpops_exclude_from_pan <-
   select(scheme, type)
 ```
 
+Preparing custom target populations for submodules (see later).
+These target populations will typically be a subset of the module's target population.
+They will never extend (exceed) the target population.
+
+```{r}
+n2khab_targetpops <-
+  read_scheme_types() %>%
+  select(scheme, type)
+# Custom target population for a densification submodule in pan_effectmon
+# modules. Note that this still needs the restriction by
+# targetpops_exclude_from_pan
+pan_effectmon_mne_targetpops_densification <- 
+  tribble(
+    ~compartment, ~type,
+    "GW", "4010",
+    "SOIL", "4030",
+    NA_character_, "6230_hmo",
+    NA_character_, "7140_oli",
+    NA_character_, "9190"
+  ) %>% 
+  mutate(type = factor(type, levels = levels(n2khab_targetpops$type))) %>% 
+  inner_join(
+    n2khab_targetpops %>% 
+      filter(scheme %in% pan_effectmon_schemes_mne$scheme),
+    join_by(type),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>% 
+  filter(is.na(compartment) | str_detect(scheme, compartment)) %>% 
+  select(scheme, type)
+```
+
 Note that 'completion' of target population takes into account that RIBs are not included in the target population of 'pan_effectmon' schemes by definition.
 
 So we must also define these target populations in 'pan_effectmon' schemes as not considering RIBs.
@@ -106,47 +138,63 @@ A 'scheme + target population set' defines both the schemes and optional subsett
 The 'core schemes' of a 'scheme + target population set' are the schemes with a custom sample size in a module.
 
 ```{r paged.print=FALSE}
-n2khab_targetpops <-
-  read_scheme_types() %>%
-  select(scheme, type)
-stset_name_vec <- c(
-  "pan_effectmon_schemes",
-  "pan_effectmon_schemes_mne",
-  "pan_transmon_schemes",
-  "mbaa_mne_phase_1_schemes"
-)
 scheme_targetpop_sets <-
-  tibble(
-    stset_id = seq_along(stset_name_vec),
-    stset_name = fct(stset_name_vec),
-    scheme_set = map(stset_name_vec, ~ eval(as.name(.)))
+  tribble(
+    ~stset, ~scheme_set_name, ~targetpop_custom,
+    "sts_pan_effectmon", "pan_effectmon_schemes", NULL,
+    "sts_pan_effectmon_mne", "pan_effectmon_schemes_mne", NULL,
+    "sts_pan_effectmon_mne_densification", "pan_effectmon_schemes_mne",
+    pan_effectmon_mne_targetpops_densification,
+    "sts_pan_transmon", "pan_transmon_schemes", NULL,
+    "sts_mbaa_mne_phase_1", "mbaa_mne_phase_1_schemes", NULL
+  ) %>% 
+  mutate(
+    stset = fct(stset),
+    scheme_set = map(scheme_set_name, ~ eval(as.name(.)))
   ) %>%
   mutate(
-    targetpops = map2(scheme_set, stset_name, function(sts, stsn) {
-      n2khab_targetpops %>%
-        semi_join(sts, by = "scheme") %>%
-        # restrict GW_05.1_terr target populations in 'pan' schemes:
-        {
-          if (str_detect(stsn, "pan_")) {
-            anti_join(
-              .,
-              targetpops_exclude_from_pan,
-              by = c("scheme", "type")
-            )
-          } else {
-            .
+    targetpops = pmap(
+      list(stset, scheme_set, targetpop_custom),
+      function(sts, schs, tpc) {
+        n2khab_targetpops %>%
+          semi_join(schs, by = "scheme") %>%
+          # restrict to customized targetpop if available:
+          {
+            if (is.null(tpc)) {
+              .
+            } else {
+              semi_join(., tpc, join_by(scheme, type))
+            }
+          } %>% 
+          # restrict GW_05.1_terr target populations in 'pan' schemes:
+          {
+            if (str_detect(sts, "pan_")) {
+              anti_join(
+                .,
+                targetpops_exclude_from_pan,
+                by = c("scheme", "type")
+              )
+            } else {
+              .
+            }
+          } %>% 
+          # restrict all 'pan_effectmon' stsets to habitat types:
+          {
+            if (str_detect(sts, "pan_effectmon")) {
+              filter(., !str_detect(type, "^rbb"))
+            } else {
+              .
+            }
           }
-        } %>% 
-        # restrict all 'pan_effectmon' schemes to habitat types:
-        {
-          if (str_detect(stsn, "pan_effectmon_")) {
-            filter(., !str_detect(type, "^rbb"))
-          } else {
-            .
-          }
-        }
+      }
+    ),
+    # limiting scheme sets to those that occur in target populations (this is
+    # relevant for the custom targetpop restrictions above):
+    scheme_set = map2(scheme_set, targetpops, function(schs, tp) {
+      semi_join(schs, tp, join_by(scheme))
     })
-  )
+  ) %>% 
+  select(-scheme_set_name, -targetpop_custom)
 scheme_targetpop_sets
 ```
 
