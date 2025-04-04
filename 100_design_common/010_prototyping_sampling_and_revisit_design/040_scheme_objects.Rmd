@@ -683,8 +683,8 @@ Preparing objects that will distribute sample sizes that have been set at a leve
 - a specific distribution is done in module `pan_transmon_be2100024` over aquatic schemes (MHQ).
 
 ```{r}
-mhq_proportion_aquatic_per_module <-
-  mod_dom_scheme_ssf_stratum_nunits %>%
+mhq_proportion_aquatic_per_submodule <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
   semi_join(
     module_domains %>% filter(sample_size_predetermined) %>% select(module, domain),
     join_by(module, domain)
@@ -692,44 +692,64 @@ mhq_proportion_aquatic_per_module <-
   inner_join(n2khab_strata, by = "stratum") %>%
   semi_join(read_types() %>% filter(str_detect(hydr_class, "3$")), by = "type") %>%
   filter(str_detect(scheme, "^HQ")) %>%
-  distinct(module, scheme, type) %>%
+  distinct(module, submodule, scheme, type) %>%
+  # give each scheme x type equal weight per submodule; sum to one per submodule
   mutate(
-    prop_aq_in_module = 1 / n(),
-    .by = module
+    prop_aq_in_submodule = 1 / n(),
+    .by = c(module, submodule)
   ) %>%
+  # aggregate weights per submodule x scheme, in order to allocate sample sizes
+  # over schemes
   summarize(
-    prop_aq_in_module = sum(prop_aq_in_module),
-    .by = c(module, scheme)
+    prop_aq_in_submodule = sum(prop_aq_in_submodule),
+    .by = c(module, submodule, scheme)
   ) %>%
-  arrange(module, scheme)
+  arrange(module, submodule, scheme)
 
-mhq_proportions_sac_subset5 <-
-  mhq_sampled_types_per_domain %>%
+mhq_proportions_sac_subset5_per_submodule <-
+  submod_dom_scheme_ssf_stratum_nunits %>% 
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  filter(str_detect(scheme, "^HQ")) %>% 
+  inner_join(
+    mhq_sampled_types_per_domain,
+    join_by(domain, scheme, type),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  distinct(module, submodule, domain, scheme, category, type) %>% 
   semi_join(
     module_domains %>%
       filter(module == "pan_effectmon_sac5_custommeas", sample_size_predetermined),
-    by = "domain"
+    join_by(module, domain)
   ) %>%
-  # count the number of types that is sampled in each scheme and per domain
+  # Count the number of types that is sampled in each scheme and per domain
+  # (within submodule). This is just an informative attribute.
   mutate(
     type_count_mhq_sampling = n(),
-    .by = c(domain, scheme)
+    .by = c(module, submodule, domain, scheme)
   ) %>%
-  # give each type x domain equal weight within the type category (where the
-  # weights sum to 1)
+  # give each type x domain equal weight within the type category and per
+  # submodule (the weights sum to 1 per submodule x category)
   mutate(
-    prop_domaintype_per_cat = 1 / n(),
-    .by = category
+    prop_domaintype_per_cat_submod = 1 / n(),
+    .by = c(module, submodule, category)
   ) %>%
-  # sum the weights per scheme, domain and category
+  # sum the type weight per scheme, domain and category (within submodule), in
+  # order to distribute sample size over domains within a submodule x scheme x
+  # category
   summarize(
-    prop_mhq_domainscheme_per_cat = sum(prop_domaintype_per_cat),
-    .by = c(domain, scheme, category, type_count_mhq_sampling)
+    prop_mhq_domainscheme_per_cat_submod = sum(prop_domaintype_per_cat_submod),
+    .by = c(module, submodule, domain, scheme, category, type_count_mhq_sampling)
   ) %>%
-  arrange(domain, scheme)
+  arrange(module, submodule, domain, scheme)
 
-mne_core_proportions_sac_subset5 <-
-  mod_dom_scheme_ssf_stratum_nunits %>%
+mne_core_proportions_sac_subset5_per_submodule <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
   semi_join(
     module_domain_schemes %>%
       filter(module == "pan_effectmon_sac5_custommeas", is_core_scheme),
@@ -737,19 +757,20 @@ mne_core_proportions_sac_subset5 <-
   ) %>%
   filter(!str_detect(scheme, "^HQ")) %>%
   inner_join(n2khab_strata, by = "stratum") %>%
-  distinct(domain, scheme, type) %>%
-  # give each domain x type equal weight per scheme; sum to one per scheme
+  distinct(module, submodule, domain, scheme, type) %>%
+  # give each domain x type equal weight per submodule x scheme; sum to one per
+  # submodule x scheme
   mutate(
-    prop_domaintype_per_mne_scheme = 1 / n(),
-    .by = scheme
+    prop_domaintype_per_mne_scheme_submod = 1 / n(),
+    .by = c(module, submodule, scheme)
   ) %>%
-  # aggregate weights per domain x scheme, in order to distribute sample size
-  # over domains within a scheme
+  # aggregate weights per submodule x domain x scheme, in order to distribute
+  # sample size over domains within a submodule x scheme
   summarize(
-    prop_domain_per_mne_scheme = sum(prop_domaintype_per_mne_scheme),
-    .by = c(domain, scheme)
+    prop_domain_per_mne_scheme_submod = sum(prop_domaintype_per_mne_scheme_submod),
+    .by = c(module, submodule, domain, scheme)
   ) %>%
-  arrange(domain, scheme)
+  arrange(module, submodule, domain, scheme)
 ```
 
 ### Collecting and setting design attributes at the module x domain x scheme level
@@ -763,7 +784,7 @@ Note that from here on, we only consider the domains with predetermined sample s
 Sampling for splits will be done for non-consecutive (in terms of reverse GRTS addresses) sets of sampling frame units, so the sample size must be determined beforehand.
 
 ```{r}
-module_domain_scheme_designattr <-
+submodule_domain_scheme_designattr <-
   modules %>%
   select(-year_firstdefinition, -contains("name_"), -code_short) %>% 
   inner_join(module_domains, by = "module") %>%
@@ -773,25 +794,31 @@ module_domain_scheme_designattr <-
   # is controlled
   inner_join(
     module_domain_schemes,
-    by = c("module", "domain"),
-    relationship = "many-to-many"
+    join_by(module, domain),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
   ) %>%
-  # note that, for MHQ schemes, mod_dom_scheme_ssf_stratum_nunits was already
+  # Joining submodule, type and stratum counts.
+  # Note that, for MHQ schemes, submod_dom_scheme_ssf_stratum_nunits was already
   # restricted to module x domain x type combinations that are approached
   # with a sample. See the 'mhq_mod_dom_type_no_sample' object to get the
   # remainder.
   # Below _typestats/_stratumstats objects are based on
-  # mod_dom_scheme_ssf_stratum_nunits:
+  # submod_dom_scheme_ssf_stratum_nunits:
   inner_join(
-    module_domain_scheme_typestats %>%
-      select(module, domain, scheme, type_count),
-    by = c("module", "domain", "scheme")
+    submodule_domain_scheme_typestats %>%
+      select(module, submodule, domain, scheme, type_count),
+    join_by(module, domain, scheme),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
   ) %>%
+  relocate(submodule, .after = module) %>% 
   inner_join(
-    module_domain_scheme_stratumstats %>%
-      select(module, domain, scheme, stratum_count),
-    by = c("module", "domain", "scheme"),
-    relationship = "many-to-many"
+    submodule_domain_scheme_stratumstats %>%
+      select(module, submodule, domain, scheme, stratum_count),
+    join_by(module, submodule, domain, scheme),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
   ) %>%
   inner_join(schemes %>% select(scheme, attribute_1, tag_1), by = "scheme") %>%
   inner_join(scheme_sampling_frame, by = "scheme") %>%
@@ -805,33 +832,66 @@ module_domain_scheme_designattr <-
       .default = year_first_default
     )
   ) %>%
-  left_join(mhq_proportion_aquatic_per_module, by = c("module", "scheme")) %>%
-  left_join(mhq_proportions_sac_subset5, by = c("domain", "scheme")) %>%
-  left_join(mne_core_proportions_sac_subset5, by = c("domain", "scheme")) %>%
+  left_join(
+    mhq_proportion_aquatic_per_submodule,
+    join_by(module, submodule, scheme)
+  ) %>%
+  left_join(
+    mhq_proportions_sac_subset5_per_submodule,
+    join_by(module, submodule, domain, scheme)
+  ) %>%
+  left_join(
+    mne_core_proportions_sac_subset5_per_submodule,
+    join_by(module, submodule, domain, scheme)
+  ) %>%
   mutate(
     sp_sample_size_all_panels = cycle_duration_y * case_when(
       # NA in MNE means adopting the locations of the core scheme in the same compartment:
       !is_core_scheme & !str_detect(scheme, "^HQ") ~ NA_real_,
-      module == "pan_effectmon_flanders" & scheme == "GW_03.3" ~ 167,
-      module == "pan_effectmon_flanders" & scheme == "SOIL_03.2" ~ 400,
-      module == "pan_effectmon_flanders" & scheme == "SURF_03.4_lentic" ~ 64,
-      module == "pan_effectmon_flanders" & scheme == "SURF_03.4_lotic" ~ 16,
+      module == "pan_effectmon_flanders" & submodule == "main" ~ case_when(
+        scheme == "GW_03.3" ~ 167,
+        scheme == "SOIL_03.2" ~ 400,
+        scheme == "SURF_03.4_lentic" ~ 64,
+        scheme == "SURF_03.4_lotic" ~ 16
+      ),
       # pan_effectmon_sac5_custommeas partim MNE is taken as 'one sixth' of above
-      module == "pan_effectmon_sac5_custommeas" & scheme == "GW_03.3" ~ 28 * prop_domain_per_mne_scheme,
-      module == "pan_effectmon_sac5_custommeas" & scheme == "SOIL_03.2" ~ 67 * prop_domain_per_mne_scheme,
-      module == "pan_effectmon_sac5_custommeas" & scheme == "SURF_03.4_lentic" ~ 11 * prop_domain_per_mne_scheme,
-      module == "pan_effectmon_sac5_custommeas" & scheme == "SURF_03.4_lotic" ~ 3 * prop_domain_per_mne_scheme,
+      module == "pan_effectmon_sac5_custommeas" & 
+        submodule == "main" & 
+        !str_detect(scheme, "^HQ") ~ case_when(
+          scheme == "GW_03.3" ~ 28 * prop_domain_per_mne_scheme_submod,
+          scheme == "SOIL_03.2" ~ 67 * prop_domain_per_mne_scheme_submod,
+          scheme == "SURF_03.4_lentic" ~ 11 * prop_domain_per_mne_scheme_submod,
+          scheme == "SURF_03.4_lotic" ~ 3 * prop_domain_per_mne_scheme_submod
+        ),
       # pan_effectmon_sac5_custommeas partim MHQ is set at category level
-      module == "pan_effectmon_sac5_custommeas" & str_detect(scheme, "^HQ") & category == "terrestrial_open" ~ 43 * prop_mhq_domainscheme_per_cat,
-      module == "pan_effectmon_sac5_custommeas" & str_detect(scheme, "^HQ") & category == "terrestrial_forest" ~ 13 * prop_mhq_domainscheme_per_cat,
-      module == "pan_effectmon_sac5_custommeas" & str_detect(scheme, "^HQ") & category == "lentic" ~ 7 * prop_mhq_domainscheme_per_cat,
-      module == "pan_effectmon_sac5_custommeas" & str_detect(scheme, "^HQ") & category == "lotic" ~ 3 * prop_mhq_domainscheme_per_cat,
+      module == "pan_effectmon_sac5_custommeas" & 
+        submodule == "main" & 
+        str_detect(scheme, "^HQ") ~ case_when(
+          category == "terrestrial_open" ~ 43 * prop_mhq_domainscheme_per_cat_submod,
+          category == "terrestrial_forest" ~ 13 * prop_mhq_domainscheme_per_cat_submod,
+          category == "lentic" ~ 7 * prop_mhq_domainscheme_per_cat_submod,
+          category == "lotic" ~ 3 * prop_mhq_domainscheme_per_cat_submod
+        ),
+      # sampling sizes in extra submodule of panfl
+      module == "pan_effectmon_flanders" & 
+        submodule == "densification_mne_1" ~ case_when(
+          scheme == "GW_03.3" ~ 133,
+          scheme == "SOIL_03.2" ~ 270,
+          scheme == "SURF_03.4_lentic" ~ 53
+        ),
+      # sampling sizes in extra submodule of pan5
+      module == "pan_effectmon_sac5_custommeas" & 
+        submodule == "densification_mne_1" ~ case_when(
+          scheme == "GW_03.3" ~ 22 * prop_domain_per_mne_scheme_submod,
+          scheme == "SOIL_03.2" ~ 44 * prop_domain_per_mne_scheme_submod,
+          scheme == "SURF_03.4_lentic" ~ 9 * prop_domain_per_mne_scheme_submod
+        ),
       # pan_transmon_be2100024 is set at scheme level
       module == "pan_transmon_be2100024" & scheme == "GW_03.3" ~ 70,
       module == "pan_transmon_be2100024" & scheme == "SOIL_03.2" ~ 133,
       module == "pan_transmon_be2100024" & scheme == "SURF_03.4_lentic" ~ 14,
       module == "pan_transmon_be2100024" & scheme == "SURF_03.4_lotic" ~ 4,
-      module == "pan_transmon_be2100024" & str_detect(scheme, "^HQ3") ~ 18 * prop_aq_in_module,
+      module == "pan_transmon_be2100024" & str_detect(scheme, "^HQ3") ~ 18 * prop_aq_in_submodule,
       module == "pan_transmon_be2100024" & str_detect(scheme, "^HQ(23|40|91(20|90))") ~ 28,
       module == "pan_transmon_be2100024" & str_detect(scheme, "^HQ6230") ~ 84,
       module == "pan_transmon_be2100024" & str_detect(scheme, "^HQ(7140|91E0)") ~ 56,
@@ -864,7 +924,7 @@ module_domain_scheme_designattr <-
   ) %>%
   relocate(
     module,
-    stset_id,
+    submodule,
     domain,
     scheme,
     is_core_scheme,
@@ -881,20 +941,20 @@ Recalculating yearly spatial sample sizes at an aggregated level as checks.
 
 ```{r}
 sample_size_check1 <-
-  module_domain_scheme_designattr %>%
+  submodule_domain_scheme_designattr %>%
   mutate(yearly_sample_size = as.integer(round(sp_sample_size_all_panels / cycle_duration_y))) %>%
   summarize(
     yearly_sample_size = sum(yearly_sample_size, na.rm = TRUE),
-    .by = c(module, scheme)
+    .by = c(module, submodule, scheme)
   ) %>%
   filter(!is.na(yearly_sample_size), yearly_sample_size > 0) %>%
-  arrange(module, scheme)
+  arrange(module, submodule, scheme)
 sample_size_check1
 ```
 
 ```{r paged.print = FALSE}
 aggregate_sample_size(
-  module_domain_scheme_designattr,
+  submodule_domain_scheme_designattr,
   "sp_sample_size_all_panels",
   mhq_scheme_category
 ) %>%
