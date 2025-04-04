@@ -127,16 +127,17 @@ module_targetpops %>%
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
-  semi_join(module_domain_scheme_typestats, ., by = "domain") %>%
-  arrange(module, domain, scheme) %>%
+  semi_join(submodule_domain_scheme_typestats, ., by = "domain") %>%
+  arrange(module, submodule, domain, scheme) %>%
   write_sheet(
     ss = gs_id,
-    sheet = "module_domain_scheme_stats"
+    sheet = "submodule_domain_scheme_stats"
   )
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
-  semi_join(mod_dom_scheme_ssf_stratum_nunits, ., by = "domain") %>%
+  semi_join(submod_dom_scheme_ssf_stratum_nunits, ., by = "domain") %>%
+  distinct(pick(-submodule)) %>%
   inner_join(n2khab_strata, by = "stratum") %>%
   summarize(nunits = sum(nunits), .by = c(module, scheme, type)) %>%
   arrange(scheme, type) %>%
@@ -148,7 +149,8 @@ module_domains %>%
 
 module_domains %>%
   filter(sample_size_predetermined) %>%
-  semi_join(mod_dom_scheme_ssf_stratum_nunits, ., by = "domain") %>%
+  semi_join(submod_dom_scheme_ssf_stratum_nunits, ., by = "domain") %>%
+  distinct(pick(-submodule)) %>%
   inner_join(n2khab_strata, by = "stratum") %>%
   summarize(nunits = sum(nunits), .by = c(module, domain, scheme, type)) %>%
   arrange(module, scheme, type) %>%
@@ -179,18 +181,16 @@ non_core_types_per_module_and_compartment %>%
 
 
 # Below code requires availability of:
-# - module_domain_scheme_designattr
+# - submodule_domain_scheme_designattr
 # - mhq_mod_dom_type_no_sample
 # - module_domain_scheme_stratum_sample_size
 
-module_domain_scheme_designattr %>%
-  select(
-    module,
-    domain,
-    scheme,
-    cycle_duration_y,
-    type_count,
-    sp_sample_size_all_panels
+submodule_domain_scheme_designattr %>%
+  summarize(
+    submodules = str_flatten(submodule, " | "),
+    type_counts = str_flatten(type_count, " | "),
+    sp_sample_size_all_panels = sum(sp_sample_size_all_panels),
+    .by = c(module, domain, scheme, cycle_duration_y)
   ) %>%
   mutate(
     yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y),
@@ -207,7 +207,6 @@ module_domain_scheme_stratum_sample_size %>%
     domain,
     scheme,
     cycle_duration_y,
-    type_count,
     sp_sample_size_all_panels
   ) %>%
   mutate(yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y)) %>%
