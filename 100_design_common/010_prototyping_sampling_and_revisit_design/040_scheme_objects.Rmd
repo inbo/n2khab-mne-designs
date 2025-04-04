@@ -963,7 +963,7 @@ aggregate_sample_size(
 
 ### Generate non-corrected target sample sizes for strata in module x domain x scheme combinations
 
-Expanding `module_domain_scheme_designattr` with strata and distributing spatial sample sizes over strata.
+Expanding `submodule_domain_scheme_designattr` with strata, collapsing submodules (effectively summing the submodules' spatial sample sizes) and distributing spatial sample sizes over strata.
 The 4th root of the number of population units per stratum (in module x domain x scheme x type) is taken to distribute the target sample size at type level.
 This was found to be a good compromise for estimator precision at type level, between the more extreme scenarios of population size versus an area weighed distribution.
 
@@ -972,15 +972,18 @@ However we do attribute extra sample sizes in non-core MNE schemes, for those ty
 
 ```{r}
 module_domain_scheme_stratum_target_sample_size <-
-  module_domain_scheme_designattr %>%
+  submodule_domain_scheme_designattr %>%
+  select(-type_count, -stratum_count) %>% 
   inner_join(
-    # note that, for MHQ schemes, mod_dom_scheme_ssf_stratum_nunits was already
-    # restricted to module x domain x type combinations that are approached
-    # with a sample. See the 'mhq_mod_dom_type_no_sample' object to get the
-    # remainder.
-    mod_dom_scheme_ssf_stratum_nunits %>%
+    # note that, for MHQ schemes, submod_dom_scheme_ssf_stratum_nunits was
+    # already restricted to module x domain x type combinations that are
+    # approached with a sample. See the 'mhq_mod_dom_type_no_sample' object to
+    # get the remainder.
+    submod_dom_scheme_ssf_stratum_nunits %>%
       select(-is_core_scheme, -sampling_frame_id),
-    by = c("module", "domain", "scheme")
+    join_by(module, submodule, domain, scheme),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
   ) %>%
   inner_join(n2khab_strata, by = "stratum") %>%
   left_join(
@@ -998,6 +1001,8 @@ module_domain_scheme_stratum_target_sample_size <-
       mutate(add_to_sample = TRUE),
     by = c("module", "compartment", "scheme", "type")
   ) %>%
+  # adding a sample size to some types of non-core schemes (still within
+  # submodule to prevent inheriting a too high sample size)
   mutate(
     sp_sample_size_all_panels_type = case_when(
       is.na(sp_sample_size_all_panels_type) & add_to_sample ~ 
@@ -1005,8 +1010,23 @@ module_domain_scheme_stratum_target_sample_size <-
       nunits == 0 & !is.na(sp_sample_size_all_panels_type) ~ 0,
       .default = sp_sample_size_all_panels_type
     ),
-    .by = c(module, compartment)
+    .by = c(module, submodule, compartment)
   ) %>%
+  select(-compartment, -add_to_sample) %>%
+  # collapsing submodules:
+  summarize(
+    sp_sample_size_all_panels = ifelse(
+      all(is.na(sp_sample_size_all_panels)),
+      first(sp_sample_size_all_panels),
+      sum(sp_sample_size_all_panels, na.rm = TRUE)
+    ),
+    sp_sample_size_all_panels_type = ifelse(
+      all(is.na(sp_sample_size_all_panels_type)),
+      first(sp_sample_size_all_panels_type),
+      sum(sp_sample_size_all_panels_type, na.rm = TRUE)
+    ),
+    .by = !c(submodule, starts_with("sp_sample_size"))
+  ) %>% 
   mutate(
     sp_sample_size_all_panels_stratum = ifelse(
       nunits == 0 & !is.na(sp_sample_size_all_panels_type),
@@ -1015,7 +1035,6 @@ module_domain_scheme_stratum_target_sample_size <-
     ),
     .by = c(module, domain, scheme, type)
   ) %>%
-  select(-compartment, -add_to_sample) %>%
   relocate(type, stratum, nunits, .before = sp_sample_size_all_panels_type)
 ```
 
