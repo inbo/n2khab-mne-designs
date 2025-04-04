@@ -243,12 +243,12 @@ A module is like a project, that aims at realizing some well-defined part of MNE
 
 ```{r}
 modules <- tribble(
-  ~module, ~code_short, ~year_firstdefinition, ~year_last, ~stset_id,
-  "pan_effectmon_flanders", "panfl", 2024, 2037, 2,
-  "pan_effectmon_sac5_custommeas", "pan5", 2024, 2037, 1,
-  "pan_transmon_be2100024", "pan2124", 2024, 2030, 3,
-  "mbaa_mne_phase_1", "mbaa", 2024, 2031, 4,
-  "map_mne", "map", 2024, NA_integer_, NA_integer_
+  ~module, ~code_short, ~year_firstdefinition, ~year_last,
+  "pan_effectmon_flanders", "panfl", 2024, 2037,
+  "pan_effectmon_sac5_custommeas", "pan5", 2024, 2037,
+  "pan_transmon_be2100024", "pan2124", 2024, 2030,
+  "mbaa_mne_phase_1", "mbaa", 2024, 2031,
+  "map_mne", "map", 2024, NA_integer_,
 ) %>% 
   # the implementation start of certain compartments may get postponed one or
   # more years relative to the default implementation start year
@@ -314,6 +314,29 @@ Importantly, all submodules of a module follow the other module properties, such
 
 Consequently, submodules of the same module will only serve in _composing_ the spatial sample size per stratum in a module x scheme x domain.
 After that stage (in chapter \@ref(scheme-objects)), the submodules serve no further purpose and the module level suffices: the resulting spatial sample sizes per stratum in each scheme x domain at the module level is what we then need.
+
+Defining the submodules per module.
+Note that it is the combination of module and submodule name which makes the submodule unique.
+
+```{r paged.print = FALSE}
+submodules <- 
+  tribble(
+    ~module, ~submodule, ~stset,
+    "pan_effectmon_flanders", "main", "sts_pan_effectmon_mne",
+    "pan_effectmon_flanders", "densification_mne_1", "sts_pan_effectmon_mne_densification",
+    "pan_effectmon_sac5_custommeas", "main", "sts_pan_effectmon",
+    "pan_effectmon_sac5_custommeas", "densification_mne_1", "sts_pan_effectmon_mne_densification",
+    "pan_transmon_be2100024", "main", "sts_pan_transmon",
+    "mbaa_mne_phase_1", "main", "sts_mbaa_mne_phase_1",
+    "map_mne", "main", NA_character_
+  ) %>% 
+  mutate(
+    module = factor(module, levels = levels(modules$module)),
+    submodule = fct(submodule),
+    stset = factor(stset, levels = levels(scheme_targetpop_sets$stset))
+  )
+submodules
+```
 
 **Missing functionality**: write this as a file, adding extra attributes like `date_last_updated`, `last_update_comment`, `date_cancelled`.
 
@@ -1470,6 +1493,7 @@ for (name in c(
   "schemes",
   "targetpops",
   "modules",
+  "submodules",
   "domains",
   "module_domains",
   "module_schemes",
