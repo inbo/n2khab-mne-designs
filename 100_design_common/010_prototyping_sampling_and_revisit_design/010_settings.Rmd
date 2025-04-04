@@ -364,18 +364,19 @@ Note that below `module_schemes` object will be filtered and rewritten based on 
 
 ```{r}
 module_schemes <- 
-  modules %>% 
-  select(module, stset_id) %>% 
+  submodules %>% 
+  select(module, stset) %>% 
   inner_join(
     scheme_targetpop_sets %>% 
-      select(stset_id, scheme_set) %>% 
+      select(stset, scheme_set) %>% 
       unnest(scheme_set) %>% 
-      select(stset_id, scheme, is_core_scheme),
-    join_by(stset_id),
+      select(stset, scheme, is_core_scheme),
+    join_by(stset),
     unmatched = "drop",
     relationship = "many-to-many"
   ) %>% 
-  select(-stset_id)
+  select(-stset) %>% 
+  distinct()
 ```
 
 Flattening the target populations per module.
@@ -383,15 +384,18 @@ Note that below `module_targetpops` object will be filtered and rewritten based 
 
 ```{r paged.print=FALSE}
 module_targetpops <-
-  modules %>%
-  select(module, stset_id) %>%
+  submodules %>%
+  select(module, stset) %>%
   inner_join(
     scheme_targetpop_sets %>%
-      select(stset_id, targetpops),
-    by = "stset_id"
+      select(stset, targetpops),
+    join_by(stset),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
   ) %>%
-  select(-stset_id) %>%
-  unnest(targetpops)
+  select(-stset) %>%
+  unnest(targetpops) %>% 
+  distinct()
 ```
 
 
