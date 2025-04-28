@@ -102,7 +102,7 @@ domain_type_nunits_attribs %>%
 domain_type_nunits_attribs %>%
   filter(is_habitat, !in_aquatic_subset) %>%
   filter(str_detect(domain, "^BE")) %>%
-  mutate(is_forest = typeclass == "FS") %>%
+  mutate(is_forest = str_detect(type, "^9|^2180|^rbbppm")) %>%
   summarize(
     area = sum(nunits) * 1024 %>% set_units("m^2") %>% set_units("ha"),
     .by = is_forest
@@ -304,7 +304,7 @@ mhq_mod_dom_type_no_sample %>%
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
-  mutate(is_forest = typeclass == "FS") %>%
+  mutate(is_forest = str_detect(type, "^9|^2180|^rbbppm")) %>%
   summarize(
     area = sum(nunits) * 1024 %>% set_units("m^2") %>% set_units("ha"),
     .by = is_forest
