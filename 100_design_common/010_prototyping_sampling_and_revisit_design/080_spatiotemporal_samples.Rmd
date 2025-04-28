@@ -556,7 +556,7 @@ Also, because of the cleaning with respect to the order of FAGs, actual location
 
 But also note that the current strategy is to avoid dropping panel visits and locations by postponing them (and this may be reconsidered; see \@ref(cal-cleaning)).
 
-Checking that the same panel designs are present in each stratum and spatial poststratum, in the spatial sample calendar and in the panel membership object.
+Checking that, in each stratum and spatial poststratum, the panel designs from the spatial sample calendar are also present in the panel membership object.
 
 ```{r}
 scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
@@ -578,9 +578,30 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
     # different activity sequences because of the cleaning on FAG X actseq.
     # Hency we get "many-to-one"
     relationship = "many-to-one",
-    unmatched = "error"
+    unmatched = c("error", "drop")
   ) %>% 
   invisible()
+```
+
+In the above comparison, listing cases in the panel membership object that are missing from the spatial sample calendar.
+These cases should be limited (or just be absent) to very small strata where a `field_activity_group` with a lower rank outside the monitoring period has been dropped, so that it got eliminated altogether.
+
+```{r}
+scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>% 
+  anti_join(
+    scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar,
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset,
+      notation_paneldesign,
+      stratum,
+      sp_poststratum
+    )
+  ) %>% 
+  mutate(spatial_sample_size = map_int(panel_membership, nrow)) %>% 
+  select(-fas, -panel_membership)
 ```
 
 Checking the stratum spatial sample sizes for _target_ FAGs in the calendar against the spatial sample sizes from `scheme_moco_ps_stratum_sppost_spsamples`, for each scheme x module combo x panel split.
