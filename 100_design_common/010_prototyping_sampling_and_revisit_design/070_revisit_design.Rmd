@@ -775,13 +775,13 @@ scheme_moco_ps_spsubset_fas_panels <-
 
 Defining date intervals and assigning panels to these intervals.
 
+`year_origin` is used to build up the revisit design (including the membership design) in order to align panel numbering with the monitoring and reporting cycle.
+Also, using the same year to start panel numbering maximizes chances for matching locations between schemes x module combo.
+
+
 ```{r}
 scheme_moco_ps_spsubset_panel_calendar <-
   scheme_moco_ps_spsubset_fas_panels %>% 
-  # year_first_overall will be used to build up the revisit design (incl the
-  # membership design) in order to maximize chances for matching locations
-  # between schemes x module combo
-  mutate(year_first_overall = min(year_first)) %>% 
   nest(
     revisit = c(
       matches("^year|^limit_"), 
@@ -799,17 +799,17 @@ scheme_moco_ps_spsubset_panel_calendar <-
     ),
     panels = panel
   ) %>%
-  # define date intervals from year_first_overall to year_last, by panel_period
+  # define date intervals from year_origin to year_last, by panel_period
   mutate(
     revisit = map(revisit, function(df) {
       df %>%
         distinct() %>%
         mutate(
-          # we always define panels from the first (overall) year and the first
-          # month; if a module or scheme starts later, then this part is dropped
-          # from the first cycle
+          # we always define panels from the first month of year_origin; if a
+          # module or scheme starts later, then this part is dropped from the
+          # first cycle
           nr_periods =
-            years(year_last - year_first_overall + 1) / panel_period
+            years(year_last - year_origin + 1) / panel_period
         ) %>%
         uncount(nr_periods) %>%
         mutate(
@@ -818,10 +818,10 @@ scheme_moco_ps_spsubset_panel_calendar <-
             as.integer(),
           panel_cum_months = cumsum(panel_periodmonths),
           panel_cum_months_lag = lag(panel_cum_months, default = 0L),
-          date_start = make_date(year_first_overall, 1, 1) + 
+          date_start = make_date(year_origin, 1, 1) + 
             months(panel_cum_months_lag) +
             if_else(!is.na(panel_dateshift), panel_dateshift, months(0)),
-          date_end = make_date(year_first_overall, 1, 1) + 
+          date_end = make_date(year_origin, 1, 1) + 
             months(panel_cum_months) +
             if_else(
               !is.na(panel_enddate_addition),
@@ -1084,6 +1084,7 @@ For these strata, we better share this distribution over the panels across schem
 
 **Missing functionality**: modules (like pan2124) with shorter cycle duration for data collection in groundwater schemes than the cycle applied to (re)install groundwater level devices, may need special attention which we didn't give it yet.
 Notably the implemented approach for 'auto' and 'fastalign' doesn't work out well here.
+This is further complicated after the implementation of `year_origin`, which triggered erroneous postponing of groundwater activities to 2026.
 
 ### Panel membership
 
