@@ -129,17 +129,6 @@ scheme_moco_ps_spsubset_targetfag <-
     unmatched = c("error", "drop")
   ) %>% 
   distinct(module, scheme, in_aquatic_subset, field_activity_group) %>% 
-  rename(in_aq = in_aquatic_subset) %>% 
-  # joining simplified values of 'in_aquatic_subset'
-  inner_join(
-    mod_scheme_fag,
-    join_by(module, scheme, field_activity_group),
-    relationship = "many-to-one",
-    unmatched = c("error", "drop")
-  ) %>% 
-  # following filter appears to be superfluous:
-  filter(in_aq == in_aquatic_subset | is.na(in_aquatic_subset)) %>% 
-  select(module, scheme, in_aquatic_subset, field_activity_group) %>% 
   # join module combos:
   inner_join(
     scheme_target_paneldesign %>% 
@@ -418,16 +407,11 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     },
     # A tricky thing below is that we again look at the activity_sequence level,
     # which would be logical, but we already lumped activity sequences per FAG
-    # when making mod_scheme_fag (on which all the rest is based). This is
-    # intensified by lumping in_aquatic_subset at the FAG level, not at the FAG
-    # x activity_sequence level, when creating mod_scheme_actseq_fag, on which
-    # mod_scheme_fag is based. This activity sequence agnostic approach works as
-    # long as FAG ranks are the same across activity sequences, which we already
-    # tested above (albeit within the FAS level). When this is no longer the
-    # case, we should not do the lumping in mod_scheme_actseq_fag and
-    # mod_scheme_fag. A good example to look at is FAG 'GWINSTPIEZWELL' in
-    # GW_03.3, which happens in 4 activity sequences, 2 terrestrial and 2
-    # aquatic (depending on which modules are active).
+    # when making mod_scheme_fag (on which all the rest is based). This activity
+    # sequence agnostic approach works as long as FAG ranks are the same across
+    # activity sequences, which we already tested above (albeit within the FAS
+    # level). When this is no longer the case, we should not do the lumping in
+    # mod_scheme_actseq_fag and mod_scheme_fag.
     .by = c(
       scheme,
       module_combo_code,
@@ -455,13 +439,6 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
          date_end > date_start_first_rank4)
   ) %>% 
   select(-year_first, -year_last, -starts_with("date_start_first_rank")) %>% 
-  # note that some activity sequences may not actually apply to the location at
-  # hand, e.g. "gw_lev_piezwell" for FAG "GWINSTPIEZWELL" in an aquatic
-  # location, where also the actseq "gwsurf_lev_piezwell" is present, but this
-  # is because certain FAGs appear in multiple activity sequences while some
-  # schemes (such as GW_03.3) have both spatial subsets, which led to merging
-  # all activity sequences in mod_scheme_fag_paneldesign per FAG, so that all
-  # these appear as attribute here
   nest(actseqs = activity_sequence) %>% 
   # once more filter out orphaned ADHOC activities (but at the time of writing
   # this had no effect; keeping it for generality)
@@ -722,8 +699,10 @@ stopifnot(all.equal(obj_a_n, obj_b_n))
 obj_b1 <- obj_b %>% 
   filter(
     panel %in% c(
-      "GW_03.3_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
-      "GW_03.3_panflpan5mbaa_24panelsof3m(SER)_PANEL06"
+      "GW_03.3_TERR_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
+      "GW_03.3_TERR_panflpan5mbaa_24panelsof3m(SER)_PANEL06",
+      "GW_03.3_AQ_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
+      "GW_03.3_AQ_panflpan5mbaa_24panelsof3m(SER)_PANEL06"
     )
   )
 # levread

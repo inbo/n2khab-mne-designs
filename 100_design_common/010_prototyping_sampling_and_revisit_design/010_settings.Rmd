@@ -1081,46 +1081,12 @@ The 'field activity groups' (FAGs) are those activity groups that exist of field
 Hence, a FAG is a set of _field_ activities with the same panel design _and_ which take place during the same location visit.
 
 We will construct FAGs per module, scheme and spatial subset by abstracting away the field activities and collapsing activity sequences, ranks and maximum ranks.
-Also, the spatial subset is only given where relevant.
 
 First, construct the FAGs while still retaining the activity sequence.
 
 ```{r}
 mod_scheme_actseq_fag <- 
   mod_scheme_field_activity %>% 
-  distinct(
-    module,
-    scheme,
-    is_core_scheme,
-    activity_sequence,
-    field_activity_group,
-    rank,
-    max_rank,
-    in_aquatic_subset
-  ) %>% 
-  # only consider spatial subsets where needed to distinguish between activity
-  # groups:
-  inner_join(
-    mod_scheme_mainfieldmethod_subsets %>% 
-      distinct(module, scheme, in_aquatic_subset) %>% 
-      summarize(
-        # is more than one subset covered by the module x scheme?
-        multiple_subsets = n() > 1,
-        .by = c(module, scheme)
-      ),
-    join_by(module, scheme),
-    unmatched = "error",
-    relationship = "many-to-one"
-  ) %>% 
-  mutate(
-    # is more than one subset represented for the FAG?
-    # This currently assumes that ALL subsets are hence represented for the FAG
-    duplicate = n_distinct(in_aquatic_subset) > 1,
-    in_aquatic_subset = ifelse(duplicate | !multiple_subsets, NA, in_aquatic_subset),
-    .by = c(module, scheme, field_activity_group)
-  ) %>% 
-  # now spatial subsets are mere attributes of unique combination of
-  # module, scheme, activity_sequence & field_activity_group:
   distinct(
     module,
     scheme,
