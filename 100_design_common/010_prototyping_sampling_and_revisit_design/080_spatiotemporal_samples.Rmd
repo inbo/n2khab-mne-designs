@@ -238,6 +238,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
         in_aquatic_subset, 
         year_first,
         year_last,
+        month_first,
         panel_enddate_addition,
         panel_dateshift,
         limit_n_subperiods,
@@ -263,14 +264,14 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   ) %>% 
   # implement a delay for FAGs with a panel design with one subperiod and for
   # FAGs where permanent equipment is installed and spatially positioned, if
-  # month(date_start) < month_first_default in the first year
+  # month(date_start) < month_first in the first year
   mutate(
     delay = if_else(
       (limit_n_subperiods == 1 | 
          str_detect(field_activity_group, "INST|SPATPOSIT")) & 
         year(date_start) == year_first & 
-        month(date_start) < month_first_default,
-      months(month_first_default - month(date_start)),
+        month(date_start) < month_first,
+      months(month_first - month(date_start)),
       months(0),
       # limit_n_subperiods can be NA, hence condition can be NA
       months(0)
@@ -291,22 +292,22 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     )
   ) %>% 
   select(-delay) %>% 
-  # drop inapplicable panels in the startup period based on month_first_default,
+  # drop inapplicable panels in the startup period based on month_first,
   # except for LOCEVAL
   filter(
-    month(date_end) >= month_first_default | 
+    month(date_end) >= month_first | 
       year(date_end) > year_first |
       str_detect(field_activity_group, "LOCEVAL")
   ) %>% 
-  # if a panel period overlaps month_first_default but starts earlier, then
-  # wind up the start date, but not for LOCEVAL and HQ schemes
+  # if a panel period overlaps month_first in the first year but starts earlier,
+  # then wind up the start date, but not for LOCEVAL and HQ schemes
   mutate(
     delay = if_else(
-      month(date_start) < month_first_default & 
+      month(date_start) < month_first & 
         year(date_start) == year_first &
         !str_detect(field_activity_group, "LOCEVAL") &
         !str_detect(scheme, "^HQ"),
-      months(month_first_default - month(date_start)),
+      months(month_first - month(date_start)),
       months(0)
     ),
     date_start = if_else(delay > months(0), date_start + delay, date_start),
@@ -438,7 +439,12 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
          date_end > date_start_first_rank3 & 
          date_end > date_start_first_rank4)
   ) %>% 
-  select(-year_first, -year_last, -starts_with("date_start_first_rank")) %>% 
+  select(
+    -year_first,
+    -year_last,
+    -month_first,
+    -starts_with("date_start_first_rank")
+  ) %>% 
   nest(actseqs = activity_sequence) %>% 
   # once more filter out orphaned ADHOC activities (but at the time of writing
   # this had no effect; keeping it for generality)
@@ -532,7 +538,7 @@ scheme_moco_ps_spsubset_fas_panels %>%
 The dropped panel visits arise:
 
 - because of small sample sizes in all involved strata in the specific scheme x module_combo, leading to occasional panels with no sampling units at all;
-- if `month_first_default > 1`: panel visits are dropped that start too early, and FAGs that depend on it but come later at an involved location are also dropped.
+- if `month_first > 1`: panel visits are dropped that start too early, and FAGs that depend on it but come later at an involved location are also dropped.
 
 Note that 'dropping panel visits' happens because some module combos only last one cycle, otherwise the missing panel is present in the next cycle.
 This means that within the first cycle actually more panel visits are dropped.

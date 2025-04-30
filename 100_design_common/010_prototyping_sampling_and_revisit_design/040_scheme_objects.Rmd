@@ -614,12 +614,7 @@ Currently this is only investigated for domain "Flanders", for simplicity.
 ```{r}
 non_core_types_per_module_and_compartment <-
   modules %>%
-  select(
-    -year_firstdefinition,
-    -contains("name_"),
-    -code_short,
-    -contains("postpone_")
-  ) %>% 
+  select(module) %>% 
   semi_join(
     module_domains %>% filter(domain == "Flanders"),
     by = "module"
@@ -830,6 +825,13 @@ submodule_domain_scheme_designattr <-
       "SURF" ~ year_first_default + yr_postpone_surf,
       "SOIL" ~ year_first_default + yr_postpone_soil,
       .default = year_first_default
+    ),
+    month_first = case_match(
+      attribute_1,
+      "GW" ~ month_first_gw,
+      "SURF" ~ month_first_surf,
+      "SOIL" ~ month_first_soil,
+      .default = 1L
     )
   ) %>%
   left_join(
@@ -916,7 +918,8 @@ submodule_domain_scheme_designattr <-
     -category,
     -starts_with("prop"),
     -type_count_mhq_sampling,
-    -contains("postpone_")
+    -contains("postpone_"),
+    -starts_with("month_first_")
   ) %>%
   mutate(
     sp_sample_size_all_panels_type = ifelse(
@@ -936,7 +939,8 @@ submodule_domain_scheme_designattr <-
     stratum_count,
     cycle_duration_y,
     year_first,
-    year_last
+    year_last,
+    month_first
   )
 ```
 

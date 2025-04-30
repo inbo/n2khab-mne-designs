@@ -154,7 +154,7 @@ scheme_target_paneldesign %>%
 
 ### Relation between modules and module combos
 
-Creating an object that holds the relation between module, scheme, module combo, panel split and first & last years.
+Creating an object that holds the relation between module, scheme, module combo, panel split, first & last years & first month.
 
 ```{r}
 mod_scheme_yrs_moco_ps <- 
@@ -164,7 +164,7 @@ mod_scheme_yrs_moco_ps <-
   # explicitly (and only exceptionally) added sampling units for such non-core
   # schemes.
   filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
-  distinct(module, scheme, year_first, year_last) %>%
+  distinct(module, scheme, year_first, year_last, month_first) %>%
   # join module combos:
   inner_join(
     scheme_target_paneldesign %>% 
@@ -175,7 +175,6 @@ mod_scheme_yrs_moco_ps <-
     unmatched = c("error", "drop")
   ) %>% 
   arrange(scheme, module_combo_code, panel_split)
-
 ```
 
 ### Conflicting modules in a module combo
@@ -190,9 +189,11 @@ mod_scheme_yrs_moco_ps_yrsmoco <-
   mutate(
     year_first_moco = min(year_first),
     year_last_moco = max(year_last),
+    month_first_moco = min(month_first),
     .by = c(scheme, panel_split, module_combo_code)
   )
 mod_scheme_yrs_moco_ps_yrsmoco %>% 
+  select(-contains("_first")) %>% 
   filter(year_last_moco != year_last)
 ```
 
@@ -201,16 +202,30 @@ mod_scheme_yrs_moco_ps_yrsmoco %>%
 ```{r paged.print=FALSE}
 mod_scheme_ps_different_1styr <- 
   mod_scheme_yrs_moco_ps_yrsmoco %>% 
-  filter(year_first_moco != year_first)
+  filter(year_first_moco != year_first) %>% 
+  select(-matches("_last|month_"))
 mod_scheme_ps_different_1styr
 if (nrow(mod_scheme_ps_different_1styr) > 0L) {
   warning("Conflicting first years detected!")
 } 
 ```
 
-We ignore differing last years (assuming the maximum last year for the module combo; see section \@ref(considerations)), but we must pay attention to additional remedies in case of conflicting first years.
+- conflicting first months:
 
-**Missing functionality**: we currently don't correct the spatial sampling unit calendar for '`year_first` mismatches' between modules in the same module combo, if those occur.
+```{r paged.print=FALSE}
+mod_scheme_ps_different_1stm <- 
+  mod_scheme_yrs_moco_ps_yrsmoco %>% 
+  filter(year_first_moco == year_first, month_first_moco != month_first) %>% 
+  select(-contains("year_"))
+mod_scheme_ps_different_1stm
+if (nrow(mod_scheme_ps_different_1stm) > 0L) {
+  warning("Conflicting first months detected!")
+} 
+```
+
+We ignore differing last years (assuming the maximum last year for the module combo; see section \@ref(considerations)), but we must pay attention to additional remedies in case of conflicting first years or month.
+
+**Missing functionality**: we currently don't correct the spatial sampling unit calendar for '`year_first` or `month_first` mismatches' between modules in the same module combo, if those occur.
 Handling this comes down to filtering sampling units in the first panel(s) of the first cycle where such mismatches occur, hence where not all modules have started yet.
 This requires calculation of module-level spatial sample sizes in poststrata.
 More generally, we should add support for temporal variation in which modules are active inside a module combo, and take (semi-automated) decisions to either filter sampling units (post-hoc, based on full panels) and accept the resulting gaps in the GRTS series, or rearrange the panel membership using a single sampled GRTS series (this seems more appropriate if reductions are for the longer term).

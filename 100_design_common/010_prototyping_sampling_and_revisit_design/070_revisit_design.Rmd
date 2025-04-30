@@ -11,7 +11,7 @@ Some ideas that were noted before writing the code (some are not completely impl
 - for MNE, the LOCEVAL activity must take place one year beforehand!
 - SPATPOSITxxx: inflate the panel periods by 3 months at the end (so they will overlap)
 - ADHOCxxx: reduce the number of occasions by sampling them
-- in the first year of each compartment, start on 1 Jan and wind up to month_first_default
+- in the first year of each compartment, start on 1 Jan and wind up to month_first
 <!-- --------------------------- -->
 
 ## Preparations
@@ -466,14 +466,16 @@ Also the spare units are considered per spatial poststratum, so that replacement
 ```{r}
 scheme_moco_ps_spsubset_fas_panelcount_full <-
   mod_scheme_yrs_moco_ps %>% 
-  # year_first has been set module and scheme specific, while year_last is just
-  # module specific. However for year_first do note that we currently don't
-  # correct the spatial sampling unit calendar for 'year_first mismatches'
-  # between modules in the same module combo. See the earlier object
-  # 'mod_scheme_ps_different_1styr' and associated missing functionality!
+  # year_first and month_first have been set module and scheme specific, while
+  # year_last is just module specific. However for year_first and month_first do
+  # note that we currently don't correct the spatial sampling unit calendar for
+  # mismatches between modules in the same module combo. See the earlier objects
+  # 'mod_scheme_ps_different_1styr' and 'mod_scheme_ps_different_1stm' and
+  # associated missing functionality!
   summarize(
     year_first = min(year_first),
     year_last = max(year_last),
+    month_first = min(month_first),
     .by = c(scheme, module_combo_code, panel_split)
   ) %>% 
   # Add revisit designs by FAS x spatial subset. The origins of
@@ -629,6 +631,7 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     in_aquatic_subset,
     fas,
     starts_with("year"),
+    month_first,
     panel_period,
     panel_enddate_addition,
     panel_dateshift,
@@ -786,7 +789,7 @@ scheme_moco_ps_spsubset_panel_calendar <-
   scheme_moco_ps_spsubset_fas_panels %>% 
   nest(
     revisit = c(
-      matches("^year|^limit_"), 
+      matches("^year|^month|^limit_"), 
       n_subperiods_per_main_period,
       fag_cycle,
       n_locvisits_per_fagcycle,
