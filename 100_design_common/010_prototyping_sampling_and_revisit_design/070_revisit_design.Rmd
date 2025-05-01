@@ -216,14 +216,14 @@ We currently don't handle a clash like this; for now we still expect the modules
 Our code currently does not handle this case; we just sum the module sample sizes in all cases and apply the overall set of FAGs to all involved sampling units.
 When the above code chunks output a result, this will normally indicate such an unsupported module combination.
 
-#### Preparatory objects
+#### Execution
 
-Creating preparatory objects to lift `mod_scheme_fag_paneldesign` to the module combo & FAS level.
+Lifting `mod_scheme_fag_paneldesign` to the module combo & FAS level.
 
 ```{r}
 # object with revisit design for each scheme x moco x panel split x [FAS x
 # spatial subset]
-scheme_moco_ps_fas_paneldesign <-
+scheme_moco_ps_spsubset_fas_paneldesign <-
   mod_scheme_fag_paneldesign %>% 
   select(-actseqs) %>% 
   # join module combos:
@@ -282,151 +282,8 @@ scheme_moco_ps_fas_paneldesign <-
       actseqs_vec
     )
   ) %>% 
-  relocate(fas_spsubset, .after = panel_split)
-
-# object with FAGs and explicit spatial subsets (as in mod_scheme_field_activity)
-scheme_moco_ps_fagset_spsubsetfull <-
-  mod_scheme_field_activity %>%
-  distinct(
-    module, 
-    scheme, 
-    is_core_scheme, 
-    field_activity_group, 
-    in_aquatic_subset,
-    activity_sequence, 
-    rank,
-    max_rank
-  ) %>% 
-  # join module combos:
-  inner_join(
-    scheme_target_paneldesign %>% 
-      select(scheme, module_combo_code, module_combo, panel_split) %>% 
-      unnest(module_combo),
-    join_by(module, scheme),
-    relationship = "many-to-one",
-    unmatched = "error"
-  ) %>% 
-  relocate(module_combo_code, .after = scheme) %>% 
-  arrange(module, scheme, field_activity_group, in_aquatic_subset) %>% 
-  mutate(
-    rank = min(rank),
-    max_rank = if (all(is.na(max_rank))) NA else max(max_rank, na.rm = TRUE),
-    actseqs = str_c(sort(unique(activity_sequence)), collapse = ", "),
-    actseqs_vec = list(sort(unique(activity_sequence))),
-    .by = c(
-      scheme,
-      module_combo_code,
-      panel_split,
-      field_activity_group,
-      in_aquatic_subset
-    )
-  ) %>% 
-  summarize(
-    fag_spsubsetfull = list(
-      tibble(
-        field_activity_group = field_activity_group,
-        in_aquatic_subset = in_aquatic_subset,
-        rank = rank,
-        max_rank = max_rank,
-        actseqs = actseqs,
-        actseqs_vec = actseqs_vec
-      ) %>% 
-        distinct()
-    ),
-    .by = !c(
-      module, 
-      is_core_scheme, 
-      field_activity_group, 
-      in_aquatic_subset,
-      rank,
-      max_rank,
-      activity_sequence,
-      actseqs,
-      actseqs_vec
-    )
-  ) %>% 
-  relocate(fag_spsubsetfull, .after = panel_split)
-```
-
-#### Final object
-
-Creating final object.
-It expands `scheme_moco_ps_fas_paneldesign` to explicit spatial subsets, but only where needed, i.e. we want each row of `scheme_moco_ps_fas_paneldesign` to have spatial subsets for all FAGs or for none.
-Also, it unnests the spatial subset.
-
-```{r}
-scheme_moco_ps_spsubset_fas_paneldesign <-
-  scheme_moco_ps_fas_paneldesign %>%
+  relocate(fas_spsubset, .after = panel_split) %>% 
   arrange(scheme, module_combo_code) %>% 
-  inner_join(
-    scheme_moco_ps_fagset_spsubsetfull,
-    join_by(scheme, module_combo_code, panel_split),
-    relationship = "many-to-one",
-    unmatched = "error"
-  ) %>% 
-  mutate(
-    fas_spsubset = map2(
-      fas_spsubset, 
-      fag_spsubsetfull, 
-      function(fsp, f) {
-        # below condition may be superfluous since we made in_aquatic_subset
-        # explicit
-        if (anyNA(fsp$in_aquatic_subset) && any(!is.na(fsp$in_aquatic_subset))) {
-          fsp %>% 
-            inner_join(
-              f %>% 
-                rename(
-                  in_aquatic_subset_explicit = in_aquatic_subset,
-                  rank_explicit = rank,
-                  max_rank_explicit = max_rank,
-                  actseqs_explicit = actseqs,
-                  actseqs_vec_explicit = actseqs_vec
-                ),
-              join_by(field_activity_group),
-              relationship = "one-to-many",
-              unmatched = c("error", "drop")
-            ) %>% 
-            mutate(
-              rank = ifelse(
-                is.na(in_aquatic_subset),
-                rank_explicit,
-                rank
-              ),
-              max_rank = ifelse(
-                is.na(in_aquatic_subset),
-                max_rank_explicit,
-                max_rank
-              ),
-              actseqs = ifelse(
-                is.na(in_aquatic_subset),
-                actseqs_explicit,
-                actseqs
-              ),
-              actseqs_vec = ifelse(
-                is.na(in_aquatic_subset),
-                actseqs_vec_explicit,
-                actseqs_vec
-              ),
-              in_aquatic_subset = ifelse(
-                is.na(in_aquatic_subset),
-                in_aquatic_subset_explicit,
-                in_aquatic_subset
-              )
-            ) %>% 
-            distinct(
-              field_activity_group, 
-              in_aquatic_subset, 
-              rank, 
-              max_rank, 
-              actseqs,
-              actseqs_vec
-            )
-        } else {
-          fsp
-        }
-    })
-  ) %>% 
-  select(-fag_spsubsetfull) %>% 
   unnest(fas_spsubset) %>% 
   mutate(actseqs = factor(actseqs)) %>% 
   nest(fas = c(field_activity_group, rank, max_rank, actseqs, actseqs_vec)) %>% 
