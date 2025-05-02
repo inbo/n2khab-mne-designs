@@ -549,26 +549,28 @@ hmt_pol_cellcenter <-
 ```
 
 
-```{r eval = params$regenerate_binary_files}
-# takes < 1 minute:
-hmt_pol_grts_cellcenter <-
-  extract(grts_mh, hmt_pol_cellcenter, small = FALSE) %>%
-  as_tibble() %>%
-  inner_join(
-    tibble(
-      ID = seq_len(nrow(hmt_pol_cellcenter)),
-      polygon_id = hmt_pol_cellcenter$polygon_id
-    ),
-    .,
-    by = "ID"
-  ) %>%
-  select(-ID, grts_address = GRTSmaster_habitats) %>%
-  # filtering is needed since all polygons are listed by extract():
-  filter(!is.na(grts_address))
-saveRDS(
-  hmt_pol_grts_cellcenter,
-  file.path(datapath, "binary/intermediate/hmt_pol_grts_cellcenter.rds")
-)
+```{r}
+if (params$regenerate_binary_files) {
+  # takes < 1 minute:
+  hmt_pol_grts_cellcenter <-
+    extract(grts_mh, hmt_pol_cellcenter, small = FALSE) %>%
+    as_tibble() %>%
+    inner_join(
+      tibble(
+        ID = seq_len(nrow(hmt_pol_cellcenter)),
+        polygon_id = hmt_pol_cellcenter$polygon_id
+      ),
+      .,
+      by = "ID"
+    ) %>%
+    select(-ID, grts_address = GRTSmaster_habitats) %>%
+    # filtering is needed since all polygons are listed by extract():
+    filter(!is.na(grts_address))
+  saveRDS(
+    hmt_pol_grts_cellcenter,
+    file.path(datapath, "binary/intermediate/hmt_pol_grts_cellcenter.rds")
+  )
+}
 ```
 
 ```{r}

@@ -37,63 +37,67 @@ valid_extra_popunits_cell_n2khab_grts <-
 
 Now create the SpatRaster.
 
-```{r eval = params$regenerate_binary_files}
-grts_mh_non_cell <- mask(grts_mh, points_non_cell_n2khab)
-grts_mh_cellcenter <- mask(grts_mh, hmt_pol_cellcenter, touches = FALSE)
-grts_mh_cell <- mask(grts_mh, hmt_pol_cell)
-grts_mh_cellcenter_extra <- 
-  mask(
-    grts_mh,
-    grts_mh,
-    maskvalues = 
-      valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% 
-      filter(grts_join_method == "cell_center") %>% 
-      distinct(grts_address) %>% 
-      pull(grts_address),
-    inverse = TRUE
-  )
-if (length(valid_extra_popunits_cell_n2khab_grts) > 0) {
-  grts_mh_cell_extra <- 
+```{r}
+if (params$regenerate_binary_files) {
+  grts_mh_non_cell <- mask(grts_mh, points_non_cell_n2khab)
+  grts_mh_cellcenter <- mask(grts_mh, hmt_pol_cellcenter, touches = FALSE)
+  grts_mh_cell <- mask(grts_mh, hmt_pol_cell)
+  grts_mh_cellcenter_extra <- 
     mask(
       grts_mh,
       grts_mh,
-      maskvalues = valid_extra_popunits_cell_n2khab_grts,
+      maskvalues = 
+        valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% 
+        filter(grts_join_method == "cell_center") %>% 
+        distinct(grts_address) %>% 
+        pull(grts_address),
       inverse = TRUE
     )
-} else {
-  grts_mh_cell_extra <- rast(grts_mh, vals = NA)
+  if (length(valid_extra_popunits_cell_n2khab_grts) > 0) {
+    grts_mh_cell_extra <- 
+      mask(
+        grts_mh,
+        grts_mh,
+        maskvalues = valid_extra_popunits_cell_n2khab_grts,
+        inverse = TRUE
+      )
+  } else {
+    grts_mh_cell_extra <- rast(grts_mh, vals = NA)
+  }
+  grts_mh_n2khab <- max(
+    grts_mh_non_cell,
+    grts_mh_cellcenter,
+    grts_mh_cell,
+    grts_mh_cellcenter_extra,
+    grts_mh_cell_extra,
+    na.rm = TRUE
+  ) %>%
+    as.int()
+  writeRaster(
+    grts_mh_n2khab,
+    file.path(datapath, "binary/intermediate/grts_mh_n2khab.tif"),
+    overwrite = TRUE
+  )
 }
-grts_mh_n2khab <- max(
-  grts_mh_non_cell,
-  grts_mh_cellcenter,
-  grts_mh_cell,
-  grts_mh_cellcenter_extra,
-  grts_mh_cell_extra,
-  na.rm = TRUE
-) %>%
-  as.int()
-writeRaster(
-  grts_mh_n2khab,
-  file.path(datapath, "binary/intermediate/grts_mh_n2khab.tif"),
-  overwrite = TRUE
-)
 ```
 
-```{r eval=FALSE, include=FALSE}
-# compare to units_non_cell_n2khab_grts %>% distinct(grts_address) %>% nrow
-global(grts_mh_non_cell, "notNA")
-# compare to nrow(hmt_pol_grts_cellcenter)
-global(grts_mh_cellcenter, "notNA")
-# compare to hmt_pol_grts_cell %>% distinct(grts_address) %>% nrow
-global(grts_mh_cell, "notNA")
-# compare to valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% filter(grts_join_method == "cell_center") %>% distinct(grts_address) %>% nrow
-global(grts_mh_cellcenter_extra, "notNA")
-# compare to length(valid_extra_popunits_cell_n2khab_grts)
-global(grts_mh_cell_extra, "notNA")
-# compare to stratum_grts_n2khab %>% distinct(grts_address) %>% nrow
-# Note that this is no longer expected to match, since stratum_grts_n2khab has 
-# been shrinked due to assessed absences of specific population units
-global(grts_mh_n2khab, "notNA")
+```{r include=FALSE}
+if (FALSE) {
+  # compare to units_non_cell_n2khab_grts %>% distinct(grts_address) %>% nrow
+  global(grts_mh_non_cell, "notNA")
+  # compare to nrow(hmt_pol_grts_cellcenter)
+  global(grts_mh_cellcenter, "notNA")
+  # compare to hmt_pol_grts_cell %>% distinct(grts_address) %>% nrow
+  global(grts_mh_cell, "notNA")
+  # compare to valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% filter(grts_join_method == "cell_center") %>% distinct(grts_address) %>% nrow
+  global(grts_mh_cellcenter_extra, "notNA")
+  # compare to length(valid_extra_popunits_cell_n2khab_grts)
+  global(grts_mh_cell_extra, "notNA")
+  # compare to stratum_grts_n2khab %>% distinct(grts_address) %>% nrow
+  # Note that this is no longer expected to match, since stratum_grts_n2khab has 
+  # been shrinked due to assessed absences of specific population units
+  global(grts_mh_n2khab, "notNA")
+}
 ```
 
 ```{r}
@@ -153,27 +157,29 @@ Determining all GRTS addresses of the base sampling frame per domain.
 
 Since this does not distinguish between strata, stratum collapsing (see further) is irrelevant.
 
-```{r eval = params$regenerate_binary_files}
-domain_grts_n2khab <-
-  extract(grts_mh_n2khab, vect(domains)) %>%
-  as_tibble() %>%
-  filter(!is.na(GRTSmaster_habitats)) %>%
-  inner_join(
-    tibble(
-      ID = seq_len(nrow(domains)),
-      domain = domains$domain
-    ),
-    .,
-    by = "ID"
-  ) %>%
-  select(
-    -ID,
-    grts_address = GRTSmaster_habitats
+```{r}
+if (params$regenerate_binary_files) {
+  domain_grts_n2khab <-
+    extract(grts_mh_n2khab, vect(domains)) %>%
+    as_tibble() %>%
+    filter(!is.na(GRTSmaster_habitats)) %>%
+    inner_join(
+      tibble(
+        ID = seq_len(nrow(domains)),
+        domain = domains$domain
+      ),
+      .,
+      by = "ID"
+    ) %>%
+    select(
+      -ID,
+      grts_address = GRTSmaster_habitats
+    )
+  saveRDS(
+    domain_grts_n2khab,
+    file.path(datapath, "binary/intermediate/domain_grts_n2khab.rds")
   )
-saveRDS(
-  domain_grts_n2khab,
-  file.path(datapath, "binary/intermediate/domain_grts_n2khab.rds")
-)
+}
 ```
 
 ```{r}

@@ -599,19 +599,24 @@ Their definition and their planning, linked to the data collection needs, are es
 Reading the list of activities and their attributes.
 Note that only part of activities are field activities.
 
-```{r read-gsheet-activities, eval = !file.exists(file.path(datapath, "text/raw/activities.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE, include=FALSE}
-gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
-read_sheet(ss = gs_id_envvars, sheet = "activities", col_types = "ccllllc") %>%
-  mutate(
-    across(c(activity, activity_name), fct),
-    protocol = factor(protocol)
-  ) %>% 
-  write_vc(
-    file = "activities",
-    root = file.path(datapath, "text/raw"),
-    optimize = FALSE,
-    strict = FALSE
-  )
+```{r read-gsheet-activities, message = FALSE, warning = FALSE, include=FALSE}
+if (
+  !file.exists(file.path(datapath, "text/raw/activities.yml")) || 
+  params$update_raw_textdata
+) {
+  gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
+  read_sheet(ss = gs_id_envvars, sheet = "activities", col_types = "ccllllc") %>%
+    mutate(
+      across(c(activity, activity_name), fct),
+      protocol = factor(protocol)
+    ) %>% 
+    write_vc(
+      file = "activities",
+      root = file.path(datapath, "text/raw"),
+      optimize = FALSE,
+      strict = FALSE
+    )
+}
 ```
 
 ```{r read-activities}
@@ -636,24 +641,29 @@ Also, different schemes may apply to the same location, hence different activity
 Reading the list of activity sequences and the corresponding activities, chronology and activity groups.
 
 
-```{r read-gsheet-activity-sequences, eval = !file.exists(file.path(datapath, "text/raw/activity_sequences.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE, include=FALSE}
-gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
-read_sheet(ss = gs_id_envvars, sheet = "activity_sequences", col_types = "ciiclc") %>%
-  mutate(
-    activity_sequence = fct(activity_sequence),
-    activity = factor(activity, levels = activities$activity),
-    activity_group = fct_reorder(
-      factor(activity_group),
-      as.numeric(activity),
-      first
+```{r read-gsheet-activity-sequences, message = FALSE, warning = FALSE, include=FALSE}
+if (
+  !file.exists(file.path(datapath, "text/raw/activity_sequences.yml")) || 
+  params$update_raw_textdata
+) {
+  gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
+  read_sheet(ss = gs_id_envvars, sheet = "activity_sequences", col_types = "ciiclc") %>%
+    mutate(
+      activity_sequence = fct(activity_sequence),
+      activity = factor(activity, levels = activities$activity),
+      activity_group = fct_reorder(
+        factor(activity_group),
+        as.numeric(activity),
+        first
+      )
+    ) %>%
+    write_vc(
+      file = "activity_sequences",
+      root = file.path(datapath, "text/raw"),
+      optimize = FALSE,
+      strict = FALSE
     )
-  ) %>%
-  write_vc(
-    file = "activity_sequences",
-    root = file.path(datapath, "text/raw"),
-    optimize = FALSE,
-    strict = FALSE
-  )
+}
 ```
 
 ```{r read-activity-sequences}
@@ -676,15 +686,20 @@ Attributes include:
 - variable set: a cluster of variables that are measured together (e.g. in the laboratory)
 - main data collection method: it is an activity from above.
 
-```{r read-gsheet-envvars, eval = !file.exists(file.path(datapath, "text/raw/vars.yml")) || params$update_raw_textdata, message = FALSE, warning = FALSE, include=FALSE}
-gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
-read_sheet(ss = gs_id_envvars, sheet = "vars_per_scheme") %>%
-  write_vc(
-    file = "vars",
-    root = file.path(datapath, "text/raw"),
-    optimize = FALSE,
-    strict = FALSE
-  )
+```{r read-gsheet-envvars, message = FALSE, warning = FALSE, include=FALSE}
+if (
+  !file.exists(file.path(datapath, "text/raw/vars.yml")) || 
+  params$update_raw_textdata
+) {
+  gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
+  read_sheet(ss = gs_id_envvars, sheet = "vars_per_scheme") %>%
+    write_vc(
+      file = "vars",
+      root = file.path(datapath, "text/raw"),
+      optimize = FALSE,
+      strict = FALSE
+    )
+}
 ```
 
 ```{r construct-envvars}

@@ -654,91 +654,100 @@ Only executed when specific schemes and module combos are active.
 
 <!-- XXXXXXX Note that 7220 needs better handling below. -->
 
-```{r eval = scheme_target_paneldesign %>% filter(scheme == "GW_03.3", str_detect(module_combo_code, "panfl_pan5.*mbaa")) %>% nrow() > 0}
-make_obj_a <- function(calobj) {
-  calobj %>% 
+```{r}
+if (
+  scheme_target_paneldesign %>% 
   filter(
     scheme == "GW_03.3",
-    str_detect(module_combo_code, "panfl_pan5"),
-    notation_paneldesign %in% c(
-      "2panelsof3m(auto|SER)[shift(6m)]",
-      "24panelsof3m(SER)"
-    ),
-    # note that this one can be dropped once 7220 is handled better
-    stratum != "7220"
+    str_detect(module_combo_code, "panfl_pan5.*mbaa")
   ) %>% 
-  unnest(panel_membership)
-}
-make_obj_b <- function(calobj) {
-  calobj %>% 
+  nrow() > 0
+) {
+  make_obj_a <- function(calobj) {
+    calobj %>% 
+      filter(
+        scheme == "GW_03.3",
+        str_detect(module_combo_code, "panfl_pan5"),
+        notation_paneldesign %in% c(
+          "2panelsof3m(auto|SER)[shift(6m)]",
+          "24panelsof3m(SER)"
+        ),
+        # note that this one can be dropped once 7220 is handled better
+        stratum != "7220"
+      ) %>% 
+      unnest(panel_membership)
+  }
+  make_obj_b <- function(calobj) {
+    calobj %>% 
+      filter(
+        scheme == "GW_03.3",
+        str_detect(module_combo_code, "panfl_pan5"),
+        notation_paneldesign %in% c(
+          "2panelsof3m(auto|SER)[shift(6m)]",
+          "24panelsof3m(SER)"
+        ),
+        # note that this one can be dropped once 7220 is handled better
+        stratum != "7220"
+      ) %>% 
+      distinct(
+        scheme,
+        module_combo_code,
+        panel_split,
+        in_aquatic_subset,
+        notation_paneldesign,
+        stratum,
+        sp_poststratum,
+        panel,
+        grts_address
+      )
+  }
+  obj_a <- make_obj_a(scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship)
+  obj_b <- make_obj_b(scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar)
+  obj_a_n <- obj_a %>% count(notation_paneldesign)
+  obj_b_n <- obj_b %>% count(notation_paneldesign)
+  
+  stopifnot(n_distinct(obj_a_n$n) == 1)
+  stopifnot(all.equal(obj_a_n, obj_b_n))
+  
+  # installation
+  obj_b1 <- obj_b %>% 
     filter(
-    scheme == "GW_03.3",
-    str_detect(module_combo_code, "panfl_pan5"),
-    notation_paneldesign %in% c(
-      "2panelsof3m(auto|SER)[shift(6m)]",
-      "24panelsof3m(SER)"
-    ),
-    # note that this one can be dropped once 7220 is handled better
-    stratum != "7220"
-  ) %>% 
-  distinct(
-    scheme,
-    module_combo_code,
-    panel_split,
-    in_aquatic_subset,
-    notation_paneldesign,
-    stratum,
-    sp_poststratum,
-    panel,
-    grts_address
-  )
+      panel %in% c(
+        "GW_03.3_TERR_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
+        "GW_03.3_TERR_panflpan5mbaa_24panelsof3m(SER)_PANEL06",
+        "GW_03.3_AQ_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
+        "GW_03.3_AQ_panflpan5mbaa_24panelsof3m(SER)_PANEL06"
+      )
+    )
+  # levread
+  obj_b2 <- obj_b %>% 
+    filter(
+      panel %in% c(
+        "GW_03.3_TERR_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01",
+        "GW_03.3_AQ_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01"
+      )
+    )
+  stopifnot(all(obj_b1$grts_address %in% obj_b2$grts_address))
+  # all tests up to here also make sense for the first appearance of the
+  # scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar object (which
+  # has been updated since)
+  
+  # levread
+  obj_b3 <- 
+    scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+    filter(
+      panel %in% c(
+        "GW_03.3_TERR_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01",
+        "GW_03.3_AQ_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01"
+      ),
+      year(date_start) == 2025L
+    ) %>% 
+    make_obj_b()
+  stopifnot(all(obj_b1$grts_address %in% obj_b3$grts_address))
+  stopifnot(all(obj_b3$grts_address %in% obj_b1$grts_address))
+  
+  rm(obj_a, obj_b, obj_a_n, obj_b_n, obj_b1, obj_b2, obj_b3)
 }
-obj_a <- make_obj_a(scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship)
-obj_b <- make_obj_b(scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar)
-obj_a_n <- obj_a %>% count(notation_paneldesign)
-obj_b_n <- obj_b %>% count(notation_paneldesign)
-
-stopifnot(n_distinct(obj_a_n$n) == 1)
-stopifnot(all.equal(obj_a_n, obj_b_n))
-
-# installation
-obj_b1 <- obj_b %>% 
-  filter(
-    panel %in% c(
-      "GW_03.3_TERR_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
-      "GW_03.3_TERR_panflpan5mbaa_24panelsof3m(SER)_PANEL06",
-      "GW_03.3_AQ_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
-      "GW_03.3_AQ_panflpan5mbaa_24panelsof3m(SER)_PANEL06"
-    )
-  )
-# levread
-obj_b2 <- obj_b %>% 
-  filter(
-    panel %in% c(
-      "GW_03.3_TERR_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01",
-      "GW_03.3_AQ_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01"
-    )
-  )
-stopifnot(all(obj_b1$grts_address %in% obj_b2$grts_address))
-# all tests up to here also make sense for the first appearance of the
-# scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar object (which
-# has been updated since)
-
-# levread
-obj_b3 <- 
-  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
-  filter(
-    panel %in% c(
-      "GW_03.3_TERR_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01",
-      "GW_03.3_AQ_panflpan5mbaa_2panelsof3m(auto|SER)[shift(6m)]_PANEL01"
-    ),
-    year(date_start) == 2025L
-  ) %>% 
-  make_obj_b()
-stopifnot(all(obj_b1$grts_address %in% obj_b3$grts_address))
-stopifnot(all(obj_b3$grts_address %in% obj_b1$grts_address))
-
-rm(obj_a, obj_b, obj_a_n, obj_b_n, obj_b1, obj_b2, obj_b3)
 ```
 
 
@@ -752,71 +761,73 @@ For the code, see `helper_scripts/writing_to_googlesheet.R`, and it can optional
 - a 'panel_calendar' worksheet, generated from the spatial sampling unit calendar (excluding ADHOC FAGs), lists the panels and number of involved locations, for each combination of date interval (rows) and panel design (notation) (columns).
 See `compartment_paneldesign_fags` to find the connection with FAGs.
 
-```{r eval = params$update_spatiotemp_gsheet, include = FALSE, message = FALSE}
-gs_id <- "1vqxRmWVuc39HCF15K6xZhJEa5ls7Z7uF_xsEr_swQdk"
-ws_name_prefix <- str_c(str_flatten(modules$code_short), " | ")
-
-compartment_paneldesign_fags %>%
-  write_sheet(
-    ss = gs_id,
-    sheet = str_c(ws_name_prefix, "compartment_paneldesign_FAGs")
-  )
-
-scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
-  distinct(scheme, module_combo_code, panel_split, generic_panels) %>%
-  unnest(generic_panels) %>%
-  rename(location_set = id) %>%
-  rename_with(
-    \(x) str_replace(x, "generic", "panelnr_")
-  ) %>%
-  rename_with(
-    \(x) str_replace(x, "autopanels", "panels_autocontinuous_meas")
-  ) %>%
-  rename_with(
-    \(x) str_replace(x, "fastalignpanels", "panels_gwgaugeinstall")
-  ) %>%
-  pivot_longer(cols = starts_with("panelnr"), names_to = "generic", values_to = "panelnr") %>%
-  mutate(nr = str_extract(generic, "\\d+") %>% as.integer()) %>%
-  arrange(desc(nr)) %>%
-  select(-nr) %>%
-  pivot_wider(names_from = generic, values_from = panelnr) %>%
-  write_sheet(
-    ss = gs_id,
-    sheet = str_c(ws_name_prefix, "generic_panel_relations")
-  )
-
-scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
-  # don't include ADHOC FAGs:
-  filter(notation_paneldesign != "1panelof1m(PUR)") %>%
-  count(
-    scheme,
-    module_combo_code,
-    panel_split,
-    in_aquatic_subset,
-    notation_paneldesign,
-    panel,
-    date_start,
-    date_end,
-    date_interval
-  ) %>%
-  mutate(panel_n = str_c("(", n, ") ", panel)) %>%
-  summarize(
-    panels_n = str_c(panel_n, collapse = "\n"),
-    .by = c(
+```{r include = FALSE, message = FALSE}
+if (params$update_spatiotemp_gsheet) {
+  gs_id <- "1vqxRmWVuc39HCF15K6xZhJEa5ls7Z7uF_xsEr_swQdk"
+  ws_name_prefix <- str_c(str_flatten(modules$code_short), " | ")
+  
+  compartment_paneldesign_fags %>%
+    write_sheet(
+      ss = gs_id,
+      sheet = str_c(ws_name_prefix, "compartment_paneldesign_FAGs")
+    )
+  
+  scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
+    distinct(scheme, module_combo_code, panel_split, generic_panels) %>%
+    unnest(generic_panels) %>%
+    rename(location_set = id) %>%
+    rename_with(
+      \(x) str_replace(x, "generic", "panelnr_")
+    ) %>%
+    rename_with(
+      \(x) str_replace(x, "autopanels", "panels_autocontinuous_meas")
+    ) %>%
+    rename_with(
+      \(x) str_replace(x, "fastalignpanels", "panels_gwgaugeinstall")
+    ) %>%
+    pivot_longer(cols = starts_with("panelnr"), names_to = "generic", values_to = "panelnr") %>%
+    mutate(nr = str_extract(generic, "\\d+") %>% as.integer()) %>%
+    arrange(desc(nr)) %>%
+    select(-nr) %>%
+    pivot_wider(names_from = generic, values_from = panelnr) %>%
+    write_sheet(
+      ss = gs_id,
+      sheet = str_c(ws_name_prefix, "generic_panel_relations")
+    )
+  
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+    # don't include ADHOC FAGs:
+    filter(notation_paneldesign != "1panelof1m(PUR)") %>%
+    count(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset,
       notation_paneldesign,
+      panel,
       date_start,
       date_end,
       date_interval
+    ) %>%
+    mutate(panel_n = str_c("(", n, ") ", panel)) %>%
+    summarize(
+      panels_n = str_c(panel_n, collapse = "\n"),
+      .by = c(
+        notation_paneldesign,
+        date_start,
+        date_end,
+        date_interval
+      )
+    ) %>%
+    pivot_wider(names_from = notation_paneldesign, values_from = panels_n) %>%
+    arrange(date_start, date_end) %>%
+    select(-date_start, -date_end) %>%
+    mutate(date_interval = as.character(date_interval)) %>%
+    write_sheet(
+      ss = gs_id,
+      sheet = str_c(ws_name_prefix, "panel_calendar")
     )
-  ) %>%
-  pivot_wider(names_from = notation_paneldesign, values_from = panels_n) %>%
-  arrange(date_start, date_end) %>%
-  select(-date_start, -date_end) %>%
-  mutate(date_interval = as.character(date_interval)) %>%
-  write_sheet(
-    ss = gs_id,
-    sheet = str_c(ws_name_prefix, "panel_calendar")
-  )
+}
 ```
 
 
