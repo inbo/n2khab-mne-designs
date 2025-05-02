@@ -1225,6 +1225,116 @@ mod_scheme_fag %>%
 Something similar occurs when the same location gets two different but competing FAGs, one of which is superior to another, e.g. `GWINSTPIEZWELL` is superior to `GWINSTPIEZNODIVER`.
 This will mostly be avoided by generating spatiotemporal samples for non-core schemes only for types (hence, locations) that are not covered by a competing core scheme (which would compete and win otherwise).
 
+### Defining some panel design aspects at the type level
+
+
+```{r read-gsheet-biotic-timing, message = FALSE, warning = FALSE, include=FALSE}
+if (
+  !file.exists(file.path(datapath, "text/raw/biotic_timing.yml")) || 
+  params$update_raw_textdata
+) {
+  gs_id_biotic_timing <- "1umoBSRWWXoIYzgepWFpCvwI9eHlVq1xbwJduVSG3C64"
+  read_sheet(
+    ss = gs_id_biotic_timing,
+    sheet = "timing_biotic_fieldwork",
+    col_types = str_flatten(rep("c", 15))
+  ) %>% 
+    select(-type_shortname, -contains("nunits")) %>% 
+    mutate(
+      type = factor(type, levels = levels(n2khab_targetpops$type)),
+      biotope_type = fct(biotope_type)
+    ) %>% 
+    write_vc(
+      file = "biotic_timing",
+      root = file.path(datapath, "text/raw"),
+      optimize = FALSE,
+      strict = FALSE
+    )
+}
+```
+
+```{r set-biotic-timing}
+biotic_timing <- 
+  read_vc(
+    file = "biotic_timing",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble() %>% 
+  select(type, biotope_type, contains("mmdd")) %>% 
+  mutate(
+    across(contains("mmdd"), \(x) parse_date_time(x, "md") %>% as_date()),
+    # XXXXXXXXXX MANUAL HACKS FOR MISSING INPUT (attribute some types to other
+    # biotope_types); TO BE UPDATED XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    biotope_type = fct_recode(biotope_type, "droge duinen" = "droge en natte duinen?"),
+    biotope_type = if_else(
+      type == "3270",
+      factor("watervegetaties", levels = levels(biotope_type)),
+      biotope_type
+    )
+  ) %>% 
+  pivot_longer(
+    cols = contains("mmdd"),
+    names_to = c("level", "subject"),
+    names_pattern = "([^_]+)_(.*)_mmdd",
+    values_to = "mmdd"
+  ) %>% 
+  pivot_wider(
+    names_from = "level",
+    values_from = "mmdd"
+  ) %>% 
+  mutate(
+    # if finetuned dates available, prefer those, otherwise take dates from
+    # biotope_type
+    mmdd = if_else(is.na(finetuned), biotopetype, finetuned),
+    # if no dates available at all, use the ones at biotope level from other
+    # types
+    mmdd = if_else(is.na(mmdd), first(mmdd[!is.na(mmdd)]), mmdd),
+    # XXXXXXXXXXX MANUAL HACK FOR 8310 - TO BE UPDATED !!! XXXXXXXXXXXXXXXXXXXX
+    mmdd = case_when(
+      type != "8310" ~ mmdd,
+      str_detect(subject, "begin") ~ parse_date_time("01-01", "md") %>% as_date(),
+      str_detect(subject, "end") ~ parse_date_time("12-31", "md") %>% as_date()
+    ),
+    .by = biotope_type
+  ) %>% 
+  (
+    function(df) {
+      if (anyNA(df$mmdd)) {
+        stop("Missing dates detected!")
+      } else {
+        df
+      }
+    }
+  ) %>% 
+  select(type, subject, mmdd) %>% 
+  pivot_wider(
+    names_from = subject,
+    values_from = mmdd
+  ) %>% 
+  mutate(
+    begin_suboptimal = 
+      if_else(
+        begin_suboptimal > begin_optimal,
+        begin_optimal,
+        begin_suboptimal
+      ),
+    end_suboptimal = 
+      if_else(
+        end_suboptimal < end_optimal,
+        end_optimal,
+        end_suboptimal
+      )
+  ) %>% 
+  mutate(
+    month_start = month(begin_suboptimal) %>% as.integer(),
+    day_start = day(begin_suboptimal) %>% as.integer(),
+    month_end = month(end_suboptimal) %>% as.integer(),
+    day_end = day(end_suboptimal) %>% as.integer()
+  ) %>% 
+  select(type, matches("month|day"))
+```
+
+
 ### Panel design of FAGs in (spatial subsets of) schemes per module
 
 `mod_scheme_fag_paneldesign` is the panel design of field activity groups per module and scheme.
