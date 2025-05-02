@@ -1304,7 +1304,7 @@ biotic_timing <-
   (
     function(df) {
       if (anyNA(df$mmdd)) {
-        stop("Missing dates detected!")
+        stop("Missing dates detected!", call. = FALSE)
       } else {
         df
       }
@@ -1328,6 +1328,18 @@ biotic_timing <-
         end_optimal,
         end_suboptimal
       )
+  ) %>% 
+  (
+    function(df) {
+      df_wrong <- 
+        df %>% 
+        filter(begin_suboptimal == end_suboptimal | begin_optimal == end_optimal)
+      if (nrow(df_wrong) > 0) {
+        stop("Equal start and end dates detected!", call. = FALSE)
+      } else {
+        df
+      }
+    }
   ) %>% 
   mutate(
     month_start = month(begin_suboptimal) %>% as.integer(),
