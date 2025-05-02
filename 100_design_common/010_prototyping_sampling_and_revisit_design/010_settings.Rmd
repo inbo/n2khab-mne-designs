@@ -1307,19 +1307,31 @@ biotic_timing <-
     values_from = mmdd
   ) %>% 
   mutate(
-    begin_suboptimal = 
-      if_else(
-        begin_suboptimal > begin_optimal,
-        begin_optimal,
-        begin_suboptimal
-      ),
-    end_suboptimal = 
-      if_else(
-        end_suboptimal < end_optimal,
-        end_optimal,
-        end_suboptimal
-      )
+    # if no suboptimal dates available, borrow from the optimal ones
+    begin_suboptimal = if_else(
+      is.na(begin_suboptimal),
+      begin_optimal,
+      begin_suboptimal
+    ),
+    end_suboptimal = if_else(
+      is.na(end_suboptimal),
+      end_optimal,
+      end_suboptimal
+    ),
+    # if suboptimal ranges are within optimal ranges, expand them to the optimal
+    # ones
+    begin_suboptimal = if_else(
+      begin_suboptimal > begin_optimal,
+      begin_optimal,
+      begin_suboptimal
+    ),
+    end_suboptimal = if_else(
+      end_suboptimal < end_optimal,
+      end_optimal,
+      end_suboptimal
+    )
   ) %>% 
+  # testing for unwanted situations
   (
     function(df) {
       df_wrong <- 
@@ -1327,6 +1339,8 @@ biotic_timing <-
         filter(begin_suboptimal == end_suboptimal | begin_optimal == end_optimal)
       if (nrow(df_wrong) > 0) {
         stop("Equal start and end dates detected!", call. = FALSE)
+      } else if (df %>% filter(if_any(contains("_"), is.na)) %>% nrow() > 0) {
+        stop("Missing dates detected!", call. = FALSE)
       } else {
         df
       }
