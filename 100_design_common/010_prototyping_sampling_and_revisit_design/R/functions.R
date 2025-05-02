@@ -267,6 +267,35 @@ add_col_is_strictly_aquatic <- function(df, strata, type_properties) {
 
 
 
+
+#' Add column 'in_aquatic_subset' based on type column in a data frame
+#'
+#' @param df Data frame that has a column `type` and to which a column
+#'   `in_aquatic_subset` has to be added, which potentially invokes duplicating
+#'   rows where a type has `hydr_class == "HC23"`.
+add_typecol_in_aquatic_subset <- function(df) {
+  df %>%
+    inner_join(
+      read_types() %>%
+        # duplicating types that have aquatic forms & terrestrial forms:
+        filter(hydr_class == "HC23") %>%
+        uncount(2) %>%
+        mutate(in_aquatic_subset = rep(c(TRUE, FALSE), 2)) %>%
+        bind_rows(
+          read_types() %>%
+            filter(hydr_class != "HC23") %>%
+            mutate(in_aquatic_subset = hydr_class == "HC3")
+        ) %>%
+        select(type, in_aquatic_subset),
+      join_by(type),
+      unmatched = c("error", "drop"),
+      relationship = "many-to-many"
+    )
+}
+
+
+
+
 #' Add column 'in_aquatic_subset' based on stratum column in a data frame
 #'
 #' @param df Data frame that has a column `stratum` and to which a column
