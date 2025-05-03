@@ -3,13 +3,15 @@
 We will join panel memberships with the date intervals per panel to generate the planning of FAGs (field activity groups) and the spatiotemporal samples.
 At the same time, each FAS is replaced by its constituting FAGs, which have a common revisit design.
 
+Also, the date intervals are updated at the level of the spatial sampling unit in case of a biotic FAG (containing LOCEVALxxx or LSVIxxx activity), depending on the stratum (see \@ref(type-dates)).
+
 ## Calendar per scheme, FAG, stratum and spatial sampling unit
 
 This calendar still distinguishes between scheme x module combo x panel split.
 
 ### Initial spatial sampling unit calendar
 
-Generating a sampling unit calendar, i.e. with timing per FAG, stratum and spatial sampling unit in a scheme x module combo x panel split x spatial poststratum.
+Generating a sampling unit calendar, i.e. with timing per FAG (updated for biotic FAG), stratum and spatial sampling unit in a scheme x module combo x panel split x spatial poststratum.
 Note that the spatial subset is a mere attribute, as is already expressed by stratum and also FAG (in case of 7220).
 
 ```{r}
@@ -29,6 +31,42 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial <-
     starts_with("date"),
     .after = notation_paneldesign
   ) %>% 
+  # join biotic FAG timings
+  left_join(
+    bioticfag_spsubset_type_timing %>% 
+      inner_join(
+        n2khab_strata,
+        join_by(type),
+        relationship = "many-to-many",
+        unmatched = c("error", "drop")
+      ) %>% 
+      select(-type),
+    join_by(field_activity_group, in_aquatic_subset, stratum),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  # update date intervals of biotic FAGs
+  mutate(
+    date_start = if_else(
+      is.na(month_start),
+      date_start,
+      make_date(year = year(date_start), month = month_start, day = day_start)
+    ),
+    date_end = if_else(
+      is.na(month_end),
+      date_end,
+      make_date(year = year(date_end), month = month_end, day = day_end)
+    ),
+    date_interval = if_else(
+      is.na(month_start),
+      date_interval,
+      interval(
+        force_tz(date_start, "Europe/Brussels"), 
+        force_tz(date_end, "Europe/Brussels")
+      )
+    )
+  ) %>% 
+  select(-matches("^month|^day")) %>% 
   arrange(
     scheme,
     module_combo_code,
