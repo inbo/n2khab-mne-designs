@@ -11,6 +11,8 @@ rdata_set <- c(
   "activity_sequences",
   "field_activities",
   "field_activity_sequences",
+  "biotic_timing",
+  "bioticfag_spsubset_type_timing",
   "mod_scheme_field_activity",
   "mod_scheme_actseq_fag",
   "mod_scheme_fag_paneldesign",
