@@ -1377,6 +1377,25 @@ biotic_timing %>%
   count(pick(-type), name = "n_types")
 ```
 
+#### Prepare input to update the FAG calendar
+
+To prepare for updating the FAG calendar at the level of spatial sampling units, we join `biotic_timing` to the biotic FAGs by the applicable spatial subset.
+
+```{r}
+bioticfag_spsubset_type_timing <- 
+  field_activity_sequences %>% 
+  filter(str_detect(field_activity, "LOCEVAL|LSVI")) %>% 
+  mutate(in_aquatic_subset = str_detect(field_activity, "AQ")) %>% 
+  distinct(field_activity_group, in_aquatic_subset) %>% 
+  inner_join(
+    biotic_timing %>% 
+      add_typecol_in_aquatic_subset(),
+    join_by(in_aquatic_subset),
+    relationship = "many-to-many",
+    unmatched = "error"
+  )
+```
+
 
 ### Panel design of FAGs in (spatial subsets of) schemes per module
 
