@@ -680,6 +680,8 @@ prepare_lazy_get <- function(rdata_filepath,
   # make lazy-load database from temp_env and give it a local name
   tools:::makeLazyLoadDB(temp_env, file.path(tempdir(), database_name))
   # remove the temp environment
+  rm(list = ls(envir = temp_env), envir = temp_env)
+  gc()
   rm(temp_env)
   gc()
   # create the requested environment to access the lazy-load database
