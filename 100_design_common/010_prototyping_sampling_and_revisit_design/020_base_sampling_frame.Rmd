@@ -1192,8 +1192,7 @@ absent_popunits_cell_all_n2khab <-
   mutate(stratum = factor(stratum, levels = levels(n2khab_strata$stratum)))
 ```
 
-We don't expect absences to be present in `valid_extra_popunits_cell_all_n2khab`.
-Listing violations for further enquiry.
+Checking that absences are not present in `valid_extra_popunits_cell_all_n2khab`.
 
 ```{r eval = mhq_data_available}
 present_absences_cell_all <- 
@@ -1203,24 +1202,8 @@ present_absences_cell_all <-
     join_by(grts_address, stratum)
   ) %>% 
   arrange(stratum, grts_address)
-present_absences_cell_all
+stopifnot(present_absences_cell_all %>% nrow() == 0)
 ```
-
-As a safety precaution, we don't consider these locations as true absences.
-
-Applying a temporary fix for those cases: dropping them from `absent_popunits_cell_all_n2khab`.
-
-<!-- XXXXXX To be revisited! -->
-
-```{r eval = mhq_data_available}
-absent_popunits_cell_all_n2khab <- 
-  absent_popunits_cell_all_n2khab %>% 
-  anti_join(
-    present_absences_cell_all,
-    join_by(stratum, grts_address)
-  )
-```
-
 
 
 ### Substituting assessed population units in the base sampling frame
