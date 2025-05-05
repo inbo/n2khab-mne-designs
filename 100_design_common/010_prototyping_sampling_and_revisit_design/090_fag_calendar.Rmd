@@ -118,18 +118,30 @@ fag_stratum_grts_calendar_cycleid <-
     fag_simplifiable = 
       fag_is_auxiliary &
       !(field_activity_group %in% c("SURFLEVREADDIVER", "GWLEVREADDIVERDEEP")) & 
-      str_detect(field_activity_group, "LEVREAD"),
+      str_detect(field_activity_group, "LEVREAD|LOCEVALAQ|LOCEVALSAMPLPOINT"),
     fag_simplified = case_when(
-      fag_simplifiable ~ "GWLEVREAD",
+      fag_simplifiable & str_detect(field_activity_group, "LEVREAD") ~ "GWLEVREAD",
       # we don't group the different GWINST occasions, since these are 
       # effectively complementary, not overlapping (diver goes into well vs. 
       # into piezometer)!
       # str_detect(field_activity_group, "GWINST") ~ "GWINST",
+      fag_simplifiable & str_detect(field_activity_group, "LEVREAD") ~ 
+        "GWLEVREAD",
+      fag_simplifiable & 
+        str_detect(field_activity_group, "LENTLOCEVAL|LOCEVALAQ") &
+        !(str_detect(stratum, "3260|7220")) ~
+        "LOCEVALAQLENT",
+      fag_simplifiable & 
+        str_detect(field_activity_group, "LOTLOCEVAL|LOCEVALAQ") &
+        str_detect(stratum, "3260|7220") ~
+        "LOCEVALAQLOT",
       .default = as.character(field_activity_group)
     ) %>% 
       factor(levels = c(
         levels(field_activity_sequences$field_activity_group),
-        "GWLEVREAD"
+        "GWLEVREAD",
+        "LOCEVALAQLENT",
+        "LOCEVALAQLOT"
       ))
   ) %>% 
   # below step drops identical planned FAGs; the scheme x moco x panel split
@@ -238,7 +250,11 @@ simplified_fag_ranks <-
     ~fag_simplified, ~field_activity_group, ~simplification_rank,
     "GWLEVREAD", "GWSURFLEVREADDIVERMAN", 1L,
     "GWLEVREAD", "GWLEVREADDIVERMAN", 2L,
-    "GWLEVREAD", "GWLEVREADDIVER", 3L
+    "GWLEVREAD", "GWLEVREADDIVER", 3L,
+    "LOCEVALAQLENT", "SURFLENTLOCEVALSAMPLPOINT", 1L,
+    "LOCEVALAQLENT", "LOCEVALAQ", 2L,
+    "LOCEVALAQLOT", "SURFLOTLOCEVALSAMPLPOINT", 1L,
+    "LOCEVALAQLOT", "LOCEVALAQ", 2L
   ) %>% 
   mutate(
     fag_simplified = factor(
