@@ -77,6 +77,31 @@ fag_stratum_grts_calendar_cycleid <-
       as.integer()
   ) %>% 
   unnest(fags) %>% 
+  # add the default loceval_cycle of strata
+  left_join(
+    locevalfag_spsubset_type_cycle %>% 
+      inner_join(
+        n2khab_strata,
+        join_by(type),
+        relationship = "many-to-many",
+        unmatched = c("error", "drop")
+      ) %>% 
+      select(-type),
+    join_by(field_activity_group, in_aquatic_subset, stratum),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  # update the fag_cycle for LOCEVAL FAGs depending on type (without touching
+  # notation_paneldesign, panel etc). Note that n_locvisits_per_fagcycle is
+  # already 1 for this type of FAGs.
+  mutate(
+    fag_cycle = if_else(
+      is.na(loceval_cycle),
+      fag_cycle,
+      loceval_cycle
+    )
+  ) %>% 
+  select(-loceval_cycle) %>% 
   mutate(
     # we will only consider auxiliary FAGs in dropping planned FAGs across
     # scheme x moco x panel split
@@ -133,9 +158,8 @@ fag_stratum_grts_calendar_cycleid <-
   ) %>% 
   relocate(fag_cycle_months, .after = fag_cycle) %>% 
   # drop planned auxiliary FAGs that have a lower avg_visitfrequency_per_y than
-  # the maximum one for that stratum x location x FAG. At the time of coding,
-  # these appear to be LOCEVAL FAGs with a cycle of 6 years, in case at that
-  # location a module is active where this happens with a cycle of 3 years.
+  # the maximum one for that stratum x location x FAG. Currently, this does not
+  # remove further cases.
   filter(
     !fag_is_auxiliary |
       avg_visitfrequency_per_y == max(avg_visitfrequency_per_y),
