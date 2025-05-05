@@ -1210,22 +1210,45 @@ mod_scheme_fag %>%
 Something similar occurs when the same location gets two different but competing FAGs, one of which is superior to another, e.g. `GWINSTPIEZWELL` is superior to `GWINSTPIEZNODIVER`.
 This will mostly be avoided by generating spatiotemporal samples for non-core schemes only for types (hence, locations) that are not covered by a competing core scheme (which would compete and win otherwise).
 
-### Defining some panel design aspects at the type level {#type-dates}
+### Defining some panel design aspects at the type level
+
+#### Overview
+
+##### Cycle duration of FAGs with LOCEVAL {#type-cycle}
+
+FAGs with a LOCEVALxxx activity need a cycle duration that depends on the type:
+
+- for aquatic types (lentic and lotic, even though HQ3260 has a cycle duration of 6 years): every 3 years;
+- for terrestrial types, partim open: every 6 years;
+- for terrestrial types, partim forest: every 12 years.
+
+However, since the LOCEVAL activities are auxiliary FAGs (with regard to the target variables), this frequency should only be used in _dropping_ already planned LOCEVAL activities, not for scheduling them:
+
+- the integration of multiple modules, schemes and panel splits can lead to unneeded higher frequencies than the above, so dropping will be needed;
+- in scheduling the LOCEVAL activities, the module x scheme x panel split's cycle duration prevails and the above defaults are not used.
+Indeed, if the module x scheme x panel split's cycle duration is longer than an above cycle duration, then this means (in a serially alternating pattern) that for each location the target variable is determined in only one year of that longer cycle, so that one LOCEVAL activity is indeed sufficient during one cycle;
+- still, the decision whether two different LOCEVAL occasions from two different schemes with the same cycle duration and during the same cycle should be kept, is to be decided using the above type-specific cycle durations: if they are less separated than the type-specific cycle duration, then only the first is kept, otherwise both are kept.
+
+##### Start and end dates of FAGs with LOCEVAL or LSVI activities {#type-dates}
 
 The FAGs with a LOCEVALxxx or LSVIxxx activity have a panel period of one year, since repetitions within the year make no sense, but they should subsequently have their start and end dates amended (relative to 1 Jan and 31 Dec) depending on the type at a location.
 This is because different types have different optimal or suboptimal months within the year to perform this fieldwork; outside these months these field activities cannot be undertaken.
 
 Both the fact that they cannot be done anytime during the year, and the fact that this depends on the type, distinguish these field activities from all other activities.
 
-The FAG panel design in the next section, and all subsequent derivations in chapters \@ref(spatiotemp-sampling-prep) and \@ref(revisit) do not consider the type level.
-While we could integrate all different start and end dates for LOCEVALxxx or LSVIxxx in these panel design objects, we don't consider these type-level differences as enough to actually distinguish different panel designs depending on the type, each with their own notation, panel labels and so on, as it would cause way more complexity in an already crowded list of different FAG panel designs.
+#### Options to proceed
 
-So what we want is that different date intervals are defined for the same panels (considered for the same revisit design), and the applied date intervals also depend on the stratum (the location) instead of just the revisit design and the panel.
+The FAG panel design in section \@ref(fag-panel-design), and all subsequent derivations in chapters \@ref(spatiotemp-sampling-prep) and \@ref(revisit) do not consider the type level.
+While we could integrate all different start and end dates for LOCEVALxxx or LSVIxxx and the different LOCEVALxxx cycle durations in these panel design objects, we don't consider these type-level differences as enough to actually distinguish different panel designs depending on the type, each with their own notation, panel labels and so on, as it would cause way more complexity in an already crowded list of different FAG panel designs.
+
+So what we want is that different date intervals and cycle durations are applied within the same panels (considered for the same revisit design), so that date intervals and cycle durations also depend on the stratum (the location) instead of just the revisit design and the panel.
 
 This still leaves multiple options to proceed:
 
-- either integrating the type-dependent start and end date adjustments in the panel design objects (as done for other FAGs, though these have just one possible value), but without creating different panel design notations, and filtering them according to the involved type when the panel membership is generated (chapter \@ref(revisit));
-- or leaving the default generated start and end dates for LOCEVALxxx or LSVIxxx as-is (1 Jan & 31 Dec), and updating the date intervals only in the initial stages of the FAG calendar (at the level of spatial sampling units), i.e. when the panel calendar and the panel memberships have already been joined (chapter \@ref(spatiotemp-sampling)).
+- either integrating the type-dependent adjustments in the panel design objects (as done for other FAGs, though these have just one possible value), but without creating different panel design notations, and filtering them according to the involved type when the panel membership is generated (chapter \@ref(revisit));
+- or leaving the default generated cycle durations, start and end dates for LOCEVALxxx or LSVIxxx as-is (1 Jan & 31 Dec), and updating:
+  - the date intervals only in the initial stages of the FAG calendar (at the level of spatial sampling units), i.e. when the panel calendar and the panel memberships have already been joined (chapter \@ref(spatiotemp-sampling));
+  - the cycle durations only in preparation of dropping superfluous revisits in the FAG calendar (chapter \@ref(fag-calendar)).
 
 Since the first option proved to be more complex ^[We actually did start doing this, see branch `poc_bioticfag_paneldesign`, but after a while we thought of the other alternative.], we have chosen the second path.
 
@@ -1403,7 +1426,7 @@ bioticfag_spsubset_type_timing <-
 ```
 
 
-### Panel design of FAGs in (spatial subsets of) schemes per module
+### Panel design of FAGs in (spatial subsets of) schemes per module {#fag-panel-design}
 
 `mod_scheme_fag_paneldesign` is the panel design of field activity groups per module and scheme.
 This will matter most for data collection plans.
