@@ -1252,7 +1252,49 @@ This still leaves multiple options to proceed:
 
 Since the first option proved to be more complex ^[We actually did start doing this, see branch `poc_bioticfag_paneldesign`, but after a while we thought of the other alternative.], we have chosen the second path.
 
-#### Reading and preprocessing start and end dates
+#### Setting default cycle durations per type for LOCEVAL
+
+Setting default cycle durations.
+
+```{r}
+type_spsubset_locevalcycle_default <- 
+  targetpops %>% 
+  distinct(type) %>% 
+  add_typecol_in_aquatic_subset() %>% 
+  mutate(
+    loceval_cycle = case_when(
+      in_aquatic_subset ~ years(3),
+      str_detect(type, "^9|^2180|^rbbppm") ~ years(12),
+      .default = years(6)
+    )
+  )
+```
+
+To prepare for updating the FAG calendar at the level of spatial sampling units, we join `loceval_freq_default` to the FAGs with a LOCEVALxxx activity by the applicable spatial subset.
+
+```{r}
+locevalfag_spsubset_type_cycle <- 
+  field_activity_sequences %>% 
+  filter(str_detect(field_activity, "LOCEVAL")) %>% 
+  mutate(in_aquatic_subset = str_detect(field_activity, "AQ")) %>% 
+  distinct(field_activity_group, in_aquatic_subset) %>% 
+  inner_join(
+    type_spsubset_locevalcycle_default,
+    join_by(in_aquatic_subset),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>% 
+  # filter out mismatching lentic / lotic type joins
+  filter(
+    !str_detect(field_activity_group, "LENT|LOT") |
+      (str_detect(field_activity_group, "LOT") & type %in% c("3260", "7220")) |
+      (str_detect(field_activity_group, "LENT") & !(type %in% c("3260", "7220")))
+  )
+```
+
+
+
+#### Setting start and end dates per type for LOCEVAL and LSVI
 
 Reading and further processing the dataset with start and end dates per type, for biotic field activities.
 
@@ -1399,8 +1441,6 @@ As explained, multiple combinations exist, depending on the type:
 biotic_timing %>% 
   count(pick(-type), name = "n_types")
 ```
-
-#### Prepare input to update the FAG calendar
 
 To prepare for updating the FAG calendar at the level of spatial sampling units, we join `biotic_timing` to the biotic FAGs by the applicable spatial subset.
 
