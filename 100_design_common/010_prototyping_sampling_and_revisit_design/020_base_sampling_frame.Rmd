@@ -1107,18 +1107,28 @@ stopifnot(
 `mhq_terr_assessments` also contains information about types being absent from a location.
 This information can be used to drop some population units from the base sampling frame.
 
-As a precaution, we only consider the assessments that are not older than 'current year - 5'.
+As a precaution, we only consider the assessed absences that are not older than:
+
+- 'current year - 5' for open terrestrial types;
+- 'current year - 11' for forest types.
 
 ```{r eval = mhq_data_available}
 absent_popunits_cell_all_n2khab <- 
   mhq_terr_assessments %>% 
+  mutate(
+    oldest_allowed_year = ifelse(
+      str_detect(type, "^9|^2180|^rbbppm"),
+      year(today()) - 11,
+      year(today()) - 5
+    )
+  ) %>% 
   # we DON'T yet filter by `!is_present` because in some cases, the point_code
   # has multiple values for the same GRTS address, so this must be filtered and
   # summarized at the GRTS address level
   filter(
     !is.na(type),
     !is.na(is_present),
-    year(assessment_date) >= year(today()) - 5
+    year(assessment_date) >= oldest_allowed_year
   ) %>% 
   select(point_code, type, is_present, assessment_date) %>% 
   # expansion of main types to subtypes is needed for compatibility with MNE/MHQ
