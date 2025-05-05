@@ -200,6 +200,23 @@ add_assessment_data <- function(df) {
 }
 
 
+#' Drop attributes previously added by add_assessment_data()
+#'
+#' Dropping attributes previously added by `add_assessment_data()` can be
+#' useful if the assessment attributes were needed only temporarily.
+#'
+#' @param df Data frame.
+drop_assessment_data <- function(df) {
+  assessmcol <- c(
+    colnames(stratum_grts_n2khab_phabcorrected_no_replacements),
+    "grts_address_final"
+  )
+  assessmcol <- assessmcol[!(assessmcol %in% c("stratum", "grts_address"))]
+  df %>%
+    select(!any_of(assessmcol))
+}
+
+
 
 #' Add point coordinate columns to a data frame with a GRTS address column
 add_point_coords_grts <- function(

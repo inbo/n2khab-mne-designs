@@ -30,6 +30,8 @@ Furthermore, for FAGs that contain a LOCEVALxxx activity, the FAG cycle duration
 - For each auxiliary FAG, we require that it has the highest average yearly number of visits, and subsequently, the shortest cycle, that has been attributed to this FAG in the calendar, for the given location x stratum.
 FAG events that don't meet this condition are dropped.
 - To resolve the cases that have 'more FAG occasions than needed', we first allocate all date intervals (FAG occasions) to cycle IDs, the numbering of which occurs separately for each simplified FAG x `fag_cycle` x `n_locvisits_per_fagcycle`.
+For the LOCEVAL FAGs, we require that an occasion is not planned too soon after an already available assessment date.
+The stratum-specific cycle duration is used to determine this.
 Then, for each cycle ID, we demand that (simplified) FAGs occur no more than the expected `n_locvisits_per_fagcycle`.
 If needed, the first `n_locvisits_per_fagcycle` with different start dates are kept in the considered cycle ID.
 - If still 'more FAG occasions occur than needed', then this is because overlapping FAGs at a location occur in the same cycle with the same start date but with a different end date.
@@ -311,12 +313,29 @@ stopifnot(
 
 ## Dropping superfluous revisits for the same (simplified) auxiliary FAG and cycle ID
 
+Specifically for FAGs with a LOCEVAL activity, we first require that an occasion is not planned too soon after an already available assessment date, if one exists.
+If the year difference between assessment date and the FAG occasion is not larger than the cycle duration, then the FAG occasion can be dropped.
+
+```{r}
+loceval_fags <- unique(locevalfag_spsubset_type_cycle$field_activity_group)
+fag_stratum_grts_calendar_alladhoc <- 
+  fag_stratum_grts_calendar_cycleid %>% 
+  select(-fag_simplifiable, -fag_simplified) %>% 
+  add_assessment_data() %>% 
+  filter(
+    !(field_activity_group %in% loceval_fags) |
+      is.na(assessment_date) |
+      year(date_start) >= year(assessment_date) + year(fag_cycle)
+  ) %>% 
+  drop_assessment_data()
+```
+
+Now, for each cycle ID, we demand that (simplified) FAGs occur no more than the expected `n_locvisits_per_fagcycle`.
 Note that we also drop subsequently orphaned ADHOC FAGs, once more.
 
 ```{r}
 fag_stratum_grts_calendar_alladhoc <- 
-  fag_stratum_grts_calendar_cycleid %>% 
-  select(-fag_simplifiable, -fag_simplified) %>% 
+  fag_stratum_grts_calendar_alladhoc %>% 
   filter(
     !fag_is_auxiliary | 
       n() <= n_locvisits_per_fagcycle |
