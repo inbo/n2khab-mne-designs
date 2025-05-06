@@ -16,6 +16,8 @@ Also restricting columns to the necessary ones for workflows (unlike for 'displa
 
 ```{r}
 n2khab_schemes <- read_schemes(lang = lang)
+forest_types_regex <- "^9|^2180|^rbbppm"
+mhq_forest_schemes_regex <- str_replace_all(forest_types_regex, "\\^", "\\^HQ")
 pan_core_schemes_vec <- c(
   "GW_03.3",
   "SOIL_03.2",
@@ -40,7 +42,7 @@ pan_transmon_schemes <-
       # INBO will not approach forest types as a sample in MHQ, since measuring
       # LSVI in a forest sampling unit is not its expertise. If INBO monitors
       # forest type LSVI in certain areas, it will occur through LSVI mapping.
-      (programme == "MHQ" & !str_detect(scheme, "^HQ9|^HQ2180|^HQrbbppm"))
+      (programme == "MHQ" & !str_detect(scheme, mhq_forest_schemes_regex))
   ) %>%
   mutate(
     is_core_scheme = scheme %in% pan_core_schemes_vec | 
@@ -571,7 +573,7 @@ module_scheme_cycle_duration <-
     module == "pan_transmon_be2100024" ~ 3L,
     str_detect(scheme, "^SURF") ~ 3L,
     str_detect(scheme, "^HQ31") | scheme == "HQ2190_aq" ~ 3L,
-    str_detect(scheme, "^HQ9|^HQ2180|^HQrbbppm") ~ 12L,
+    str_detect(scheme, mhq_forest_schemes_regex) ~ 12L,
     .default = 6L
   ))
 ```
@@ -1264,7 +1266,7 @@ type_spsubset_locevalcycle_default <-
   mutate(
     loceval_cycle = case_when(
       in_aquatic_subset ~ years(3),
-      str_detect(type, "^9|^2180|^rbbppm") ~ years(12),
+      str_detect(type, forest_types_regex) ~ years(12),
       .default = years(6)
     )
   )
