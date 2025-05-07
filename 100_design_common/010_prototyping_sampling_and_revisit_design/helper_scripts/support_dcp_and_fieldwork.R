@@ -1,6 +1,6 @@
 # This code is to support ad-hoc steps and building blocks in making a data
-# collection plan and not to be considered part of the workflow. Just like the
-# other helper scripts.
+# collection plan or in preparing fieldwork and not to be considered part of the
+# POC workflow. Just like the other helper scripts.
 
 
 
