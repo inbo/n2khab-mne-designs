@@ -24,6 +24,8 @@ rdata_set <- c(
   "n2khab_targetpops",
   "grts_mh_n2khab_index",
   "domain_grts_n2khab",
+  "stratum_units_non_cell_n2khab",
+  "units_non_cell_n2khab_grts",
   "stratum_grts_n2khab",
   "stratum_grts_n2khab_collapsed",
   "stratum_grts_n2khab_phabcorrected",
