@@ -8,6 +8,7 @@ However this does not mean that executing each row at the designated time and lo
 - ADHOC FAGs, while theoretically given a pure panel design, will only be carried out during other scheduled (non-biotic) FAGs and only with a low probability.
 
 In this section we will generate a sensible field activity calendar in terms of FAGs, location (GRTS address) x stratum and date interval.
+We still keep the scheme x moco x panel split information as nested tibbles (with unique rows) in the resulting tibbles of the FAG occasions, and we merge these nested tibbles as overlapping FAGs (rows) are merged (but not dropped).
 
 To determine a FAG overlap, not only identical FAGs are considered but also FAGs that overlap in the activities or activity specifics that they represent.
 In the latter case, the most 'sophisticated' FAG will be retained and the other overlapping ones are replaced by that one if they occur in the same FAG cycle in the same place and stratum.
@@ -145,9 +146,10 @@ fag_stratum_grts_calendar_cycleid <-
       ))
   ) %>% 
   # below step drops identical planned FAGs; the scheme x moco x panel split
-  # level is dropped
-  summarize(
-    year_first = as.integer(min(year_first)),
+  # level is collapsed
+  nest(
+    year_first = year_first,
+    scheme_moco_ps = c(scheme, module_combo_code, panel_split),
     .by = c(
       stratum,
       grts_address,
@@ -163,7 +165,12 @@ fag_stratum_grts_calendar_cycleid <-
       date_interval
     )
   ) %>% 
+  relocate(scheme_moco_ps) %>% 
   mutate(
+    # use a single year_first if needed
+    year_first = map_int(year_first, \(x) min(x$year_first)),
+    # make unique rows in each scheme_moco_ps tibble 
+    scheme_moco_ps = map(scheme_moco_ps, distinct),
     # FAG cycle duration expressed as number of months
     fag_cycle_months = as.integer(year(fag_cycle) * 12 + month(fag_cycle)),
     # average yearly number of times a FAG happens at a single location during a
@@ -305,6 +312,27 @@ fag_stratum_grts_calendar_cycleid <-
         ),
       .default = field_activity_group
     ),
+    # following code is to replace scheme_moco_ps by the aggregation of all
+    # involved scheme_moco_ps tibbles in the groups where simplification is
+    # triggered (and can lead to removal of rows in the next section). This is
+    # done in several steps.
+    scheme_moco_ps_lump = if_else(
+      fag_simplifiable & !is.na(simplification_rank),
+      list(scheme_moco_ps),
+      list(NULL)
+    ),
+    scheme_moco_ps_cleaned = map(scheme_moco_ps_lump, function(df_list) {
+      if (is.null(df_list)) return(NULL)
+      list_rbind(df_list) %>% distinct()
+    }),
+    scheme_moco_ps = map2(
+      scheme_moco_ps,
+      scheme_moco_ps_cleaned,
+      function(smp, smpc) {
+        if (is.null(smpc)) return(smp)
+        smpc
+      }
+    ),
     .by = c(
       stratum,
       grts_address,
@@ -313,8 +341,10 @@ fag_stratum_grts_calendar_cycleid <-
       cycle_id
     )
   ) %>% 
-  select(-simplification_rank) %>% 
-  # deduplicate FAG occasions due to the simplification
+  select(-simplification_rank, -scheme_moco_ps_lump, -scheme_moco_ps_cleaned) %>% 
+  # deduplicate FAG occasions due to the simplification. Since we aligned
+  # scheme_moco_ps, these cannot differ within a group where FAG simplification
+  # has been done
   distinct()
 ```
 
@@ -402,8 +432,16 @@ fag_stratum_grts_calendar_alladhoc <-
   # drop unneeded columns
   select(-starts_with("fag_"), -n_locvisits_per_fagcycle, -cycle_id) %>% 
   # dropping cycle_id leads to some more duplicates (wrt GW sampling), so
-  # deduplicating
-  distinct() %>% 
+  # deduplicating. We need to integrate scheme_moco_ps tibbles where needed.
+  summarize(
+    scheme_moco_ps_nested = list(scheme_moco_ps),
+    .by = !scheme_moco_ps
+  ) %>% 
+  mutate(scheme_moco_ps = map(scheme_moco_ps_nested, function(df_list) {
+    list_rbind(df_list) %>% distinct()
+  })) %>% 
+  relocate(scheme_moco_ps) %>% 
+  select(-scheme_moco_ps_nested) %>% 
   relocate(field_activity_group, rank, .after = last_col()) %>%
   arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
 ```
