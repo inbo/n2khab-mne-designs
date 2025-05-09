@@ -41,6 +41,7 @@ rdata_set <- c(
   "mhq_sampled_types_per_domain",
   "mhq_mod_dom_scheme_mhqsampletype_no_sample",
   "mhq_mod_dom_type_no_sample",
+  "mhq_scheme_category",
   "submod_dom_scheme_ssf_stratum_nunits",
   "module_domain_schemes",
   "submodule_domain_scheme_typestats",
