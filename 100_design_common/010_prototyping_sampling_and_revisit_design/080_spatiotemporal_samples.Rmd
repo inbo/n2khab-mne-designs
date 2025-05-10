@@ -259,7 +259,7 @@ See the _missing functionality_ in section \@ref(moco).
 This will drop about half of the SURFINSTGAUGE activities in groundwater schemes during the first 3-year cycle.
 - drop FAGs that miss their foregoing FAGs with a lower rank.
 
-Further, we drop all ADHOC activities that don't have a start date that matches that of another (non-biotic) activity at the same location, in the same scheme x module combo x panel split x stratum.
+Further, if ADHOC activities were introduced, we drop all those that don't have a start date that matches that of another (non-biotic) activity at the same location, in the same scheme x module combo x panel split x stratum.
 This is because ADHOC activities will not be separately undertaken, but only take place in the context of another (non-biotic) activity.
 Also, they will only happen with a low probability, which we currently still neglect.
 
@@ -384,21 +384,28 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     (memship_alignfastest & date_start >= first_date_gwinst) |
       !memship_alignfastest
   ) %>% 
-  # drop ADHOC FAGs that have no matching start date at their location in the
-  # specific scheme x module combo x panel split.
-  filter(
-    !str_detect(field_activity_group, "ADHOC") |
-      date_start %in% 
-      date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
-    .by = c(
-      scheme,
-      module_combo_code,
-      panel_split,
-      stratum,
-      sp_poststratum,
-      grts_address
-    )
-  ) %>% 
+  {
+    if (params$keep_adhoc_acts) {
+      # drop ADHOC FAGs that have no matching start date at their location in the
+      # specific scheme x module combo x panel split.
+      filter(
+        .,
+        !str_detect(field_activity_group, "ADHOC") |
+          date_start %in% 
+          date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
+        .by = c(
+          scheme,
+          module_combo_code,
+          panel_split,
+          stratum,
+          sp_poststratum,
+          grts_address
+        )
+      )
+    } else {
+      .
+    }
+  } %>% 
   select(!c(
     first_date_gwinst,
     memship_alignfastest,
@@ -484,21 +491,28 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     -starts_with("date_start_first_rank")
   ) %>% 
   nest(actseqs = activity_sequence) %>% 
-  # once more filter out orphaned ADHOC activities (but at the time of writing
-  # this had no effect; keeping it for generality)
-  filter(
-    !str_detect(field_activity_group, "ADHOC") |
-      date_start %in% 
-      date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
-    .by = c(
-      scheme,
-      module_combo_code,
-      panel_split,
-      stratum,
-      sp_poststratum,
-      grts_address
-    )
-  ) %>% 
+  {
+    if (params$keep_adhoc_acts) {
+      # once more filter out orphaned ADHOC activities (but at the time of writing
+      # this had no effect; keeping it for generality)
+      filter(
+        .,
+        !str_detect(field_activity_group, "ADHOC") |
+          date_start %in% 
+          date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
+        .by = c(
+          scheme,
+          module_combo_code,
+          panel_split,
+          stratum,
+          sp_poststratum,
+          grts_address
+        )
+      )
+    } else {
+      .
+    }
+  } %>% 
   # since the new FAG sets may be smaller than the original FA supergroups, due
   # to dropping FAGs while cleaning, we just call these sets 'fags' so that
   # 'fas' can keep its time-independent but revisit-design

@@ -948,7 +948,7 @@ stopifnot(
 
 ## Setting the panel design of field activities
 
-### Determining the field activities of (spatial subsets of) schemes per module
+### Determining the field activities of (spatial subsets of) schemes per module {#field-activities}
 
 'Field activity' can cover data collection, where it corresponds to 'main field method' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
 
@@ -961,6 +961,16 @@ field_activities <-
   select(starts_with("activity")) %>% 
   rename_with(~ str_c("field_", .))
 field_activities
+```
+
+ADHOCxxx field activities may be dropped from this result; see section \@ref(fag-panel-design) for explanation.
+
+```{r}
+if (!params$keep_adhoc_acts) {
+  field_activities <- 
+    field_activities %>% 
+    filter(!str_detect(field_activity, "ADHOC"))
+}
 ```
 
 Several field activities necessarily belong together, depending on the applicable sequence of activities, as expressed by the `activity_sequence` variable.
@@ -1629,6 +1639,16 @@ samplingprop_adhocpipereplace <- 0.05
 samplingprop_adhocdiverreplace <- 0.05
 samplingprop_surfadhocgaugereplace <- 0.10
 ```
+
+Since subsampling ADHOC FAGs happens in a late stage (\@ref(fag-cal-completion)), because of the numerous occasions of these ADHOC FAGs in the preceding objects (due to the high-frequency pure panel approach), and given their more specific purpose, this workflow allows to suppress the occurrence of the ADHOC FAGs.
+
+Does this workflow keep the ADHOC FAGs?
+
+```{r}
+params$keep_adhoc_acts
+```
+
+Note that the implementation of this parameter already took place in the creation of `field_activities` in section \@ref(field-activities).
 
 Overview of different occurring panel designs per FAG across modules and schemes:
 

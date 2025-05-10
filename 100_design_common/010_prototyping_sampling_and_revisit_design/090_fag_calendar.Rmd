@@ -5,7 +5,7 @@ The above calendar objects contain the structure needed for statistical inferenc
 However this does not mean that executing each row at the designated time and location makes sense in reality:
 
 - schemes x module combos can have overlapping FAGs in space and time. It is best to remove these overlaps within limits and as long as this does not lead to data loss;
-- ADHOC FAGs, while theoretically given a pure panel design, will only be carried out during other scheduled (non-biotic) FAGs and only with a low probability.
+- ADHOC FAGs (if they were kept in this workflow), while theoretically given a pure panel design, will only be carried out during other scheduled (non-biotic) FAGs and only with a low probability.
 
 In this section we will generate a sensible field activity calendar in terms of FAGs, location (GRTS address) x stratum and date interval.
 We still keep the scheme x moco x panel split information as nested tibbles (with unique rows) in the resulting tibbles of the FAG occasions, and we merge these nested tibbles as overlapping FAGs (rows) are merged (but not dropped).
@@ -366,7 +366,7 @@ If the year difference between assessment date and the FAG occasion is not large
 
 ```{r}
 loceval_fags <- unique(locevalfag_spsubset_type_cycle$field_activity_group)
-fag_stratum_grts_calendar_alladhoc <- 
+fag_stratum_grts_calendar_result <- 
   fag_stratum_grts_calendar_cycleid %>% 
   select(-fag_simplifiable, -fag_simplified) %>% 
   add_assessment_data() %>% 
@@ -379,11 +379,11 @@ fag_stratum_grts_calendar_alladhoc <-
 ```
 
 Now, for each cycle ID, we demand that (simplified) FAGs occur no more than the expected `n_locvisits_per_fagcycle`.
-Note that we also drop subsequently orphaned ADHOC FAGs, once more.
+Note that we also drop subsequently orphaned ADHOC FAGs, once more, if they were kept in this workflow.
 
 ```{r}
-fag_stratum_grts_calendar_alladhoc <- 
-  fag_stratum_grts_calendar_alladhoc %>% 
+fag_stratum_grts_calendar_result <- 
+  fag_stratum_grts_calendar_result %>% 
   filter(
     !fag_is_auxiliary | 
       n() <= n_locvisits_per_fagcycle |
@@ -419,16 +419,23 @@ fag_stratum_grts_calendar_alladhoc <-
       date_start
     )
   ) %>% 
-  # once more filter out orphaned ADHOC activities
-  filter(
-    !str_detect(field_activity_group, "ADHOC") |
-      date_start %in% 
-      date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
-    .by = c(
-      stratum,
-      grts_address
-    )
-  ) %>% 
+  {
+    if (params$keep_adhoc_acts) {
+      # once more filter out orphaned ADHOC activities
+      filter(
+        .,
+        !str_detect(field_activity_group, "ADHOC") |
+          date_start %in% 
+          date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
+        .by = c(
+          stratum,
+          grts_address
+        )
+      )
+    } else {
+      .
+    }
+  } %>% 
   # drop unneeded columns
   select(-starts_with("fag_"), -n_locvisits_per_fagcycle, -cycle_id) %>% 
   # dropping cycle_id leads to some more duplicates (wrt GW sampling), so
@@ -446,12 +453,12 @@ fag_stratum_grts_calendar_alladhoc <-
   arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
 ```
 
-## FAG calendar (subsampling and relaxing ADHOC FAGs; adding assessment data)
+## FAG calendar (subsampling and relaxing ADHOC FAGs; adding assessment data) {#fag-cal-completion}
 
-We implement the preset proportions to subsample ADHOC FAGs.
+We implement the preset proportions to subsample ADHOC FAGs, if they were kept in this workflow.
 Note that a maximum yearly frequency at stratum x location is enforced for each ADHOC FAG before subsampling, since that was the assumption of the subsampling proportions.
 
-Further, we relax the date intervals of the remaining ADHOC FAGs to take _one of the existing_ date intervals of non-ADHOC, non-biotic FAGs that have the same start date (in the same stratum x location).
+Further (and again: if applicable), we relax the date intervals of the remaining ADHOC FAGs to take _one of the existing_ date intervals of non-ADHOC, non-biotic FAGs that have the same start date (in the same stratum x location).
 This is done in order to not limit ADHOC FAGs to their initial date interval of one month, but align them with existing date intervals.
 
 Also, we add assessment data including the replacement locations substituted in `grts_address_final`.
@@ -459,37 +466,43 @@ Also, we add assessment data including the replacement locations substituted in 
 ```{r}
 set.seed(20250127)
 fag_stratum_grts_calendar <- 
-  fag_stratum_grts_calendar_alladhoc %>% 
-  filter(!str_detect(field_activity_group, "ADHOC")) %>% 
-  bind_rows(
-    fag_stratum_grts_calendar_alladhoc %>% 
-      subsample_and_relax_adhocfag(
-        adhoc_fag = "ADHOCPIPEREPLACE",
-        local_max_per_year = 1,
-        proportion = samplingprop_adhocpipereplace
-      )
-  ) %>%
-  bind_rows(
-    fag_stratum_grts_calendar_alladhoc %>% 
-      subsample_and_relax_adhocfag(
-        adhoc_fag = "ADHOCDIVERREPLACE",
-        local_max_per_year = 1,
-        proportion = samplingprop_adhocdiverreplace
-      )
-  ) %>%
-  bind_rows(
-    fag_stratum_grts_calendar_alladhoc %>% 
-      subsample_and_relax_adhocfag(
-        adhoc_fag = "SURFADHOCGAUGEREPLACE",
-        local_max_per_year = 1,
-        proportion = samplingprop_surfadhocgaugereplace
-      )
-  ) %>%
+  fag_stratum_grts_calendar_result %>% 
+  {
+    if (params$keep_adhoc_acts) {
+      filter(., !str_detect(field_activity_group, "ADHOC")) %>% 
+        bind_rows(
+          fag_stratum_grts_calendar_result %>% 
+            subsample_and_relax_adhocfag(
+              adhoc_fag = "ADHOCPIPEREPLACE",
+              local_max_per_year = 1,
+              proportion = samplingprop_adhocpipereplace
+            )
+        ) %>%
+        bind_rows(
+          fag_stratum_grts_calendar_result %>% 
+            subsample_and_relax_adhocfag(
+              adhoc_fag = "ADHOCDIVERREPLACE",
+              local_max_per_year = 1,
+              proportion = samplingprop_adhocdiverreplace
+            )
+        ) %>%
+        bind_rows(
+          fag_stratum_grts_calendar_result %>% 
+            subsample_and_relax_adhocfag(
+              adhoc_fag = "SURFADHOCGAUGEREPLACE",
+              local_max_per_year = 1,
+              proportion = samplingprop_surfadhocgaugereplace
+            )
+        )
+    } else {
+      .
+    }
+  } %>% 
   arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group) %>% 
   add_assessment_data()
 ```
 
-Keeping ADHOC FAGs in the calendar is only done to not overlook this substantial investment.
+Keeping ADHOC FAGs in the calendar (if they were kept in this workflow) is only done to not overlook this substantial investment.
 Of course, their actual occurrence in space and time will be different, so that when implementing this calendar the ADHOC FAGs will be dropped.
 
 Uncertainties in the sampling frame cause duplication of GRTS addresses in the (generated) sample because multiple strata can be connected to the same GRTS address.
@@ -542,7 +555,7 @@ if (params$update_spatiotemp_gsheet) {
 ```{r echo = FALSE}
 for (name in c(
   "fag_stratum_grts_calendar_cycleid",
-  "fag_stratum_grts_calendar_alladhoc",
+  "fag_stratum_grts_calendar_result",
   "fag_stratum_grts_calendar",
   "fag_grts_calendar"
 )) {
