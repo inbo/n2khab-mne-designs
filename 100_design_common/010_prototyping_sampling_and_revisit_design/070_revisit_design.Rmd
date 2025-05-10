@@ -282,13 +282,29 @@ scheme_moco_ps_spsubset_fas_paneldesign <-
       actseqs_vec
     )
   ) %>% 
-  relocate(fas_spsubset, .after = panel_split) %>% 
+  # create a flag that says if the spatial subset should be used in defining
+  # (naming) panel series. Each row has its own FAS x spatial subset tibble. If
+  # the included FAGs are indifferent wrt spatial subset, then we set this flag
+  # as FALSE.
+  mutate(
+    spsubset_needed_for_panel = map_lgl(fas_spsubset, function(fs) {
+      n_distinct(fs$in_aquatic_subset) > 1 &
+        !identical(
+          sort(fs$field_activity_group[fs$in_aquatic_subset]),
+          sort(fs$field_activity_group[!fs$in_aquatic_subset])
+        )
+    })
+  ) %>% 
+  relocate(fas_spsubset, spsubset_needed_for_panel, .after = panel_split) %>% 
   arrange(scheme, module_combo_code) %>% 
   unnest(fas_spsubset) %>% 
   mutate(actseqs = factor(actseqs)) %>% 
   nest(fas = c(field_activity_group, rank, max_rank, actseqs, actseqs_vec)) %>% 
-  relocate(fas, .after = in_aquatic_subset)
+  relocate(fas, .after = spsubset_needed_for_panel)
 ```
+
+We added a logical variable `spsubset_needed_for_panel` in order to determine whether the naming system of panel series (which distinguishes different panel series) should include the spatial subset.
+If, for a given revisit design in a scheme x module combo x panel split, the corresponding list of FAGs is indifferent with regard to the spatial subset, then the panel series should combine both spatial subsets if more than one exists, hence not include it in its name.
 
 Let's verify that no FAGs have been duplicated because `rank` or `max_rank` were not unique.
 
@@ -486,6 +502,7 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     module_combo_code,
     panel_split,
     in_aquatic_subset,
+    spsubset_needed_for_panel,
     fas,
     starts_with("year"),
     month_first,
@@ -595,7 +612,11 @@ scheme_moco_ps_spsubset_fas_panels <-
   scheme_moco_ps_spsubset_fas_panelcount %>%
   # spatial_subset_abbr is a temporary string used in the panel labels
   mutate(
-    spatial_subset_abbr = if_else(in_aquatic_subset, "AQ", "TERR", ""),
+    spatial_subset_abbr = case_when(
+      !spsubset_needed_for_panel ~ "",
+      in_aquatic_subset ~ "AQ",
+      !in_aquatic_subset ~ "TERR"
+    ),
     scheme_moco_has_multiple_panel_splits = n_distinct(panel_split) > 1,
     .by = c(scheme, module_combo_code)
   ) %>% 
@@ -747,7 +768,7 @@ scheme_moco_ps_spsubset_panel_calendar <-
   ) %>%
   select(-fas, -panels, -revisit) %>%
   unnest(panel_date_assignment) %>%
-  relocate(panel, .after = in_aquatic_subset)
+  relocate(panel, .after = spsubset_needed_for_panel)
 ```
 
 **Missing functionality**: ability to undo the dateshift of a backward shifted panel design in the first panel of the first cycle only, in combination with setting this panel's enddate earlier (i.e. making the panel duration shorter).
@@ -760,7 +781,14 @@ scheme_moco_ps_spsubset_panel_calendar %>%
   inner_join(
     scheme_moco_ps_spsubset_fas_panels %>% 
       select(scheme:fas, panel),
-    join_by(scheme, module_combo_code, panel_split, in_aquatic_subset, panel),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset,
+      spsubset_needed_for_panel,
+      panel
+    ),
     relationship = "many-to-one",
     unmatched = "error"
   ) %>% 
@@ -960,6 +988,7 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
     module_combo_code, 
     panel_split, 
     in_aquatic_subset, 
+    spsubset_needed_for_panel,
     fas, 
     auto_continuous_meas,
     memship_alignfastest,

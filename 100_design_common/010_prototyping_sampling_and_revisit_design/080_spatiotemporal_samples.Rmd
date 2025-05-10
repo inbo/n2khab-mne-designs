@@ -21,7 +21,14 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial <-
   unnest(fas) %>% 
   inner_join(
     scheme_moco_ps_spsubset_panel_calendar,
-    join_by(scheme, module_combo_code, panel_split, in_aquatic_subset, panel),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset,
+      spsubset_needed_for_panel,
+      panel
+    ),
     relationship = "many-to-many",
     unmatched = c("error", "drop")
   ) %>% 
@@ -101,6 +108,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
       module_combo_code, 
       panel_split, 
       in_aquatic_subset,
+      spsubset_needed_for_panel,
       field_activity_group,
       rank,
       max_rank,
@@ -131,6 +139,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
       module_combo_code,
       panel_split,
       in_aquatic_subset,
+      spsubset_needed_for_panel,
       notation_paneldesign,
       field_activity_group,
       rank,
@@ -274,6 +283,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
         module_combo_code, 
         panel_split, 
         in_aquatic_subset, 
+        spsubset_needed_for_panel,
         year_first,
         year_last,
         month_first,
@@ -283,7 +293,14 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
         notation_paneldesign,
         memship_alignfastest
       ),
-    join_by(scheme, module_combo_code, panel_split, in_aquatic_subset, notation_paneldesign),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_split,
+      in_aquatic_subset,
+      spsubset_needed_for_panel,
+      notation_paneldesign
+    ),
     relationship = "many-to-one",
     unmatched = "error"
   ) %>% 
@@ -518,7 +535,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   # 'fas' can keep its time-independent but revisit-design
   # (notation_paneldesign) dependent meaning
   nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>% 
-  relocate(fags, .after = in_aquatic_subset) %>% 
+  relocate(fags, .after = spsubset_needed_for_panel) %>% 
   relocate(
     sp_poststratum,
     panel,
@@ -558,6 +575,7 @@ scheme_moco_ps_spsubset_fas_panels %>%
       module_combo_code,
       panel_split,
       in_aquatic_subset,
+      spsubset_needed_for_panel,
       notation_paneldesign,
       panel
     ),
@@ -612,6 +630,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
       module_combo_code,
       panel_split,
       in_aquatic_subset,
+      spsubset_needed_for_panel,
       notation_paneldesign,
       stratum,
       sp_poststratum
@@ -637,6 +656,7 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>%
       module_combo_code,
       panel_split,
       in_aquatic_subset,
+      spsubset_needed_for_panel,
       notation_paneldesign,
       stratum,
       sp_poststratum
@@ -765,10 +785,10 @@ if (
   obj_b1 <- obj_b %>% 
     filter(
       panel %in% c(
-        "GW_03.3_TERR_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
-        "GW_03.3_TERR_panflpan5mbaa_24panelsof3m(SER)_PANEL06",
-        "GW_03.3_AQ_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
-        "GW_03.3_AQ_panflpan5mbaa_24panelsof3m(SER)_PANEL06"
+        "GW_03.3_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
+        "GW_03.3_panflpan5mbaa_24panelsof3m(SER)_PANEL06",
+        "GW_03.3_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
+        "GW_03.3_panflpan5mbaa_24panelsof3m(SER)_PANEL06"
       )
     )
   # levread
@@ -854,7 +874,6 @@ if (params$update_spatiotemp_gsheet) {
       scheme,
       module_combo_code,
       panel_split,
-      in_aquatic_subset,
       notation_paneldesign,
       panel,
       date_start,
@@ -898,7 +917,7 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <-
     join_by(scheme, module_combo_code, panel_split, in_aquatic_subset, field_activity_group)
   ) %>% 
   nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>% 
-  relocate(fags, .after = in_aquatic_subset) %>% 
+  relocate(fags, .after = spsubset_needed_for_panel) %>% 
   add_assessment_data()
 ```
 
