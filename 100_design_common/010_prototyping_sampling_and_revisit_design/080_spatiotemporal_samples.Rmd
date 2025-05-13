@@ -905,7 +905,8 @@ if (params$update_spatiotemp_gsheet) {
 ## Spatiotemporal samples
 
 Subsetting the sampling unit calendar to the occasions with a target FAG.
-We also add assessment data including the replacement locations substituted in `grts_address_final`.
+We also add assessment data including the replacement locations substituted in `grts_address_final`, as well as a simplified 'targetpanel' notation.
+The targetpanel notation requires a condition to be met in order to ignore the spatial subset if the latter is used in the panel notation.
 This object comes closest to the notion of **spatiotemporal samples**.
 
 ```{r}
@@ -918,6 +919,20 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <-
   ) %>% 
   nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>% 
   relocate(fags, .after = spsubset_needed_for_panel) %>% 
+  (
+    # check that spatial subset can be sensibly ignored in the targetpanel label
+    function(df) {
+      df %>%
+  distinct(scheme, module_combo_code, panel_split, notation_paneldesign) %>%
+  count(scheme, module_combo_code, panel_split) %>%
+  filter(n > 1) %>%
+  {nrow(.) == 0} %>%
+  stopifnot()
+      df
+    }
+  ) %>% 
+  mutate(targetpanel = str_match(panel, "_(PANEL\\d\\d)$")[, 2] %>% factor()) %>% 
+  relocate(targetpanel, .after = panel) %>% 
   add_assessment_data()
 ```
 
