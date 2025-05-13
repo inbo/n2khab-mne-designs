@@ -148,3 +148,133 @@ save(
     "binary/intermediate/objects_for_aq_piezometers_panfl_pan5.RData"
   )
 )
+
+
+
+
+
+
+
+
+
+
+
+# Variable sets and FAG occasions -------------------------------------------
+
+
+# First run setup chunk
+#
+# Then run:
+
+load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
+
+# attributes of spatial sampling units (~grts_address_final), useful for maps,
+# selections and decisions
+scheme_moco_ps_stratum_targetpanel_spsamples <-
+  scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
+  distinct(
+    scheme,
+    module_combo_code,
+    panel_split,
+    stratum,
+    grts_address,
+    grts_address_final,
+    targetpanel,
+    last_type_assessment = assessment_date,
+    last_type_assessment_in_field = assessed_in_field,
+    last_inaccessible = inaccessible
+  ) %>%
+  arrange(pick(scheme:grts_address))
+
+# Note: if grts_address_final differs from grts_address, and it appears that the
+# stratum is no longer present in the field, then a new replacement procedure
+# must take place using grts_address as the anchor, provided that the type still
+# occurs in the polygon. If not, the absence must be noted and sampling frame +
+# sample are to be updated.
+
+# field activities (FAs) per field activity group (FAG) in the active modules
+# and schemes (considered without the spatial overlap between core and non-core
+# schemes). A FAG represents the field activities that must happen during the
+# same location visit.
+fag_fa <-
+  mod_scheme_field_activity %>%
+  semi_join(mod_scheme_yrs_moco_ps, join_by(module, scheme)) %>%
+  distinct(field_activity_group, field_activity) %>%
+  arrange(field_activity_group, field_activity)
+
+fag_stratum_grts_calendar
+
+# fag_stratum_grts_calendar demonstrates the needed visits and is organized at
+# the FAG level. The rank is an indication of the needed order of different FAGs
+# at one location, in the same cycle. In some cases repetitions do happen for
+# certain FAGs in a scheme, not all FAGs, as prescribed by the date interval.
+
+# Below code brings the FAG calendar at the resolution of each field activity.
+fag_fa_stratum_grts_calendar <-
+  fag_stratum_grts_calendar %>%
+  inner_join(
+    fag_fa,
+    join_by(field_activity_group),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  select(-c(typelevel_certain:inaccessible))
+
+# Note that both calendar objects have a scheme_moco_ps column that makes clear
+# which scheme x module combo x panel split the FAG is serving. This may be a
+# SUBSET of the same information at the level of the spatial sampling unit
+# without considering FAG occasions, since not all field activities necessarily
+# serve all schemes.
+
+# Link between field activities and their protocol
+fa_protocol <-
+  field_activities %>%
+  inner_join(
+    activities %>%
+      select(activity, protocol),
+    join_by(field_activity == activity),
+    relationship = "one-to-one",
+    unmatched = c("error", "drop")
+  )
+
+# List of variables / variable sets to be collected in the field (will expand
+# when mod_scheme_vars expands)
+scheme_moco_fa_fieldvar <-
+  mod_scheme_vars %>%
+  # bring to module combo level
+  inner_join(
+    mod_scheme_yrs_moco_ps %>%
+      distinct(module, scheme, module_combo_code),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  relocate(module_combo_code, .after = scheme) %>%
+  # field activities only
+  semi_join(
+    field_activities,
+    join_by(main_datacollection_method == field_activity)
+  ) %>%
+  select(
+    -module,
+    field_activity = main_datacollection_method
+  ) %>%
+  # make unique after dropping module:
+  distinct(
+    scheme,
+    module_combo_code,
+    field_activity,
+    variable_set,
+    variable
+  ) %>%
+  # variables with the SAMP field activity are variables to be determined in the
+  # lab, so not relevant for the fieldwork (but the sampling protocol is)
+  filter(!str_detect(field_activity, "SAMP"))
+
+
+
+
+
+
+
+
