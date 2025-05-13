@@ -677,11 +677,13 @@ activity_sequences <-
   as_tibble()
 ```
 
-## Setting environmental variables and associated (main) activities
+## Setting (environmental) variables and associated (main) activities
 
-### Environmental variables and main data collection methods
+### Variables and main data collection methods
 
-Reading and further amending the dataset that defines the environmental variables and their attributes, for each module and scheme.
+Reading and further amending the dataset that defines the variables and their attributes, for each module and scheme.
+
+Most of these variables are environmental variables.
 
 Attributes include:
 
@@ -704,8 +706,8 @@ if (
 }
 ```
 
-```{r construct-envvars}
-envvars <- 
+```{r construct-vars-per-scheme}
+mod_scheme_vars <- 
   read_vc(
     file = "vars",
     root = file.path(datapath, "text/raw")
@@ -714,8 +716,8 @@ envvars <-
   select(
     scheme = meetnet,
     target_site_factor = standplaatsfactor,
-    environm_var = milieuvar,
-    envvar_abbrev = afk_milieuvar,
+    variable = milieuvar,
+    var_abbrev = afk_milieuvar,
     measurement_var = meetvar,
     target = primair,
     explanatory = verklarend,
@@ -756,12 +758,14 @@ envvars <-
       levels = levels(activities$activity)
     ),
     across(target:quality_control, ~ !is.na(.)),
+    is_envvar = target | explanatory | quality_control,
     across(where(is.character), factor),
     variable_set = factor(
       variable_set, 
       levels = c(levels(variable_set), "LSVI")
     )
   ) %>% 
+  relocate(is_envvar, .after = var_abbrev) %>% 
   pivot_longer(
     cols = where(~ max(as.character(.), na.rm = TRUE) == "X"),
     names_to = "module",
@@ -795,7 +799,7 @@ envvars <-
 
 Note: explanatory environmental variables might need spatial restrictions that are more stringent than the one at the scheme level.
 
-Checking which MNE schemes per module are not covered by `envvars` (this may yield cases where the applicable domain has no target population units available, since `module_schemes` will only take this into account in chapter \@ref(scheme-objects)).
+Checking which MNE schemes per module are not covered by `mod_scheme_vars` (this may yield cases where the applicable domain has no target population units available, since `module_schemes` will only take this into account in chapter \@ref(scheme-objects)).
 
 ```{r check-envvar-coverage}
 module_schemes_mne <- 
@@ -803,7 +807,7 @@ module_schemes_mne <-
   filter(!str_detect(scheme, "^HQ"))
 module_schemes_mne %>% 
   anti_join(
-    envvars %>% 
+    mod_scheme_vars %>% 
       distinct(module, scheme),
     join_by(module, scheme)
   )
@@ -815,35 +819,35 @@ Checking that no unplanned schemes are covered.
 
 ```{r check-envvar-coverage-2}
 stopifnot(
-  envvars %>% 
+  mod_scheme_vars %>% 
     distinct(module, scheme) %>% 
     anti_join(module_schemes_mne, join_by(module, scheme)) %>% 
     nrow() == 0
 )
 ```
 
-Some scheme x environmental variable combinations are module-specific:
+Some scheme x variable combinations are module-specific:
 
-```{r module-specific-envvars}
-envvars %>% 
+```{r module-specific-vars}
+mod_scheme_vars %>% 
   distinct(
     module,
     scheme,
-    environm_var,
-    envvar_abbrev,
+    variable,
+    var_abbrev,
     variable_set,
     main_datacollection_method
   ) %>% 
   count(
     scheme,
-    environm_var,
-    envvar_abbrev,
+    variable,
+    var_abbrev,
     variable_set,
     main_datacollection_method,
     name = "n_modules"
   ) %>% 
   inner_join(
-    envvars %>% 
+    mod_scheme_vars %>% 
       distinct(module, scheme) %>% 
       count(scheme, name = "n_modules_all"),
     join_by(scheme)
@@ -855,12 +859,12 @@ Creating an object with _non-field_ data collection methods per module x scheme,
 
 ```{r non-field-data-collection-methods}
 mod_scheme_datacoll_nofield <- 
-  envvars %>% 
+  mod_scheme_vars %>% 
   distinct(
     module,
     scheme,
-    environm_var,
-    envvar_abbrev,
+    variable,
+    var_abbrev,
     variable_set,
     main_datacollection_method
   ) %>% 
@@ -879,7 +883,7 @@ We also add the variable set and field methods for the MHQ programme for modules
 ```{r}
 mod_scheme_variableset_mainfieldmethod <-
   # MNE schemes
-  envvars %>%
+  mod_scheme_vars %>%
   distinct(module, scheme, variable_set, main_datacollection_method) %>%
   # warn about missing data collection methods:
   {
@@ -914,7 +918,7 @@ mod_scheme_variableset_mainfieldmethod <-
       ) %>%
       mutate(
         variable_set = "LSVI" %>% 
-          factor(levels = levels(envvars$variable_set)),
+          factor(levels = levels(mod_scheme_vars$variable_set)),
         main_field_method = ifelse(tag_1 == "aq", "LSVIAQ", "LSVITERR") %>% 
           factor(levels = levels(activities$activity))
       ) %>% 
@@ -925,7 +929,7 @@ mod_scheme_variableset_mainfieldmethod
 
 For MHQ the variables are summarized as one variable set 'LSVI', and the hierarchy of involved measurement variables for each scheme (type) is incorporated in the [LSVI](https://packages.inbo.be/LSVI/) package.
 
-Checking that the set of module x schemes not covered by `mod_scheme_variableset_mainfieldmethod` equals the MNE-set not covered by `envvars`.
+Checking that the set of module x schemes not covered by `mod_scheme_variableset_mainfieldmethod` equals the MNE-set not covered by `mod_scheme_vars`.
 
 ```{r check-mod-scheme-variableset-coverage}
 stopifnot(
@@ -938,7 +942,7 @@ stopifnot(
     all.equal(
       module_schemes_mne %>% 
         anti_join(
-          envvars %>% 
+          mod_scheme_vars %>% 
             distinct(module, scheme),
           join_by(module, scheme)
         )
@@ -1766,7 +1770,7 @@ for (name in c(
   "module_targetpops",
   "activities",
   "activity_sequences",
-  "envvars",
+  "mod_scheme_vars",
   "field_activities",
   "field_activity_sequences",
   "biotic_timing",
