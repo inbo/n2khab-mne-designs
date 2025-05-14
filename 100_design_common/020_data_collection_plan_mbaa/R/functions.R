@@ -88,20 +88,11 @@ filter_grts_mh_by_address <- function(
   if (is.null(cells)) {
     cells <- subset(spatrast_index, grts_address %in% addresses)$id
   }
-  # the detour with raster package can be dropped when bug in terra is
-  # solved: see https://github.com/rspatial/terra/issues/1523
-  suppressMessages(
-    if (!require(raster)) stop("Please install the raster package.")
-  )
-  spatrast <- raster(spatrast)
   r <- spatrast[cells, drop = FALSE]
   if (drop_address) {
-    # this operation in raster is actually a bit faster than in terra, although
-    # it's equivalent (and in terra it's also faster than the ifel() statement):
     r[!is.na(r)] <- 1
   }
-  # convert back to SpatRaster
-  rast(r)
+  r
 }
 
 add_point_coords_grts <- function(
