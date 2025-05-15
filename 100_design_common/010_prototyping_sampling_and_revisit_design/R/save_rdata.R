@@ -67,7 +67,10 @@ rdata_set <- c(
   "scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar",
   "scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar",
   "fag_stratum_grts_calendar",
-  "fag_grts_calendar"
+  "fag_grts_calendar",
+  # exporting specific functions:
+  "add_point_coords_grts",
+  "filter_grts_mh_by_address"
 )
 module_suffix <- str_c("_", str_flatten(modules$code_short))
 phabcorr_suffix <- ifelse(
