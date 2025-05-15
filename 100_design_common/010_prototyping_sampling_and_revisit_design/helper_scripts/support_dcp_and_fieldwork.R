@@ -168,15 +168,36 @@ save(
 
 load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
 
-# attributes of spatial sampling units (~grts_address_final), useful for maps,
-# selections and decisions
+# attributes of spatial sampling units (~grts_address_final), useful in maps,
+# selections and decisions. Note that we *identify* sampling units as stratum x
+# grts_address; a unit_id is not needed provided that units don't share the same
+# GRTS address (if some still do, it means that the GRTS raster is too coarse
+# for those types, and will eventually need extra levels inside those specific
+# cells)
 scheme_moco_ps_stratum_targetpanel_spsamples <-
   scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    n2khab_types_expanded_properties %>%
+      select(type, sample_support_code),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
   distinct(
     scheme,
     module_combo_code,
     panel_split,
     stratum,
+    # 'aquatic' column will be improved for 7220 later on (now it simply has a
+    # duplication (TRUE + FALSE) of all locations)
+    aquatic = in_aquatic_subset,
+    sample_support_code,
     grts_address,
     grts_address_final,
     targetpanel,
