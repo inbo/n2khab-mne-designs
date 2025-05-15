@@ -219,6 +219,53 @@ n2khab_types_expanded_properties %>%
   distinct(grts_join_method, sample_support_code, sample_support) %>%
   arrange(grts_join_method, sample_support_code)
 
+# obtaining geometries of the sampling units themselves:
+# - for aquatic types, see code from https://github.com/inbo/n2khab-mne-monitoring/pull/2
+# - for 7220 as a whole, see code provided below
+# - for terrestrial types, these are cells; see code provided below
+
+
+# geometries of 7220 units are represented by points, labelled with their GRTS
+# address
+# =========================================================================
+flanders_buffer <-
+  read_admin_areas(dsn = "flanders") %>%
+  st_buffer(40)
+# following function will be adapted to support the latest version of the data
+# source; for now use version habitatsprings_2020v2
+units_7220 <-
+  read_habitatsprings(units_7220 = TRUE) %>%
+  .[flanders_buffer, ] %>%
+  mutate(unit_id = as.character(unit_id)) %>%
+  # replacing unit_id by the grts_address
+  inner_join(
+    units_non_cell_n2khab_grts %>%
+      filter(sample_support_code == "spring") %>%
+      select(-sample_support_code),
+    join_by(unit_id),
+    relationship = "one-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # to be solved later; a hack which looses one unit for now:
+  filter(!is.na(grts_address)) %>%
+  select(
+    -unit_id,
+    grts_address_final = grts_address
+  ) %>%
+  relocate(grts_address_final)
+
+
+# geometries of terrestrial types, excluding 7220: these are cells
+# =================================================================
+grts_mh <- read_GRTSmh()
+scheme_moco_ps_stratum_targetpanel_spsamples %>%
+  pull(grts_address_final) %>%
+  # filter_grts_mh_by_address() uses the loaded grts_mh_n2khab_index object.
+  # Note that the spatrast argument works equally well with grts_mh (as with the
+  # defaultgrts_mh_n2khab), which we will use, since the rasters' extent and
+  # resolution match.
+  filter_grts_mh_by_address(grts_mh)
+
 
 
 

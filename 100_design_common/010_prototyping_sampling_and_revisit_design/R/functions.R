@@ -251,6 +251,23 @@ add_point_coords_grts <- function(
     }
 }
 
+#' Generate raster cells based on a vector of GRTS addresses
+filter_grts_mh_by_address <- function(
+    addresses,
+    spatrast = grts_mh_n2khab,
+    spatrast_index = grts_mh_n2khab_index,
+    cells = NULL,
+    drop_address = FALSE) {
+  if (is.null(cells)) {
+    cells <- subset(spatrast_index, grts_address %in% addresses)$id
+  }
+  r <- spatrast[cells, drop = FALSE]
+  if (drop_address) {
+    r[!is.na(r)] <- 1
+  }
+  r
+}
+
 
 
 
