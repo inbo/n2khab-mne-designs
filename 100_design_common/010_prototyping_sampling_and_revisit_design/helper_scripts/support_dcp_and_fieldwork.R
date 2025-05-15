@@ -286,7 +286,11 @@ scheme_moco_fa_fieldvar <-
     module_combo_code,
     field_activity,
     variable_set,
-    variable
+    # # not including variable: the (target) variable is either the same as the
+    # # measurement variable, or it is an aggregated variable which we don't
+    # # measure as such in the field
+    # variable,
+    measurement_var
   ) %>%
   # variables with the SAMP field activity are variables to be determined in the
   # lab, so not relevant for the fieldwork (but the sampling protocol is)
