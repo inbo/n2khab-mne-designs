@@ -1,0 +1,126 @@
+---
+title: "Spatial Co-Variation in Groundwater Measurements"
+subtitle: "(MNE preparation)"
+author: "Falk Mielke"
+format: 
+  revealjs:
+    theme: dark
+    embed-resources: true
+date: 20/05/2025
+---
+
+
+# Introduction
+## Fieldwork
+
+![](//data/assets/20250520_coupling/fieldwork.webp){fig-alt="Joren and Mathias during fieldwork."}
+
+---
+
+```{r watina-map}
+#| code-fold: true
+#| eval: false
+require("n2khab")
+require("mapview")
+# require("watina")
+require("dplyr")
+require("sf")
+source("./watina_migration.R")
+
+flanders <- n2khab::read_admin_areas() # dsn = "provinces"
+m1 <- mapview::mapview(flanders, col.regions = "white", alpha.regions = 0.6)
+# TODO: I could not get provinces
+
+conn <- connect_watina()
+watina_locations <- get_locs(conn) %>%
+  select(area_code, loc_code, x, y) %>%
+  distinct() %>% 
+  filter(
+    area_code != "VBS",
+    if_all(everything(), ~ !is.na(.x))
+    ) %>% 
+  collect() %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+m2 <- mapview(
+  watina_locations,
+  map.types = c("CartoDB.DarkMatter"),
+  cex = 3,
+  col.regions = "orange"
+)
+
+m1+m2
+```
+
+## Everything is Connected {background-color="black" background-image="/data/assets/20250520_coupling/bryan-goff-RF4p4rTM-2s-unsplash.jpg"}
+
+![](//data/assets/20250520_coupling/buddha.svg){fig-alt="Symbol of Buddha." .absolute left=0 right=0 bottom=0 top=0 height="30%" style="margin: auto auto;"}
+
+
+::: aside
+<span style="color:darkgrey"><sub>
+Photo by <a href="https://unsplash.com/@bryangoffphoto?utm_content=creditCopyText&utm_medium=referral&utm_source=unsplash">Bryan Goff</a> on <a href="https://unsplash.com/photos/galaxy-with-starry-night-RF4p4rTM-2s?utm_content=creditCopyText&utm_medium=referral&utm_source=unsplash">Unsplash</a>; Buddha by <a href="https://thenounproject.com/icon/buddha-6336396">"Brad" via The Noun Project.</a>
+</sub></span>
+:::
+      
+---
+
+![](//data/assets/20250520_coupling/jones_raiders_of_the_lost_obswell.jpg){fig-alt="Raiders of the Lost Observation Well" .absolute left=0 right=0 bottom=0 top=0 height="60%" style="margin: auto auto;"}
+
+---
+
+![](//data/assets/20250520_coupling/bias.webp){fig-alt="An allegory for bias." .absolute left=0 right=0 bottom=0 top=0 height="100%" style="margin: auto auto;"}
+
+---
+
+![](//data/assets/20250520_coupling/obswell_afbeelding1.jpg){fig-alt="A scheme of an observation well." width=60%}
+
+::: aside
+<span style="color:darkgrey"><sub>https://www.h2o-watermatters.com/includes/partials/printArticle.php?ed=201904&art=06_Artikel</sub></span>
+:::
+
+
+## Results
+
+- variogram figure
+
+. . .
+
+- have a break!
+
+# Methods
+## Variogram Tweaks
+
+::: {.incremental}
+- groupwise
+- equibin
+- MAD
+- 512m // param limits
+- bootstrapping
+- mTAW vs mMaaiveld
+- slope filter $1\%$
+:::
+
+## figure test
+
+![Test Figure.](figures/sf_geometry_uml.svg)
+
+
+## code
+
+```{.python code-line-numbers="6-8"}
+import numpy as np
+import matplotlib.pyplot as plt
+
+r = np.arange(0, 2, 0.01)
+theta = 2 * np.pi * r
+fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+ax.plot(theta, r)
+ax.set_rticks([0.5, 1, 1.5, 2])
+ax.grid(True)
+plt.show()
+```
+
+
+
+<!-- https://quarto.org/docs/presentations/revealjs -->
