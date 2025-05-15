@@ -184,7 +184,7 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
   ) %>%
   inner_join(
     n2khab_types_expanded_properties %>%
-      select(type, sample_support_code),
+      select(type, grts_join_method, sample_support_code),
     join_by(type),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
@@ -197,6 +197,7 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
     # 'aquatic' column will be improved for 7220 later on (now it simply has a
     # duplication (TRUE + FALSE) of all locations)
     aquatic = in_aquatic_subset,
+    grts_join_method,
     sample_support_code,
     grts_address,
     grts_address_final,
