@@ -1,12 +1,13 @@
 ---
-title: "Spatial Co-Variation in Groundwater Measurements"
+title: "<sup>Spatial Co-Variation<br>in<br>Groundwater Levels</sup>"
 subtitle: "(MNE preparation)"
 author: "Falk Mielke"
 format: 
   revealjs:
     theme: dark
     embed-resources: true
-date: 20/05/2025
+    center-title-slide: true
+date: "20/05/2025"
 ---
 
 
@@ -22,6 +23,7 @@ void <- suppressPackageStartupMessages
 library("dplyr")     |> void() # our favorite data wrangling toolbox
 library("arrow")     |> void() # writing parquet files
 library("ggplot2")   |> void() # a visualization toolbox
+library("ggdark")    |> void() # dark themes for ggplot
 require("n2khab")    |> void()
 require("sf")        |> void()
 require("mapview")   |> void()
@@ -36,11 +38,11 @@ source("./regression_tools.R")
 source("./watina_migration.R")
 
 
-local_cache_folder <- "cache"
+local_cache_folder <- "cache_old"
 ```
 
+![](//data/assets/20250520_coupling/fieldwork.webp){fig-alt="Joren and Mathias during fieldwork." .absolute left=0 right=0 bottom=0 top=0 height="80%" style="margin: auto auto;"}
 
-![](//data/assets/20250520_coupling/fieldwork.webp){fig-alt="Joren and Mathias during fieldwork."}
 
 ---
 
@@ -88,18 +90,32 @@ Photo by <a href="https://unsplash.com/@bryangoffphoto?utm_content=creditCopyTex
       
 ---
 
-![](//data/assets/20250520_coupling/jones_raiders_of_the_lost_obswell.jpg){fig-alt="Raiders of the Lost Observation Well" .absolute left=0 right=0 bottom=0 top=0 height="60%" style="margin: auto auto;"}
+
+![](//data/assets/20250520_coupling/jones_raiders_of_the_lost_obswell_bw.webp){fig-alt="Raiders of the Lost Observation Well" .absolute left=0 right=0 bottom=0 top=0 height="60%" style="margin: auto auto;"}
 
 ---
 
-![](//data/assets/20250520_coupling/bias.webp){fig-alt="An allegory for bias." .absolute left=0 right=0 bottom=0 top=0 height="100%" style="margin: auto auto;"}
-
----
-
-![](//data/assets/20250520_coupling/obswell_afbeelding1.jpg){fig-alt="A scheme of an observation well." width=60%}
+![](//data/assets/20250520_coupling/bias.webp){fig-alt="An allegory for bias." .absolute left=0 right=0 bottom=0 top=0 height="80%" style="margin: auto auto;"}
 
 ::: aside
-<span style="color:darkgrey"><sub>https://www.h2o-watermatters.com/includes/partials/printArticle.php?ed=201904&art=06_Artikel</sub></span>
+The only viable solution to implicit bias is to prevent it via *fully random placement*.
+:::
+
+---
+
+:::{.callout-tip title="Main Question"}
+**Up to what target distance should we re-use an observation well?**
+:::
+
+::: aside
+We will not neglect other aspects:
+
+- type and status of the existing installation, "location quality" 
+- topographic/habitat type continuity
+- common sense framing (1m? 50m?)
+- cost savings 
+- accessibility and land owner's interests (conciliation)
+
 :::
 
 
@@ -163,8 +179,38 @@ soilclass_colors <- c(
 ```
 
 
+### <sup>mTAW</sup>
+
+```{r load-regressions-dw}
+#| eval: true
+#| echo: false
+#| code-fold: true
+data_w <- list(
+  "heavy" = load_fitdata("slopefilter", "heavy", "dw"),
+  "light" = load_fitdata("slopefilter", "light", "dw"),
+  "peat" = load_fitdata("slopefilter", "peat", "dw")
+)
+
+
+g <- ggplot(NULL)
+for (sc in names(data_w)) {
+  regression_result <- data_w[[sc]]
+  g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc])
+}
+g + xlab("distance (m)") + ylab("mean absolute difference (mTAW)") +
+  theme_minimal() +
+  ylim(0, 1.0) +
+  dark_theme_minimal()
+
+```
+
+---
+
+### <sup>mMaaiveld</sup>
+
 ```{r load-regressions-dm}
 #| eval: true
+#| echo: false
 #| code-fold: true
 data_m <- list(
   "heavy" = load_fitdata("maaiveld", "heavy", "dm"),
@@ -179,48 +225,232 @@ for (sc in names(data_m)) {
   g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc])
 }
 g + xlab("distance (m)") + ylab("mean absolute difference (mMaaiveld)") +
-  ylim(0, 1.6) +
-  theme_minimal()
+  theme_minimal() +
+  ylim(0, 1.0) +
+  dark_theme_minimal()
 
 ```
+
+## Bootstrapping
+### <sup>mMaaiveld</sup>
+
+```{r reload-bootstrap-dm}
+#| eval: true
+#| echo: false
+#| code-fold: true
+bootstrap_data <- arrow::read_parquet("./data/bootstrapping_dm_soilclass.parquet")
+ref_boots <- bootstrap_data %>%
+  filter(i == 0)
+sub_boots <- bootstrap_data %>%
+  filter(conv == 0, i > 0, if_all(everything(), ~ !is.na(.x)))
+
+
+```
+
+```{r plot-bootstrap-dm}
+#| eval: true
+#| echo: false
+#| code-fold: true
+sub_boots %>%
+    ggplot(aes(x = threshold, fill = soilclass)) +
+    geom_histogram(bins = 256, width = 1.05, color = NA, alpha = 0.67, position = "identity") +
+    geom_vline(xintercept = ref_boots$threshold) +
+    xlab("threshold to 1cm difference") +
+    scale_fill_manual(values = soilclass_colors) +
+    scale_color_manual(values = soilclass_colors) +
+    xlim(0, 32) +
+    dark_theme_minimal()
+```
+
+---
+
+```{r table-bootstrap-dm}
+#| eval: true
+#| echo: false
+#| code-fold: true
+threshold_quantiles <- sub_boots %>%
+  summarize(
+    q02 = quantile(threshold, c(0.02)),
+    median = quantile(threshold, c(0.50)),
+    q98 = quantile(threshold, c(0.98)),
+    .by = soilclass 
+  ) 
+knitr::kable(threshold_quantiles, digits = 1)
+```
+
+## Sample Overlap
+
+
+```{r sp-samples}
+#| eval: true
+#| echo: false
+#| code-fold: true
+
+spsamples <- readRDS(file.path(local_cache_folder, "spsamples_gw_sf_panflpan5.rds"))
+
+spsamples <- cbind(sf::st_drop_geometry(spsamples), sf::st_coordinates(spsamples)) %>%
+  dplyr::filter(hydr_class != "HC3") 
+
+```
+
+```{r load-spk-regression}
+#| eval: true
+#| echo: false
+#| code-fold: true
+
+model_results <- readRDS(here::here(local_cache_folder, "regression", "steekproefkader_bayesian.rds"))
+
+calculate_n_sites <- function(distance, col = "mean") {
+  A <- model_results["A", col]
+  k <- model_results["k", col]
+
+  return(round(A*distance^k, 1))
+}
+# calculate_n_sites(distance = 10, col = "2.5%")
+distance_threshold = 10
+mean_n_sites <- calculate_n_sites(distance = distance_threshold, col = "mean")
+```
+
+<br>
+
+| *location*   | putative new | $\rightarrow$ |
+|--------------|:-------------|:-------------:|
+| **existing** | *distance*   | $\ldots$      |
+| $\downarrow$ | $\vdots$     | $\ddots$      |
+
+<br><br>
+
+With a distance cut-off of `{r} distance_threshold`, <br> about `{r} round(mean_n_sites, 0)` sites are eligible for re-use.
+
+
+---
+
+![](figures/steekproefkader_sites_per_distance_dark.svg){fig-alt="Site re-use as a function of distance." .absolute left=0 right=0 bottom=0 top=0 height="80%" style="margin: auto auto;"}
+
+## Summary
+
+-  threshold calculated: `{r} paste0(threshold_quantiles %>% filter(soilclass %in% c("heavy", "light")) %>% pull(median) %>% as.vector %>% round(., 1), collapse = " for heavy, ") ` for light soil
+- `{r} round(mean_n_sites, 0)` sites expected for potential re-use
+- given: slope threshold $\le 1\%$
+- repeated measures averaged; no temporal information
+
+
+# Variogram Tweaks
+
+## Basics
+
+
+::: {.incremental}
+- groupwise: soilclass
+- Matérn parametrization: <sup>
+$$ \gamma = \gamma_{max} - d\gamma \cdot \left( \frac{\sqrt{2\nu}}{\sigma} x \right)^{\nu} \cdot K_{\nu}\left( \frac{\sqrt{2\nu}}{\sigma} x \right) \cdot \frac{1}{2^{\nu - 1} \cdot \Gamma\left(\nu\right)} $$ 
+</sup>
+:::
 
 . . .
 
-- have a break!
-
-# Methods
-## Variogram Tweaks
-
-::: {.incremental}
-- groupwise
-- equibin
-- MAD
-- 512m // param limits
+- maximum range: 512 m 
+- shape parameter soft-fixed ($\nu = 1.0$)
 - bootstrapping
-- mTAW vs mMaaiveld
-- slope filter $1\%$
+
+::: aside
+We published [a detailed tutorial](https://tutorials.inbo.be/tutorials/spatial_variograms)!
 :::
 
-## figure test
 
-![Test Figure.](figures/sf_geometry_uml.svg)
+## Equal Bin Fill
+
+![](figures/binsize_cumulated_dark.svg){fig-alt="Cumulated number of observations per bin for variogram analysis." .absolute left=0 right=0 bottom=0 top=0 height="80%" style="margin: auto auto;"}
 
 
-## code
+## MAD: Mean Absolute Difference
 
-```{.python code-line-numbers="6-8"}
-import numpy as np
-import matplotlib.pyplot as plt
+$$ \langle dw\rangle = \frac{1}{N} \sum\limits_{i,j} \left| z_j - z_i\right| $$
 
-r = np.arange(0, 2, 0.01)
-theta = 2 * np.pi * r
-fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-ax.plot(theta, r)
-ax.set_rticks([0.5, 1, 1.5, 2])
-ax.grid(True)
-plt.show()
+*versus*
+
+$$ \gamma = \frac{1}{2N} \sum\limits_{i,j} \left(z_j - z_i\right)^2 $$
+
+
+## `mTAW` *vs.* `mMaaiveld`
+
+![](//data/assets/20250520_coupling/obswell_scheme_tilted.svg){fig-alt="A scheme of observation wells on a tilted surface." .absolute left=0 right=0 bottom=0 top=0 height="80%" style="margin: auto auto;"}
+
+
+
+## Slope
+
+Field:
+
+- elevation difference: $\le 10 cm$
+
+
+Desktop:
+
+- slope filter $1\%$ for this analysis
+
+
+# Open Discussion
+
+TODO
+
+# Backup
+
+
+## bootstrapping 
+
+### <sup>mTAW</sup>
+
+```{r reload-bootstrap-dw}
+#| eval: true
+#| echo: false
+#| code-fold: true
+bootstrap_data <- arrow::read_parquet("./data/bootstrapping_dw_soilclass.parquet")
+ref_boots <- bootstrap_data %>%
+  filter(i == 0)
+sub_boots <- bootstrap_data %>%
+  filter(conv == 0, i > 0, if_all(everything(), ~ !is.na(.x)))
+
+
+```
+
+```{r plot-bootstrap-dw}
+#| eval: true
+#| echo: false
+#| code-fold: true
+h <- sub_boots %>%
+    ggplot(aes(x = threshold, fill = soilclass)) +
+    geom_histogram(bins = 256, width = 1.05, color = NA, alpha = 0.67, position = "identity") +
+    geom_vline(xintercept = ref_boots$threshold) +
+    xlab("threshold to 1cm difference") +
+    scale_fill_manual(values = soilclass_colors) +
+    scale_color_manual(values = soilclass_colors) +
+    xlim(0, 32) +
+    dark_theme_minimal()
+
+suppressWarnings(print(h))
+```
+
+---
+
+```{r table-bootstrap-dw}
+#| eval: true
+#| echo: false
+#| code-fold: true
+threshold_quantiles <- sub_boots %>%
+  summarize(
+    q02 = quantile(threshold, c(0.02)),
+    median = quantile(threshold, c(0.50)),
+    q98 = quantile(threshold, c(0.98)),
+    .by = soilclass 
+  ) 
+knitr::kable(threshold_quantiles, digits = 1)
 ```
 
 
-
 <!-- https://quarto.org/docs/presentations/revealjs -->
+<!-- https://quarto.org/docs/presentations/revealjs/advanced.html -->
+
+
+
+<!-- span style="color:darkgrey"><sub>https://www.h2o-watermatters.com/includes/partials/printArticle.php?ed=201904&art=06_Artikel</sub></span -->
