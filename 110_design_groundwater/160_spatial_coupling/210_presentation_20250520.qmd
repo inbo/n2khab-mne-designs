@@ -11,7 +11,34 @@ date: 20/05/2025
 
 
 # Introduction
+
 ## Fieldwork
+
+```{r load-packages}
+#| code-fold: true
+#| eval: true
+void <- suppressPackageStartupMessages
+# require("watina")
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+require("n2khab")    |> void()
+require("sf")        |> void()
+require("mapview")   |> void()
+
+# to quick-load the meta data
+source("./auxiliary_data_queries.R")
+
+# uniform regression tools and plot helpers
+source("./regression_tools.R")
+
+# connection to the new dwh
+source("./watina_migration.R")
+
+
+local_cache_folder <- "cache"
+```
+
 
 ![](//data/assets/20250520_coupling/fieldwork.webp){fig-alt="Joren and Mathias during fieldwork."}
 
@@ -20,12 +47,8 @@ date: 20/05/2025
 ```{r watina-map}
 #| code-fold: true
 #| eval: false
-require("n2khab")
-require("mapview")
-# require("watina")
-require("dplyr")
-require("sf")
-source("./watina_migration.R")
+# TODO: evaluate this
+
 
 flanders <- n2khab::read_admin_areas() # dsn = "provinces"
 m1 <- mapview::mapview(flanders, col.regions = "white", alpha.regions = 0.6)
@@ -80,9 +103,86 @@ Photo by <a href="https://unsplash.com/@bryangoffphoto?utm_content=creditCopyTex
 :::
 
 
-## Results
+# Results
 
-- variogram figure
+## Variograms
+
+```{r data-paths}
+#| code-fold: true
+#| eval: true
+
+soilclasses <- c("heavy", "light", "peat")
+
+combine_path <- function(filepath) here::here(local_cache_folder, "regression", filepath)
+stitch_filepath <- function(label, sc, reg_var, extension = "parquet") {
+  # examples: 
+  #   label = "allin", "slopefilter", "maaiveld"
+  #   sc = "heavy", "light", "peat"
+  #   reg_var = "dw", "dm"
+  #
+  return(paste0(
+    sprintf("%s_%s_%s", label, reg_var, sc), 
+    ".", extension, 
+    collapse = ""
+    ))
+}
+
+load_plotdata <- function(
+    label = c("slopefilter", "allin", "maaiveld"),
+    soilclass = c("heavy", "light", "peat"),
+    regression_variable = c("dw", "dm")
+  ) {
+  data_file <- combine_path(
+    stitch_filepath(label, soilclass, regression_variable,
+    extension = "parquet")
+  )
+
+  return(arrow::read_parquet(data_file))
+}
+
+load_fitdata <- function(
+    label = c("slopefilter", "allin", "maaiveld"),
+    soilclass = c("heavy", "light", "peat"),
+    regression_variable = c("dw", "dm")
+  ) {
+  data_file <- combine_path(
+    stitch_filepath(label, soilclass, regression_variable,
+    extension = "rds")
+  )
+  return(readRDS(data_file))
+}
+
+
+# aesthetics-and-style
+soilclass_colors <- c(
+  "heavy" = "sienna",
+  "light" = "burlywood",
+  "peat" = "darkseagreen",
+  "unknown" = "slategray"
+)
+```
+
+
+```{r load-regressions-dm}
+#| eval: true
+#| code-fold: true
+data_m <- list(
+  "heavy" = load_fitdata("maaiveld", "heavy", "dm"),
+  "light" = load_fitdata("maaiveld", "light", "dm"),
+  "peat" = load_fitdata("maaiveld", "peat", "dm")
+)
+
+
+g <- ggplot(NULL)
+for (sc in names(data_m)) {
+  regression_result <- data_m[[sc]]
+  g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc])
+}
+g + xlab("distance (m)") + ylab("mean absolute difference (mMaaiveld)") +
+  ylim(0, 1.6) +
+  theme_minimal()
+
+```
 
 . . .
 
