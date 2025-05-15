@@ -214,6 +214,12 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
 # the polygon. If not, the absence must be noted and sampling frame + sample are
 # to be updated.
 
+# existing sample support codes and spatial GRTS join methods:
+n2khab_types_expanded_properties %>%
+  distinct(grts_join_method, sample_support_code, sample_support) %>%
+  arrange(grts_join_method, sample_support_code)
+
+
 
 
 
