@@ -159,7 +159,7 @@ save(
 
 
 
-# Variable sets and FAG occasions -------------------------------------------
+# Preparing code for mne-monitoring repo: variable sets and FAG occasions -----
 
 
 # First run setup chunk
@@ -207,11 +207,15 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
   ) %>%
   arrange(pick(scheme:grts_address))
 
-# Note: if grts_address_final differs from grts_address, and it appears that the
-# stratum is no longer present in the field, then a new replacement procedure
-# must take place using grts_address as the anchor, provided that the type still
-# occurs in the polygon. If not, the absence must be noted and sampling frame +
-# sample are to be updated.
+# Note: if grts_address_final differs from grts_address, then this means a local
+# replacement took place already in the past. If now it appears that the stratum
+# is no longer present in the field, then a new replacement procedure must take
+# place using grts_address as the anchor, provided that the type still occurs in
+# the polygon. If not, the absence must be noted and sampling frame + sample are
+# to be updated.
+
+
+
 
 # field activities (FAs) per field activity group (FAG) in the active modules
 # and schemes (considered without the spatial overlap between core and non-core
@@ -225,10 +229,11 @@ fag_fa <-
 
 fag_stratum_grts_calendar
 
-# fag_stratum_grts_calendar demonstrates the needed visits and is organized at
-# the FAG level. The rank is an indication of the needed order of different FAGs
-# at one location, in the same cycle. In some cases repetitions do happen for
-# certain FAGs in a scheme, not all FAGs, as prescribed by the date interval.
+# fag_stratum_grts_calendar defines the needed visits of the spatial sampling
+# units and is organized at the FAG level. The rank is an indication of the
+# needed order of different FAGs at one location, in the same cycle. In some
+# cases repetitions do happen for certain FAGs in a scheme, not all FAGs, as
+# prescribed by the date interval.
 
 # Below code brings the FAG calendar at the resolution of each field activity.
 fag_fa_stratum_grts_calendar <-
