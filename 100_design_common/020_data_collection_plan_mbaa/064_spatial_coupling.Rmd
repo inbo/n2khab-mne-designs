@@ -1,11 +1,85 @@
 ## Ruimtelijke koppeling in het grondwatermeetnet {#spatialcoupling}
 
-Wanneer steekproefeenheden...
+### Achtergrond en Doelstelling
+
+De centrale functie van het MBAG-project is het kwantificeren van de invloed van landbouwactiviteiten op aangrenzende gebieden.
+Deze vraag verwijst intrinsiek naar het fenomeen van ruimtelijke koppeling, dat wil zeggen de niet-onafhankelijkheid van meetpunten.
+De mate van afhankelijkheid is op triviale wijze nauw verbonden met de ruimtelijke afstand tussen locaties:
+een waarneming of meting lijkt eerder op andere metingen in de directe omgeving dan op metingen die verder weg zijn [@Miller2004].
+
+Dit wordt samengevat in de "Wet van Tobler", genoemd naar Waldo Tobler die deze afstand-verschilrelatie verwoordde, formaliseerde, en daarop bouwende methodes populariseerde [@Tobler1970].
+Tobler's wet heeft minstens twee corollaria voor MBAA, die we in dit hoofdstuk willen adresseren:
+
+1. op welke afstand zouden twee metingen praktisch identiek zijn (**"indifferentiebereik"**; rechtvaardiging hergebruik van een bestaande meetinstallatie voor MNE);
+2. wat is het werkingsbereik van gemeenschappelijke invloedsfactoren (**"afhankelijkheidsbereik"**, d.w.z. boven welke afstand zijn grotendeels onafhankelijke waarnemingen te verwachten).
+
+Methoden om deze vragen te beantwoorden (met name variogrammodellering) zijn logistiek en rekenkundig veeleisend.
+Voor de hand liggende redenen zijn
++ de continue, maar anisotrope effecten van gemeenschappelijke invloedsfactoren (bijv. waterstroom),
++ de overlapping van ruimtelijke schalen van geografische en biologische kenmerken (klimaatregio's, habitattypen, microhabitat),
++ en temporele variabiliteit (meerjarig, seizoensgebonden, tot dagelijkse periodiciteit).
+Deze factoren zorgen voor een aanzienlijke fragmentatie van de bestaande steekproef van watermetingen,
+wat een directe, statistisch scherpe analyse van de *waterchemie* (beschikbaar via de WATINA-database) om eutrofiëring te kwantificeren (initiële milieudruk van belang voor MNE) met reeds versamelde data onmogelijk blijkt te maken.
+*Waterstanden* worden daarentegen vrijwel continu gemonitord met dataloggers.
+Waterstanden zijn relevant als één van de (binnenkoort volgende) focusmodules van MNE.
+Wij gaan er ook van uit dat waterstanden en de analyse daarvan kunnen dienen als een proxy voor de ruimtelijke koppeling van andere grondwatergerelateerde parameters, omdat ze aanwijzingen geven over de (directe en indirecte) onderlinge connectiviteit van grondwatersystemen.
+
+
+In dit hoofdstuk presenteren en interpreteren we de uitkomst van een op variogrammen gebaseerde analyse om de ruimtelijke niet-onafhankelijkheid (d.w.z. ruimtelijke koppeling of ruimtelijke covariatie) van grondwaterstanden te kwantificeren.
+Door een ten opzichte van conventionele variogrammen licht aangepaste procedure toe te passen, afgestemd op de specifieke kenmerken van de dataset,
+geven we algemene antwoorden op de twee bovenstaande vragen voor het hele gewest Vlaanderen.
+We vatten hier de belangrijkste resultaten samen; geïnteresseerde lezers verwijzen we naar
+onze veel uitgebreidere analysenotities [TODO-publicatie] en
+een tutorial over variogramanalyse [@VgramTutorial2025].
+
+
+### Resultaten en Discussie
+Ruimtelijke koppeling ontstaat door gemeenschappelijke invloeden en de gelijkenis van omgevingsfactoren die een bepaalde indicator op twee locaties bepalen.
+Eén bijzonder sterke invloed op waterstandsmetingen was de bodemklasse (hierin richten we ons grofweg op de bodemklassen 'zwaar', 'licht' en 'veen').
+
+
+Veen is kenmerkend voor nutriëntenarme en natte habitats, wat in de verschil-afstand-plot ([Fig. 1], groene curve) tot uiting komt in een snelle aanloop naar de asymptotische waarden ("sill").
+De waterstanden liggen onder normale omstandigheden overal dicht bij het oppervlak, en waterstandverschillen van meer dan 0,25 m tussen twee veen-meetpunten komen over het algemeen zelden voor (let op: ze zijn wel mogelijk, de afbeelding toont gemiddelden in tijd en ruimte).
+Bijgevolg zien we lage verschilwaarden alleen binnen een nauw bereik
+(afhankelijkheidsbereik van `{r} bootstrap_results["veen", "sigma"]`),
+wat vooral wijst op de bijzonderheid van de waterstanden in deze habitats.
+
+
+Zware grond wordt gekenmerkt door dicht gepakte bodemdeeltjes.
+Water hecht zich aan deze deeltjes en is relatief onbeweeglijk; over het algemeen zijn er minder sterke schommelingen in de waterstand te verwachten.
+We berekenen een matig afhankelijkheidsbereik
+(`{r} bootstrap_results["heavy", "sigma"]`) en stellen vast dat twee meetlocaties op een afstand van `{r} threshold["heavy", "threshold"]` (indifferentiebereik) naar verwachting minder dan $0,01 m$ van elkaar verschillen ([Figuur 1], donkerbruine curve). 
+
+
+Vergeleken daarmee is water naar verwachting relatief mobieler op lichte grond.
+Dit komt overeen met de afhankelijkheidsbereiken die we berekenen in de verschil-afstandsanalyse (`{r} bootstrap_results["light", "sigma"]`).
+Verschillen van meer dan $0,01 m$ zijn meetbaar ​​vanaf een afstand van meer dan `{r} threshold["heavy", "threshold"]` m.
+
+
+
+Deze resultaten zijn vrij algemeen, maar robuust vanwege de hoeveelheid data en de methodologisch vereiste categorisering, "binning", en middeling.
+Hun algemeenheid kan misleidend zijn.
+Onder normale omstandigheden is het niet uitgesloten dat twee specifieke grondwaterobservatieputten over een grote afstand sterk gecorreleerde waterstanden en waterchemie meten (bijvoorbeeld als beide langs dezelfde waterstroom liggen). 
+Het kan ook zijn dat twee putten die relatief dicht bij elkaar liggen, bijna volledig onafhankelijk zijn (bijvoorbeeld bij een geografische discontinuïteit, zoals een verkeersweg).
+Wij hebben uitsluitend gelijktijdige metingen (op dezelfde dag) meegenomen en onze analyse houdt dus geen rekening met tijdvertraagde covariatie.
+Vooral de waterstroom speelt hierin een belangrijke rol.
+Gerelateerd aan stroming zagen we ook dat hoogte en helling een belangrijke rol spelen in variogrammen.
+Deze rol is zo belangrijk dat we besloten de datapunten voor de huidige analyse te filteren, zodat alleen de locaties met een helling van minder dan $1 \%$ (hoogteverschil $< 1cm$ per meter) ertussen overbleven.
+Het referentiesysteem voor waterstandsverschillen (meter diepte tov. maaiveld; niet: meter TAW) is specifiek gekozen omdat hoogteverschillen hiermee de waterstandsverschillen minder sterk beïnvloeden.
+Tot slot moet bij de evaluatie van hergebruik van een bestaande veldinstallatie voor MNE zorgvuldig rekening worden gehouden met de nabijheid van oppervlaktewaterlichamen of grondwaterreservoirs; specifieke regels hiervoor hebben we in een panel met experts afgetoetst.
+
+
+Het systeem dat we hierin "top-down" analyseren, blijft complex in zijn hydrodynamische mechaniek.
+Wat van deze analyse overblijft, ondanks alle beïnvloedende effecten, is een realistische schatting van de mate waarin de grondwatersystemen onderling afhankelijk zijn, hetzij via directe verbinding, hetzij via gemeenschappelijke externaliteiten.
+Uit onze analyse blijkt dat er belangrijke factoren zijn waarmee rekening moet worden gehouden (bijvoorbeeld bodemgesteldheid, hoogte, temporele effecten).
+Wij kwantificeren wel de afhankelijkheidsbereik, kritische afstanden die mogelijk als eerste referentie kunnen dienen voor beleidsbeslissingen.
+
+
+
+<!-- [intro] Wanneer steekproefeenheden... -->
 
 <!-- Doel analyse -->
-
 <!-- Werkwijze -->
 
-### Afstandsregels met voorwaarden
-
-### Implicaties
+<!-- ### Afstandsregels met voorwaarden -->
+<!-- ### Implicaties -->
