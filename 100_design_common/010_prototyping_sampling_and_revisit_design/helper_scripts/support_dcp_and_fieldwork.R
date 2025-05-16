@@ -259,6 +259,11 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
   filter(grts_address != grts_address_final) %>%
   glimpse
 
+
+
+
+## Sampling unit geometries --------------------------------------
+
 # obtaining geometries of the sampling units themselves:
 # - for aquatic types, see code from https://github.com/inbo/n2khab-mne-monitoring/pull/2
 # - for 7220 as a whole, see code provided below
@@ -419,6 +424,7 @@ schemetargetpanel_spsamples <-
   relocate(geometry, .after = last_col()) %>%
   arrange(stratum_scheme_targetpanels, grts_address)
 
+# storing interactive map
 schemetargetpanel_spsamples_hasgw <-
   schemetargetpanel_spsamples %>%
   mutate(has_gw = str_detect(stratum_scheme_targetpanels, "GW"))
