@@ -305,6 +305,14 @@ units_7220 <-
 # ////////////////////////////////////////////////////////////////////////////
 
 grts_mh <- read_GRTSmh()
+
+# cell centers of the terrestrial sampling units (excluding 7220):
+units_cell_cellcenter <-
+  stratum_schemetargetpanel_spsamples %>%
+  filter(str_detect(sample_support_code, "cell")) %>%
+  add_point_coords_grts(spatrast = grts_mh)
+
+# sampling units as raster cells:
 units_cell_rast <-
   stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
