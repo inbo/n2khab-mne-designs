@@ -303,6 +303,39 @@ units_cell_rast <-
   # defaultgrts_mh_n2khab), which we will use, since the rasters' extent and
   # resolution match.
   filter_grts_mh_by_address(grts_mh)
+set.names(units_cell_rast, "grts_address_final")
+
+# the number of non-NA cells matches the number of unique GRTS addresses
+stratum_targetpanel_spsamples %>%
+  filter(str_detect(sample_support_code, "cell")) %>%
+  distinct(grts_address_final) %>%
+  nrow() %>%
+  all.equal(global(units_cell, "notNA") %>% as.integer())
+
+# representing a limited number of cells as polygons: useful for plotting etc
+units_cell_polygon <-
+  units_cell_rast %>%
+  as.polygons(aggregate = FALSE) %>%
+  st_as_sf() %>%
+  # to prefer the tibble approach in sf, we need to convert forth and back
+  as_tibble() %>%
+  # it appears that the CRS is actually retrieved from the tibble, but I don't
+  # understand how (so the crs argument below isn't needed)
+  st_as_sf(crs = "EPSG:31370")
+
+# adding the sampling unit attributes to these polygons, arranged as in
+# stratum_targetpanel_spsamples:
+units_cell_polygon %>%
+  inner_join(
+    stratum_targetpanel_spsamples %>%
+      filter(str_detect(sample_support_code, "cell")),
+    join_by(grts_address_final),
+    relationship = "one-to-many",
+    unmatched = "error"
+  ) %>%
+  relocate(grts_address_final, .after = grts_address) %>%
+  relocate(geometry, .after = last_col()) %>%
+  arrange(pick(stratum:grts_address))
 
 
 
