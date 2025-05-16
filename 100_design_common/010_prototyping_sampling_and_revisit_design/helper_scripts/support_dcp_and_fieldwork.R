@@ -235,7 +235,7 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
 # strata separately (even though they may share their location: this is unreal
 # in the case of multiple cell-centered strata). For now, not distinguishing
 # module_combo and panel_split as explained above.
-stratum_targetpanel_spsamples <-
+stratum_schemetargetpanel_spsamples <-
   scheme_moco_ps_stratum_targetpanel_spsamples %>%
   select(-module_combo_code, -panel_split) %>%
   unite(scheme_targetpanel, scheme, targetpanel, sep = ":") %>%
@@ -301,7 +301,7 @@ units_7220 <-
 
 grts_mh <- read_GRTSmh()
 units_cell_rast <-
-  stratum_targetpanel_spsamples %>%
+  stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
   pull(grts_address_final) %>%
   # filter_grts_mh_by_address() uses the loaded grts_mh_n2khab_index object.
@@ -312,7 +312,7 @@ units_cell_rast <-
 set.names(units_cell_rast, "grts_address_final")
 
 # the number of non-NA cells matches the number of unique GRTS addresses
-stratum_targetpanel_spsamples %>%
+stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
   distinct(grts_address_final) %>%
   nrow() %>%
@@ -333,7 +333,7 @@ units_cell_polygon <-
 # stratum_targetpanel_spsamples:
 units_cell_polygon %>%
   inner_join(
-    stratum_targetpanel_spsamples %>%
+    stratum_schemetargetpanel_spsamples %>%
       filter(str_detect(sample_support_code, "cell")),
     join_by(grts_address_final),
     relationship = "one-to-many",
