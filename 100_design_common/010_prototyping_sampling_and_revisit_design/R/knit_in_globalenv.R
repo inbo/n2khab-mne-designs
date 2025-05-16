@@ -10,6 +10,8 @@ files_to_run <- central_files[-10]
 # first run index.Rmd manually, as knitr::knit("index.Rmd") doesn't process
 # YAML and stops when reading params
 
+# Then, overwrite elements of params as needed (beware of: active_modules)
+
 # Then run:
 
 for (file in files_to_run) {
