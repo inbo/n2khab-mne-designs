@@ -330,8 +330,10 @@ units_cell_polygon <-
   st_as_sf(crs = "EPSG:31370")
 
 # adding the sampling unit attributes to these polygons, arranged as in
-# stratum_targetpanel_spsamples:
-units_cell_polygon %>%
+# stratum_targetpanel_spsamples. Note that this duplicates cells with multiple
+# strata!
+units_cell_polygon_attribs <-
+  units_cell_polygon %>%
   inner_join(
     stratum_schemetargetpanel_spsamples %>%
       filter(str_detect(sample_support_code, "cell")),
@@ -342,6 +344,91 @@ units_cell_polygon %>%
   relocate(grts_address_final, .after = grts_address) %>%
   relocate(geometry, .after = last_col()) %>%
   arrange(pick(stratum:grts_address))
+
+# storing some interactive maps of the extra types
+generate_mapview_gw <- function(obj) {
+  vals <- unique(obj$has_gw)
+  cols <- if (length(vals) == 2) {
+    c("pink", "blue")
+  } else if (isFALSE(vals)) {
+    "pink"
+  } else {
+    "blue"
+  }
+  mapview::mapview(
+    obj,
+    zcol = "has_gw",
+    col.regions = cols,
+    lwd = 2,
+    map.types = c(
+      "CartoDB.Positron",
+      "OpenStreetMap",
+      "Esri.WorldImagery",
+      "OpenTopoMap"
+    )
+  )
+}
+store_stratum_map <- function(type) {
+  obj <-
+    units_cell_polygon_attribs %>%
+    mutate(has_gw = str_detect(scheme_targetpanels, "GW")) %>%
+    filter(stratum == type)
+  map <- generate_mapview_gw(obj)
+  htmlwidgets::saveWidget(
+    map@map,
+    str_c("maps/map_", type, ".html"),
+    selfcontained = TRUE
+  )
+}
+store_stratum_map("4010")
+store_stratum_map("4030")
+store_stratum_map("7140_oli")
+store_stratum_map("6230_hmo")
+store_stratum_map("9190")
+
+# merging strata as well for visualization:
+schemetargetpanel_spsamples <-
+  stratum_schemetargetpanel_spsamples %>%
+  filter(str_detect(sample_support_code, "cell")) %>%
+  mutate(stratum_scheme_targetpanels = str_c(
+    stratum,
+    " (",
+    grts_join_method,
+    ") ",
+    " [",
+    scheme_targetpanels,
+    "]"
+  )) %>%
+  mutate(
+    stratum_scheme_targetpanels =
+      str_flatten(stratum_scheme_targetpanels, collapse = " \u2588 ") %>%
+      factor(),
+    # n_strata = n(),
+    .by = grts_address_final
+  ) %>%
+  # filter(n_strata > 1) %>%
+  distinct(stratum_scheme_targetpanels, grts_address, grts_address_final) %>%
+  inner_join(
+    units_cell_polygon,
+    .,
+    join_by(grts_address_final),
+    relationship = "one-to-many",
+    unmatched = "error"
+  ) %>%
+  relocate(grts_address_final, .after = grts_address) %>%
+  relocate(geometry, .after = last_col()) %>%
+  arrange(stratum_scheme_targetpanels, grts_address)
+
+schemetargetpanel_spsamples_hasgw <-
+  schemetargetpanel_spsamples %>%
+  mutate(has_gw = str_detect(stratum_scheme_targetpanels, "GW"))
+map_all <- generate_mapview_gw(schemetargetpanel_spsamples_hasgw)
+htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
+
+
+
+
+
 
 
 
