@@ -189,6 +189,9 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
+  mutate(
+    is_forest = str_detect(type, "^9|^2180|^rbbppm")
+  ) %>%
   distinct(
     scheme,
     module_combo_code,
@@ -196,7 +199,8 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
     stratum,
     # 'aquatic' column will be improved for 7220 later on (now it simply has a
     # duplication (TRUE + FALSE) of all locations)
-    aquatic = in_aquatic_subset,
+    is_aquatic = in_aquatic_subset,
+    is_forest,
     grts_join_method,
     sample_support_code,
     grts_address,
