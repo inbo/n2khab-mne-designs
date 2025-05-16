@@ -294,7 +294,9 @@ units_7220 <-
 # geometries of terrestrial types, excluding 7220: these are cells
 # =================================================================
 grts_mh <- read_GRTSmh()
-scheme_moco_ps_stratum_targetpanel_spsamples %>%
+units_cell_rast <-
+  stratum_targetpanel_spsamples %>%
+  filter(str_detect(sample_support_code, "cell")) %>%
   pull(grts_address_final) %>%
   # filter_grts_mh_by_address() uses the loaded grts_mh_n2khab_index object.
   # Note that the spatrast argument works equally well with grts_mh (as with the
