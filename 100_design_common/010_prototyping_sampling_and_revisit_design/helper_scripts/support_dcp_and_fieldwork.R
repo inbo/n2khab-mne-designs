@@ -168,6 +168,10 @@ save(
 
 load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
 
+
+## Sampling unit attributes -----------------------------
+
+
 # attributes of spatial sampling units (~grts_address_final), useful in maps,
 # selections and decisions. Note that we *identify* sampling units as stratum x
 # grts_address; a unit_id is not needed provided that units don't share the same
@@ -263,7 +267,8 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
 
 # geometries of 7220 units are represented by points, labelled with their GRTS
 # address
-# =========================================================================
+# ////////////////////////////////////////////////////////////////////////////
+
 flanders_buffer <-
   read_admin_areas(dsn = "flanders") %>%
   st_buffer(40)
@@ -292,7 +297,8 @@ units_7220 <-
 
 
 # geometries of terrestrial types, excluding 7220: these are cells
-# =================================================================
+# ////////////////////////////////////////////////////////////////////////////
+
 grts_mh <- read_GRTSmh()
 units_cell_rast <-
   stratum_targetpanel_spsamples %>%
@@ -340,6 +346,8 @@ units_cell_polygon %>%
 
 
 
+
+## FAG occasions, field activities and variables ------------------------
 
 # field activities (FAs) per field activity group (FAG) in the active modules
 # and schemes (considered without the spatial overlap between core and non-core
