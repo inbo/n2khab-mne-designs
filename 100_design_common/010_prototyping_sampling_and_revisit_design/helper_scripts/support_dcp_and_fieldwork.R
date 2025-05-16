@@ -212,17 +212,48 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
   ) %>%
   arrange(pick(scheme:grts_address))
 
+# existing sample support codes and spatial GRTS join methods:
+n2khab_types_expanded_properties %>%
+  distinct(grts_join_method, sample_support_code, sample_support) %>%
+  arrange(grts_join_method, sample_support_code)
+
+# with the currently active modules, module_combo_code and panel_split have a
+# single unique value for each scheme. This is expected to change though in
+# future (module_combo_code and panel_split do 'split' a scheme's spatial
+# sample, applying different revisit designs). However we will currently take
+# advantage of their uniqueness to keep things as simple as possible. Checking
+# that foregoing statement is TRUE:
+scheme_moco_ps_stratum_targetpanel_spsamples %>%
+  distinct(scheme, module_combo_code, panel_split) %>%
+  {nrow(.) == nrow(distinct(., scheme))}
+
+# merging scheme:module_combo_code:panel_split:targetpanel, still distinguishing
+# strata separately (even though they may share their location: this is unreal
+# in the case of multiple cell-centered strata). For now, not distinguishing
+# module_combo and panel_split as explained above.
+stratum_targetpanel_spsamples <-
+  scheme_moco_ps_stratum_targetpanel_spsamples %>%
+  select(-module_combo_code, -panel_split) %>%
+  unite(scheme_targetpanel, scheme, targetpanel, sep = ":") %>%
+  nest(scheme_targetpanels = scheme_targetpanel) %>%
+  mutate(
+    scheme_targetpanels = map_chr(scheme_targetpanels, \(df) {
+      str_flatten(df$scheme_targetpanel, collapse = " | ")
+    }) %>%
+      factor()
+  ) %>%
+  relocate(scheme_targetpanels) %>%
+  arrange(pick(stratum:grts_address))
+
 # Note: if grts_address_final differs from grts_address, then this means a local
 # replacement took place already in the past. If now it appears that the stratum
 # is no longer present in the field, then a new replacement procedure must take
 # place using grts_address as the anchor, provided that the type still occurs in
 # the polygon. If not, the absence must be noted and sampling frame + sample are
 # to be updated.
-
-# existing sample support codes and spatial GRTS join methods:
-n2khab_types_expanded_properties %>%
-  distinct(grts_join_method, sample_support_code, sample_support) %>%
-  arrange(grts_join_method, sample_support_code)
+scheme_moco_ps_stratum_targetpanel_spsamples %>%
+  filter(grts_address != grts_address_final) %>%
+  glimpse
 
 # obtaining geometries of the sampling units themselves:
 # - for aquatic types, see code from https://github.com/inbo/n2khab-mne-monitoring/pull/2
