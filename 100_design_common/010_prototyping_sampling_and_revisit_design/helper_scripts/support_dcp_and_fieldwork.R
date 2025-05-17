@@ -448,9 +448,10 @@ htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
 ## Cells for local unit replacement in terrestrial types except 7220 -------
 
 # The units that are eligible for local replacement of a specific unit are those
-# cells that have the same 'level 3' GRTS address as the considered unit. The
-# level 3 address is the GRTS address of the enclosing large cell (256 * 256
-# quare meters; i.e. 64 level 0 units) of the coarser level3 GRTS raster.
+# cells that have the same 'level 3' GRTS address as the considered unit, and
+# belong to the same habitatmap polygon. The level 3 address is the GRTS address
+# of the enclosing large cell (256 * 256 quare meters; i.e. 64 level 0 units) of
+# the coarser level3 GRTS raster.
 
 # reading the level0-resolution SpatRaster layer that holds the level 3
 # addresses
@@ -462,29 +463,28 @@ grts_mh_brick_lev3_index <- tibble(
 ) %>%
   filter(!is.na(grts_address))
 
-# generate replacement cell numbers as a list column, in order to keep the link
+# Generate replacement cell numbers as a list column, in order to keep the link
 # between the GRTS address and the set of (usually 64) addresses in the
 # enclosing level 3 cell. Beware that we must rely on grts_address if
-# grts_address_final is different, so we can just use grts_address. Doing this
-# for many rows takes a lot of time and might profit from 'parallel' execution.
-# The result is probably best stored for efficiency.
-stratum_schemetargetpanel_spsamples_replacement <-
+# grts_address_final is different, so we can just use grts_address. We will
+# limit these replacement cells in a later step, based on polygon IDs.
+stratum_schemetargetpanel_spsamples_terr_replacementcells_unrestricted <-
   stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
-  # as an example, just do this for a few rows
-  slice(2000:2009) %>%
   mutate(
-    replacement_cellnrs = get_replacement_cellnrs(
+    replacement_cells = get_replacement_cellnrs(
       grts_address,
       spatrast = grts_mh,
       spatrast_lev3 = grts_mh_brick_lev3,
       spatrast_lev3_index = grts_mh_brick_lev3_index
     )
-  )
+  ) %>%
+  relocate(replacement_cells, .after = grts_address_final)
 
-# much, much quicker if we don't want the rowwise link between grts_address and
-# the respective sets of replacement addresses, and just fetch the cell numbers
-# for the whole data frame at once:
+# If we don't need the rowwise link between grts_address and the respective sets
+# of replacement addresses, we can just fetch the cell numbers for the whole
+# data frame at once, which runs faster. We don't use it further, but actually
+# this is what get_replacement_cellnrs() first calculates if as_list = TRUE.
 cellnrs_replacement_integrated <-
   stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
@@ -496,50 +496,105 @@ cellnrs_replacement_integrated <-
     as_list = FALSE
   )
 
-# an alternative to generate the link between the GRTS addresses and the
-# addresses of the replacement cells, is to generate both addresses from the
-# same cell numbers. The object samplingunits_replacementunits can be joined to
-# the terrestrial sampling units via grts_address.
-replacement_cells_grts03 <- tibble(
-  grts_address_replac = grts_mh[cellnrs_replacement_integrated][, 1],
-  grts_address_replac_lev3 = grts_mh_brick_lev3[cellnrs_replacement_integrated][, 1]
-)
-samplingunits_grts03 <- replacement_cells_grts03 %>%
-  filter(
-    grts_address_replac %in% (stratum_schemetargetpanel_spsamples %>%
-      filter(str_detect(sample_support_code, "cell")) %>%
-      pull(grts_address))
-  ) %>%
-  rename(grts_address = grts_address_replac)
-samplingunits_replacementunits <-
-  samplingunits_grts03 %>%
-  inner_join(
-    replacement_cells_grts03,
-    join_by(grts_address_replac_lev3),
+# In joining with the terrestrial sampling units, we must also take into account
+# the polygon ID of the habitatmap and the stratum (because the GRTS join method
+# depends on stratum). In the case of the 'cell' join method, it is possible to
+# get multiple polygons attached to the same GRTS cell, provided that this
+# polygon has been labelled to contain the specific type. Further, some GRTS
+# addresses are from previously assessed sites with the type, while this
+# information is not present in habitatmap_terr, hence also not in below used
+# hmt_pol_stratum_grts_cell_all_n2khab. In these cases, we just keep all local
+# replacement cells for now. Either the clip is done in the field, or the
+# appropriate polygon from the habitatmap should be retrieved as well in order
+# to make the clip, regardless of its label in the habitatmap.
+stratum_schemetargetpanel_spsamples_terr_replacementcells <-
+  stratum_schemetargetpanel_spsamples_terr_replacementcells_unrestricted %>%
+  # adding polygon_id attribute (sometimes missing, sometimes more than one, as
+  # explained above)
+  left_join(
+    hmt_pol_stratum_grts_cell_all_n2khab,
+    join_by(stratum, grts_address),
     relationship = "many-to-many",
-    unmatched = "error"
+    unmatched = "drop"
   ) %>%
-  select(-grts_address_replac_lev3) %>%
-  nest(grts_addresses_replacement = grts_address_replac)
-
-
-# cell centers of all above replacement cells, also providing the level 3
-# address
-coords <- xyFromCell(grts_mh, cellnrs_replacement_integrated)
-replacement_cells_grts03 %>%
+  # adding all GRTS addresses of the polygon, taking into account the stratum's
+  # GRTS join method
+  left_join(
+    hmt_pol_stratum_grts_cell_all_n2khab %>%
+      rename(grts_address_replac = grts_address),
+    join_by(stratum, polygon_id),
+    relationship = "many-to-many",
+    unmatched = "drop"
+  ) %>%
+  # nesting polygons & addresses; the number of rows is the same as before the
+  # first join above
+  nest(polygon_addresses = c(polygon_id, grts_address_replac)) %>%
+  # filtering replacement cells by polygon ID, unless polygon ID is missing
   mutate(
-    x = coords[, "x"],
-    y = coords[, "y"]
+    replacement_cells = map2(
+      polygon_addresses,
+      replacement_cells,
+      function(poladr, repladr) {
+        poladr_unique <- unique(poladr$grts_address_replac)
+        if (length(poladr_unique) == 1 && is.na(poladr_unique)) {
+          repladr
+        } else {
+        repladr %>%
+          filter(grts_address_replac %in% poladr_unique)
+        }
+      }
+    )
   ) %>%
-  arrange(grts_address_replac_lev3, grts_address_replac) %>%
+  select(-polygon_addresses)
+
+# distribution of the number of replacement cells per sampling unit:
+stratum_schemetargetpanel_spsamples_terr_replacementcells %>%
+  mutate(nrcells = map_int(replacement_cells, nrow)) %>%
+  pull(nrcells) %>%
+  summary()
+
+# plotting some examples using terra's plot method
+plot_replacement_example <- function(nr_replacement_cells) {
+  stratum_schemetargetpanel_spsamples_terr_replacementcells %>%
+    mutate(nrcells = map_int(replacement_cells, nrow)) %>%
+    filter(nrcells == nr_replacement_cells) %>%
+    slice_sample(n = 1) %>%
+    pluck("replacement_cells", 1) %>%
+    pull(cellnr_replac) %>%
+    {grts_mh[., drop = FALSE]} %>%
+    plot()
+}
+plot_replacement_example(64)
+plot_replacement_example(40)
+plot_replacement_example(30)
+plot_replacement_example(12)
+plot_replacement_example(5)
+
+# we may like to have a single vector of all replacement cell numbers
+cellnrs_replacement <-
+  stratum_schemetargetpanel_spsamples_terr_replacementcells %>%
+  select(replacement_cells) %>%
+  unnest(replacement_cells) %>%
+  distinct(cellnr_replac) %>%
+  pull(cellnr_replac)
+
+# generate sf points object of all replacement cell centers
+coords <- xyFromCell(grts_mh, cellnrs_replacement)
+tibble(
+  cellnr = cellnrs_replacement,
+  grts_address = grts_mh[cellnrs_replacement][, 1],
+  x = coords[, "x"],
+  y = coords[, "y"]
+) %>%
   st_as_sf(coords = c("x", "y"), crs = crs(grts_mh))
 
-# SpatRaster of all above replacement cells; note the use of the cells argument:
+# SpatRaster of all replacement cells; note the use of the cells argument:
 units_cell_replacement_rast <-
   filter_grts_mh_by_address(
     spatrast = grts_mh,
-    cells = cellnrs_replacement_integrated
+    cells = cellnrs_replacement
   )
+global(units_cell_replacement_rast, "notNA")[1, 1] == length(cellnrs_replacement)
 
 
 
