@@ -224,7 +224,7 @@ drop_assessment_data <- function(df) {
 #' @param grts_var String. The column name in df that holds the GRTS addresses.
 #' @param spatrast SpatRaster object with level 0 GRTS addresses.
 #' @param spatrast_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell numbers for each GRTS address in `spatrast`.
+#'   holding the cell numbers (cell IDs) for each GRTS address in `spatrast`.
 #' @param spatial Logical. Should the returned object be a sf points object? If
 #'   `FALSE`, a data frame is returned with x and y coordinates as columns.
 #'
@@ -264,11 +264,11 @@ add_point_coords_grts <- function(
 
 #' Generate raster cells based on a vector of GRTS addresses
 #'
+#' Subsets the SpatRaster provided in the `spatrast` argument, using a vector of
+#' either GRTS addresses or cell numbers.
+#'
 #' @param addresses Vector of integer GRTS addresses (level 0).
-#' @param spatrast SpatRaster object with level 0 GRTS addresses, and which is
-#'   to be subsetted using `addresses`.
-#' @param spatrast_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell numbers (cell IDs) for each GRTS address in `spatrast`.
+#' @inheritParams add_point_coords_grts
 #' @param cells Vector of cell numbers to use; overrides addresses.
 #' @param drop_address Logical. Should the non-missing values of the returned
 #'   SpatRaster contain the original values, or should they be set as 1?
@@ -304,10 +304,7 @@ filter_grts_mh_by_address <- function(
 #' Given a vector of GRTS addresses, provides the cell numbers that fall inside
 #' the enclosing larger 256 * 256 GRTS cell ('level 3 GRTS cell').
 #'
-#' @param addresses Vector of integer GRTS addresses (level 0).
-#' @param spatrast SpatRaster object with level 0 GRTS addresses.
-#' @param spatrast_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell numbers for each GRTS address in `spatrast`.
+#' @inheritParams filter_grts_mh_by_address
 #' @param spatrast_lev3 SpatRaster object with level 3 GRTS addresses, at the
 #'   resolution of `spatrast`.
 #' @param spatrast_lev3_index Data frame with columns 'id' and 'grts_address',
