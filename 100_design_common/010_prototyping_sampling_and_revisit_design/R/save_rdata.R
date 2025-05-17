@@ -71,7 +71,7 @@ rdata_set <- c(
   # exporting specific functions:
   "add_point_coords_grts",
   "filter_grts_mh_by_address",
-  "get_replacement_cellids"
+  "get_replacement_cellnrs"
 )
 module_suffix <- str_c("_", str_flatten(modules$code_short))
 phabcorr_suffix <- ifelse(
