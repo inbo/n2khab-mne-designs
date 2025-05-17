@@ -219,6 +219,16 @@ drop_assessment_data <- function(df) {
 
 
 #' Add point coordinate columns to a data frame with a GRTS address column
+#'
+#' @param df Data frame.
+#' @param grts_var String. The column name in df that holds the GRTS addresses.
+#' @param spatrast SpatRaster object with level 0 GRTS addresses.
+#' @param spatrast_index Data frame with columns 'id' and 'grts_address',
+#'   holding the cell IDs for each GRTS address in `spatrast`.
+#' @param spatial Logical. Should the returned object be a sf points object? If
+#'   `FALSE`, a data frame is returned with x and y coordinates as columns.
+#'
+#' @returns description
 add_point_coords_grts <- function(
     df,
     grts_var = "grts_address",
@@ -252,6 +262,17 @@ add_point_coords_grts <- function(
 }
 
 #' Generate raster cells based on a vector of GRTS addresses
+#'
+#' @param addresses Vector of integer GRTS addresses (level 0).
+#' @param spatrast SpatRaster object with level 0 GRTS addresses, and which is
+#'   to be subsetted using `addresses`.
+#' @param spatrast_index Data frame with columns 'id' and 'grts_address',
+#'   holding the cell IDs for each GRTS address in `spatrast`.
+#' @param cells Vector of cell IDs to use; overrides addresses.
+#' @param drop_address Logical. Should the non-missing values of the returned
+#'   SpatRaster contain the original values, or should they be set as 1?
+#'
+#' @returns SpatRaster
 filter_grts_mh_by_address <- function(
     addresses,
     spatrast = grts_mh_n2khab,
