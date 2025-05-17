@@ -496,6 +496,33 @@ cellnrs_replacement_integrated <-
     as_list = FALSE
   )
 
+# an alternative to generate the link between the GRTS addresses and the
+# addresses of the replacement cells, is to generate both addresses from the
+# same cell numbers. The object samplingunits_replacementunits can be joined to
+# the terrestrial sampling units via grts_address.
+replacement_cells_grts03 <- tibble(
+  grts_address_replac = grts_mh[cellnrs_replacement_integrated][, 1],
+  grts_address_replac_lev3 = grts_mh_brick_lev3[cellnrs_replacement_integrated][, 1]
+)
+samplingunits_grts03 <- replacement_cells_grts03 %>%
+  filter(
+    grts_address_replac %in% (stratum_schemetargetpanel_spsamples %>%
+      filter(str_detect(sample_support_code, "cell")) %>%
+      pull(grts_address))
+  ) %>%
+  rename(grts_address = grts_address_replac)
+samplingunits_replacementunits <-
+  samplingunits_grts03 %>%
+  inner_join(
+    replacement_cells_grts03,
+    join_by(grts_address_replac_lev3),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
+  select(-grts_address_replac_lev3) %>%
+  nest(grts_addresses_replacement = grts_address_replac)
+
+
 # SpatRaster of all above replacement cells; note the use of the cells argument:
 units_cell_replacement_rast <-
   filter_grts_mh_by_address(
