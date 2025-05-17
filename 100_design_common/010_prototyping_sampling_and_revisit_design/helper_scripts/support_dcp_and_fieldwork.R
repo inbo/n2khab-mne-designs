@@ -523,6 +523,17 @@ samplingunits_replacementunits <-
   nest(grts_addresses_replacement = grts_address_replac)
 
 
+# cell centers of all above replacement cells, also providing the level 3
+# address
+coords <- xyFromCell(grts_mh, cellnrs_replacement_integrated)
+replacement_cells_grts03 %>%
+  mutate(
+    x = coords[, "x"],
+    y = coords[, "y"]
+  ) %>%
+  arrange(grts_address_replac_lev3, grts_address_replac) %>%
+  st_as_sf(coords = c("x", "y"), crs = crs(grts_mh))
+
 # SpatRaster of all above replacement cells; note the use of the cells argument:
 units_cell_replacement_rast <-
   filter_grts_mh_by_address(
