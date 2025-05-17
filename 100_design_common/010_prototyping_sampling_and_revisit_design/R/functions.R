@@ -270,6 +270,59 @@ filter_grts_mh_by_address <- function(
 
 
 
+#' Generate the potential replacement GRTS cell IDs for a given vector of GRTS
+#' addresses
+#'
+#' Given a vector of GRTS addresses, provides the cell IDs that fall inside the
+#' enclosing larger 256 * 256 GRTS cell ('level 3 GRTS cell').
+#'
+#' @param addresses Vector of integer GRTS addresses (level 0).
+#' @param spatrast SpatRaster object with level 0 GRTS addresses.
+#' @param spatrast_index Data frame with columns 'id' and 'grts_address',
+#'   holding the cell IDs for each GRTS address in `spatrast`.
+#' @param spatrast_lev3 SpatRaster object with level 3 GRTS addresses, at the
+#'   resolution of `spatrast`.
+#' @param spatrast_lev3_index Data frame with columns 'id' and 'grts_address',
+#'   holding the cell IDs for each GRTS address in `spatrast_lev3`.
+#' @param as_list Logical. Should the result be given as a list, ordered so that
+#'   the first element contains the replacement cell IDs corresponding to the
+#'   first element of `addresses`, and so on? Note that different GRTS addresses
+#'   at level 0 may still yield the same set of replacement cell IDs if they
+#'   reside in the same level 3 cell. If `FALSE`, a single vector is returned of
+#'   unique cell IDs.
+#'
+#' @returns Vector or list, depending on the value of `as_list`.
+get_replacement_cellids <- function(
+    addresses,
+    spatrast = grts_mh_n2khab,
+    spatrast_index = grts_mh_n2khab_index,
+    spatrast_lev3,
+    spatrast_lev3_index,
+    as_list = TRUE
+) {
+  if (!as_list) {
+    id0 <- subset(spatrast_index, grts_address %in% unique(addresses))$id
+    addr3 <- spatrast_lev3[id0]$level3
+    spatrast_lev3_index %>%
+      filter(grts_address %in% unique(addr3)) %>%
+      pull(id)
+  } else {
+    # following statement takes care to align the cell ID order with the GRTS
+    # addresses vector
+    id0 <- spatrast_index[match(
+      addresses,
+      spatrast_index$grts_address
+    ), ]$id
+    addr3 <- spatrast_lev3[id0]$level3
+    lapply(addr3, function(a3) {
+      spatrast_lev3_index %>%
+        filter(grts_address == a3) %>%
+        pull(id)
+    })
+  }
+}
+
+
 
 
 #' Add column 'is_strictly_aquatic' based on stratum column in a data frame

@@ -445,6 +445,67 @@ htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
 
 
 
+## Cells for local unit replacement in terrestrial types except 7220 -------
+
+# The units that are eligible for local replacement of a specific unit are those
+# cells that have the same 'level 3' GRTS address as the considered unit. The
+# level 3 address is the GRTS address of the enclosing large cell (256 * 256
+# quare meters; i.e. 64 level 0 units) of the coarser level3 GRTS raster.
+
+# reading the level0-resolution SpatRaster layer that holds the level 3
+# addresses
+grts_mh_brick_lev3 <- read_GRTSmh(brick = TRUE)[["level3"]]
+# create a spatial index of the level 3 GRTS values
+grts_mh_brick_lev3_index <- tibble(
+  id = seq_len(ncell(grts_mh_brick_lev3)),
+  grts_address = values(grts_mh_brick_lev3)[, 1]
+) %>%
+  filter(!is.na(grts_address))
+
+# generate replacement cell IDs as a list column, in order to keep the link
+# between the GRTS address and the set of (usually 64) addresses in the
+# enclosing level 3 cell. Beware that we must rely on grts_address if
+# grts_address_final is different, so we can just use grts_address. Doing this
+# for many rows takes a lot of time and might profit from 'parallel' execution.
+# The result is probably best stored for efficiency.
+stratum_schemetargetpanel_spsamples_replacement <-
+  stratum_schemetargetpanel_spsamples %>%
+  filter(str_detect(sample_support_code, "cell")) %>%
+  # as an example, just do this for a few rows
+  slice(2000:2009) %>%
+  mutate(
+    replacement_cellids = get_replacement_cellids(
+      grts_address,
+      spatrast = grts_mh,
+      spatrast_lev3 = grts_mh_brick_lev3,
+      spatrast_lev3_index = grts_mh_brick_lev3_index
+    )
+  )
+
+# much, much quicker if we don't want the rowwise link between grts_address and
+# the respective sets of replacement addresses, and just fetch the cell IDs for
+# the whole data frame at once:
+cellids_replacement_integrated <-
+  stratum_schemetargetpanel_spsamples %>%
+  filter(str_detect(sample_support_code, "cell")) %>%
+  pull(grts_address) %>%
+  get_replacement_cellids(
+    spatrast = grts_mh,
+    spatrast_lev3 = grts_mh_brick_lev3,
+    spatrast_lev3_index = grts_mh_brick_lev3_index,
+    as_list = FALSE
+  )
+
+# SpatRaster of all above replacement cells; note the use of the cells argument:
+units_cell_replacement_rast <-
+  filter_grts_mh_by_address(
+    spatrast = grts_mh,
+    cells = cellids_replacement_integrated
+  )
+
+
+
+
 
 
 
