@@ -70,7 +70,8 @@ rdata_set <- c(
   "fag_grts_calendar",
   # exporting specific functions:
   "add_point_coords_grts",
-  "filter_grts_mh_by_address"
+  "filter_grts_mh_by_address",
+  "get_replacement_cellids"
 )
 module_suffix <- str_c("_", str_flatten(modules$code_short))
 phabcorr_suffix <- ifelse(
