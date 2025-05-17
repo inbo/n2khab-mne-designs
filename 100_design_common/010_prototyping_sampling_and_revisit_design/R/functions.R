@@ -274,7 +274,7 @@ add_point_coords_grts <- function(
 #'
 #' @returns SpatRaster
 filter_grts_mh_by_address <- function(
-    addresses,
+    addresses = NULL,
     spatrast = grts_mh_n2khab,
     spatrast_index = grts_mh_n2khab_index,
     cells = NULL,
