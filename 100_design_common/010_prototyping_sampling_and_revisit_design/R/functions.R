@@ -272,16 +272,22 @@ add_point_coords_grts <- function(
 #' @param cells Vector of cell numbers to use; overrides addresses.
 #' @param drop_address Logical. Should the non-missing values of the returned
 #'   SpatRaster contain the original values, or should they be set as 1?
+#' @param output_cell_nrs Logical. Should the function just return the cell
+#'   numbers as an integer vector?
 #'
-#' @returns SpatRaster
+#' @returns SpatRaster, or an integer vector if `output_cell_nrs` is `TRUE`.
 filter_grts_mh_by_address <- function(
     addresses = NULL,
     spatrast = grts_mh_n2khab,
     spatrast_index = grts_mh_n2khab_index,
     cells = NULL,
-    drop_address = FALSE) {
+    drop_address = FALSE,
+    output_cell_nrs = FALSE) {
   if (is.null(cells)) {
     cells <- subset(spatrast_index, grts_address %in% addresses)$id
+  }
+  if (output_cell_nrs) {
+    return(cells)
   }
   r <- spatrast[cells, drop = FALSE]
   if (drop_address) {
