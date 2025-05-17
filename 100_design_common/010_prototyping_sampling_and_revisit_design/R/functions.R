@@ -228,7 +228,8 @@ drop_assessment_data <- function(df) {
 #' @param spatial Logical. Should the returned object be a sf points object? If
 #'   `FALSE`, a data frame is returned with x and y coordinates as columns.
 #'
-#' @returns description
+#' @returns An sf points object or a tibble with coordinates, depending on the
+#'   `spatial` argument.
 add_point_coords_grts <- function(
     df,
     grts_var = "grts_address",
