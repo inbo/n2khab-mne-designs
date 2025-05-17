@@ -400,7 +400,7 @@ store_stratum_map("6230_hmo")
 store_stratum_map("9190")
 
 # merging strata as well for visualization:
-schemetargetpanel_spsamples <-
+schemetargetpanel_spsamples_terr <-
   stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
   mutate(stratum_scheme_targetpanels = str_c(
@@ -433,10 +433,10 @@ schemetargetpanel_spsamples <-
   arrange(stratum_scheme_targetpanels, grts_address)
 
 # storing interactive map
-schemetargetpanel_spsamples_hasgw <-
-  schemetargetpanel_spsamples %>%
+schemetargetpanel_spsamples_terr_hasgw <-
+  schemetargetpanel_spsamples_terr %>%
   mutate(has_gw = str_detect(stratum_scheme_targetpanels, "GW"))
-map_all <- generate_mapview_gw(schemetargetpanel_spsamples_hasgw)
+map_all <- generate_mapview_gw(schemetargetpanel_spsamples_terr_hasgw)
 htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
 
 
