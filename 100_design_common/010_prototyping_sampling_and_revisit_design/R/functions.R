@@ -302,7 +302,9 @@ filter_grts_mh_by_address <- function(
 #' GRTS addresses
 #'
 #' Given a vector of GRTS addresses, provides the cell numbers that fall inside
-#' the enclosing larger 256 * 256 GRTS cell ('level 3 GRTS cell').
+#' the enclosing larger 256 * 256 GRTS cell ('level 3 GRTS cell'). Note that
+#' this result must still be limited to the cells of a specific polygon if this
+#' is used for the polygon-constrained local replacement method.
 #'
 #' @inheritParams filter_grts_mh_by_address
 #' @param spatrast_lev3 SpatRaster object with level 3 GRTS addresses, at the
@@ -311,10 +313,11 @@ filter_grts_mh_by_address <- function(
 #'   holding the cell numbers for each GRTS address in `spatrast_lev3`.
 #' @param as_list Logical. Should the result be given as a list, ordered so that
 #'   the first element contains the replacement cell numbers corresponding to
-#'   the first element of `addresses`, and so on? Note that different GRTS
-#'   addresses at level 0 may still yield the same set of replacement cell
-#'   numbers if they reside in the same level 3 cell. If `FALSE`, a single
-#'   vector is returned of unique cell numbers.
+#'   the first element of `addresses`, and so on? In this case, each element is
+#'   a tibble of both the cell numbers and the GRTS address (level 0). Note that
+#'   different GRTS addresses at level 0 may still yield the same set of
+#'   replacement cell numbers if they reside in the same level 3 cell. If
+#'   `FALSE`, a single vector is returned of unique cell numbers.
 #'
 #' @returns Vector or list, depending on the value of `as_list`.
 get_replacement_cellnrs <- function(
@@ -325,25 +328,39 @@ get_replacement_cellnrs <- function(
     spatrast_lev3_index,
     as_list = TRUE
 ) {
-  if (!as_list) {
     id0 <- subset(spatrast_index, grts_address %in% unique(addresses))$id
     addr3 <- spatrast_lev3[id0]$level3
-    spatrast_lev3_index %>%
+    id3 <- spatrast_lev3_index %>%
       filter(grts_address %in% unique(addr3)) %>%
       pull(id)
+  if (!as_list) {
+    id3
   } else {
-    # following statement takes care to align the cell number order with the GRTS
+    replacement_cells_grts03 <- tibble(
+      cellnr_replac = id3,
+      grts_address_replac = spatrast[id3][, 1],
+      grts_address_replac_lev3 = spatrast_lev3[id3][, 1]
+    )
+    given_cells_grts03 <- replacement_cells_grts03 %>%
+      select(-cellnr_replac) %>%
+      filter(grts_address_replac %in% addresses) %>%
+      rename(grts_address = grts_address_replac)
+    sampledcells_replacementcells <-
+      given_cells_grts03 %>%
+      inner_join(
+        replacement_cells_grts03,
+        join_by(grts_address_replac_lev3),
+        relationship = "many-to-many",
+        unmatched = "error"
+      ) %>%
+      select(-grts_address_replac_lev3) %>%
+      nest(replacement_cells = c(cellnr_replac, grts_address_replac))
+    # following statement takes care to align the row order with the GRTS
     # addresses vector
-    id0 <- spatrast_index[match(
+    sampledcells_replacementcells[match(
       addresses,
-      spatrast_index$grts_address
-    ), ]$id
-    addr3 <- spatrast_lev3[id0]$level3
-    lapply(addr3, function(a3) {
-      spatrast_lev3_index %>%
-        filter(grts_address == a3) %>%
-        pull(id)
-    })
+      sampledcells_replacementcells$grts_address
+    ), ]$replacement_cells
   }
 }
 
