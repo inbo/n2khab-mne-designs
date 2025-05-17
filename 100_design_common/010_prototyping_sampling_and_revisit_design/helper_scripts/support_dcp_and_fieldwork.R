@@ -462,7 +462,7 @@ grts_mh_brick_lev3_index <- tibble(
 ) %>%
   filter(!is.na(grts_address))
 
-# generate replacement cell IDs as a list column, in order to keep the link
+# generate replacement cell numbers as a list column, in order to keep the link
 # between the GRTS address and the set of (usually 64) addresses in the
 # enclosing level 3 cell. Beware that we must rely on grts_address if
 # grts_address_final is different, so we can just use grts_address. Doing this
@@ -474,7 +474,7 @@ stratum_schemetargetpanel_spsamples_replacement <-
   # as an example, just do this for a few rows
   slice(2000:2009) %>%
   mutate(
-    replacement_cellids = get_replacement_cellids(
+    replacement_cellnrs = get_replacement_cellnrs(
       grts_address,
       spatrast = grts_mh,
       spatrast_lev3 = grts_mh_brick_lev3,
@@ -483,13 +483,13 @@ stratum_schemetargetpanel_spsamples_replacement <-
   )
 
 # much, much quicker if we don't want the rowwise link between grts_address and
-# the respective sets of replacement addresses, and just fetch the cell IDs for
-# the whole data frame at once:
-cellids_replacement_integrated <-
+# the respective sets of replacement addresses, and just fetch the cell numbers
+# for the whole data frame at once:
+cellnrs_replacement_integrated <-
   stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
   pull(grts_address) %>%
-  get_replacement_cellids(
+  get_replacement_cellnrs(
     spatrast = grts_mh,
     spatrast_lev3 = grts_mh_brick_lev3,
     spatrast_lev3_index = grts_mh_brick_lev3_index,
@@ -500,7 +500,7 @@ cellids_replacement_integrated <-
 units_cell_replacement_rast <-
   filter_grts_mh_by_address(
     spatrast = grts_mh,
-    cells = cellids_replacement_integrated
+    cells = cellnrs_replacement_integrated
   )
 
 

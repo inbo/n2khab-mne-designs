@@ -224,7 +224,7 @@ drop_assessment_data <- function(df) {
 #' @param grts_var String. The column name in df that holds the GRTS addresses.
 #' @param spatrast SpatRaster object with level 0 GRTS addresses.
 #' @param spatrast_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell IDs for each GRTS address in `spatrast`.
+#'   holding the cell numbers for each GRTS address in `spatrast`.
 #' @param spatial Logical. Should the returned object be a sf points object? If
 #'   `FALSE`, a data frame is returned with x and y coordinates as columns.
 #'
@@ -267,8 +267,8 @@ add_point_coords_grts <- function(
 #' @param spatrast SpatRaster object with level 0 GRTS addresses, and which is
 #'   to be subsetted using `addresses`.
 #' @param spatrast_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell IDs for each GRTS address in `spatrast`.
-#' @param cells Vector of cell IDs to use; overrides addresses.
+#'   holding the cell numbers (cell IDs) for each GRTS address in `spatrast`.
+#' @param cells Vector of cell numbers to use; overrides addresses.
 #' @param drop_address Logical. Should the non-missing values of the returned
 #'   SpatRaster contain the original values, or should they be set as 1?
 #'
@@ -291,29 +291,29 @@ filter_grts_mh_by_address <- function(
 
 
 
-#' Generate the potential replacement GRTS cell IDs for a given vector of GRTS
-#' addresses
+#' Generate the potential replacement GRTS cell numbers for a given vector of
+#' GRTS addresses
 #'
-#' Given a vector of GRTS addresses, provides the cell IDs that fall inside the
-#' enclosing larger 256 * 256 GRTS cell ('level 3 GRTS cell').
+#' Given a vector of GRTS addresses, provides the cell numbers that fall inside
+#' the enclosing larger 256 * 256 GRTS cell ('level 3 GRTS cell').
 #'
 #' @param addresses Vector of integer GRTS addresses (level 0).
 #' @param spatrast SpatRaster object with level 0 GRTS addresses.
 #' @param spatrast_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell IDs for each GRTS address in `spatrast`.
+#'   holding the cell numbers for each GRTS address in `spatrast`.
 #' @param spatrast_lev3 SpatRaster object with level 3 GRTS addresses, at the
 #'   resolution of `spatrast`.
 #' @param spatrast_lev3_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell IDs for each GRTS address in `spatrast_lev3`.
+#'   holding the cell numbers for each GRTS address in `spatrast_lev3`.
 #' @param as_list Logical. Should the result be given as a list, ordered so that
-#'   the first element contains the replacement cell IDs corresponding to the
-#'   first element of `addresses`, and so on? Note that different GRTS addresses
-#'   at level 0 may still yield the same set of replacement cell IDs if they
-#'   reside in the same level 3 cell. If `FALSE`, a single vector is returned of
-#'   unique cell IDs.
+#'   the first element contains the replacement cell numbers corresponding to
+#'   the first element of `addresses`, and so on? Note that different GRTS
+#'   addresses at level 0 may still yield the same set of replacement cell
+#'   numbers if they reside in the same level 3 cell. If `FALSE`, a single
+#'   vector is returned of unique cell numbers.
 #'
 #' @returns Vector or list, depending on the value of `as_list`.
-get_replacement_cellids <- function(
+get_replacement_cellnrs <- function(
     addresses,
     spatrast = grts_mh_n2khab,
     spatrast_index = grts_mh_n2khab_index,
@@ -328,7 +328,7 @@ get_replacement_cellids <- function(
       filter(grts_address %in% unique(addr3)) %>%
       pull(id)
   } else {
-    # following statement takes care to align the cell ID order with the GRTS
+    # following statement takes care to align the cell number order with the GRTS
     # addresses vector
     id0 <- spatrast_index[match(
       addresses,
