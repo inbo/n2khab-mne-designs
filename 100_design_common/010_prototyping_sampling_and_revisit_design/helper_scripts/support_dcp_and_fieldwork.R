@@ -458,68 +458,29 @@ htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
 
 ## Cells for local unit replacement in terrestrial types except 7220 -------
 
-# The units that are eligible for local replacement of a specific unit are those
-# cells that have the same 'level 3' GRTS address as the considered unit, and
-# belong to the same habitatmap polygon. The level 3 address is the GRTS address
-# of the enclosing large cell (256 * 256 quare meters; i.e. 64 level 0 units) of
-# the coarser level3 GRTS raster.
 
-# reading the level0-resolution SpatRaster layer that holds the level 3
-# addresses
-grts_mh_brick_lev3 <- read_GRTSmh(brick = TRUE)[["level3"]]
-# create a spatial index of the level 3 GRTS values
-grts_mh_brick_lev3_index <- tibble(
-  id = seq_len(ncell(grts_mh_brick_lev3)),
-  grts_address = values(grts_mh_brick_lev3)[, 1]
-) %>%
-  filter(!is.na(grts_address))
+# The units that are eligible for local replacement of a specific cell-based
+# sampling unit are the other cells that belong to the same habitatmap polygon.
+# In case that this polygon is too large, i.e. exceeds 64 cells, then only the
+# replacement cells are kept with the same 'level 3' GRTS address as the
+# considered unit. The level 3 address is the GRTS address of the enclosing
+# large cell (256 * 256 quare meters; i.e. 64 level 0 units) of the coarser
+# level3 GRTS raster.
 
-# Generate replacement cell numbers as a list column, in order to keep the link
-# between the GRTS address and the set of (usually 64) addresses in the
-# enclosing level 3 cell. Beware that we must rely on grts_address if
-# grts_address_final is different, so we can just use grts_address. We will
-# limit these replacement cells in a later step, based on polygon IDs.
-stratum_schemetargetpanel_spsamples_terr_replacementcells_unrestricted <-
+# Getting the replacement cells based on polygon. Beware that we must rely on
+# grts_address if grts_address_final is different, so we can just use
+# grts_address. In the case of the 'cell' join method, it is possible to get
+# multiple polygons attached to the same considered cell, provided that this
+# polygon has been labelled to contain the specific type. Further, some sampling
+# units concern previously assessed sites with the type, while this information
+# is not present in habitatmap_terr, hence also not in below used
+# hmt_pol_stratum_grts_cell_all_n2khab, so that the polygon_id is missing. In
+# these cases, for now, we will take all replacement cells according to the
+# level 3 cell (further down).
+
+stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells <-
   stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
-  mutate(
-    replacement_cells = get_replacement_cellnrs(
-      grts_address,
-      spatrast = grts_mh,
-      spatrast_lev3 = grts_mh_brick_lev3,
-      spatrast_lev3_index = grts_mh_brick_lev3_index
-    )
-  ) %>%
-  relocate(replacement_cells, .after = grts_address_final)
-
-# If we don't need the rowwise link between grts_address and the respective sets
-# of replacement addresses, we can just fetch the cell numbers for the whole
-# data frame at once, which runs faster. We don't use it further, but actually
-# this is what get_replacement_cellnrs() first calculates if as_list = TRUE.
-cellnrs_replacement_integrated <-
-  stratum_schemetargetpanel_spsamples %>%
-  filter(str_detect(sample_support_code, "cell")) %>%
-  pull(grts_address) %>%
-  get_replacement_cellnrs(
-    spatrast = grts_mh,
-    spatrast_lev3 = grts_mh_brick_lev3,
-    spatrast_lev3_index = grts_mh_brick_lev3_index,
-    as_list = FALSE
-  )
-
-# In joining with the terrestrial sampling units, we must also take into account
-# the polygon ID of the habitatmap and the stratum (because the GRTS join method
-# depends on stratum). In the case of the 'cell' join method, it is possible to
-# get multiple polygons attached to the same GRTS cell, provided that this
-# polygon has been labelled to contain the specific type. Further, some GRTS
-# addresses are from previously assessed sites with the type, while this
-# information is not present in habitatmap_terr, hence also not in below used
-# hmt_pol_stratum_grts_cell_all_n2khab. In these cases, we just keep all local
-# replacement cells for now. Either the clip is done in the field, or the
-# appropriate polygon from the habitatmap should be retrieved as well in order
-# to make the clip, regardless of its label in the habitatmap.
-stratum_schemetargetpanel_spsamples_terr_replacementcells <-
-  stratum_schemetargetpanel_spsamples_terr_replacementcells_unrestricted %>%
   # adding polygon_id attribute (sometimes missing, sometimes more than one, as
   # explained above)
   left_join(
@@ -537,26 +498,72 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
     relationship = "many-to-many",
     unmatched = "drop"
   ) %>%
-  # nesting polygons & addresses; the number of rows is the same as before the
-  # first join above
-  nest(polygon_addresses = c(polygon_id, grts_address_replac)) %>%
-  # filtering replacement cells by polygon ID, unless polygon ID is missing
+  # get cell numbers of the replacement addresses (useful in visualization)
+  left_join(
+    grts_mh_index %>%
+      rename(cellnr_replac = id),
+    join_by(grts_address_replac == grts_address),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  # nesting polygon ids, cellnr & replacement addresses; the number of rows is
+  # the same as before the first join above
+  nest(polygon_replacement_cells = c(
+    polygon_id,
+    cellnr_replac,
+    grts_address_replac
+  )) %>%
+  relocate(polygon_replacement_cells, .after = grts_address_final)
+
+# reading the level0-resolution SpatRaster layer that holds the level 3
+# addresses, to prepare for potential restriction to level 3 cells
+grts_mh_brick_lev3 <- read_GRTSmh(brick = TRUE)[["level3"]]
+# create a spatial index of the level 3 GRTS values
+grts_mh_brick_lev3_index <- tibble(
+  id = seq_len(ncell(grts_mh_brick_lev3)),
+  grts_address = values(grts_mh_brick_lev3)[, 1]
+) %>%
+  filter(!is.na(grts_address))
+
+# In order to restrict to the level 3 cells, we generate the level 3 replacement
+# cells as a separate list column. Beware that we must rely on grts_address if
+# grts_address_final is different, so we can just use grts_address.
+stratum_schemetargetpanel_spsamples_terr_replacementcells <-
+  stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells %>%
   mutate(
+    level3_replacement_cells = get_level3replacement_cellnrs(
+      grts_address,
+      spatrast = grts_mh,
+      spatrast_index = grts_mh_index,
+      spatrast_lev3 = grts_mh_brick_lev3,
+      spatrast_lev3_index = grts_mh_brick_lev3_index
+    ),
     replacement_cells = map2(
-      polygon_addresses,
-      replacement_cells,
+      polygon_replacement_cells,
+      level3_replacement_cells,
       function(poladr, repladr) {
         poladr_unique <- unique(poladr$grts_address_replac)
         if (length(poladr_unique) == 1 && is.na(poladr_unique)) {
+          # if polygon missing (but this needs a solution!), just return all
+          # cells from the level3-cell
           repladr
+        } else if (length(poladr_unique) <= 64) {
+          # if polygon not larger than a level 3 cell, just apply
+          # polygon-constrained replacement
+          poladr %>%
+            distinct(cellnr_replac, grts_address_replac)
         } else {
-        repladr %>%
-          filter(grts_address_replac %in% poladr_unique)
+          # if polygon larger than a level 3 cell, apply 'polygon x level3-cell'
+          # constrained replacement
+          repladr %>%
+            filter(grts_address_replac %in% poladr_unique)
         }
       }
     )
   ) %>%
-  select(-polygon_addresses)
+  select(-polygon_replacement_cells, -level3_replacement_cells) %>%
+  relocate(replacement_cells, .after = grts_address_final)
+
 
 # distribution of the number of replacement cells per sampling unit:
 stratum_schemetargetpanel_spsamples_terr_replacementcells %>%
