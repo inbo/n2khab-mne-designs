@@ -572,21 +572,28 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells %>%
   summary()
 
 # plotting some examples using terra's plot method
-plot_replacement_example <- function(nr_replacement_cells) {
+plot_replacement_example <- function(
+  min_nr_replacement_cells,
+  max_nr_replacement_cells
+) {
   stratum_schemetargetpanel_spsamples_terr_replacementcells %>%
     mutate(nrcells = map_int(replacement_cells, nrow)) %>%
-    filter(nrcells == nr_replacement_cells) %>%
+    filter(between(
+      nrcells,
+      min_nr_replacement_cells,
+      max_nr_replacement_cells
+    )) %>%
     slice_sample(n = 1) %>%
     pluck("replacement_cells", 1) %>%
     pull(cellnr_replac) %>%
     {grts_mh[., drop = FALSE]} %>%
     plot()
 }
-plot_replacement_example(64)
-plot_replacement_example(40)
-plot_replacement_example(30)
-plot_replacement_example(12)
-plot_replacement_example(5)
+plot_replacement_example(64, 64)
+plot_replacement_example(40, 45)
+plot_replacement_example(30, 35)
+plot_replacement_example(12, 20)
+plot_replacement_example(5, 8)
 
 # we may like to have a single vector of all replacement cell numbers
 cellnrs_replacement <-
