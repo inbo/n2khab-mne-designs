@@ -461,11 +461,12 @@ htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
 
 # The units that are eligible for local replacement of a specific cell-based
 # sampling unit are the other cells that belong to the same habitatmap polygon.
-# In case that this polygon is too large, i.e. exceeds 64 cells, then only the
-# replacement cells are kept with the same 'level 3' GRTS address as the
-# considered unit. The level 3 address is the GRTS address of the enclosing
-# large cell (256 * 256 quare meters; i.e. 64 level 0 units) of the coarser
-# level3 GRTS raster.
+# In case that this polygon is too large, i.e. exceeds 64 cells, OR if it has
+# too 'long' dimensions (evaluated from the bounding box of the polygon's cell
+# centers), then only the replacement cells are kept that belong to the same
+# 'level 3' GRTS address as the considered unit. The level 3 address is the GRTS
+# address of the enclosing large cell (256 * 256 quare meters; i.e. 64 level 0
+# units) of the coarser level3 GRTS raster.
 
 # Getting the replacement cells based on polygon. Beware that we must rely on
 # grts_address if grts_address_final is different, so we can just use
@@ -527,10 +528,26 @@ grts_mh_brick_lev3_index <- tibble(
 
 # In order to restrict to the level 3 cells, we generate the level 3 replacement
 # cells as a separate list column. Beware that we must rely on grts_address if
-# grts_address_final is different, so we can just use grts_address.
+# grts_address_final is different, so we can just use grts_address. Further, we
+# calculate a the diagonal length of the bounding box of polygon cell centers,
+# since this is also a criterion to decide about the level 3 restriction.
+
+# Maximum allowed bboxdiag: if exceeded, we apply level 3 restriction.
+# Dimensions are based on those of a level 3 cell
+allowed_bboxdiag <- sqrt(2 * 256^2)
+# Maximum allowed number of cells in polygon; based on number of cells in a
+# level 3 cell. If exceeded, we apply level 3 restriction.
+allowed_nrcells <- (2^3)^2
+
 stratum_schemetargetpanel_spsamples_terr_replacementcells <-
   stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells %>%
   mutate(
+    bboxdiag = map_dbl(polygon_replacement_cells, \(df) {
+      coo <- xyFromCell(grts_mh, df$cellnr_replac)
+      xdiff <- max(coo[, "x"]) - min(coo[, "x"])
+      ydiff <- max(coo[, "y"]) - min(coo[, "y"])
+      sqrt(xdiff^2 + ydiff^2)
+    }),
     level3_replacement_cells = get_level3replacement_cellnrs(
       grts_address,
       spatrast = grts_mh,
@@ -538,30 +555,34 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
       spatrast_lev3 = grts_mh_brick_lev3,
       spatrast_lev3_index = grts_mh_brick_lev3_index
     ),
-    replacement_cells = map2(
-      polygon_replacement_cells,
-      level3_replacement_cells,
-      function(poladr, repladr) {
+    replacement_cells = pmap(
+      list(
+        polygon_replacement_cells,
+        bboxdiag,
+        level3_replacement_cells
+      ),
+      function(poladr, d, repladr) {
         poladr_unique <- unique(poladr$grts_address_replac)
         if (length(poladr_unique) == 1 && is.na(poladr_unique)) {
           # if polygon missing (but this needs a solution!), just return all
           # cells from the level3-cell
           repladr
-        } else if (length(poladr_unique) <= 64) {
-          # if polygon not larger than a level 3 cell, just apply
-          # polygon-constrained replacement
+        } else if (
+          d <= allowed_bboxdiag & length(poladr_unique) <= allowed_nrcells
+        ) {
+          # if polygon not too large, just apply polygon-constrained replacement
           poladr %>%
             distinct(cellnr_replac, grts_address_replac)
         } else {
-          # if polygon larger than a level 3 cell, apply 'polygon x level3-cell'
-          # constrained replacement
+          # if polygon too large, apply 'polygon x level3-cell' constrained
+          # replacement
           repladr %>%
             filter(grts_address_replac %in% poladr_unique)
         }
       }
     )
   ) %>%
-  select(-polygon_replacement_cells, -level3_replacement_cells) %>%
+  select(-polygon_replacement_cells, -bboxdiag, -level3_replacement_cells) %>%
   relocate(replacement_cells, .after = grts_address_final)
 
 
