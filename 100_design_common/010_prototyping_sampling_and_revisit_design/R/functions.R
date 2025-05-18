@@ -298,8 +298,8 @@ filter_grts_mh_by_address <- function(
 
 
 
-#' Generate the potential replacement GRTS cell numbers for a given vector of
-#' GRTS addresses
+#' Generate the potential 'level 3' replacement GRTS cell numbers for a given
+#' vector of GRTS addresses
 #'
 #' Given a vector of GRTS addresses, provides the cell numbers that fall inside
 #' the enclosing larger 256 * 256 GRTS cell ('level 3 GRTS cell'). Note that
@@ -320,7 +320,7 @@ filter_grts_mh_by_address <- function(
 #'   `FALSE`, a single vector is returned of unique cell numbers.
 #'
 #' @returns Vector or list, depending on the value of `as_list`.
-get_replacement_cellnrs <- function(
+get_level3replacement_cellnrs <- function(
     addresses,
     spatrast = grts_mh_n2khab,
     spatrast_index = grts_mh_n2khab_index,
