@@ -561,12 +561,13 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
         bboxdiag,
         level3_replacement_cells
       ),
-      function(poladr, d, repladr) {
+      function(poladr, d, lev3adr) {
         poladr_unique <- unique(poladr$grts_address_replac)
+        result <-
         if (length(poladr_unique) == 1 && is.na(poladr_unique)) {
           # if polygon missing (but this needs a solution!), just return all
           # cells from the level3-cell
-          repladr
+          lev3adr
         } else if (
           d <= allowed_bboxdiag & length(poladr_unique) <= allowed_nrcells
         ) {
@@ -576,7 +577,7 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
         } else {
           # if polygon too large, apply 'polygon x level3-cell' constrained
           # replacement
-          repladr %>%
+          lev3adr %>%
             filter(grts_address_replac %in% poladr_unique)
         }
       }
