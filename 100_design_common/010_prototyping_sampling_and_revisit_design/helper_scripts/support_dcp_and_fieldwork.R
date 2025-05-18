@@ -312,23 +312,26 @@ units_7220 <-
 # ////////////////////////////////////////////////////////////////////////////
 
 grts_mh <- read_GRTSmh()
+# create a spatial index of the GRTS addresses
+grts_mh_index <- tibble(
+  id = seq_len(ncell(grts_mh)),
+  grts_address = values(grts_mh)[, 1]
+) %>%
+  filter(!is.na(grts_address))
+
 
 # cell centers of the terrestrial sampling units (excluding 7220):
 units_cell_cellcenter <-
   stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
-  add_point_coords_grts(spatrast = grts_mh)
+  add_point_coords_grts(spatrast = grts_mh, spatrast_index = grts_mh_index)
 
 # sampling units as raster cells:
 units_cell_rast <-
   stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
   pull(grts_address_final) %>%
-  # filter_grts_mh_by_address() uses the loaded grts_mh_n2khab_index object.
-  # Note that the spatrast argument works equally well with grts_mh (as with the
-  # defaultgrts_mh_n2khab), which we will use, since the rasters' extent and
-  # resolution match.
-  filter_grts_mh_by_address(grts_mh)
+  filter_grts_mh_by_address(spatrast = grts_mh, spatrast_index = grts_mh_index)
 set.names(units_cell_rast, "grts_address_final")
 
 # the number of non-NA cells matches the number of unique GRTS addresses
@@ -600,6 +603,7 @@ tibble(
 units_cell_replacement_rast <-
   filter_grts_mh_by_address(
     spatrast = grts_mh,
+    spatrast_index = grts_mh_index,
     cells = cellnrs_replacement
   )
 global(units_cell_replacement_rast, "notNA")[1, 1] == length(cellnrs_replacement)
