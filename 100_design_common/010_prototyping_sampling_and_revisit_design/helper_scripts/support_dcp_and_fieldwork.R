@@ -159,7 +159,7 @@ save(
 
 
 
-# Preparing code for mne-monitoring repo: variable sets and FAG occasions -----
+# Preparing code for mne-monitoring repo: samples, variables, FAG occasions ----
 
 
 # First run setup chunk
@@ -262,11 +262,18 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
 
 
 
+
+
+
+
+
 ## Sampling unit geometries --------------------------------------
 
 # obtaining geometries of the sampling units themselves:
-# - for aquatic types, see code from https://github.com/inbo/n2khab-mne-monitoring/pull/2
-# - for 7220 as a whole, see code provided below
+# - for aquatic types, see code from
+#   https://github.com/inbo/n2khab-mne-monitoring/pull/2, but then do use the
+#   POC RData file used here
+# - for type 7220 (springs) as a whole, see code provided below
 # - for terrestrial types, these are cells; see code provided below
 
 
@@ -399,7 +406,8 @@ store_stratum_map("7140_oli")
 store_stratum_map("6230_hmo")
 store_stratum_map("9190")
 
-# merging strata as well for visualization:
+# merging strata as well for visualization (where we want each row to represent
+# another location):
 schemetargetpanel_spsamples_terr <-
   stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
