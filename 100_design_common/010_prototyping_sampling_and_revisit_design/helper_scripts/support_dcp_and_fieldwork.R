@@ -580,11 +580,14 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
           lev3adr %>%
             filter(grts_address_replac %in% poladr_unique)
         }
+        result %>%
+          mutate(ranknr = row_number(grts_address_replac))
       }
     )
   ) %>%
   select(-polygon_replacement_cells, -bboxdiag, -level3_replacement_cells) %>%
   relocate(replacement_cells, .after = grts_address_final)
+
 
 
 # distribution of the number of replacement cells per sampling unit:
