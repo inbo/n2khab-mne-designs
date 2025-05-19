@@ -85,7 +85,7 @@ samples <- readRDS(file.path(datapath, "spsamples_gw_sf_panflpan5.rds"))
 # samples <- cbind(sf::st_drop_geometry(samples), sf::st_coordinates(samples)) %>%
 #   filter(if_all(everything(), ~ !is.na(.x)))
 
-samples %<>% dplyr::filter(hydr_class != "HC3")
+samples <- samples %>% dplyr::filter(hydr_class != "HC3")
 
 knitr::kable(t(dplyr::sample_n(samples, 4)))
 ```
@@ -277,9 +277,9 @@ print_regression_results <- function(orsl) {
 
 x <- cumulative_crossdistcount$distance
 y <- cumulative_crossdistcount$cumulated_count
-cap <- 31.
-y <- y[x<=cap]
-x <- x[x<=cap]
+cap <- 42.
+y <- y[x<cap]
+x <- x[x<cap]
 fit_result <- fit_fitting(x, y,
   method = "Nelder-Mead", # "L-BFGS-B",
   par = c(0.25, 1.8),
@@ -452,7 +452,7 @@ regression_wrapper <- function(boot_distances) {
   
   boot_cumcrossdistcount <- bind_rows(
     lapply(
-      seq(0, 32, length.out = 33),
+      seq(0, as.integer(cap), length.out = as.integer(cap)+1),
       FUN = boot_threshold)
   )
 
@@ -474,7 +474,7 @@ regression_wrapper <- function(boot_distances) {
 
 
 ```{r regression-reference}
-even_closer_distances <- close_distances[close_distances <= 32]
+even_closer_distances <- close_distances[close_distances <= cap]
 reference <- regression_wrapper(even_closer_distances)
 reference["A"] <- reference$par[1]
 reference["k"] <- reference$par[2]
@@ -594,8 +594,8 @@ h <- ggplot(NULL) +
   geom_line(aes(x = x, y = y_bayesian), color = "red",
     linetype = "dotted", linewidth = 0.5) +
   labs(x = "inclusion distance threshold (m)", y = "cumulative site re-use") +
-  xlim(0, 32) +
-  ylim(0, 1.05*fit_result$predict(32)) +
+  xlim(0, cap) +
+  ylim(0, 1.05*fit_result$predict(cap)) +
   dark_theme_minimal()
   
 suppressWarnings(
@@ -617,8 +617,8 @@ h <- ggplot(NULL) +
   geom_line(aes(x = x, y = y_bayesian), color = "darkred",
     linetype = "dotted", linewidth = 0.5) +
   labs(x = "inclusion distance threshold (m)", y = "cumulative site re-use") +
-  xlim(0, 32) +
-  ylim(0, 1.05*fit_result$predict(32)) +
+  xlim(0, cap) +
+  ylim(0, 1.05*fit_result$predict(cap)) +
   theme_bw()
   
 suppressWarnings(
