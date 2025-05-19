@@ -335,15 +335,23 @@ add_regression_to_plot <- function(h, optimizer_results, color = "black") {
   range <- optimizer_results$par[2]
   nugget <- optimizer_results$par[3]
   sill <- scale + nugget
+  threshold <- calculate_limit(
+    optimizer_results,
+    threshold = 0.01,
+    prep_fcn = shift_nugget_matern4p
+  )
 
   # plotting
-  plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
+  maxx = max(regx)
+  plotx <- seq(0, maxx, length.out = maxx + 1)[]
+  # plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
   plotx <- plotx[plotx>0]
 
   h <- h +
-    geom_vline(xintercept = range, color = color, alpha = 0.5) +
-    geom_hline(yintercept = nugget, color = color, alpha = 0.5) +
-    geom_hline(yintercept = sill, color = color, alpha = 0.5) +
+    geom_vline(xintercept = threshold, color = color, alpha = 1.0) +
+    geom_vline(xintercept = range, color = color, alpha = 1.0) +
+    geom_hline(yintercept = nugget, color = color, alpha = 1.0) +
+    geom_hline(yintercept = sill, color = color, alpha = 1.0) +
     geom_point(aes(x = regx, y = regy),
       size = 2.5, color = color, alpha = 0.6) +
     geom_line(aes(x = plotx, y = predict(plotx)),

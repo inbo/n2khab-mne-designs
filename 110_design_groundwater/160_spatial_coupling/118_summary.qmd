@@ -1,7 +1,7 @@
 ---
 title: "Summary: Spatial Coupling of Groundwater Levels"
 bibliography: references_csl.json
-date: "2025-04-02"
+date: "2025-05-19"
 format:
   html:
     toc: true
@@ -363,7 +363,12 @@ From the Matérn regression models visualized in the diagrams, we can derive the
 ```{r results-table-dm}
 knitr::kable(
     t(sapply(names(data_m),
-      FUN = function(sc) calculate_limit(data_m[[sc]])
+      FUN = function(sc) calculate_limit(
+              data_m[[sc]],
+              threshold = 0.01,
+              fit_fcn = matern_function,
+              prep_fcn = shift_nugget_matern4p
+            )
     )),
     digits = 1
   )
@@ -480,9 +485,10 @@ Given this distance threshold, how many locations would be affected?
 
 ```{r sp-samples}
 # message(file.path(local_cache_folder, "spsamples_gw_sf_panflpan5.rds"))
-spsamples <- readRDS(file.path(local_cache_folder, "spsamples_gw_sf_panflpan5.rds"))
+# spsamples <- readRDS(file.path(local_cache_folder, "spsamples_gw_sf_panflpan5.rds"))
+spsamples <- readRDS(file.path("./cache", "spsamples_gw_sf_panflpan5.rds"))
 
-spsamples <- cbind(sf::st_drop_geometry(spsamples), sf::st_coordinates(spsamples)) %>%
+spsamples <- spsamples %>%
   dplyr::filter(hydr_class != "HC3") 
 
 ```
