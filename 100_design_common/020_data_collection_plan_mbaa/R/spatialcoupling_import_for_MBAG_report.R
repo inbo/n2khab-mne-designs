@@ -5,8 +5,8 @@ library("here")      |> void() # relative paths
 
 
 #### load data
-all_regdata <- read.csv("data/spatialcoupling/regdata.csv")
-bootstrap_quantiles <- read.csv("data/spatialcoupling/quantiles.csv")
+all_regdata <- read.csv(here::here("data", "spatialcoupling", "regdata.csv"))
+bootstrap_quantiles <- read.csv(here::here("data", "spatialcoupling", "quantiles.csv"))
 
 
 #### text report
