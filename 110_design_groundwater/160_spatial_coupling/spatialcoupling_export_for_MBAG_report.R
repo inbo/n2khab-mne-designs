@@ -31,24 +31,6 @@ soilclass_colors <- c(
   "unknown" = "slategray"
 )
 
-
-matern_function <- function(d, parameters) {
-  scale <- parameters[1] # related to semivariance
-  sigma <- parameters[2] # related to actual range; turning point
-  nugget <- parameters[3]
-  nu <- parameters[4]
-
-  sill <- scale + nugget
-  z <- sqrt(2 * nu) * d / sigma
-  K <- suppressWarnings(besselK(z, nu))
-  matern <- (z)^nu * K / (2^(nu - 1) * gamma(nu))
-  result <- sill - scale * matern
-
-  result[is.na(result)] <- 0
-  return(result)
-}
-
-
 local_cache_folder <- "cache_" # TODO move this to a shared place or distribute .RData
 
 

@@ -175,7 +175,6 @@ matern_function <- function(d, parameters) {
 #_______________________________________________________________________________
 # Matern-specific
 
-
 fit_matern <- function(x, y, distweighted = FALSE, ...) {
   target_fcn <- wrap_target_function
   if (distweighted) {
