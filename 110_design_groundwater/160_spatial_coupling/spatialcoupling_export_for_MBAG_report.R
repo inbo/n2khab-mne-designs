@@ -14,6 +14,13 @@ source("./regression_tools.R")
 # - regression_tools.R
 # - ./data/bootstrapping_dm_*
 # - ./cache/regression
+# turn into:
+# - {r} bootstrap_results["veen", "sigma"]
+# - {r} bootstrap_results["heavy", "sigma"]
+# - {r} threshold["heavy", "threshold"]
+# - {r} bootstrap_results["light", "sigma"]
+# - {r} threshold["heavy", "threshold"]
+# plus figure
 
 
 soilclasses <- c("heavy", "light", "peat")
@@ -25,8 +32,29 @@ soilclass_colors <- c(
 )
 
 
-local_cache_folder <- "cache"
+matern_function <- function(d, parameters) {
+  scale <- parameters[1] # related to semivariance
+  sigma <- parameters[2] # related to actual range; turning point
+  nugget <- parameters[3]
+  nu <- parameters[4]
+
+  sill <- scale + nugget
+  z <- sqrt(2 * nu) * d / sigma
+  K <- suppressWarnings(besselK(z, nu))
+  matern <- (z)^nu * K / (2^(nu - 1) * gamma(nu))
+  result <- sill - scale * matern
+
+  result[is.na(result)] <- 0
+  return(result)
+}
+
+
+local_cache_folder <- "cache_" # TODO move this to a shared place or distribute .RData
+
+
 bootstrap_data <- arrow::read_parquet("./data/bootstrapping_dm_soilclass.parquet")
+
+
 
 combine_path <- function(filepath) here::here(local_cache_folder, "regression", filepath)
 stitch_filepath <- function(label, sc, reg_var, extension = "parquet") {
@@ -41,6 +69,7 @@ stitch_filepath <- function(label, sc, reg_var, extension = "parquet") {
     collapse = ""
   ))
 }
+
 
 load_plotdata <- function(
     label = c("slopefilter", "allin", "maaiveld"),
@@ -76,23 +105,20 @@ data_m <- list(
   "peat" = load_fitdata("maaiveld", "peat", "dm")
 )
 
+get_regression_data <- function(sc) {
+  x <- data_m[[sc]]$regx
+  y <- data_m[[sc]]$regy
+  df <- data.frame(
+    "sc" = sc,
+    "x" = x,
+    "y" = y
+  )
+  return(df)
+}
 
-# g <- ggplot(NULL)
-# for (sc in names(data_m)) {
-#   regression_result <- data_m[[sc]]
-#   g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc])
-# }
-# g + xlab("distance (m)") + ylab("mean absolute difference (mMaaiveld)") +
-#   ylim(0, 1.6) +
-#   theme_minimal()
-#
-#
-# knitr::kable(
-#     t(sapply(names(data_m),
-#       FUN = function(sc) calculate_limit(data_m[[sc]])
-#     )),
-#     digits = 1
-#   )
+all_rdata <- bind_rows(lapply(soilclasses, FUN = get_regression_data))
+write.csv(all_rdata, "cache/report/regdata.csv")
+
 
 
 ref_boots <- bootstrap_data %>%
@@ -114,9 +140,15 @@ sub_boots <- bootstrap_data %>%
 
 threshold_quantiles <- sub_boots %>%
   summarize(
-    q02 = quantile(threshold, c(0.02)),
-    median = quantile(threshold, c(0.50)),
-    q98 = quantile(threshold, c(0.98)),
+    threshold_q02 = quantile(threshold, c(0.02)),
+    threshold_median = quantile(threshold, c(0.50)),
+    threshold_q98 = quantile(threshold, c(0.98)),
+    sigma_q02 = quantile(sigma, c(0.02)),
+    sigma_median = quantile(sigma, c(0.50)),
+    sigma_q98 = quantile(sigma, c(0.98)),
     .by = soilclass
   )
 # knitr::kable(threshold_quantiles, digits = 1)
+
+
+write.csv(threshold_quantiles, "cache/report/quantiles.csv")
