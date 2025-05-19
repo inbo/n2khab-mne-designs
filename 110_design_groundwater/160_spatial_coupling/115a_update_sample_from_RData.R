@@ -59,8 +59,8 @@ sample <- get_variable("mhq_samples") %>%
   select(stratum, grts_address, hydr_class, hydr_class_shortname, geometry)
 # df: {stratum, grts_address, hydr_class, hydr_class_shortname, geometry}
 
-sample <- sf::st_as_sf(sample, coords = "geometry")
-samples <- cbind(sf::st_drop_geometry(samples), sf::st_coordinates(samples)) %>%
+sample <- sf::st_as_sf(sample)
+sample <- cbind(sf::st_drop_geometry(sample), sf::st_coordinates(sample)) %>%
   filter(if_all(everything(), ~ !is.na(.x)))
 
 store_filepath <- file.path("./cache", "spsamples_gw_sf_panflpan5.rds")
