@@ -2,12 +2,12 @@
 title: "<sup>Spatial Co-Variation<br>in<br>Groundwater Levels</sup>"
 subtitle: "(MNE preparation)"
 author: "Falk Mielke"
+date: "20250520"
 format: 
   revealjs:
     theme: dark
     embed-resources: true
     center-title-slide: true
-date: "20/05/2025"
 ---
 
 
@@ -48,7 +48,7 @@ local_cache_folder <- "cache"
 
 ```{r watina-map}
 #| code-fold: true
-#| eval: false
+#| eval: true
 # TODO: evaluate this for production.
 
 
@@ -77,6 +77,11 @@ m2 <- mapview(
 m1+m2
 ```
 
+---
+
+![](//data/assets/20250520_coupling/jones_raiders_of_the_lost_obswell_bw.webp){fig-alt="Raiders of the Lost Observation Well" .absolute left=0 right=0 bottom=0 top=0 height="60%" style="margin: auto auto;"}
+
+
 ## Everything is Connected {background-color="black" background-image="/data/assets/20250520_coupling/bryan-goff-RF4p4rTM-2s-unsplash.jpg"}
 
 ![](//data/assets/20250520_coupling/buddha.svg){fig-alt="Symbol of Buddha." .absolute left=0 right=0 bottom=0 top=0 height="30%" style="margin: auto auto;"}
@@ -90,11 +95,6 @@ Photo by <a href="https://unsplash.com/@bryangoffphoto?utm_content=creditCopyTex
       
 ---
 
-
-![](//data/assets/20250520_coupling/jones_raiders_of_the_lost_obswell_bw.webp){fig-alt="Raiders of the Lost Observation Well" .absolute left=0 right=0 bottom=0 top=0 height="60%" style="margin: auto auto;"}
-
----
-
 :::: {.columns}
 
 ::: {.column width="40%"}
@@ -102,9 +102,11 @@ The only viable solution
 
 to implicit bias 
 
-is to prevent it via 
+is to prevent it 
 
-*fully random placement*.
+*a priori*
+
+via **fully random placement**.
 :::
 
 ::: {.column width="60%"}
@@ -292,13 +294,14 @@ threshold_quantiles <- sub_boots %>%
 knitr::kable(threshold_quantiles, digits = 1)
 ```
 
+  $$\fbox{O(10)}$$
 
-:::{.callout-tip title="Main Question"}
+:::{.callout-tip title="Main Answer"}
 $\Rightarrow$ **Re-use up to 10m.**
 :::
 
 
-## Sample Re-Use
+## Predicting Sample Re-Use
 
 
 ```{r sp-samples}
@@ -328,6 +331,8 @@ calculate_n_sites <- function(distance, col = "mean") {
 # calculate_n_sites(distance = 10, col = "2.5%")
 distance_threshold = 10
 mean_n_sites <- calculate_n_sites(distance = distance_threshold, col = "mean")
+min_n_sites <- calculate_n_sites(distance = distance_threshold, col = "2.5%")
+max_n_sites <- calculate_n_sites(distance = distance_threshold, col = "97.5%")
 ```
 
 <br>
@@ -339,7 +344,7 @@ mean_n_sites <- calculate_n_sites(distance = distance_threshold, col = "mean")
 
 <br><br>
 
-With a distance cut-off of `{r} distance_threshold`, <br> **about `{r} round(mean_n_sites, 0)` sites** are eligible for re-use.
+With a distance cut-off of `{r} distance_threshold`, <br> **about `{r} round(mean_n_sites, 0)` [`{r} round(min_n_sites, 0)`, `{r} round(max_n_sites, 0)`] sites** are eligible for re-use.
 
 
 ---
@@ -348,10 +353,11 @@ With a distance cut-off of `{r} distance_threshold`, <br> **about `{r} round(mea
 
 ## Summary
 
--  threshold calculated: `{r} paste0(threshold_quantiles %>% filter(soilclass %in% c("heavy", "light")) %>% pull(median) %>% as.vector %>% round(., 1), collapse = " for heavy, ") ` for light soil
+-  threshold calculated: `{r} paste0(threshold_quantiles %>% filter(soilclass %in% c("heavy", "light")) %>% pull(median) %>% as.vector %>% round(., 1), collapse = " m for heavy, ") ` m for light soil
 - `{r} round(mean_n_sites, 0)` sites expected for potential re-use
 - given: slope threshold $\le 1\%$
-- repeated measures averaged; no temporal information
+  - (there will be other decision rules)
+- repeated observations averaged; no temporal information
 
 
 # Variogram Tweaks
@@ -391,6 +397,18 @@ $$ \langle dw\rangle = \frac{1}{N} \sum\limits_{i,j} \left| z_j - z_i\right| $$
 $$ \gamma = \frac{1}{2N} \sum\limits_{i,j} \left(z_j - z_i\right)^2 $$
 
 
+## Slope
+
+Field:
+
+- elevation difference: $\le 10 cm$
+
+
+Desktop:
+
+- slope filter $1\%$ for this analysis
+
+
 ## `mTAW` *vs.* `mMaaiveld`
 
 ![](//data/assets/20250520_coupling/obswell_scheme_tilted.svg){fig-alt="A scheme of observation wells on a tilted surface." .absolute left=0 right=0 bottom=0 top=0 height="80%" style="margin: auto auto;"}
@@ -402,18 +420,6 @@ $$ \gamma = \frac{1}{2N} \sum\limits_{i,j} \left(z_j - z_i\right)^2 $$
 --- 
 
 ![](//data/assets/20250520_coupling/obswell_scheme_maaiveld.svg){fig-alt="A scheme of observation wells on a non-continuous surface." .absolute left=0 right=0 bottom=0 top=0 height="80%" style="margin: auto auto;"}
-
-
-## Slope
-
-Field:
-
-- elevation difference: $\le 10 cm$
-
-
-Desktop:
-
-- slope filter $1\%$ for this analysis
 
 
 ## Validation
@@ -458,9 +464,26 @@ Thank you!
 
 ---
 
+:::: {.columns}
+
+::: {.column width="50%"}
 - Is this useful for you?
+- ... or other colleagues
 - What did we miss?
 
+:::
+
+::: {.column width="50%"}
+Re-use considerations:
+
+- distance: < 10m
+- quality, type, status (e.g. sufficient depth)
+- topographic continuity (soil, water)
+- elevation difference: < 10cm
+- accessibility / land owner conciliation
+:::
+
+::::
 
 # Backup
 
