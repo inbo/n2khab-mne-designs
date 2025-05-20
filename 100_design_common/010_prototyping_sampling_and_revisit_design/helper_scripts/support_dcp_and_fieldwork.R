@@ -409,6 +409,12 @@ store_stratum_map("7140_oli")
 store_stratum_map("6230_hmo")
 store_stratum_map("9190")
 
+units_cell_polygon_attribs %>%
+  st_write(
+    str_c("maps/spsample_terr.gpkg"),
+    layer = "units_cell_polygon_attribs"
+  )
+
 # merging strata as well for visualization (where we want each row to represent
 # another location):
 schemetargetpanel_spsamples_terr <-
@@ -449,6 +455,11 @@ schemetargetpanel_spsamples_terr_hasgw <-
   mutate(has_gw = str_detect(stratum_scheme_targetpanels, "GW"))
 map_all <- generate_mapview_gw(schemetargetpanel_spsamples_terr_hasgw)
 htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
+schemetargetpanel_spsamples_terr_hasgw %>%
+  st_write(
+    str_c("maps/spsample_terr.gpkg"),
+    layer = "schemetargetpanel_spsamples_terr_hasgw"
+  )
 
 
 
