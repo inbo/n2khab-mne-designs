@@ -670,7 +670,7 @@ The occurrence of types with non-predetermined sample size is very limited.
 The objects that will be created in this paragraph represent the design attributes of schemes x strata (and if needed variable sets) for each module x domain combination.
 Together with `scheme_sampling_frame` and `sp_samplingframe_domain`, we will have the necessary and sufficient information to draw spatial samples and allocate locations to panels and date-time intervals (chapters \@ref(spatial-sampling) and \@ref(revisit)).
 
-### Helper objects in distributing sample sizes
+### Helper objects in distributing or setting sample sizes
 
 Preparing objects that will distribute sample sizes that have been set at a level higher than (sub)module x domain x scheme:
 
@@ -768,6 +768,27 @@ mne_core_proportions_sac_subset5_per_submodule <-
   arrange(module, submodule, domain, scheme)
 ```
 
+Since the sample sizes in the 'densification_mne_1' submodules of groundwater and soil schemes will be set at the type level, with a maximum budget of 8 types, we need to track the number of types that has been selected in chapter \@ref(#settings), and consider the budget proportion.
+
+```{r}
+densification_max_types <- 8
+densification_type_proportion_gw <- 
+  scheme_targetpop_sets %>% 
+  filter(stset == "sts_pan_effectmon_mne_densification") %>% 
+  pluck("targetpops_strata", 1) %>% 
+  filter(str_detect(scheme, "^GW")) %>% 
+  pull(stratum) %>% 
+  n_distinct() / densification_max_types
+densification_type_proportion_soil <- 
+  scheme_targetpop_sets %>% 
+  filter(stset == "sts_pan_effectmon_mne_densification") %>% 
+  pluck("targetpops_strata", 1) %>% 
+  filter(str_detect(scheme, "^SOIL")) %>% 
+  pull(stratum) %>% 
+  n_distinct() / densification_max_types
+```
+
+
 ### Collecting and setting design attributes at the submodule x domain x scheme level
 
 Joining submodule and scheme properties to the count statistics by submodule, domain and scheme, needing those attributes to generate further attributes, and repeating them here for now.
@@ -851,8 +872,10 @@ submodule_domain_scheme_designattr <-
       # NA in MNE means adopting the locations of the core scheme in the same compartment:
       !is_core_scheme & !str_detect(scheme, "^HQ") ~ NA_real_,
       module == "pan_effectmon_flanders" & submodule == "main" ~ case_when(
-        scheme == "GW_03.3" ~ 167,
-        scheme == "SOIL_03.2" ~ 400,
+        # the surplus in GW & SOIL is a protection against underprecision, and
+        # was transferred from the extra submodule
+        scheme == "GW_03.3" ~ 167 + (133 * 0.5),
+        scheme == "SOIL_03.2" ~ 400 + (1600/6 * 0.5),
         scheme == "SURF_03.4_lentic" ~ 64,
         scheme == "SURF_03.4_lotic" ~ 16
       ),
@@ -860,8 +883,8 @@ submodule_domain_scheme_designattr <-
       module == "pan_effectmon_sac5_custommeas" & 
         submodule == "main" & 
         !str_detect(scheme, "^HQ") ~ case_when(
-          scheme == "GW_03.3" ~ 28 * prop_domain_per_mne_scheme_submod,
-          scheme == "SOIL_03.2" ~ 67 * prop_domain_per_mne_scheme_submod,
+          scheme == "GW_03.3" ~ (28 + (22 * 0.5)) * prop_domain_per_mne_scheme_submod,
+          scheme == "SOIL_03.2" ~ (67 + (44 * 0.5)) * prop_domain_per_mne_scheme_submod,
           scheme == "SURF_03.4_lentic" ~ 11 * prop_domain_per_mne_scheme_submod,
           scheme == "SURF_03.4_lotic" ~ 3 * prop_domain_per_mne_scheme_submod
         ),
@@ -880,15 +903,18 @@ submodule_domain_scheme_designattr <-
       # sampling sizes in extra submodule of panfl
       module == "pan_effectmon_flanders" & 
         submodule == "densification_mne_1" ~ case_when(
-          scheme == "GW_03.3" ~ 133,
-          scheme == "SOIL_03.2" ~ 270,
+          # 133 * 0.5 and 270 * 0.5 is the current budget for 8 types
+          scheme == "GW_03.3" ~ (133 * 0.5) * densification_type_proportion_gw,
+          scheme == "SOIL_03.2" ~ (270 * 0.5) * densification_type_proportion_soil,
           scheme == "SURF_03.4_lentic" ~ 53
         ),
       # sampling sizes in extra submodule of pan5
       module == "pan_effectmon_sac5_custommeas" & 
         submodule == "densification_mne_1" ~ case_when(
-          scheme == "GW_03.3" ~ 22 * prop_domain_per_mne_scheme_submod,
-          scheme == "SOIL_03.2" ~ 44 * prop_domain_per_mne_scheme_submod,
+          scheme == "GW_03.3" ~ (22 * 0.5) * densification_type_proportion_gw *
+            prop_domain_per_mne_scheme_submod,
+          scheme == "SOIL_03.2" ~ (44 * 0.5) * densification_type_proportion_soil *
+            prop_domain_per_mne_scheme_submod,
           scheme == "SURF_03.4_lentic" ~ 9 * prop_domain_per_mne_scheme_submod
         ),
       # pan_transmon_be2100024 is set at scheme level
