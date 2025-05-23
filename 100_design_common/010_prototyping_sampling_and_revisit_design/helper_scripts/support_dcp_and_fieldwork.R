@@ -535,6 +535,13 @@ stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells <-
   )) %>%
   relocate(polygon_replacement_cells, .after = grts_address_final)
 
+# distribution of the number of polygon replacement cells per sampling unit:
+stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells %>%
+  mutate(nrcells = map_int(polygon_replacement_cells, nrow)) %>%
+  pull(nrcells) %>%
+  summary()
+
+
 # reading the level0-resolution SpatRaster layer that holds the level 3
 # addresses, to prepare for potential restriction to level 3 cells
 grts_mh_brick_lev3 <- read_GRTSmh(brick = TRUE)[["level3"]]
