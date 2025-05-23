@@ -339,7 +339,7 @@ stratum_schemetargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
   distinct(grts_address_final) %>%
   nrow() %>%
-  all.equal(global(units_cell_rast, "notNA") %>% as.integer())
+  all.equal(global(units_cell_rast, "notNA")[1, 1])
 
 # representing this limited number of cells as polygons: useful for plotting etc
 units_cell_polygon <-
