@@ -558,12 +558,14 @@ grts_mh_brick_lev3_index <- tibble(
 # calculate a the diagonal length of the bounding box of polygon cell centers,
 # since this is also a criterion to decide about the level 3 restriction.
 
-# Maximum allowed bboxdiag: if exceeded, we apply level 3 restriction.
-# Dimensions are based on those of a level 3 cell
-allowed_bboxdiag <- sqrt(2 * 256^2)
+# Maximum allowed bboxdiag: if exceeded and there are at least 32 replacement
+# cells in the polygon, we apply level 3 restriction. Dimensions are based on
+# those of a level 3 cell
+max_allowed_bboxdiag <- sqrt(2 * 256^2)
+min_nrcells_tosplit <- (2^3)^2 / 2
 # Maximum allowed number of cells in polygon; based on number of cells in a
 # level 3 cell. If exceeded, we apply level 3 restriction.
-allowed_nrcells <- (2^3)^2
+max_allowed_nrcells <- (2^3)^2
 
 stratum_schemetargetpanel_spsamples_terr_replacementcells <-
   stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells %>%
@@ -595,16 +597,19 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
           # cells from the level3-cell
           lev3adr
         } else if (
-          d <= allowed_bboxdiag & length(poladr_unique) <= allowed_nrcells
+          length(poladr_unique) > max_allowed_nrcells | (
+            d > max_allowed_bboxdiag &
+            length(poladr_unique) >= min_nrcells_tosplit
+          )
         ) {
-          # if polygon not too large, just apply polygon-constrained replacement
-          poladr %>%
-            distinct(cellnr_replac, grts_address_replac)
-        } else {
           # if polygon too large, apply 'polygon x level3-cell' constrained
           # replacement
           lev3adr %>%
             filter(grts_address_replac %in% poladr_unique)
+        } else {
+          # if polygon not too large, just apply polygon-constrained replacement
+          poladr %>%
+            distinct(cellnr_replac, grts_address_replac)
         }
         result %>%
           mutate(ranknr = row_number(grts_address_replac))
