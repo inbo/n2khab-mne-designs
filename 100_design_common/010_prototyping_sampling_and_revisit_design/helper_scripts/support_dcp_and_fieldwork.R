@@ -472,20 +472,28 @@ schemetargetpanel_spsamples_terr_hasgw %>%
 
 # The units that are eligible for local replacement of a specific cell-based
 # sampling unit are the other cells that belong to the same habitatmap polygon.
-# In case that this polygon is too large, i.e. exceeds 64 cells, OR if it has
-# too 'long' dimensions (evaluated from the bounding box of the polygon's cell
-# centers), then only the replacement cells are kept that belong to the same
-# 'level 3' GRTS address as the considered unit. The level 3 address is the GRTS
-# address of the enclosing large cell (256 * 256 quare meters; i.e. 64 level 0
-# units) of the coarser level3 GRTS raster.
+# In case that this polygon is too large, i.e. exceeds 64 cells, OR if it has at
+# least 32 cells in combination with too 'long' dimensions (evaluated from the
+# bounding box of the polygon's cell centers), then the replacement cells are
+# kept that belong to the same 'level 3' GRTS address as the considered unit (we
+# call this the anchor level 3 cell). The level 3 address is the GRTS address of
+# the enclosing large cell (256 * 256 quare meters; i.e. 64 level 0 units) of
+# the coarser level3 GRTS raster. These replacement cells are still supplemented
+# by those of the 'next' level 3 cell of the polygon if such one exists and if
+# the anchor level 3 cell has at most 32 cells, which is done to end up with a
+# reasonable amount of replacement cells, at the same time applying a decent
+# split of the polygon. With 'next level 3 cell' we mean the next level 3
+# address that is attached to the polygon, or the lowest one if the anchor level
+# 3 cell already had the highest address (since this is how lower level
+# addresses cyclically 'walk through' the higher level addresses).
 
 # Getting the replacement cells based on polygon. Beware that we must rely on
 # grts_address if grts_address_final is different, so we can just use
 # grts_address. In the case of the 'cell' join method, it is possible to get
-# multiple polygons attached to the same considered cell, provided that this
-# polygon has been labelled to contain the specific type. Further, some sampling
-# units concern previously assessed sites with the type, while this information
-# is not present in habitatmap_terr, hence also not in below used
+# multiple polygons attached to the same considered cell, provided that these
+# polygons have been labelled to contain the specific type. Further, some
+# sampling units concern previously assessed sites with the type, while this
+# information is not present in habitatmap_terr, hence also not in below used
 # hmt_pol_stratum_grts_cell_all_n2khab, so that the polygon_id is missing. In
 # these cases, for now, we will take all replacement cells according to the
 # level 3 cell (further down).
