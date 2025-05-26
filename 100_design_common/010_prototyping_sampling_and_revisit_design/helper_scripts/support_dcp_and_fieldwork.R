@@ -743,11 +743,13 @@ plot_replacement_example <- function(
       max_nr_replacement_cells
     )) %>%
     slice_sample(n = 1) %>%
+    (\(df) {cat(as.character(df$stratum), df$grts_address); df}) %>%
     pluck("replacement_cells", 1) %>%
     pull(cellnr_replac) %>%
     {grts_mh[., drop = FALSE]} %>%
     plot()
 }
+plot_replacement_example(65, 80)
 plot_replacement_example(64, 64)
 plot_replacement_example(40, 45)
 plot_replacement_example(30, 35)
