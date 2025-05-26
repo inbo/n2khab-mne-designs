@@ -480,7 +480,7 @@ schemetargetpanel_spsamples_terr_hasgw %>%
 # the enclosing large cell (256 * 256 quare meters; i.e. 64 level 0 units) of
 # the coarser level3 GRTS raster. These replacement cells are still supplemented
 # by those of the 'next' level 3 cell of the polygon if such one exists and if
-# the anchor level 3 cell has at most 32 cells, which is done to end up with a
+# the anchor level 3 cell has at most 16 cells, which is done to end up with a
 # reasonable amount of replacement cells, at the same time applying a decent
 # split of the polygon. With 'next level 3 cell' we mean the next level 3
 # address that is attached to the polygon, or the lowest one if the anchor level
@@ -617,6 +617,9 @@ min_nrcells_tosplit <- (2^3)^2 / 2
 # Maximum allowed number of cells in polygon; based on number of cells in a
 # level 3 cell. If exceeded, we apply level 3 restriction.
 max_allowed_nrcells <- (2^3)^2
+# Maximum nr of replacement cells after first level 3 cell restriction, below
+# which it is decided to add the second level 3 cell if available
+max_insufficient_nrcells_level3 <- (2^3)^2 / 4
 
 stratum_schemetargetpanel_spsamples_terr_replacementcells <-
   stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells %>%
@@ -628,6 +631,19 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
       ydiff <- max(coo[, "y"]) - min(coo[, "y"])
       sqrt(xdiff^2 + ydiff^2)
     }),
+    # calculate level3 address of current and next level0 address
+    level3_address = convert_level0_to_level3(
+      grts_address,
+      spatrast = grts_mh,
+      spatrast_index = grts_mh_index,
+      spatrast_lev3 = grts_mh_brick_lev3
+    ),
+    level3_address_next = convert_level0_to_level3(
+      grts_address_next,
+      spatrast = grts_mh,
+      spatrast_index = grts_mh_index,
+      spatrast_lev3 = grts_mh_brick_lev3
+    ),
     # get level 3 replacement cells for current GRTS address
     level3_replacement_cells = get_level3replacement_cellnrs(
       grts_address,
@@ -636,14 +652,27 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
       spatrast_lev3 = grts_mh_brick_lev3,
       spatrast_lev3_index = grts_mh_brick_lev3_index
     ),
+    # get level 3 replacement cells for next GRTS address
+    nextlevel3_replacement_cells = ifelse(
+      is.na(level3_address_next) | level3_address_next == level3_address,
+      list(NULL),
+      get_level3replacement_cellnrs(
+        grts_address_next,
+        spatrast = grts_mh,
+        spatrast_index = grts_mh_index,
+        spatrast_lev3 = grts_mh_brick_lev3,
+        spatrast_lev3_index = grts_mh_brick_lev3_index
+      )
+    ),
     # determine final replacement cells
     replacement_cells = pmap(
       list(
         polygon_replacement_cells,
         bboxdiag,
-        level3_replacement_cells
+        level3_replacement_cells,
+        nextlevel3_replacement_cells
       ),
-      function(poladr, d, lev3adr) {
+      function(poladr, d, lev3adr, nextlev3adr) {
         poladr_unique <- unique(poladr$grts_address_replac)
         result <-
         if (length(poladr_unique) == 1 && is.na(poladr_unique)) {
@@ -657,9 +686,24 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
           )
         ) {
           # if polygon too large, apply 'polygon x level3-cell' constrained
-          # replacement
-          lev3adr %>%
+          # replacement. If the result is quite small, add the next level3-cell
+          # if available (if not available, this means that all polygon cells
+          # belong to the same level 3 cell).
+          lev3_constrained <-
+            lev3adr %>%
             filter(grts_address_replac %in% poladr_unique)
+          if (
+            !is.null(nextlev3adr) &
+            nrow(lev3_constrained) <= max_insufficient_nrcells_level3
+          ) {
+            bind_rows(
+              lev3_constrained,
+              nextlev3adr %>%
+                filter(grts_address_replac %in% poladr_unique)
+            )
+          } else {
+            lev3_constrained
+          }
         } else {
           # if polygon not too large, just apply polygon-constrained replacement
           poladr %>%
@@ -670,7 +714,12 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
       }
     )
   ) %>%
-  select(-polygon_replacement_cells, -bboxdiag, -level3_replacement_cells) %>%
+  select(
+    -polygon_replacement_cells,
+    -bboxdiag,
+    -grts_address_next,
+    -contains("level3")
+  ) %>%
   relocate(replacement_cells, .after = grts_address_final)
 
 
