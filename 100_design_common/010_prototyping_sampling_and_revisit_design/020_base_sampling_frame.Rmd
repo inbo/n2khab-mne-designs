@@ -1056,7 +1056,7 @@ valid_extra_popunits_cell_all_n2khab <-
   ))
 ```
 
-#### Tidy object to add valid units to the base sampling frame
+#### Tidy object to add valid units to the base sampling frame {#tidy}
 
 Drawn GRTS addresses that have been locally replaced by another address will possibly be substituted in the sampling frame, since we need this to draw samples according to the GRTS address series.
 The degree to which this happens depends on the outcome of phab-correction (section \@ref(phab-correction)), as MHQ did not drop these locations in the application of phab-driven bernouilli sampling when drawing samples: only locations that are retained by phab-correction (while neglecting locally replaced drawn GRTS addresses) will lead to retaining the corresponding (replaced) drawn GRTS address.
@@ -1123,6 +1123,8 @@ As a precaution, we only consider the assessed absences that are not older than:
 
 - 'current year - 5' for open terrestrial types;
 - 'current year - 11' for forest types.
+
+In order to align with section \@ref(tidy), we don't include the locations that got a replacement, even though in many (but not all) cases those locations are recorded as absences for the considered type.
 
 ```{r eval = mhq_data_available}
 absent_popunits_cell_all_n2khab <- 
@@ -1211,7 +1213,14 @@ absent_popunits_cell_all_n2khab <-
   # only keep the absences
   filter(!is_present) %>% 
   select(-is_present) %>% 
-  mutate(stratum = factor(stratum, levels = levels(n2khab_strata$stratum)))
+  mutate(stratum = factor(stratum, levels = levels(n2khab_strata$stratum))) %>% 
+  # don't regard replaced GRTS addresses as absences to be dropped from the
+  # sampling frame; otherwise these cannot be sampled
+  anti_join(
+    valid_extra_popunits_cell_all_n2khab_tidy %>% 
+      filter(!is.na(replaced_by)),
+    join_by(stratum, grts_address)
+  )
 ```
 
 Checking that absences are not present in `valid_extra_popunits_cell_all_n2khab`.
