@@ -674,11 +674,11 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
       ),
       function(poladr, d, lev3adr, nextlev3adr) {
         poladr_unique <- unique(poladr$grts_address_replac)
-        result <-
         if (length(poladr_unique) == 1 && is.na(poladr_unique)) {
           # if polygon missing (but this needs a solution!), just return all
           # cells from the level3-cell
-          lev3adr
+          lev3adr %>%
+            mutate(ranknr = row_number(grts_address_replac))
         } else if (
           length(poladr_unique) > max_allowed_nrcells | (
             d > max_allowed_bboxdiag &
@@ -687,11 +687,15 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
         ) {
           # if polygon too large, apply 'polygon x level3-cell' constrained
           # replacement. If the result is quite small, add the next level3-cell
-          # if available (if not available, this means that all polygon cells
-          # belong to the same level 3 cell).
+          # if available, but keep its level0 ranks after the first one, since
+          # the idea is still to 'split' the polygon in the replacement
+          # procedure, only relaxing it if no replacement was possible in the
+          # first level3-cell. If no second level3-cell is available, this means
+          # that all polygon cells belong to the same level3-cell).
           lev3_constrained <-
             lev3adr %>%
-            filter(grts_address_replac %in% poladr_unique)
+            filter(grts_address_replac %in% poladr_unique) %>%
+            mutate(ranknr = row_number(grts_address_replac))
           if (
             !is.null(nextlev3adr) &
             nrow(lev3_constrained) <= max_insufficient_nrcells_level3
@@ -699,7 +703,11 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
             bind_rows(
               lev3_constrained,
               nextlev3adr %>%
-                filter(grts_address_replac %in% poladr_unique)
+                filter(grts_address_replac %in% poladr_unique) %>%
+                mutate(
+                  ranknr =
+                    row_number(grts_address_replac) + nrow(lev3_constrained)
+                )
             )
           } else {
             lev3_constrained
@@ -707,10 +715,9 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
         } else {
           # if polygon not too large, just apply polygon-constrained replacement
           poladr %>%
-            distinct(cellnr_replac, grts_address_replac)
+            distinct(cellnr_replac, grts_address_replac) %>%
+            mutate(ranknr = row_number(grts_address_replac))
         }
-        result %>%
-          mutate(ranknr = row_number(grts_address_replac))
       }
     )
   ) %>%
