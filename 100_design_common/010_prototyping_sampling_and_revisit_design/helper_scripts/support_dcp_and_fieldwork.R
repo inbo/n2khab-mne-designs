@@ -518,6 +518,58 @@ stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells <-
     relationship = "many-to-many",
     unmatched = "drop"
   ) %>%
+  select(-polygon_id) %>%
+  # we also determine the 'next GRTS address' per grts_address x stratum, which
+  # we will need to determine the 'next level 3 cell' per grts_address x
+  # stratum. This acts like 'within polygon', but for cell-joined types several
+  # adjacent polygons can be selected which we combine since we abstracted
+  # polygon_id away.
+  nest(addr_replac = grts_address_replac) %>%
+  mutate(
+    grts_address_next = map2_int(grts_address, addr_replac, function(grts, ar) {
+      if (all(is.na(ar$grts_address_replac))) {
+        return(NA_integer_)
+      }
+      grts_r <- sort(unique(ar$grts_address_replac))
+      grts_next_i <- which(grts_r == grts) + 1
+      # this gives back NA if grts_next_i is out of range, which is what we
+      # want:
+      grts_r[grts_next_i]
+    })
+  ) %>%
+  # GRTS addresses of the considered stratum that are member of the sample,
+  # either drawn or already in use as a replacement, are considered forbidden
+  # area to use as a replacement within the polygon for this stratum, since this
+  # would generate problems in the sample management. This step also drops the
+  # to-be-replaced address that is under consideration, which is no problem.
+  # Note that the following nesting step makes unique rows per stratum x
+  # set of replacement cells (~ mostly a single polygon).
+  nest(addr_sampled = c(
+    scheme_targetpanels,
+    grts_address,
+    grts_address_final,
+    last_type_assessment,
+    last_type_assessment_in_field,
+    last_inaccessible,
+    grts_address_next
+  )) %>%
+  # filter replacement addresses as described above and make them unique
+  mutate(
+    addr_replac = map2(addr_replac, addr_sampled, function(ar, as) {
+      ar %>%
+        filter(
+          !(grts_address_replac %in% as$grts_address),
+          !(grts_address_replac %in% as$grts_address_final)
+        ) %>%
+        distinct()
+    })
+  ) %>%
+  # unnest the list columns sequentially, and don't drop rows if no replacement
+  # cells are available: we want to keep all sampled locations in this data
+  # frame
+  unnest(addr_sampled) %>%
+  relocate(scheme_targetpanels) %>%
+  unnest(addr_replac, keep_empty = TRUE) %>%
   # get cell numbers of the replacement addresses (useful in visualization)
   left_join(
     grts_mh_index %>%
@@ -529,7 +581,6 @@ stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells <-
   # nesting polygon ids, cellnr & replacement addresses; the number of rows is
   # the same as before the first join above
   nest(polygon_replacement_cells = c(
-    polygon_id,
     cellnr_replac,
     grts_address_replac
   )) %>%
