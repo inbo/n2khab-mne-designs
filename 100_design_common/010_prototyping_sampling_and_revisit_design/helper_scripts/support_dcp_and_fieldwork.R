@@ -808,6 +808,31 @@ fag_fa <-
   distinct(field_activity_group, field_activity) %>%
   arrange(field_activity_group, field_activity)
 
+# Field activity sequences define the sequence of activities needed for some
+# objective (determining a variable). An activity sequence may be used by
+# different schemes, and a single scheme may combine more than one, since
+# multiple variables are determined by a single scheme.
+faseqs <-
+  mod_scheme_field_activity %>%
+  semi_join(mod_scheme_yrs_moco_ps, join_by(module, scheme)) %>%
+  distinct(activity_sequence, in_aquatic_subset, scheme) %>%
+  summarize(
+    schemes = str_flatten(scheme, collapse = ", "),
+    .by = c(activity_sequence, in_aquatic_subset)
+  )
+
+# faseqs_fag_fa shows the individual FAs and FAGs for each field activity sequence
+faseqs_fag_fa <-
+  field_activity_sequences %>%
+  semi_join(faseqs, join_by(activity_sequence))
+
+# Note that following has a more elaborate set of (partially non-field)
+# activities:
+actseqs_actgroups_acts <-
+  activity_sequences %>%
+  semi_join(faseqs, join_by(activity_sequence))
+
+
 fag_stratum_grts_calendar
 
 # fag_stratum_grts_calendar defines the needed visits of the spatial sampling
