@@ -621,12 +621,14 @@ max_allowed_nrcells <- (2^3)^2
 stratum_schemetargetpanel_spsamples_terr_replacementcells <-
   stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells %>%
   mutate(
+    # calculate diagonal length of bounding box of replacement cell centers
     bboxdiag = map_dbl(polygon_replacement_cells, \(df) {
       coo <- xyFromCell(grts_mh, df$cellnr_replac)
       xdiff <- max(coo[, "x"]) - min(coo[, "x"])
       ydiff <- max(coo[, "y"]) - min(coo[, "y"])
       sqrt(xdiff^2 + ydiff^2)
     }),
+    # get level 3 replacement cells for current GRTS address
     level3_replacement_cells = get_level3replacement_cellnrs(
       grts_address,
       spatrast = grts_mh,
@@ -634,6 +636,7 @@ stratum_schemetargetpanel_spsamples_terr_replacementcells <-
       spatrast_lev3 = grts_mh_brick_lev3,
       spatrast_lev3_index = grts_mh_brick_lev3_index
     ),
+    # determine final replacement cells
     replacement_cells = pmap(
       list(
         polygon_replacement_cells,
