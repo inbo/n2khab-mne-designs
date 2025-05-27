@@ -811,7 +811,13 @@ fag_fa <-
   mod_scheme_field_activity %>%
   semi_join(mod_scheme_yrs_moco_ps, join_by(module, scheme)) %>%
   distinct(field_activity_group, field_activity) %>%
-  arrange(field_activity_group, field_activity)
+  arrange(field_activity_group, field_activity) %>%
+  inner_join(
+    field_activities,
+    join_by(field_activity),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
 
 # Field activity sequences define the sequence of activities needed for some
 # objective (determining a variable). An activity sequence may be used by
@@ -826,16 +832,30 @@ faseqs <-
     .by = c(activity_sequence, in_aquatic_subset)
   )
 
-# faseqs_fag_fa shows the individual FAs and FAGs for each field activity sequence
+# faseqs_fag_fa shows the individual FAs and FAGs for each field activity
+# sequence
 faseqs_fag_fa <-
   field_activity_sequences %>%
-  semi_join(faseqs, join_by(activity_sequence))
+  semi_join(faseqs, join_by(activity_sequence)) %>%
+  inner_join(
+    field_activities,
+    join_by(field_activity),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
 
 # Note that following has a more elaborate set of (partially non-field)
 # activities:
 actseqs_actgroups_acts <-
   activity_sequences %>%
-  semi_join(faseqs, join_by(activity_sequence))
+  semi_join(faseqs, join_by(activity_sequence)) %>%
+  inner_join(
+    activities %>%
+      select(activity, activity_name),
+    join_by(activity),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
 
 
 fag_stratum_grts_calendar
