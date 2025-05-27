@@ -1,6 +1,6 @@
 # Generating an overall plan of field activity groups in space and time (FAG calendar) {#fag-calendar}
 
-The above calendar objects contain the structure needed for statistical inference, by considering spatiotemporal field activity groups (FAGs) in relation to scheme, module combo, panel split, stratum and spatial poststratum.
+The above calendar objects contain the structure needed for statistical inference, by considering spatiotemporal field activity groups (FAGs) in relation to scheme, module combo, panel set, stratum and spatial poststratum.
 
 However this does not mean that executing each row at the designated time and location makes sense in reality:
 
@@ -8,7 +8,7 @@ However this does not mean that executing each row at the designated time and lo
 - ADHOC FAGs (if they were kept in this workflow), while theoretically given a pure panel design, will only be carried out during other scheduled (non-biotic) FAGs and only with a low probability.
 
 In this section we will generate a sensible field activity calendar in terms of FAGs, location (GRTS address) x stratum and date interval.
-We still keep the scheme x moco x panel split information as nested tibbles (with unique rows) in the resulting tibbles of the FAG occasions, and we merge these nested tibbles as overlapping FAGs (rows) are merged (but not dropped).
+We still keep the scheme x moco x panel set information as nested tibbles (with unique rows) in the resulting tibbles of the FAG occasions, and we merge these nested tibbles as overlapping FAGs (rows) are merged (but not dropped).
 
 To determine a FAG overlap, not only identical FAGs are considered but also FAGs that overlap in the activities or activity specifics that they represent.
 In the latter case, the most 'sophisticated' FAG will be retained and the other overlapping ones are replaced by that one if they occur in the same FAG cycle in the same place and stratum.
@@ -39,7 +39,7 @@ If needed, the first `n_locvisits_per_fagcycle` with different start dates are k
 In this case, the shortest (i.e. most demanding) date interval is kept.
 
 
-**Missing functionality**: create an object that links the calendar with the result, so that the designed calendar of auxiliary FAGs can still be linked to the eventual field work. This may also be the logical place to store population sizes (and potential other sample attributes) needed to derive the sampling weights in inference, in a module combo x scheme (x panel split) x spatial poststratum x temporal poststratum.
+**Missing functionality**: create an object that links the calendar with the result, so that the designed calendar of auxiliary FAGs can still be linked to the eventual field work. This may also be the logical place to store population sizes (and potential other sample attributes) needed to derive the sampling weights in inference, in a module combo x scheme (x panel set) x spatial poststratum x temporal poststratum.
 
 ## Dropping low-frequency auxiliary FAGs if high-frequency occurs; calculate cycle ID
 
@@ -52,7 +52,7 @@ fag_stratum_grts_calendar_cycleid <-
       select(
         scheme, 
         module_combo_code, 
-        panel_split, 
+        panel_set, 
         in_aquatic_subset, 
         spsubset_needed_for_panel,
         year_first,
@@ -64,7 +64,7 @@ fag_stratum_grts_calendar_cycleid <-
     join_by(
       scheme,
       module_combo_code,
-      panel_split,
+      panel_set,
       in_aquatic_subset,
       spsubset_needed_for_panel,
       notation_paneldesign
@@ -109,7 +109,7 @@ fag_stratum_grts_calendar_cycleid <-
   select(-loceval_cycle) %>% 
   mutate(
     # we will only consider auxiliary FAGs in dropping planned FAGs across
-    # scheme x moco x panel split
+    # scheme x moco x panel set
     fag_is_auxiliary = str_detect(
       field_activity_group,
       "LOCEVAL|INST|SPATPOSIT|LEVREADDIVER"
@@ -147,11 +147,11 @@ fag_stratum_grts_calendar_cycleid <-
         "LOCEVALAQLOT"
       ))
   ) %>% 
-  # below step drops identical planned FAGs; the scheme x moco x panel split
+  # below step drops identical planned FAGs; the scheme x moco x panel set
   # level is collapsed
   nest(
     year_first = year_first,
-    scheme_moco_ps = c(scheme, module_combo_code, panel_split),
+    scheme_moco_ps = c(scheme, module_combo_code, panel_set),
     .by = c(
       stratum,
       grts_address,

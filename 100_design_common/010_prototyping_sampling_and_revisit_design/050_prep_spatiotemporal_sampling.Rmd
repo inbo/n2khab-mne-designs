@@ -21,7 +21,7 @@ This approach optimizes sampling design & inference for the module combination.
   We could also have applied this at the module x domain level, but then one needs to assign individual units to modules (and doing it in some randomized way, since we need interspersion of modules in time), even while the same revisit design applies, and it would lower the flexibility to maintain spatial balance when modules are stopped or added.
   - Clearly, also the division of panels between modules only applies to the domains where both modules overlap.
 - Combining modules with different revisit design: sampling units must be assigned to modules a priori, each module has its own GRTS series + spare addresses (hence mandatory gap needed).
-The challenge will be to maintain sufficient gap for spare units while also maintaining a fixed start point for a second module (or panel split) for the future that doesn't necessarily compound the rise of new modules.
+The challenge will be to maintain sufficient gap for spare units while also maintaining a fixed start point for a second module (or panel set) for the future that doesn't necessarily compound the rise of new modules.
 Then panel designs are created for each module separately.
 The same approach holds for split panel designs.
 
@@ -31,7 +31,7 @@ For now still without:
 - collapsing nearby units for groundwater schemes
 - the fact that the _installation_ of observation wells must be accelerated in the module's _first_ cycle if the latter is shorter than the enforced cycle duration.
 
-We will not take into account the fact that different modules can have _different end years_ (and maybe start years), so that their combination in a scheme and panel split would invoke the need for sample sizes and panel memberships on a yearly basis.
+We will not take into account the fact that different modules can have _different end years_ (and maybe start years), so that their combination in a scheme and panel set would invoke the need for sample sizes and panel memberships on a yearly basis.
 However, large shifts in the membership designs when a module in a module combo ends (invoking location redistribution over panels in order to restore an even spread) would effectively disrupt the revisit design of those locations.
 Since the actual end years of modules are highly uncertain, we simply ignore this and assume that the maximum end year is most useful at the module combo level.
 
@@ -80,7 +80,7 @@ mod_scheme_targetfieldmethod_paneldesign <-
   # add the FAG panel design
   inner_join(
     mod_scheme_fag_paneldesign %>% 
-      distinct(pick(module, scheme, field_activity_group, panel_split, revisit_pattern:last_col())),
+      distinct(pick(module, scheme, field_activity_group, panel_set, revisit_pattern:last_col())),
     join_by(module, scheme, field_activity_group),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
@@ -89,7 +89,7 @@ mod_scheme_targetfieldmethod_paneldesign <-
     module,
     scheme,
     main_field_activity,
-    panel_split,
+    panel_set,
     revisit_pattern:last_col()
   ))
 if (nrow(mod_scheme_targetfieldmethod_paneldesign) != nrow(mod_scheme_targetfieldmethod)) {
@@ -100,11 +100,11 @@ mod_scheme_target_paneldesign <-
   distinct(pick(-main_field_activity, -enforced_cycle_duration))
 ```
 
-### Module combos per scheme and panel split
+### Module combos per scheme and panel set
 
-Now determining the module combos per scheme and panel split.
-Do note that the module combo code can only be interpreted as a unique revisit design in combination with scheme and panel split!
-So a module combo has to be seen as an aggregation based on a common revisit design _between_ modules but _within_ scheme and panel split.
+Now determining the module combos per scheme and panel set.
+Do note that the module combo code can only be interpreted as a unique revisit design in combination with scheme and panel set!
+So a module combo has to be seen as an aggregation based on a common revisit design _between_ modules but _within_ scheme and panel set.
 
 ```{r}
 scheme_target_paneldesign <- 
@@ -127,7 +127,7 @@ scheme_target_paneldesign
 
 We end up with `r nrow(scheme_target_paneldesign)` different scheme x target panel design combinations, each of which applies to one or several modules.
 
-Schemes may have more than one revisit design, i.e. different module combinations x panel splits.
+Schemes may have more than one revisit design, i.e. different module combinations x panel sets.
 
 ```{r paged.print = FALSE}
 scheme_target_paneldesign %>% 
@@ -154,7 +154,7 @@ scheme_target_paneldesign %>%
 
 ### Relation between modules and module combos
 
-Creating an object that holds the relation between module, scheme, module combo, panel split, first & last years & first month.
+Creating an object that holds the relation between module, scheme, module combo, panel set, first & last years & first month.
 
 ```{r}
 mod_scheme_yrs_moco_ps <- 
@@ -168,18 +168,18 @@ mod_scheme_yrs_moco_ps <-
   # join module combos:
   inner_join(
     scheme_target_paneldesign %>% 
-      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      select(scheme, module_combo_code, module_combo, panel_set) %>% 
       unnest(module_combo),
     join_by(module, scheme),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>% 
-  arrange(scheme, module_combo_code, panel_split)
+  arrange(scheme, module_combo_code, panel_set)
 ```
 
 ### Conflicting modules in a module combo
 
-Checking which scheme x module combo x panel split rows have conflicting first or last years across modules.
+Checking which scheme x module combo x panel set rows have conflicting first or last years across modules.
 
 - conflicting last years:
 
@@ -190,7 +190,7 @@ mod_scheme_yrs_moco_ps_yrsmoco <-
     year_first_moco = min(year_first),
     year_last_moco = max(year_last),
     month_first_moco = min(month_first),
-    .by = c(scheme, panel_split, module_combo_code)
+    .by = c(scheme, panel_set, module_combo_code)
   )
 mod_scheme_yrs_moco_ps_yrsmoco %>% 
   select(-contains("_first")) %>% 
@@ -255,10 +255,10 @@ moco_order <- tribble(
   filter(!is.na(module_combo_code))
 ```
 
-Note that panel splits are always ranked in ascending order, assuming that panel split 1 represents the _largest_ number of sampling units.
-This should be taken into account when defining the panel splits.
+Note that panel sets are always ranked in ascending order, assuming that panel set 1 represents the _largest_ number of sampling units.
+This should be taken into account when defining the panel sets.
 
-To maximize matching of spatial samples across schemes, the module combo codes with the same rank within a common panel split rank will be forced to use the same subset of a GRTS series (i.e. GRTS address partition) for a particular stratum and domain!
+To maximize matching of spatial samples across schemes, the module combo codes with the same rank within a common panel set rank will be forced to use the same subset of a GRTS series (i.e. GRTS address partition) for a particular stratum and domain!
 
 Check that no module combos exist that are missed by above object.
 
@@ -270,7 +270,7 @@ stopifnot(all(
 
 ### Notes about multiple module combos in a scheme
 
-Note that _different_ module combos within a scheme are **currently** handled as if they were different panel splits, i.e. they need a separate portion of the GRTS series to sample from; the starting address could be set based on sample size proportion but after that the starting address should be held fixed.
+Note that _different_ module combos within a scheme are **currently** handled as if they were different panel sets, i.e. they need a separate portion of the GRTS series to sample from; the starting address could be set based on sample size proportion but after that the starting address should be held fixed.
 
 Note that this may not hold in general.
 This is currently invoked by the `pan_transmon_be2100024` module, which explicitly intends to apply the higher frequency monitoring to **new** (hence _extra_) monitoring locations, relative to the other modules.
@@ -291,7 +291,7 @@ On the other hand we should be aware that the current MHQ samples are the result
 Consequently:
 
 - it only makes sense to really combine both if they adopt the same sampling strategy;
-- it is best to consider the additional MHQ modules as panel split 'number 2', invoking a gap in the GRTS address series and making clear these additional data should actually be considered separately.
+- it is best to consider the additional MHQ modules as panel set 'number 2', invoking a gap in the GRTS address series and making clear these additional data should actually be considered separately.
 
 Reading data sources with Flemish MHQ samples.
 Note that we use the drawn GRTS address, as this is the identifier of the sampling unit within each stratum.

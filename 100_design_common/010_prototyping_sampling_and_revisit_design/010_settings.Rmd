@@ -548,7 +548,7 @@ spare_coef_default <- 3L
 ```
 
 We will however apply a much lower number for aquatic types, as these are mostly already known and monitored before.
-When combining multiple revisit designs (multiple modules or panel splits), each needs its own spare units and this can cause large gaps in the GRTS address series.
+When combining multiple revisit designs (multiple modules or panel sets), each needs its own spare units and this can cause large gaps in the GRTS address series.
 
 ```{r}
 spare_coef_aq <- 0.2
@@ -1247,9 +1247,9 @@ FAGs with a LOCEVALxxx activity need a cycle duration that depends on the type:
 
 However, since the LOCEVAL activities are auxiliary FAGs (with regard to the target variables), this frequency should only be used in _dropping_ already planned LOCEVAL activities, not for scheduling them:
 
-- the integration of multiple modules, schemes and panel splits can lead to unneeded higher frequencies than the above, so dropping will be needed;
-- in scheduling the LOCEVAL activities, the module x scheme x panel split's cycle duration prevails and the above defaults are not used.
-Indeed, if the module x scheme x panel split's cycle duration is longer than an above cycle duration, then this means (in a serially alternating pattern) that for each location the target variable is determined in only one year of that longer cycle, so that one LOCEVAL activity is indeed sufficient during one cycle;
+- the integration of multiple modules, schemes and panel sets can lead to unneeded higher frequencies than the above, so dropping will be needed;
+- in scheduling the LOCEVAL activities, the module x scheme x panel set's cycle duration prevails and the above defaults are not used.
+Indeed, if the module x scheme x panel set's cycle duration is longer than an above cycle duration, then this means (in a serially alternating pattern) that for each location the target variable is determined in only one year of that longer cycle, so that one LOCEVAL activity is indeed sufficient during one cycle;
 - still, the decision whether two different LOCEVAL occasions from two different schemes with the same cycle duration and during the same cycle should be kept, is to be decided using the above type-specific cycle durations: if they are less separated than the type-specific cycle duration, then only the first is kept, otherwise both are kept.
 
 ##### Start and end dates of FAGs with LOCEVAL or LSVI activities {#type-dates}
@@ -1493,12 +1493,12 @@ This will matter most for data collection plans.
 mod_scheme_fag_paneldesign <-
   mod_scheme_fag %>% 
   # Adding preliminary support for split panels; to be set as NA where
-  # applicable. We call different splits of a panel design a 'panel_split' and
+  # applicable. We call different splits of a panel design a 'panel_set' and
   # they are numbered within module x scheme x FAG x spatial subset (but I
   # actually expect only module x scheme to be relevant for the number of
-  # distinguished panel_splits; later on we effectively consider this at scheme
+  # distinguished panel_sets; later on we effectively consider this at scheme
   # level so that we get the same locations for all FAGs in a module x scheme)
-  mutate(panel_split = 1L) %>% 
+  mutate(panel_set = 1L) %>% 
   inner_join(
     module_scheme_cycle_duration,
     join_by(module, scheme),
@@ -1620,7 +1620,7 @@ mod_scheme_fag_paneldesign <-
   ) %>% 
   select(-enforce_cycle_duration_y) %>% 
   relocate(cycle_duration_y, .before = enforced_cycle_duration) %>% 
-  relocate(panel_split, .after = field_activity_group) %>% 
+  relocate(panel_set, .after = field_activity_group) %>% 
   arrange(field_activity_group)
 ```
 
@@ -1665,7 +1665,7 @@ mod_scheme_fag_paneldesign %>%
     scheme_first = first(scheme),
     scheme_last = last(scheme),
     n_schemes = n_distinct(scheme),
-    .by = c(field_activity_group, panel_split, revisit_pattern:last_col())
+    .by = c(field_activity_group, panel_set, revisit_pattern:last_col())
   ) %>%
   relocate(contains("scheme")) %>% 
   arrange(field_activity_group)

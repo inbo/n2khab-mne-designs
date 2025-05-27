@@ -23,7 +23,7 @@ spsamples_sf_vmm <-
       distinct(
         scheme,
         module_combo_code,
-        panel_split,
+        panel_set,
         sp_poststratum,
         stratum,
         grts_address,
@@ -38,7 +38,7 @@ spsamples_sf_vmm <-
     join_by(
       scheme,
       module_combo_code,
-      panel_split,
+      panel_set,
       sp_poststratum,
       stratum,
       grts_address
@@ -47,7 +47,7 @@ spsamples_sf_vmm <-
   ) %>%
   select(
     -module_combo_code,
-    -panel_split,
+    -panel_set,
     -typelevel_certain,
     -assessed_in_field,
     -assessment_date,

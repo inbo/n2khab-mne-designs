@@ -36,7 +36,7 @@ biotic_fag_scheme_aggr <-
       ))
   ) %>%
   select(-is_mhq, -category) %>%
-  nest(scheme_moco_ps = c(scheme, module_combo_code, panel_split)) %>%
+  nest(scheme_moco_ps = c(scheme, module_combo_code, panel_set)) %>%
   mutate(
     year = year(date_start) %>% as.integer(),
     schemes = map_chr(scheme_moco_ps, function(df) {

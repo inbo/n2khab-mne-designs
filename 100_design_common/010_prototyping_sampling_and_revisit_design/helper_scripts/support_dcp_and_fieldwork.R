@@ -199,7 +199,7 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
   distinct(
     scheme,
     module_combo_code,
-    panel_split,
+    panel_set,
     stratum,
     # 'aquatic' column will be improved for 7220 later on (now it simply has a
     # duplication (TRUE + FALSE) of all locations)
@@ -221,23 +221,23 @@ n2khab_types_expanded_properties %>%
   distinct(grts_join_method, sample_support_code, sample_support) %>%
   arrange(grts_join_method, sample_support_code)
 
-# with the currently active modules, module_combo_code and panel_split have a
+# with the currently active modules, module_combo_code and panel_set have a
 # single unique value for each scheme. This is expected to change though in
-# future (module_combo_code and panel_split do 'split' a scheme's spatial
+# future (module_combo_code and panel_set do 'split' a scheme's spatial
 # sample, applying different revisit designs). However we will currently take
 # advantage of their uniqueness to keep things as simple as possible. Checking
 # that foregoing statement is TRUE:
 scheme_moco_ps_stratum_targetpanel_spsamples %>%
-  distinct(scheme, module_combo_code, panel_split) %>%
+  distinct(scheme, module_combo_code, panel_set) %>%
   {nrow(.) == nrow(distinct(., scheme))}
 
-# merging scheme:module_combo_code:panel_split:targetpanel, still distinguishing
+# merging scheme:module_combo_code:panel_set:targetpanel, still distinguishing
 # strata separately (even though they may share their location: this is unreal
 # in the case of multiple cell-centered strata). For now, not distinguishing
-# module_combo and panel_split as explained above.
+# module_combo and panel_set as explained above.
 stratum_schemetargetpanel_spsamples <-
   scheme_moco_ps_stratum_targetpanel_spsamples %>%
-  select(-module_combo_code, -panel_split) %>%
+  select(-module_combo_code, -panel_set) %>%
   unite(scheme_targetpanel, scheme, targetpanel, sep = ":") %>%
   nest(scheme_targetpanels = scheme_targetpanel) %>%
   mutate(
@@ -878,7 +878,7 @@ fag_fa_stratum_grts_calendar <-
   select(-c(typelevel_certain:inaccessible))
 
 # Note that both calendar objects have a scheme_moco_ps column that makes clear
-# which scheme x module combo x panel split the FAG is serving. This may be a
+# which scheme x module combo x panel set the FAG is serving. This may be a
 # SUBSET of the same information at the level of the spatial sampling unit
 # without considering FAG occasions, since not all field activities necessarily
 # serve all schemes.

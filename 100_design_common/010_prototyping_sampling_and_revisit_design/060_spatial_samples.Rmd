@@ -2,7 +2,7 @@
 
 ## Set GRTS address thresholds per domain and stratum for cross-scheme synergies
 
-Determining fixed GRTS address thresholds per domain and stratum to assign to module combos and panel splits, applicable across schemes, in order to maintain maximum synergy across schemes.
+Determining fixed GRTS address thresholds per domain and stratum to assign to module combos and panel sets, applicable across schemes, in order to maintain maximum synergy across schemes.
 
 The threshold is the GRTS address start where a series should start.
 For this, also the relationship of module combos between schemes must be investigated and aligned.
@@ -43,7 +43,7 @@ scheme_sampling_frame %>%
 However for synergy with schemes from other compartments, we will still use it in all situations, also taking into account that the sample sizes for schemes in the SOIL compartment are currently the largest, and based on sampling frame 0.
 This choice is also because it's better to generate thresholds further apart than too close together for certain schemes.
 
-Defining the GRTS partition number, based on the module combo **rank** and panel split, for each domain and stratum, hence across schemes.
+Defining the GRTS partition number, based on the module combo **rank** and panel set, for each domain and stratum, hence across schemes.
 We only take into account sample sizes larger than zero.
 
 ```{r}
@@ -66,7 +66,7 @@ moco_dom_stratum_grtspart <-
   # joining module combos
   inner_join(
     scheme_target_paneldesign %>% 
-      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      select(scheme, module_combo_code, module_combo, panel_set) %>% 
       unnest(module_combo),
     join_by(module, scheme),
     relationship = "many-to-one",
@@ -80,13 +80,13 @@ moco_dom_stratum_grtspart <-
       sum(sp_sample_size_all_panels_stratum),
       max(nunits)
     ),
-    .by = c(scheme, module_combo_code, panel_split, domain, stratum, nunits)
+    .by = c(scheme, module_combo_code, panel_set, domain, stratum, nunits)
   ) %>% 
   # use maximum sample sizes across schemes for common panel designs, domain and
   # stratum, since these should drive GRTS series partitioning:
   summarize(
     max_sample_size_all_panels = max(total_sample_size_all_panels),
-    .by = c(module_combo_code, panel_split, domain, stratum)
+    .by = c(module_combo_code, panel_set, domain, stratum)
   ) %>% 
   # add module combo rank:
   inner_join(
@@ -97,7 +97,7 @@ moco_dom_stratum_grtspart <-
   ) %>% 
   # determine rank number of the GRTS partition
   mutate(
-    grts_part = rank(moco_rank * 1000 + panel_split, ties.method = "min"),
+    grts_part = rank(moco_rank * 1000 + panel_set, ties.method = "min"),
     .by = c(domain, stratum)
   )
 ```
@@ -116,7 +116,7 @@ dom_stratum_grtspart_threshold <-
   # determine max sample size for each GRTS partition rank per domain x stratum,
   # which will ultimately drive the GRTS partitioning for the same revisit
   # design and across module combos with the same rank (note that different
-  # panel splits always trigger another rank)
+  # panel sets always trigger another rank)
   summarize(
     max_sample_size_all_panels = max(max_sample_size_all_panels),
     .by = c(domain, stratum, grts_part)
@@ -224,9 +224,9 @@ dom_stratum_grtspart_threshold %>%
 **Missing functionality**: write a file with these thresholds (GRTS partition definitions), so that it can be read in a static way from some point on!!
 
 
-## Apply the GRTS address threshold to the module combos and panel splits
+## Apply the GRTS address threshold to the module combos and panel sets
 
-Expanding the GRTS-partition-level GRTS-threshold to the level of module combos and panel splits (per domain and stratum).
+Expanding the GRTS-partition-level GRTS-threshold to the level of module combos and panel sets (per domain and stratum).
 
 ```{r}
 moco_dom_stratum_grtspart_threshold <- 
@@ -286,7 +286,7 @@ scheme_moco_ps_dom_stratum_sample_size <-
   # joining module combos
   inner_join(
     scheme_target_paneldesign %>% 
-      select(scheme, module_combo_code, module_combo, panel_split) %>% 
+      select(scheme, module_combo_code, module_combo, panel_set) %>% 
       unnest(module_combo),
     join_by(module, scheme),
     relationship = "many-to-one",
@@ -303,7 +303,7 @@ scheme_moco_ps_dom_stratum_sample_size <-
     .by = c(
       scheme,
       module_combo_code,
-      panel_split,
+      panel_set,
       sampling_frame_id,
       cycle_duration_y,
       domain,
@@ -325,7 +325,7 @@ aggregate_sample_size(
   print(n = Inf)
 ```
 
-Drawing spatial samples per scheme and GRTS partition (hence for module combos x panel splits), for each stratum x domain.
+Drawing spatial samples per scheme and GRTS partition (hence for module combos x panel sets), for each stratum x domain.
 This includes the step to redraw the sample for domains included by another domain (typically because of module combinations), to ensure that no units are drawn more than once and the GRTS series in the domain is one series.
 
 Note that the term 'domain' causes some confusion when considered across modules:
@@ -350,13 +350,13 @@ scheme_moco_ps_stratum_dom_spsamples_nested <-
   inner_join(
     moco_dom_stratum_grtspart_threshold %>% 
       select(-grts_part),
-    join_by(module_combo_code, panel_split, domain, stratum),
+    join_by(module_combo_code, panel_set, domain, stratum),
     relationship = "many-to-one",
     unmatched = "error"
   ) %>% 
   nest(moco_ps_domain_stratum_spsamplesize = c(
     module_combo_code, 
-    panel_split,
+    panel_set,
     domain, 
     stratum, 
     sp_sample_size_all_panels_stratum,
@@ -369,7 +369,7 @@ scheme_moco_ps_stratum_dom_spsamples_nested <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
-  # drawing an independent sample per scheme, domain, stratum and module combo & panel split:
+  # drawing an independent sample per scheme, domain, stratum and module combo & panel set:
   mutate(
     spsample = map2(moco_ps_domain_stratum_spsamplesize, sampling_frame_domain, function(dss, sfd) {
       dss %>% 
@@ -413,7 +413,7 @@ scheme_moco_ps_stratum_dom_spsamples_nested <-
   ) %>%
   select(scheme, spsample) %>%
   unnest(spsample) %>% 
-  # handling the overlap between domains within module combo x panel split:
+  # handling the overlap between domains within module combo x panel set:
   # above, the samples have been drawn independently so now this has to be
   # corrected!
   mutate(
@@ -433,7 +433,7 @@ scheme_moco_ps_stratum_dom_spsamples_nested <-
       including_domains <- including_domains[including_domains %in% ds$domain]
       if (length(including_domains) > 1) {
         stop(
-          "Multiple including domains in one module combo x panel split",
+          "Multiple including domains in one module combo x panel set",
           " x stratum are not supported."
         )
       }
@@ -495,12 +495,12 @@ scheme_moco_ps_stratum_dom_spsamples <-
   unnest(domain_spsample)
 ```
 
-Checking that no sampling units overlap between domains within the combination of module combo, scheme, panel split and stratum.
+Checking that no sampling units overlap between domains within the combination of module combo, scheme, panel set and stratum.
 
 ```{r}
 stopifnot(
   scheme_moco_ps_stratum_dom_spsamples %>% 
-    count(scheme, module_combo_code, panel_split, stratum, grts_address) %>% 
+    count(scheme, module_combo_code, panel_set, stratum, grts_address) %>% 
     filter(n > 1) %>% 
     nrow() == 0
 )
@@ -522,7 +522,7 @@ Hence in this object it is clear which sampling units are added surplus in speci
 
 However, given samples that belong to different and potentially overlapping domains, we must take into account several aspects:
 
-- **Panel memberships** will be based on the GRTS series for each revisit design of a stratum in a scheme, hence for a module combo x panel split that applies to this scheme (this has already been prepared by implementing the GRTS partition thresholds).
+- **Panel memberships** will be based on the GRTS series for each revisit design of a stratum in a scheme, hence for a module combo x panel set that applies to this scheme (this has already been prepared by implementing the GRTS partition thresholds).
 This is done in order to maintain long-term spatial balance per revisit design and to minimize the possibility that sampling units jump from one revisit design to another as a consequence of changes in the spatial sampling frame.
 Furthermore, the panel membership design is created separately for each included (or multiple non-overlapping) domain and for the remainder of the including domain.
 Otherwise the units of an included domain would not be well spread over the panels when specifically looking at an included domain (for which a module is obviously present, hence an inference requested).
@@ -530,7 +530,7 @@ Otherwise the units of an included domain would not be well spread over the pane
 We regard them as poststrata rather than strata, since their spatial sample size is not predetermined.
 (But note that one could counterargue that the panel membership is controlled by the poststrata, hence they do affect the spatiotemporal sample.)
 - Consequently, a separate set of **spare units** is needed for each revisit design of a stratum in a scheme, hence they must be generated at the level of spatial poststrata in a revisit design.
-The _number_ of spare units will be determined based on the stratum sample size of each spatial poststratum, for a given revisit design (~ module combo x panel split) in a scheme.
+The _number_ of spare units will be determined based on the stratum sample size of each spatial poststratum, for a given revisit design (~ module combo x panel set) in a scheme.
 
 Now generating the spatial poststrata (which replace the domain level) and adding spare units.
 (Note: for domain-specific inferences, re-introduction of domains is needed, where units in overlapped domains will be reused for each domain but with different sampling weights.)
@@ -549,7 +549,7 @@ scheme_moco_ps_stratum_sppost_spsamples_spares <-
     spare_coef = ifelse(is_strictly_aquatic, spare_coef_aq, spare_coef_default)
   ) %>% 
   select(-is_strictly_aquatic) %>% 
-  # add list columns for scheme x module combo x panel split x stratum:
+  # add list columns for scheme x module combo x panel set x stratum:
   mutate(
     # 1. vector that defines relevant spatial poststrata
     sp_poststrata = map(domain_spsample, function(ds) {
@@ -653,11 +653,11 @@ scheme_moco_ps_stratum_sppost_spsamples_spares <-
   select(
     scheme,
     module_combo_code,
-    panel_split,
+    panel_set,
     stratum,
     sp_poststr_samples_spareunits
   ) %>% 
-  arrange(scheme, module_combo_code, panel_split, stratum)
+  arrange(scheme, module_combo_code, panel_set, stratum)
 ```
 
 Total size of `scheme_moco_ps_stratum_sppost_spsamples_spares` after unnesting.

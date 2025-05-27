@@ -341,7 +341,7 @@ compartment_paneldesign_fags %>%
 # - fag_stratum_grts_calendar
 
 scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
-  distinct(scheme, module_combo_code, panel_split, generic_panels) %>%
+  distinct(scheme, module_combo_code, panel_set, generic_panels) %>%
   unnest(generic_panels) %>%
   rename(location_set = id) %>%
   rename_with(
@@ -369,7 +369,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
   count(
     scheme,
     module_combo_code,
-    panel_split,
+    panel_set,
     in_aquatic_subset,
     notation_paneldesign,
     panel,

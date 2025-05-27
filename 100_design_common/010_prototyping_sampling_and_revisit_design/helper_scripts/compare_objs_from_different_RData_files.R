@@ -27,7 +27,7 @@ ls(envir = panflpan5_nophabcorrection)
 get("scheme_moco_ps_dom_stratum_sample_size", envir = panflpan5_nophabcorrection) %>%
   anti_join(
     get("scheme_moco_ps_dom_stratum_sample_size", envir = panflpan5_previous),
-    join_by(scheme, module_combo_code, panel_split, sampling_frame_id, cycle_duration_y, domain, stratum)
+    join_by(scheme, module_combo_code, panel_set, sampling_frame_id, cycle_duration_y, domain, stratum)
   )
 get("mod_dom_scheme_ssf_stratum_nunits", envir = panflpan5_nophabcorrection) %>%
   anti_join(
@@ -44,7 +44,7 @@ get("scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship", envir = panflpan5
   anti_join(
     get("scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship", envir = panflpan5_previous),
     # .,
-    join_by(scheme, module_combo_code, panel_split, notation_paneldesign, stratum, sp_poststratum)
+    join_by(scheme, module_combo_code, panel_set, notation_paneldesign, stratum, sp_poststratum)
   )
 
 stratum_grts_n2khab_phabcorrected_no_replacements <-
@@ -53,7 +53,7 @@ stratum_grts_n2khab_phabcorrected_no_replacements <-
 get("scheme_moco_ps_stratum_dom_spsamples", envir = panflpan5_nophabcorrection) %>%
   anti_join(
     get("scheme_moco_ps_stratum_dom_spsamples", envir = panflpan5_previous),
-    join_by(scheme, module_combo_code, panel_split, stratum, domain, grts_address)
+    join_by(scheme, module_combo_code, panel_set, stratum, domain, grts_address)
   ) %>%
   add_assessment_data() %>%
   count(assessed_in_field)
@@ -81,7 +81,7 @@ get("module_domain_scheme_stratum_sample_size", envir = panflpan5_nophabcorrecti
 get("scheme_moco_ps_dom_stratum_sample_size", envir = panflpan5_nophabcorrection) %>%
   anti_join(
     get("scheme_moco_ps_dom_stratum_sample_size", envir = panflpan5),
-    join_by(scheme, module_combo_code, panel_split, sampling_frame_id, cycle_duration_y, domain, stratum)
+    join_by(scheme, module_combo_code, panel_set, sampling_frame_id, cycle_duration_y, domain, stratum)
   )
 
 # large shifts in both directions wrt locations (> 1/3), and leading to a net
@@ -93,7 +93,7 @@ get("scheme_moco_ps_stratum_sppost_spsamples_sf", envir = panflpan5_nophabcorrec
     get("scheme_moco_ps_stratum_sppost_spsamples_sf", envir = panflpan5) %>%
       st_drop_geometry(),
     .,
-    join_by(scheme, module_combo_code, panel_split, stratum, sp_poststratum, grts_address)
+    join_by(scheme, module_combo_code, panel_set, stratum, sp_poststratum, grts_address)
   )
 
 
