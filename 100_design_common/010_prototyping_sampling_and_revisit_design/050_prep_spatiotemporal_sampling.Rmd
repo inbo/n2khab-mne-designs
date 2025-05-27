@@ -44,36 +44,36 @@ We prefer this in order to align the full GRTS series with each reporting period
 ## Module combinations (module combos) per scheme based on common panel design of target variables {#moco}
 
 Determining module combos per scheme based on common panel design characteristics _of target variables_.
-The target variables limit the main field methods of a module x scheme to a great extent, since the latter also comprise variables for explanation & quality control.
+The target variables limit the main field activities of a module x scheme to a great extent, since the latter also comprise variables for explanation & quality control.
 
 First create an object with the 'target' panel designs per module and scheme (target referring to the target variables restriction).
 
 ```{r}
 mod_scheme_targetfieldmethod <- 
-  mod_scheme_mainfieldmethod %>% 
+  mod_scheme_mainfieldactivity %>% 
   left_join(
     mod_scheme_vars %>% 
       filter(target) %>% 
       distinct(module, scheme, main_datacollection_method) %>% 
       mutate(target_envvar = TRUE),
-    join_by(module, scheme, main_field_method == main_datacollection_method),
+    join_by(module, scheme, main_field_activity == main_datacollection_method),
     relationship = "one-to-one",
     unmatched = "drop"
   ) %>% 
-  # the main field method of MHQ schemes also corresponds to a target variable;
+  # the main field activity of MHQ schemes also corresponds to a target variable;
   # in MHQ we only defined a 'variable set' LSVI...
   filter(target_envvar | str_detect(scheme, "^HQ")) %>% 
   select(-is_core_scheme, -target_envvar)
 mod_scheme_targetfieldmethod_paneldesign <- 
   mod_scheme_targetfieldmethod %>% 
-  # expand with FAG (note that some main field methods link to more than one
+  # expand with FAG (note that some main field activities link to more than one
   # FAG, which has to do with the spatial subsets, which we can ignore here
-  # since in the case of the MAIN field method these don't cause differences in
+  # since in the case of the MAIN field activity these don't cause differences in
   # panel designs but only in activities.)
   inner_join(
     mod_scheme_field_activity %>% 
       distinct(module, scheme, field_activity, field_activity_group),
-    join_by(module, scheme, main_field_method == field_activity),
+    join_by(module, scheme, main_field_activity == field_activity),
     relationship = "one-to-many",
     unmatched = c("error", "drop")
   ) %>% 
@@ -88,7 +88,7 @@ mod_scheme_targetfieldmethod_paneldesign <-
   distinct(pick(
     module,
     scheme,
-    main_field_method,
+    main_field_activity,
     panel_split,
     revisit_pattern:last_col()
   ))
@@ -97,7 +97,7 @@ if (nrow(mod_scheme_targetfieldmethod_paneldesign) != nrow(mod_scheme_targetfiel
 }
 mod_scheme_target_paneldesign <- 
   mod_scheme_targetfieldmethod_paneldesign %>% 
-  distinct(pick(-main_field_method, -enforced_cycle_duration))
+  distinct(pick(-main_field_activity, -enforced_cycle_duration))
 ```
 
 ### Module combos per scheme and panel split

@@ -7,7 +7,7 @@ Some ideas that were noted before writing the code (some are not completely impl
 - also make membership design linked between such different supergroups of the same sample size, where these have a compatible number of panels, e.g. if one panel in one supergroup can be the sum of 4 panels of another supergroup.
 - start with the supergroups that coincide with the panel designs of the _main_ field method of _target_ variables, as we plan to optimize the spatial samples in order to deal with the representation of those panel designs across modules, schemes and domains.
 - apply non-core FAG panels only to locations not covered by a corresponding core FAG
-- select a single winning FAG for competition in time (for the same FAG) or between interlinked FAGs (take the superior one and schedule it as the first one). However don't do this for the FAG with the main field method of each scheme: the data collection design must not be harmed!
+- select a single winning FAG for competition in time (for the same FAG) or between interlinked FAGs (take the superior one and schedule it as the first one). However don't do this for the FAG with the main field activity of each scheme: the data collection design must not be harmed!
 - for MNE, the LOCEVAL activity must take place one year beforehand!
 - SPATPOSITxxx: inflate the panel periods by 3 months at the end (so they will overlap)
 - ADHOCxxx: reduce the number of occasions by sampling them
@@ -100,9 +100,9 @@ scheme_moco_ps_sppost_stratum_sample_size_obtained %>%
 
 ### Lifting mod_scheme_fag_paneldesign to the module combo & FA supergroup level
 
-The module combos (of a scheme x panel split) reflect a common revisit design of the main field method of the target variable, across modules.
+The module combos (of a scheme x panel split) reflect a common revisit design of the main field activity of the target variable, across modules.
 We use this entity to populate all the different FAG panel designs (grouped into field activity supergroups) with the same corresponding sampling units (from `scheme_moco_ps_stratum_sppost_spsamples`).
-So this means that the spatial sample of a module combo in a scheme x panel split will be used for all field activity revisit designs of this scheme x panel split, including that of the main field method of the target variable.
+So this means that the spatial sample of a module combo in a scheme x panel split will be used for all field activity revisit designs of this scheme x panel split, including that of the main field activity of the target variable.
 
 A field activity supergroup (FAS) combines multiple FAGs with the same revisit design, in the same scheme x module combo x panel split x spatial subset.
 Membership designs should be implemented at the FAS level.
@@ -114,7 +114,7 @@ FASs of different spatial subsets can share their revisit design, scheme, module
 
 <!-- The other solution may be to work at the module level right away, hence respecting different sets of FAGs per module; this as well assumes module labelling of sampling units! -->
 
-<!-- For now I prefer to ignore this on condition that no modules are effectively combined that pose this problem, hence we always need to verify the existence of clashes, for main field methods (which directly relate to target environmental vars) and for activity sequences (which trigger the FAGs). -->
+<!-- For now I prefer to ignore this on condition that no modules are effectively combined that pose this problem, hence we always need to verify the existence of clashes, for main field activities (which directly relate to target environmental vars) and for activity sequences (which trigger the FAGs). -->
 
 <!-- Note that the following is wrong, since the spatial samples and spatial subsets already cover 'stratum': ~Since different modules can have different target populations for the same scheme, hence different applicable spatial subsets, we must do this at the stratum level.~ -->
 
@@ -122,14 +122,14 @@ FASs of different spatial subsets can share their revisit design, scheme, module
 
 Before we execute this plan, we must verify the degree to which:
 
-- main field methods are repeated _in all modules_ in the same scheme x module combo x panel split.
+- main field activities are repeated _in all modules_ in the same scheme x module combo x panel split.
 Where this is not the case, it must be verified whether the combination of modules poses problems at the level of the interpretation of the involved (target) environmental variable, and it should be decided whether this combination of modules can be held.
 
-  Main field methods not represented across all modules in the same scheme x module combo x panel split:
+  Main field activities not represented across all modules in the same scheme x module combo x panel split:
 
 ```{r}
-moco_mod_scheme_ps_conflicting_mainfieldmethods <- 
-  mod_scheme_mainfieldmethod %>% 
+moco_mod_scheme_ps_conflicting_mainfieldactivities <- 
+  mod_scheme_mainfieldactivity %>% 
   # join module combos:
   inner_join(
     scheme_target_paneldesign %>% 
@@ -145,14 +145,14 @@ moco_mod_scheme_ps_conflicting_mainfieldmethods <-
     n_mod = n_distinct(module),
     .by = c(scheme, module_combo_code, panel_split)
   ) %>% 
-  # differentiate number of different modules for each main field method
+  # differentiate number of different modules for each main field activity
   mutate(
-    n_mod_mainfieldmethod = n_distinct(module),
-    .by = c(scheme, module_combo_code, panel_split, main_field_method)
+    n_mod_mainfieldactivity = n_distinct(module),
+    .by = c(scheme, module_combo_code, panel_split, main_field_activity)
   ) %>% 
   # we like both of these numbers to be the same, but which ones are different?
-  filter(n_mod != n_mod_mainfieldmethod)
-moco_mod_scheme_ps_conflicting_mainfieldmethods
+  filter(n_mod != n_mod_mainfieldactivity)
+moco_mod_scheme_ps_conflicting_mainfieldactivities
 ```
 
 <!-- A potential conflict is observed between the PAN effectmonitoring vs the MBAA modules, for reading surfacewater levels in GW_05.1_aq. -->
@@ -164,7 +164,7 @@ moco_mod_scheme_ps_conflicting_mainfieldmethods
 mod_scheme_vars %>% 
   filter(target) %>% 
   semi_join(
-    moco_mod_scheme_ps_conflicting_mainfieldmethods,
+    moco_mod_scheme_ps_conflicting_mainfieldactivities,
     join_by(module, scheme)
   ) %>% 
   distinct(variable, var_abbrev, target, main_datacollection_method)
@@ -174,7 +174,7 @@ mod_scheme_vars %>%
 Similarly we have to decide potential consequences (restrictions) in the combination of modules if this is not the case.
 
 ```{r}
-mod_scheme_mainfieldmethod_actseq %>% 
+mod_scheme_mainfieldactivity_actseq %>% 
   distinct(module, scheme, in_aquatic_subset, activity_sequence,) %>% 
   # join module combos:
   inner_join(
@@ -353,7 +353,7 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
   ) %>% 
   # Add revisit designs by FAS x spatial subset. The origins of
   # 'scheme_moco_ps_spsubset_fas_paneldesign' lie in objects
-  # 'mod_scheme_variableset_mainfieldmethod' and 'activity_sequence', which
+  # 'mod_scheme_variableset_mainfieldactivity' and 'activity_sequence', which
   # don't distinguish between schemes that got a sample size or not. So we
   # expect some cases to be dropped.
   inner_join(
@@ -967,7 +967,7 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
 This actually boils down to distinguishing rivulets and mires as two different strata within type 7220, for which independent sampling must take place.
 This has been applied at the scheme level already, in preparing the scheme-specific spatial sampling frames; however we also need it within schemes where both subsets are present, in order to apply the appropriate field activity group per location.
 Currently we just duplicate the samples for these two spatial subsets...
-The 7220 strata can also be used to delineate the target population of `GW_05.1_{aq,terr}` and of `SURF_*` schemes (much like the code to generate `mod_scheme_mainfieldmethod`).
+The 7220 strata can also be used to delineate the target population of `GW_05.1_{aq,terr}` and of `SURF_*` schemes (much like the code to generate `mod_scheme_mainfieldactivity`).
 
 **Missing functionality**: for the rarer stratum x spatial poststratum combinations, exact matches of the spatial sample occur _across schemes_.
 For these strata, we better share this distribution over the panels across schemes for efficiency reasons (matching field activities, reduced number of location visits).

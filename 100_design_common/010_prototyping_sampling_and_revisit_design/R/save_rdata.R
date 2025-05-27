@@ -6,7 +6,7 @@ rdata_set <- c(
   "domains",
   "module_domains",
   "module_scheme_cycle_duration",
-  "mod_scheme_variableset_mainfieldmethod",
+  "mod_scheme_variableset_mainfieldactivity",
   "mod_scheme_vars",
   "activities",
   "activity_sequences",

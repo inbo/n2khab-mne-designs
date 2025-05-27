@@ -875,13 +875,13 @@ mod_scheme_datacoll_nofield <-
   arrange(module, scheme, variable_set, main_datacollection_method)
 ```
 
-### Variable sets and associated main field methods
+### Variable sets and associated main field activities
 
-Defining variable sets and main field methods (i.e. main data collection methods restricted to field activities), per module x scheme.
+Defining variable sets and main field activities (i.e. main data collection methods restricted to field activities), per module x scheme.
 We also add the variable set and field methods for the MHQ programme for modules where this applies.
 
 ```{r}
-mod_scheme_variableset_mainfieldmethod <-
+mod_scheme_variableset_mainfieldactivity <-
   # MNE schemes
   mod_scheme_vars %>%
   distinct(module, scheme, variable_set, main_datacollection_method) %>%
@@ -901,9 +901,9 @@ mod_scheme_variableset_mainfieldmethod <-
   } %>%
   # limit to field activities:
   filter(main_datacollection_method %in% activities$activity[activities$is_field_activity]) %>% 
-  rename(main_field_method = main_datacollection_method) %>% 
+  rename(main_field_activity = main_datacollection_method) %>% 
   mutate(scheme = factor(scheme, levels = levels(n2khab_schemes$scheme))) %>%
-  arrange(module, scheme, variable_set, main_field_method) %>% 
+  arrange(module, scheme, variable_set, main_field_activity) %>% 
   # add variable set & field method for MHQ schemes:
   bind_rows(
     module_schemes %>% 
@@ -919,23 +919,23 @@ mod_scheme_variableset_mainfieldmethod <-
       mutate(
         variable_set = "LSVI" %>% 
           factor(levels = levels(mod_scheme_vars$variable_set)),
-        main_field_method = ifelse(tag_1 == "aq", "LSVIAQ", "LSVITERR") %>% 
+        main_field_activity = ifelse(tag_1 == "aq", "LSVIAQ", "LSVITERR") %>% 
           factor(levels = levels(activities$activity))
       ) %>% 
       select(-tag_1)
   )
-mod_scheme_variableset_mainfieldmethod
+mod_scheme_variableset_mainfieldactivity
 ```
 
 For MHQ the variables are summarized as one variable set 'LSVI', and the hierarchy of involved measurement variables for each scheme (type) is incorporated in the [LSVI](https://packages.inbo.be/LSVI/) package.
 
-Checking that the set of module x schemes not covered by `mod_scheme_variableset_mainfieldmethod` equals the MNE-set not covered by `mod_scheme_vars`.
+Checking that the set of module x schemes not covered by `mod_scheme_variableset_mainfieldactivity` equals the MNE-set not covered by `mod_scheme_vars`.
 
 ```{r check-mod-scheme-variableset-coverage}
 stopifnot(
   module_schemes %>% 
     anti_join(
-      mod_scheme_variableset_mainfieldmethod %>% 
+      mod_scheme_variableset_mainfieldactivity %>% 
         distinct(module, scheme),
       join_by(module, scheme)
     ) %>% 
@@ -954,7 +954,7 @@ stopifnot(
 
 ### Determining the field activities of (spatial subsets of) schemes per module {#field-activities}
 
-'Field activity' can cover data collection, where it corresponds to 'main field method' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
+'Field activity' can cover data collection, where it corresponds to 'main field activity' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
 
 The field activities are a subset of the activities:
 
@@ -990,14 +990,14 @@ field_activity_sequences <-
 field_activity_sequences
 ```
 
-Field activities can be linked to modules x schemes via the main field method by using the applicable activity sequence, and abstracting variable sets away.
+Field activities can be linked to modules x schemes via the main field activity by using the applicable activity sequence, and abstracting variable sets away.
 
-Determining the main field methods per module x scheme, where useful split into spatial subsets (based on type properties in the target population) that will be linked to different activity sequences.
+Determining the main field activities per module x scheme, where useful split into spatial subsets (based on type properties in the target population) that will be linked to different activity sequences.
   
 ```{r}
-mod_scheme_mainfieldmethod <- 
-  mod_scheme_variableset_mainfieldmethod %>% 
-  distinct(module, scheme, main_field_method) %>%
+mod_scheme_mainfieldactivity <- 
+  mod_scheme_variableset_mainfieldactivity %>% 
+  distinct(module, scheme, main_field_activity) %>%
   # add the is_core_scheme variable, needed to filter activity_sequences later:
   inner_join(
     module_schemes,
@@ -1005,18 +1005,18 @@ mod_scheme_mainfieldmethod <-
     unmatched = c("error", "drop"),
     relationship = "many-to-one"
   ) %>% 
-  # modify some main field methods for non-core schemes:
+  # modify some main field activities for non-core schemes:
   mutate(
-    main_field_method = case_when(
+    main_field_activity = case_when(
       scheme == "GW_05.1_aq" & 
         !is_core_scheme &  
-        main_field_method == "SURFLEVREADDIVER" ~ "SURFLEVREADGAUGE",
-      .default = main_field_method
+        main_field_activity == "SURFLEVREADDIVER" ~ "SURFLEVREADGAUGE",
+      .default = main_field_activity
     ) %>% 
       factor(levels = levels(activities$activity))
   )
-mod_scheme_mainfieldmethod_subsets <- 
-  mod_scheme_mainfieldmethod %>% 
+mod_scheme_mainfieldactivity_subsets <- 
+  mod_scheme_mainfieldactivity %>% 
   # Characterize all schemes with needed type features as needed to distinguish
   # between activity sequences, e.g. the distinction between aquatic and
   # terrestrial types. This gives rise to spatial subsets of module x scheme
@@ -1040,24 +1040,24 @@ mod_scheme_mainfieldmethod_subsets <-
 Expanding with activity sequences using the `field_activity_sequences` dataset and applying scheme, spatial subset, field method and `is_core_scheme` based filter rules.
   
 ```{r}
-mod_scheme_mainfieldmethod_actseq <- 
-  mod_scheme_mainfieldmethod_subsets %>% 
+mod_scheme_mainfieldactivity_actseq <- 
+  mod_scheme_mainfieldactivity_subsets %>% 
   inner_join(
     field_activity_sequences %>% 
       select(activity_sequence, field_activity),
-    join_by(main_field_method == field_activity),
+    join_by(main_field_activity == field_activity),
     unmatched = c("error", "drop"),
     relationship = "many-to-many"
   ) %>%
   apply_activity_sequence_filters()
 ```
 
-Checking that each main field method per module, scheme and spatial subset was translated to exactly one sequence (this checks the `apply_activity_sequence_filters()` function).
+Checking that each main field activity per module, scheme and spatial subset was translated to exactly one sequence (this checks the `apply_activity_sequence_filters()` function).
 
 ```{r}
 stopifnot(
-  nrow(mod_scheme_mainfieldmethod_actseq) == 
-    nrow(mod_scheme_mainfieldmethod_subsets)
+  nrow(mod_scheme_mainfieldactivity_actseq) == 
+    nrow(mod_scheme_mainfieldactivity_subsets)
 )
 ```
 
@@ -1065,9 +1065,9 @@ Expanding the object with all field activities that apply for each combination o
 
 ```{r}
 mod_scheme_field_activity <- 
-  mod_scheme_mainfieldmethod_actseq %>% 
+  mod_scheme_mainfieldactivity_actseq %>% 
   # add missing field activities for each sequence
-  nest(data = c(main_field_method)) %>% 
+  nest(data = c(main_field_activity)) %>% 
   mutate(data = map2(activity_sequence, data, function(s, df) {
     field_activity_sequences %>% 
       filter(activity_sequence == s) %>% 
@@ -1196,7 +1196,7 @@ mod_scheme_fag %>%
 
 The activity sequences serve two purposes:
 
-- getting all field activities and FAGs for a given main field method of a module, scheme and spatial subset (see above in the creation of `mod_scheme_field_activity`);
+- getting all field activities and FAGs for a given main field activity of a module, scheme and spatial subset (see above in the creation of `mod_scheme_field_activity`);
 - setting the required chronological order between field activities / FAGs.
 
 By collapsing them in `mod_scheme_fag` we have made things more simple from now on, but note that we still need the requirements for the chronological order of FAGs, reflecting the (single or multiple) activity sequences they came from.
@@ -1689,7 +1689,7 @@ Notable differences with `mod_scheme_fag_paneldesign` are that:
 
 ```{r}
 scheme_variableset_paneldesign <-
-  mod_scheme_variableset_mainfieldmethod %>%
+  mod_scheme_variableset_mainfieldactivity %>%
   inner_join(
     module_schemes,
     join_by(module, scheme),
@@ -1697,7 +1697,7 @@ scheme_variableset_paneldesign <-
     relationship = "many-to-one"
   ) %>% 
   filter(is_core_scheme) %>% 
-  distinct(scheme, variable_set, main_field_method) %>%
+  distinct(scheme, variable_set, main_field_activity) %>%
   mutate(
     targetvar_temporal_resolution = case_when(
       str_detect(scheme, "^HQ") ~ years(1),
@@ -1746,10 +1746,10 @@ Note that the following objects are not yet finished at this stage (see chapter 
 - `scheme_targetpop_sets`
 - `module_scheme_cycle_duration`
 - `mod_scheme_datacoll_nofield`
-- `mod_scheme_variableset_mainfieldmethod`
-- `mod_scheme_mainfieldmethod`
-- `mod_scheme_mainfieldmethod_subsets`
-- `mod_scheme_mainfieldmethod_actseq`
+- `mod_scheme_variableset_mainfieldactivity`
+- `mod_scheme_mainfieldactivity`
+- `mod_scheme_mainfieldactivity_subsets`
+- `mod_scheme_mainfieldactivity_actseq`
 - `mod_scheme_field_activity`
 - `mod_scheme_actseq_fag`
 - `mod_scheme_fag`
@@ -1777,10 +1777,10 @@ for (name in c(
   "bioticfag_spsubset_type_timing",
   "module_scheme_cycle_duration",
   "mod_scheme_datacoll_nofield",
-  "mod_scheme_variableset_mainfieldmethod",
-  "mod_scheme_mainfieldmethod",
-  "mod_scheme_mainfieldmethod_subsets",
-  "mod_scheme_mainfieldmethod_actseq",
+  "mod_scheme_variableset_mainfieldactivity",
+  "mod_scheme_mainfieldactivity",
+  "mod_scheme_mainfieldactivity_subsets",
+  "mod_scheme_mainfieldactivity_actseq",
   "mod_scheme_field_activity",
   "mod_scheme_actseq_fag",
   "mod_scheme_fag",
