@@ -433,10 +433,8 @@ schemetargetpanel_spsamples_terr <-
     stratum_scheme_targetpanels =
       str_flatten(stratum_scheme_targetpanels, collapse = " \u2588 ") %>%
       factor(),
-    # n_strata = n(),
     .by = grts_address_final
   ) %>%
-  # filter(n_strata > 1) %>%
   distinct(stratum_scheme_targetpanels, grts_address, grts_address_final) %>%
   inner_join(
     units_cell_polygon,
