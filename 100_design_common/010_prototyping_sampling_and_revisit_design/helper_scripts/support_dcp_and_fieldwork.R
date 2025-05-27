@@ -605,9 +605,8 @@ grts_mh_brick_lev3_index <- tibble(
 
 # In order to restrict to the level 3 cells, we generate the level 3 replacement
 # cells as a separate list column. Beware that we must rely on grts_address if
-# grts_address_final is different, so we can just use grts_address. Further, we
-# calculate a the diagonal length of the bounding box of polygon cell centers,
-# since this is also a criterion to decide about the level 3 restriction.
+# grts_address_final is different, so we can just use grts_address. First, we
+# set the several criteria to decide about the level 3 restriction.
 
 # Maximum allowed bboxdiag: if exceeded and there are at least 32 replacement
 # cells in the polygon, we apply level 3 restriction. Dimensions are based on
@@ -620,6 +619,14 @@ max_allowed_nrcells <- (2^3)^2
 # Maximum nr of replacement cells after first level 3 cell restriction, below
 # which it is decided to add the second level 3 cell if available
 max_insufficient_nrcells_level3 <- (2^3)^2 / 4
+
+# Resolving the eligible replacement cells (column replacement_cells) from
+# polygon replacement cells, level 3 replacement cells (from current + next
+# level3-cell) and the application of criteria that determine how to use these.
+# The tibbles in the replacement_cells column have a column 'ranknr' to show the
+# order in which a replacement cell can be elected: the first positive
+# evaluation for the considered stratum determines which cell must be used as
+# replacement.
 
 stratum_schemetargetpanel_spsamples_terr_replacementcells <-
   stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells %>%
