@@ -439,10 +439,12 @@ schemetargetpanel_spsamples_terr <-
       factor(),
     .by = grts_address_final
   ) %>%
-  distinct(stratum_scheme_targetpanels, grts_address, grts_address_final) %>%
+  distinct(stratum_scheme_targetpanels, grts_address, grts_address_final)
+
+units_cell_polygon_attrib <-
+  units_cell_polygon %>%
   inner_join(
-    units_cell_polygon,
-    .,
+    schemetargetpanel_spsamples_terr,
     join_by(grts_address_final),
     relationship = "one-to-many",
     unmatched = "error"
@@ -452,15 +454,15 @@ schemetargetpanel_spsamples_terr <-
   arrange(stratum_scheme_targetpanels, grts_address)
 
 # storing interactive map
-schemetargetpanel_spsamples_terr_hasgw <-
-  schemetargetpanel_spsamples_terr %>%
+units_cell_polygon_attrib_hasgw <-
+  units_cell_polygon_attrib %>%
   mutate(has_gw = str_detect(stratum_scheme_targetpanels, "GW"))
-map_all <- generate_mapview_gw(schemetargetpanel_spsamples_terr_hasgw)
+map_all <- generate_mapview_gw(units_cell_polygon_attrib_hasgw)
 htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
-schemetargetpanel_spsamples_terr_hasgw %>%
+units_cell_polygon_attrib_hasgw %>%
   st_write(
     str_c("maps/spsample_terr.gpkg"),
-    layer = "schemetargetpanel_spsamples_terr_hasgw"
+    layer = "units_cell_polygon_attrib_hasgw"
   )
 
 
