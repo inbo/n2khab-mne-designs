@@ -359,7 +359,7 @@ units_cell_polygon <-
 # adding the sampling unit attributes to these polygons, arranged as in
 # stratum_targetpanel_spsamples. Note that this duplicates cells with multiple
 # strata!
-units_cell_polygon_attribs <-
+units_cell_polygon_stratum_attribs <-
   units_cell_polygon %>%
   inner_join(
     stratum_schemetargetpanel_spsamples %>%
@@ -397,7 +397,7 @@ generate_mapview_gw <- function(obj) {
 }
 store_stratum_map <- function(type) {
   obj <-
-    units_cell_polygon_attribs %>%
+    units_cell_polygon_stratum_attribs %>%
     mutate(has_gw = str_detect(scheme_targetpanels, "GW")) %>%
     filter(stratum == type)
   map <- generate_mapview_gw(obj)
@@ -413,7 +413,7 @@ store_stratum_map("7140_oli")
 store_stratum_map("6230_hmo")
 store_stratum_map("9190")
 
-units_cell_polygon_attribs %>%
+units_cell_polygon_stratum_attribs %>%
   st_write(
     str_c("maps/spsample_terr.gpkg"),
     layer = "units_cell_polygon_attribs"
