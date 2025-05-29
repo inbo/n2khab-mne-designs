@@ -1065,7 +1065,7 @@ fieldwork_2025_prioritization <-
       str_detect(scheme_targetpanels, "GW_03\\.3:PANEL03") ~ 3L,
       .default = 4L
     ),
-    wait_surfacewater = str_detect(stratum, "^31|^2190_a$"),
+    wait_watersurface = str_detect(stratum, "^31|^2190_a$"),
     wait_3260 = stratum == "3260"
   )
 
@@ -1075,11 +1075,11 @@ fieldwork_2025_targetpanels_prioritization_count <-
   count(
     scheme_targetpanels,
     priority,
-    wait_surfacewater,
+    wait_watersurface,
     wait_3260,
     field_activity_group
   ) %>%
-  arrange(priority, wait_surfacewater, wait_3260) %>%
+  arrange(priority, wait_watersurface, wait_3260) %>%
   pivot_wider(names_from = field_activity_group, values_from = n)
 
 
@@ -1099,11 +1099,11 @@ fieldwork_2025_dates_prioritization_count <-
     date_interval,
     date_end,
     priority,
-    wait_surfacewater,
+    wait_watersurface,
     wait_3260,
     field_activity_group
   ) %>%
-  arrange(date_end, priority, wait_surfacewater, wait_3260) %>%
+  arrange(date_end, priority, wait_watersurface, wait_3260) %>%
   select(-date_end) %>%
   pivot_wider(names_from = field_activity_group, values_from = n)
 
