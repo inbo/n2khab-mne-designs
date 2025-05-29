@@ -407,17 +407,22 @@ store_stratum_map <- function(type) {
     selfcontained = TRUE
   )
 }
-store_stratum_map("4010")
-store_stratum_map("4030")
-store_stratum_map("7140_oli")
-store_stratum_map("6230_hmo")
-store_stratum_map("9190")
 
-units_cell_polygon_stratum_attribs %>%
-  st_write(
-    str_c("maps/spsample_terr.gpkg"),
-    layer = "units_cell_polygon_attribs"
-  )
+if (FALSE) {
+  store_stratum_map("4010")
+  store_stratum_map("4030")
+  store_stratum_map("7140_oli")
+  store_stratum_map("6230_hmo")
+  store_stratum_map("9190")
+}
+
+if (FALSE) {
+  units_cell_polygon_stratum_attribs %>%
+    st_write(
+      str_c("maps/spsample_terr.gpkg"),
+      layer = "units_cell_polygon_attribs"
+    )
+}
 
 # merging strata as well for visualization (where we want each row to represent
 # another location):
@@ -454,17 +459,20 @@ units_cell_polygon_attrib <-
   arrange(stratum_scheme_targetpanels, grts_address)
 
 # storing interactive map
-units_cell_polygon_attrib_hasgw <-
-  units_cell_polygon_attrib %>%
-  mutate(has_gw = str_detect(stratum_scheme_targetpanels, "GW"))
-map_all <- generate_mapview_gw(units_cell_polygon_attrib_hasgw)
-htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
-units_cell_polygon_attrib_hasgw %>%
-  st_write(
-    str_c("maps/spsample_terr.gpkg"),
-    layer = "units_cell_polygon_attrib_hasgw"
-  )
-
+if (FALSE) {
+  units_cell_polygon_attrib_hasgw <-
+    units_cell_polygon_attrib %>%
+    mutate(has_gw = str_detect(stratum_scheme_targetpanels, "GW"))
+  map_all <- generate_mapview_gw(units_cell_polygon_attrib_hasgw)
+  htmlwidgets::saveWidget(map_all@map, "maps/map_all.html", selfcontained = TRUE)
+}
+if (FALSE) {
+  units_cell_polygon_attrib_hasgw %>%
+    st_write(
+      str_c("maps/spsample_terr.gpkg"),
+      layer = "units_cell_polygon_attrib_hasgw"
+    )
+}
 
 
 
