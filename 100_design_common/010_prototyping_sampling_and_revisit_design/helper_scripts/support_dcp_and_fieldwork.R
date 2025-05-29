@@ -947,6 +947,9 @@ scheme_moco_fa_fieldvar <-
 
 ## Processing the FAG calendar wrt prioritizing fieldwork in 2025 ----
 
+# This section is primarily intended as support for fieldwork planning by the
+# compartment scheme responsible, who will use these R objects directly.
+
 # Derive the FAG calendar for 2025 at the stratum x location x FAG x
 # date-interval level, and include some of the location attributes.
 fag_stratum_grts_calendar_2025_attribs <-
