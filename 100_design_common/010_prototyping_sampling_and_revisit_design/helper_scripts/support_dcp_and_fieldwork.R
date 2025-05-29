@@ -968,7 +968,7 @@ fag_stratum_grts_calendar_2025_attribs <-
   # its meaning
   mutate(
     across(c(date_start, date_end), \(x) {
-      if_else(year(x) == 2024, x + years(1), x)
+      if_else(year(date_start) == 2024, x + years(1), x)
     }),
     date_interval = interval(
       force_tz(date_start, "Europe/Brussels"),
