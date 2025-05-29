@@ -950,8 +950,8 @@ scheme_moco_fa_fieldvar <-
 # This section is primarily intended as support for fieldwork planning by the
 # compartment scheme responsible, who will use these R objects directly.
 
-# Derive the FAG calendar for 2025 at the stratum x location x FAG x
-# date-interval level, and include some of the location attributes.
+# Derive the FAG calendar for 2025 at the stratum x location x FAG occasion, and
+# include some of the location attributes.
 fag_stratum_grts_calendar_2025_attribs <-
   fag_stratum_grts_calendar %>%
   select(
