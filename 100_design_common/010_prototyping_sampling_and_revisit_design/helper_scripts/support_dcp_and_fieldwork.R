@@ -1124,3 +1124,56 @@ if (FALSE) {
 
 
 
+
+
+
+
+
+## Writing object hashes to verify reproducibility ---------------------------
+
+tibble(
+  name = c(
+    "scheme_moco_ps_stratum_targetpanel_spsamples",
+    "stratum_schemetargetpanel_spsamples",
+    "schemetargetpanel_spsamples_terr",
+    "units_7220",
+    "units_cell_cellcenter",
+    "units_cell_rast",
+    "units_cell_polygon",
+    "units_cell_polygon_stratum_attribs",
+    "units_cell_polygon_attrib",
+    "grts_mh",
+    "grts_mh_index",
+    "grts_mh_brick_lev3",
+    "grts_mh_brick_lev3_index",
+    "max_allowed_bboxdiag",
+    "min_nrcells_tosplit",
+    "max_allowed_nrcells",
+    "max_insufficient_nrcells_level3",
+    "stratum_schemetargetpanel_spsamples_terr_polygonreplacementcells",
+    "stratum_schemetargetpanel_spsamples_terr_replacementcells",
+    "cellnrs_replacement",
+    "units_cell_replacement_rast",
+    "fag_fa",
+    "faseqs",
+    "faseqs_fag_fa",
+    "actseqs_actgroups_acts",
+    "fag_stratum_grts_calendar",
+    "fag_fa_stratum_grts_calendar",
+    "scheme_moco_fa_fieldvar",
+    "fag_stratum_grts_calendar_2025_attribs",
+    "fag_grts_calendar_2025_attribs",
+    "fag_grts_calendar_2025_attribs_sf",
+    "fieldwork_2025_prioritization",
+    "fieldwork_2025_targetpanels_prioritization_count",
+    "fieldwork_2025_dates_prioritization_count"
+  ),
+  xxh64sum = map_chr(name, \(x) {
+    digest::digest(eval(as.name(x)), algo = "xxhash64")
+  })
+) %>%
+  arrange(name) %>%
+  write_csv(file.path(datapath, "text/intermediate/fieldworg_hashes.csv"))
+
+
+
