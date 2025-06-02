@@ -1690,7 +1690,7 @@ mod_scheme_fag_paneldesign %>%
 
 ## Panel design of measurements
 
-`scheme_variableset_paneldesign` is the panel design of measurements.
+`scheme_ps_variableset_paneldesign` is the panel design of measurements.
 It is created below to distinguish with `mod_scheme_fag_paneldesign` above, but yet unclear whether we'll need it to create data collection plans.
 Its primary relevance is statistical (spatiotemporal pattern of available data), hence it underpins choices made above.
 
@@ -1705,7 +1705,7 @@ Notable differences with `mod_scheme_fag_paneldesign` are that:
 - the (assumed) temporal resolution of the target variable is added, which is an attempt to answer the question: which period does one value of the variable represent?
 
 ```{r}
-scheme_variableset_paneldesign <-
+scheme_ps_variableset_paneldesign <-
   mod_scheme_variableset_mainfieldactivity %>%
   inner_join(
     module_schemes,
@@ -1715,6 +1715,13 @@ scheme_variableset_paneldesign <-
   ) %>% 
   filter(is_core_scheme) %>% 
   distinct(scheme, variable_set, main_field_activity) %>%
+  mutate(panel_set = ifelse(
+    str_detect(scheme, "^GW") & !str_detect(scheme, "quarries"),
+    list(c(1L, 2L)),
+    list(1L)
+  )) %>% 
+  unnest_longer(panel_set) %>% 
+  relocate(panel_set, .after = scheme) %>% 
   mutate(
     targetvar_temporal_resolution = case_when(
       str_detect(scheme, "^HQ") ~ years(1),
@@ -1725,6 +1732,8 @@ scheme_variableset_paneldesign <-
     ),
     revisit_pattern = case_when(
       str_detect(variable_set, "peil.*automatisch") ~ "pure_panel",
+      main_field_activity == "GWSHALLSAMP" & panel_set == 1L ~ 
+        "periodic_rotational",
       .default = "serially_alternating"
     ) %>%
       factor(),
@@ -1744,10 +1753,11 @@ scheme_variableset_paneldesign <-
     ),
     limit_n_subpanels_per_panel = case_when(
       str_detect(scheme, "^GW_(03|04|07)") &
-        revisit_pattern != "pure_panel" ~ 2L
+        revisit_pattern != "pure_panel" & 
+        panel_set ==2L ~ 2L
     )
   )
-scheme_variableset_paneldesign
+scheme_ps_variableset_paneldesign
 ```
 
 ## Setting data source versions for the construction of spatial sampling frames
@@ -1802,7 +1812,7 @@ for (name in c(
   "mod_scheme_actseq_fag",
   "mod_scheme_fag",
   "mod_scheme_fag_paneldesign",
-  "scheme_variableset_paneldesign"
+  "scheme_ps_variableset_paneldesign"
 )) {
   cat(name, "\n")
   glimpse(eval(str2lang(name)))

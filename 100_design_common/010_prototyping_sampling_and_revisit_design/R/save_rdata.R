@@ -17,7 +17,7 @@ rdata_set <- c(
   "mod_scheme_field_activity",
   "mod_scheme_actseq_fag",
   "mod_scheme_fag_paneldesign",
-  "scheme_variableset_paneldesign",
+  "scheme_ps_variableset_paneldesign",
   "n2khab_types_expanded_properties",
   "n2khab_strata_expanded",
   "n2khab_strata",
