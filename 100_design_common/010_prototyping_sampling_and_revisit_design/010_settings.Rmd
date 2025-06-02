@@ -1489,29 +1489,39 @@ bioticfag_spsubset_type_timing <-
 
 ### Panel design of FAGs in (spatial subsets of) schemes per module {#fag-panel-design}
 
-`mod_scheme_fag_paneldesign` is the panel design of field activity groups per module and scheme.
+`mod_scheme_fag_paneldesign` is the panel design of field activity groups per module, scheme and panel set.
 This will matter most for data collection plans.
+
+The 'panel set' concept is introduced to support split panel designs, i.e. where each panel set receives its own revisit design.
+The value of `panel_set` is an incremental number within module x scheme; if no split panel design is defined, it has value 1.
 
 ```{r}
 mod_scheme_fag_paneldesign <-
   mod_scheme_fag %>% 
-  # Adding preliminary support for split panels; to be set as NA where
-  # applicable. We call different splits of a panel design a 'panel_set' and
-  # they are numbered within module x scheme x FAG x spatial subset (but I
-  # actually expect only module x scheme to be relevant for the number of
-  # distinguished panel_sets; later on we effectively consider this at scheme
-  # level so that we get the same locations for all FAGs in a module x scheme)
-  mutate(panel_set = 1L) %>% 
   inner_join(
     module_scheme_cycle_duration,
     join_by(module, scheme),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>% 
+  # define 2 panel sets in groundwater schemes (except GW_05.1_quarries) when
+  # cycle duration is large enough
+  mutate(panel_set = ifelse(
+    str_detect(scheme, "^GW") & 
+      !str_detect(scheme, "quarries") &
+      cycle_duration_y >= 6L,
+    list(c(1L, 2L)),
+    list(1L)
+  )) %>% 
+  unnest_longer(panel_set) %>% 
   mutate(
     # revisit pattern of main periodicity
     revisit_pattern = case_when(
       str_detect(field_activity_group, "READDIVER|ADHOC") ~ "pure_panel",
+      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") &
+        cycle_duration_y >= 6L &
+        panel_set == 1L ~ 
+        "periodic_rotational",
       .default = "serially_alternating"
     ) %>%
       factor(),
@@ -1602,7 +1612,8 @@ mod_scheme_fag_paneldesign <-
         !str_detect(scheme, "^HQ") ~ years(-1),
       # postpone the start of groundwater sampling & diver reading (to align
       # location visits)
-      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") ~ months(6),
+      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") &
+        (panel_set == 2L | cycle_duration_y < 6L) ~ months(6),
       str_detect(field_activity_group, "READDIVER") ~ months(6)
     ),
     # optionally limit the number of subperiods in a main period; this causes
@@ -1617,7 +1628,8 @@ mod_scheme_fag_paneldesign <-
     # repetition of these panels in the main period in case of a serially
     # alternating subpattern
     limit_n_subpanels_per_panel = case_when(
-      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") ~ 2L,
+      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") &
+        (panel_set == 2L | cycle_duration_y < 6L) ~ 2L,
       .default = NA_integer_
     )
   ) %>% 
@@ -1668,9 +1680,11 @@ mod_scheme_fag_paneldesign %>%
     scheme_first = first(scheme),
     scheme_last = last(scheme),
     n_schemes = n_distinct(scheme),
-    .by = c(field_activity_group, panel_set, revisit_pattern:last_col())
+    ps_min = min(panel_set),
+    ps_max = max(panel_set),
+    .by = c(field_activity_group, revisit_pattern:last_col())
   ) %>%
-  relocate(contains("scheme")) %>% 
+  relocate(matches("scheme|ps")) %>% 
   arrange(field_activity_group)
 ```
 
