@@ -571,7 +571,7 @@ spare_coef_aq <- 0.2
 ```
 
 
-## Setting cycle duration and implementation start
+## Setting revisit design attributes at module x scheme level {#mod-scheme-attrib}
 
 The remaining part of this chapter considers settings by module and scheme (active modules only), even while some may currently not differ between modules.
 
@@ -579,19 +579,35 @@ Note that schemes, hence scheme properties, can only be correctly linked to a mo
 
 Therefore settings by module and scheme will be filtered and rewritten based on `module_domain_schemes` after the latter has been created (chapter \@ref(scheme-objects)).
 
-We set the variable `cycle_duration_y` per module x scheme, which indeed depends on the combination of module x scheme already.
+Below, we set revisit design attributes at the module x scheme level:
+
+- cycle duration, which indeed depends on the combination of module x scheme already;
+- number of panel sets.
+
+The 'panel set' concept is introduced to support split panel designs, i.e. where each panel set receives its own revisit design.
 
 ```{r}
-module_scheme_cycle_duration <-
+module_scheme_props <-
   module_schemes %>%
   select(module, scheme) %>%
-  mutate(cycle_duration_y = case_when(
-    module == "pan_transmon_be2100024" ~ 3L,
-    str_detect(scheme, "^SURF") ~ 3L,
-    str_detect(scheme, "^HQ31") | scheme == "HQ2190_aq" ~ 3L,
-    str_detect(scheme, mhq_forest_schemes_regex) ~ 12L,
-    .default = 6L
-  ))
+  mutate(
+    cycle_duration_y = case_when(
+      module == "pan_transmon_be2100024" ~ 3L,
+      str_detect(scheme, "^SURF") ~ 3L,
+      str_detect(scheme, "^HQ31") | scheme == "HQ2190_aq" ~ 3L,
+      str_detect(scheme, mhq_forest_schemes_regex) ~ 12L,
+      .default = 6L
+    ),
+    # we create 2 panel sets in groundwater schemes (except GW_05.1_quarries)
+    # when cycle duration is large enough
+    nr_panelsets = ifelse(
+      str_detect(scheme, "^GW") & 
+        !str_detect(scheme, "quarries") &
+        cycle_duration_y >= 6L,
+      2L,
+      1L
+    )
+  )
 ```
 
 
@@ -1495,27 +1511,20 @@ bioticfag_spsubset_type_timing <-
 `mod_scheme_ps_fag_paneldesign` is the panel design of field activity groups per module, scheme and panel set.
 This will matter most for data collection plans.
 
-The 'panel set' concept is introduced to support split panel designs, i.e. where each panel set receives its own revisit design.
-The value of `panel_set` is an incremental number within module x scheme; if no split panel design is defined, it has value 1.
+The value of `panel_set` (see \@ref(mod-scheme-attrib)) is an incremental number within module x scheme; if no split panel design is defined, it has value 1.
 
 ```{r}
 mod_scheme_ps_fag_paneldesign <-
   mod_scheme_fag %>% 
   inner_join(
-    module_scheme_cycle_duration,
+    module_scheme_props,
     join_by(module, scheme),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>% 
-  # define 2 panel sets in groundwater schemes (except GW_05.1_quarries) when
-  # cycle duration is large enough
-  mutate(panel_set = ifelse(
-    str_detect(scheme, "^GW") & 
-      !str_detect(scheme, "quarries") &
-      cycle_duration_y >= 6L,
-    list(c(1L, 2L)),
-    list(1L)
-  )) %>% 
+  # expand number of panel sets to individually numbered panel sets
+  mutate(panel_set = map(nr_panelsets, seq_len)) %>% 
+  select(-nr_panelsets) %>% 
   unnest_longer(panel_set) %>% 
   mutate(
     # revisit pattern of main periodicity
@@ -1774,7 +1783,7 @@ Objects subsetted with `[[1]]` mean that they (may) contain more, similarly stru
 Note that the following objects are not yet finished at this stage (see chapter \@ref(scheme-objects)):
 
 - `scheme_targetpop_sets`
-- `module_scheme_cycle_duration`
+- `module_scheme_props`
 - `mod_scheme_datacoll_nofield`
 - `mod_scheme_variableset_mainfieldactivity`
 - `mod_scheme_mainfieldactivity`
@@ -1805,7 +1814,7 @@ for (name in c(
   "field_activity_sequences",
   "biotic_timing",
   "bioticfag_spsubset_type_timing",
-  "module_scheme_cycle_duration",
+  "module_scheme_props",
   "mod_scheme_datacoll_nofield",
   "mod_scheme_variableset_mainfieldactivity",
   "mod_scheme_mainfieldactivity",

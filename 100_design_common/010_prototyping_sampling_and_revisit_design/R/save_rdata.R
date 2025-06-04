@@ -5,7 +5,7 @@ rdata_set <- c(
   "submodules",
   "domains",
   "module_domains",
-  "module_scheme_cycle_duration",
+  "module_scheme_props",
   "mod_scheme_variableset_mainfieldactivity",
   "mod_scheme_vars",
   "activities",
