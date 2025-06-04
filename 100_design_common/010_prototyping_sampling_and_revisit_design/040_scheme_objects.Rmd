@@ -1091,11 +1091,6 @@ module_domain_scheme_stratum_target_sample_size <-
   select(-compartment, -add_to_sample) %>%
   # collapsing submodules:
   summarize(
-    sp_sample_size_all_panels = ifelse(
-      all(is.na(sp_sample_size_all_panels)),
-      first(sp_sample_size_all_panels),
-      sum(sp_sample_size_all_panels, na.rm = TRUE)
-    ),
     sp_sample_size_all_panels_type = ifelse(
       all(is.na(sp_sample_size_all_panels_type)),
       first(sp_sample_size_all_panels_type),
@@ -1112,6 +1107,15 @@ module_domain_scheme_stratum_target_sample_size <-
     ),
     .by = c(module, domain, scheme, panel_set, type)
   ) %>%
+  mutate(
+    sp_sample_size_all_panels = ifelse(
+      all(is.na(sp_sample_size_all_panels_stratum)),
+      first(sp_sample_size_all_panels_stratum),
+      sum(sp_sample_size_all_panels_stratum, na.rm = TRUE)
+    ),
+    .by = c(module, domain, scheme, panel_set)
+  ) %>% 
+  relocate(sp_sample_size_all_panels, .after = panel_set) %>%
   relocate(type, stratum, nunits, .before = sp_sample_size_all_panels_type)
 ```
 
