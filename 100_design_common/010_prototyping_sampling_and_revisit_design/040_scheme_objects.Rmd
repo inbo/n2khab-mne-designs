@@ -833,12 +833,27 @@ submodule_domain_scheme_designattr <-
     submodule_domain_scheme_stratumstats %>%
       select(module, submodule, domain, scheme, stratum_count),
     join_by(module, submodule, domain, scheme),
-    relationship = "one-to-many",
+    relationship = "one-to-one",
     unmatched = c("error", "drop")
   ) %>%
-  inner_join(schemes %>% select(scheme, attribute_1, tag_1), by = "scheme") %>%
-  inner_join(scheme_sampling_frame, by = "scheme") %>%
-  inner_join(module_scheme_cycle_duration, by = c("module", "scheme")) %>%
+  inner_join(
+    schemes %>% select(scheme, attribute_1, tag_1),
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    scheme_sampling_frame,
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    module_scheme_cycle_duration,
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
   mutate(
     year_first = case_match(
       attribute_1,
@@ -857,15 +872,21 @@ submodule_domain_scheme_designattr <-
   ) %>%
   left_join(
     mhq_proportion_aquatic_per_submodule,
-    join_by(module, submodule, scheme)
+    join_by(module, submodule, scheme),
+    relationship = "many-to-one",
+    unmatched = "error"
   ) %>%
   left_join(
     mhq_proportions_sac_subset5_per_submodule,
-    join_by(module, submodule, domain, scheme)
+    join_by(module, submodule, domain, scheme),
+    relationship = "one-to-one",
+    unmatched = "error"
   ) %>%
   left_join(
     mne_core_proportions_sac_subset5_per_submodule,
-    join_by(module, submodule, domain, scheme)
+    join_by(module, submodule, domain, scheme),
+    relationship = "one-to-one",
+    unmatched = "error"
   ) %>%
   mutate(
     sp_sample_size_all_panels = cycle_duration_y * case_when(
