@@ -1142,7 +1142,7 @@ module_domain_scheme_stratum_sample_size_infinite <-
   left_join(mhq_scheme_category, join_by(scheme)) %>%
   arrange(module, scheme) %>%
   mutate(
-    pool_with_equal_type_precision = ifelse(
+      pool_with_maintained_type_precision = ifelse(
       str_detect(scheme, "^HQ"),
       str_c(module, "MHQ", category, sep = "_"),
       str_c(module, scheme, sep = "_")
@@ -1158,7 +1158,7 @@ module_domain_scheme_stratum_sample_size_infinite <-
     coef = ifelse(is.na(sp_sample_size_all_panels_stratum), NA_real_, coef),
     sp_sample_size_all_panels_stratum_inf =
       sp_sample_size_all_panels_stratum * coef,
-    .by = pool_with_equal_type_precision
+    .by = pool_with_maintained_type_precision
   )
 ```
 
@@ -1174,7 +1174,7 @@ module_domain_scheme_stratum_sample_size_infinite %>%
   summarize(
     pooled_pop_size = sum(nunits),
     budgeted_sp_sample_size_all_panels = sum(sp_sample_size_all_panels_stratum),
-    .by = pool_with_equal_type_precision
+    .by = pool_with_maintained_type_precision
   )
 ```
 
@@ -1186,7 +1186,7 @@ module_domain_scheme_stratum_sample_size_infinite %>%
   summarize(
     budgeted_sp_sample_size_all_panels = sum(sp_sample_size_all_panels_stratum),
     coef = first(coef),
-    .by = pool_with_equal_type_precision
+    .by = pool_with_maintained_type_precision
   )
 ```
 
@@ -1194,7 +1194,7 @@ Summary of coefficient values, excluding potential extremes (which relate to ins
 
 ```{r}
 module_domain_scheme_stratum_sample_size_infinite %>%
-  distinct(pool_with_equal_type_precision, coef) %>%
+  distinct(pool_with_maintained_type_precision, coef) %>%
   filter(coef < upper_optim_bound - 1) %>%
   pull(coef) %>%
   summary()
@@ -1219,7 +1219,7 @@ module_domain_scheme_stratum_sample_size <-
   ) %>%
   select(-c(
     category,
-    pool_with_equal_type_precision,
+    pool_with_maintained_type_precision,
     coef,
     sp_sample_size_all_panels_stratum_inf
   )) %>%
