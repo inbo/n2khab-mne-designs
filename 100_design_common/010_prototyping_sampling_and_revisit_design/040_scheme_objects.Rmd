@@ -1039,7 +1039,12 @@ module_domain_scheme_stratum_target_sample_size <-
     relationship = "one-to-many",
     unmatched = c("error", "drop")
   ) %>%
-  inner_join(n2khab_strata, by = "stratum") %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
   left_join(
     schemes %>%
       filter(programme == "MNE") %>%
@@ -1047,13 +1052,17 @@ module_domain_scheme_stratum_target_sample_size <-
         scheme,
         compartment = attribute_1
       ),
-    by = "scheme"
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = "drop"
   ) %>%
   left_join(
     non_core_types_per_module_and_compartment %>%
       select(module, compartment, scheme, type) %>%
       mutate(add_to_sample = TRUE),
-    by = c("module", "compartment", "scheme", "type")
+    join_by(module, compartment, scheme, type),
+    relationship = "many-to-one",
+    unmatched = "drop"
   ) %>%
   # adding a sample size to some types of non-core schemes (still within
   # submodule to prevent inheriting a too high sample size)
