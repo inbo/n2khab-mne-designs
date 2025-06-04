@@ -1066,7 +1066,8 @@ module_domain_scheme_stratum_target_sample_size <-
     unmatched = "drop"
   ) %>%
   # adding a sample size to some types of non-core schemes (still within
-  # submodule to prevent inheriting a too high sample size)
+  # submodule to prevent inheriting a too high sample size); meanwhile setting
+  # type sample size to zero for cases with nunits = 0
   mutate(
     sp_sample_size_all_panels_type = case_when(
       is.na(sp_sample_size_all_panels_type) & add_to_sample ~ 
@@ -1093,6 +1094,7 @@ module_domain_scheme_stratum_target_sample_size <-
   ) %>% 
   mutate(
     sp_sample_size_all_panels_stratum = ifelse(
+      # the TRUE case is to prevent dividing by zero (wrt the FALSE case)
       nunits == 0 & !is.na(sp_sample_size_all_panels_type),
       0,
       sp_sample_size_all_panels_type * nunits^0.25 / sum(nunits^0.25)
@@ -1211,10 +1213,14 @@ module_domain_scheme_stratum_sample_size <-
       sp_sample_size_all_panels_stratum_inf,
       nunits
     ),
+    # recalculating type-level sample sizes (since type level did not define the
+    # pool)
     sp_sample_size_all_panels_type = sum(sp_sample_size_all_panels_stratum),
     .by = c(module, domain, scheme, type)
   ) %>%
   mutate(
+    # recalculating total sample sizes (especially relevent wrt domain level,
+    # which did not define the pool). This also turns NAs into zeroes.
     sp_sample_size_all_panels = sum(sp_sample_size_all_panels_stratum, na.rm = TRUE),
     .by = c(module, domain, scheme)
   ) %>%
