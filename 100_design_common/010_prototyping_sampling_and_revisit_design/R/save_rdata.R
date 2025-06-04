@@ -51,7 +51,7 @@ rdata_set <- c(
   "submodule_domain_scheme_designattr",
   "module_domain_scheme_stratum_target_sample_size",
   "module_domain_scheme_stratum_sample_size",
-  "mod_scheme_targetfieldmethod",
+  "mod_scheme_targetfieldactivity",
   "scheme_target_paneldesign",
   "mod_scheme_yrs_moco_ps",
   "mhq_samples",
