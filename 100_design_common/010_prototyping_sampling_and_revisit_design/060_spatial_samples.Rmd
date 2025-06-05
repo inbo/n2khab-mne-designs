@@ -53,6 +53,7 @@ moco_dom_stratum_grtspart <-
     module,
     domain,
     scheme,
+    panel_set,
     sampling_frame_id,
     stratum,
     sp_sample_size_all_panels_stratum,
@@ -66,15 +67,16 @@ moco_dom_stratum_grtspart <-
   # joining module combos
   inner_join(
     scheme_ps_target_paneldesign %>% 
-      select(scheme, module_combo_code, module_combo, panel_set) %>% 
+      select(scheme, panel_set, module_combo_code, module_combo) %>% 
       unnest(module_combo),
-    join_by(module, scheme),
+    join_by(module, scheme, panel_set),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>% 
-  # sum the module sample sizes for common panel designs, scheme, domain and
-  # stratum, as these sizes are going to be drawn as one GRTS address series;
-  # however limit this result to the maximum module-specific population size:
+  # sum the module sample sizes for common scheme, panel set, module combo,
+  # domain and stratum, as these sizes are going to be drawn as one GRTS address
+  # series; however limit this result to the maximum module-specific population
+  # size:
   summarize(
     total_sample_size_all_panels = min(
       sum(sp_sample_size_all_panels_stratum),
@@ -82,8 +84,8 @@ moco_dom_stratum_grtspart <-
     ),
     .by = c(scheme, module_combo_code, panel_set, domain, stratum, nunits)
   ) %>% 
-  # use maximum sample sizes across schemes for common panel designs, domain and
-  # stratum, since these should drive GRTS series partitioning:
+  # use maximum sample sizes across schemes for common panel set, module combo,
+  # domain and stratum, since these should drive GRTS series partitioning:
   summarize(
     max_sample_size_all_panels = max(total_sample_size_all_panels),
     .by = c(module_combo_code, panel_set, domain, stratum)
