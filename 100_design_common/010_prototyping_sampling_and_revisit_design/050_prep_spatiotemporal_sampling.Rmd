@@ -64,7 +64,7 @@ mod_scheme_targetfieldactivity <-
   # in MHQ we only defined a 'variable set' LSVI...
   filter(target_envvar | str_detect(scheme, "^HQ")) %>% 
   select(-is_core_scheme, -target_envvar)
-mod_scheme_targetfieldactivity_paneldesign <- 
+mod_scheme_ps_targetfieldactivity_paneldesign <- 
   mod_scheme_targetfieldactivity %>% 
   # expand with FAG (note that some main field activities link to more than one
   # FAG, which has to do with the spatial subsets, which we can ignore here
@@ -95,8 +95,8 @@ mod_scheme_targetfieldactivity_paneldesign <-
 if (nrow(mod_scheme_targetfieldactivity_paneldesign) != nrow(mod_scheme_targetfieldactivity)) {
   stop("The number of rows changed unexpectedly.")
 }
-mod_scheme_target_paneldesign <- 
-  mod_scheme_targetfieldactivity_paneldesign %>% 
+mod_scheme_ps_target_paneldesign <- 
+  mod_scheme_ps_targetfieldactivity_paneldesign %>% 
   distinct(pick(-main_field_activity, -enforced_cycle_duration))
 ```
 
@@ -107,8 +107,8 @@ Do note that the module combo code can only be interpreted as a unique revisit d
 So a module combo has to be seen as an aggregation based on a common revisit design _between_ modules but _within_ scheme and panel set.
 
 ```{r}
-scheme_target_paneldesign <- 
-  mod_scheme_target_paneldesign %>% 
+scheme_ps_target_paneldesign <- 
+  mod_scheme_ps_target_paneldesign %>% 
   inner_join(
     modules %>% select(module, code_short),
     join_by(module),
@@ -122,15 +122,15 @@ scheme_target_paneldesign <-
   ) %>% 
   arrange(module_combo_code, scheme, panel_period_main, cycle_duration_y) %>% 
   relocate(module_combo_code, module_combo, .after = scheme)
-scheme_target_paneldesign
+scheme_ps_target_paneldesign
 ```
 
-We end up with `r nrow(scheme_target_paneldesign)` different scheme x target panel design combinations, each of which applies to one or several modules.
+We end up with `r nrow(scheme_ps_target_paneldesign)` different scheme x target panel design combinations, each of which applies to one or several modules.
 
 Schemes may have more than one revisit design, i.e. different module combinations x panel sets.
 
 ```{r paged.print = FALSE}
-scheme_target_paneldesign %>% 
+scheme_ps_target_paneldesign %>% 
   count(scheme, name = "nr_revisitpatterns_per_scheme") %>% 
   count(nr_revisitpatterns_per_scheme)
 ```
@@ -140,7 +140,7 @@ scheme_target_paneldesign %>%
 
 ```{r eval=FALSE, include=FALSE}
 # Not run since this chunk is too specific and depends on which modules are active.
-scheme_target_paneldesign %>% 
+scheme_ps_target_paneldesign %>% 
   mutate(nr_revisitpatterns_per_scheme = n(), .by = scheme) %>% 
   filter(nr_revisitpatterns_per_scheme > 1) %>% 
   unnest(module_combo) %>% 
@@ -158,7 +158,7 @@ Creating an object that holds the relation between module, scheme, module combo,
 
 ```{r}
 mod_scheme_yrs_moco_ps <- 
-  module_domain_scheme_stratum_sample_size %>%
+  module_domain_scheme_ps_stratum_sample_size %>%
   # next filter step is in alignment with earlier (see above); field
   # activities of non-core schemes should (by definition) only apply to the
   # explicitly (and only exceptionally) added sampling units for such non-core
@@ -167,7 +167,7 @@ mod_scheme_yrs_moco_ps <-
   distinct(module, scheme, year_first, year_last, month_first) %>%
   # join module combos:
   inner_join(
-    scheme_target_paneldesign %>% 
+    scheme_ps_target_paneldesign %>% 
       select(scheme, module_combo_code, module_combo, panel_set) %>% 
       unnest(module_combo),
     join_by(module, scheme),
@@ -233,7 +233,7 @@ Expansion with new, unplanned modules will always lead to rearranging the panel 
 
 ### Module combo prioritization
 
-From inspection of `scheme_target_paneldesign`, we decide to use the following order to prioritize module combos in the GRTS sampling.
+From inspection of `scheme_ps_target_paneldesign`, we decide to use the following order to prioritize module combos in the GRTS sampling.
 
 ```{r}
 moco_order <- tribble(
@@ -250,7 +250,7 @@ moco_order <- tribble(
 ) %>% 
   mutate(module_combo_code = factor(
     module_combo_code,
-    levels = levels(scheme_target_paneldesign$module_combo_code)
+    levels = levels(scheme_ps_target_paneldesign$module_combo_code)
   )) %>% 
   filter(!is.na(module_combo_code))
 ```
@@ -264,7 +264,7 @@ Check that no module combos exist that are missed by above object.
 
 ```{r}
 stopifnot(all(
-  scheme_target_paneldesign$module_combo_code %in% moco_order$module_combo_code
+  scheme_ps_target_paneldesign$module_combo_code %in% moco_order$module_combo_code
 ))
 ```
 
@@ -401,9 +401,9 @@ Objects subsetted with `[[1]]` mean that they (may) contain more, similarly stru
 ```{r echo = FALSE}
 for (name in c(
   "mod_scheme_targetfieldactivity",
-  "mod_scheme_target_paneldesign",
-  "scheme_target_paneldesign",
-  "scheme_target_paneldesign$module_combo[[1]]",
+  "mod_scheme_ps_target_paneldesign",
+  "scheme_ps_target_paneldesign",
+  "scheme_ps_target_paneldesign$module_combo[[1]]",
   "mod_scheme_yrs_moco_ps",
   "mhq_samples"
 )) {

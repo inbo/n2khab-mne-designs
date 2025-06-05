@@ -1,7 +1,7 @@
 # This code requires availability of the following objects:
 # - wsh_pol_area_class
 # - habquarries_area_class
-# - module_domain_scheme_stratum_target_sample_size
+# - module_domain_scheme_ps_stratum_target_sample_size
 
 library(ggplot2)
 
@@ -19,7 +19,7 @@ wsh_strata_area <-
   select(type, stratum, int, area) %>%
   mutate(stratum = factor(stratum))
 
-module_domain_scheme_stratum_target_sample_size %>%
+module_domain_scheme_ps_stratum_target_sample_size %>%
   filter(
     module == "mbaa_mne_phase_1",
     domain == "Flanders",
@@ -76,7 +76,7 @@ habquarries_strata_area <-
   select(type, stratum, int, area) %>%
   mutate(stratum = factor(stratum))
 
-module_domain_scheme_stratum_target_sample_size %>%
+module_domain_scheme_ps_stratum_target_sample_size %>%
   filter(
     module == "mbaa_mne_phase_1",
     domain == "Flanders",

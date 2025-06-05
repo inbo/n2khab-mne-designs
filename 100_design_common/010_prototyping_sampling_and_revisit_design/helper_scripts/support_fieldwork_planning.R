@@ -171,14 +171,14 @@ generate_sample_size_table <- function(df) {
     )
 }
 
-module_domain_scheme_stratum_sample_size %>%
+module_domain_scheme_ps_stratum_sample_size %>%
   filter(
     type %in% c("4010", "4030", "6230_hmo", "7140_oli", "9190"),
     scheme %in% c("GW_03.3", "SOIL_03.2")
   ) %>%
   generate_sample_size_table()
 
-module_domain_scheme_stratum_sample_size %>%
+module_domain_scheme_ps_stratum_sample_size %>%
   filter(
     !(type %in% c("4010", "4030", "6230_hmo", "7140_oli", "9190")),
     scheme %in% c("GW_03.3", "SOIL_03.2")

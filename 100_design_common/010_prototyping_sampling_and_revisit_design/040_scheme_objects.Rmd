@@ -797,7 +797,7 @@ Also distributing the spatial sample sizes over schemes x panel sets by (sub)mod
 Note that from here on, we only consider the domains with predetermined sample size, i.e. those that have their own design.
 
 ```{r}
-submodule_domain_scheme_designattr <-
+submodule_domain_scheme_ps_designattr <-
   modules %>%
   select(-year_firstdefinition, -contains("name_"), -code_short) %>% 
   inner_join(module_domains, by = "module") %>%
@@ -1006,7 +1006,7 @@ Recalculating yearly spatial sample sizes at an aggregated level as checks.
 
 ```{r}
 sample_size_check1 <-
-  submodule_domain_scheme_designattr %>%
+  submodule_domain_scheme_ps_designattr %>%
   mutate(yearly_sample_size = as.integer(round(sp_sample_size_all_panels / cycle_duration_y))) %>%
   summarize(
     yearly_sample_size = sum(yearly_sample_size, na.rm = TRUE),
@@ -1019,7 +1019,7 @@ sample_size_check1
 
 ```{r paged.print = FALSE}
 aggregate_sample_size(
-  submodule_domain_scheme_designattr,
+  submodule_domain_scheme_ps_designattr,
   "sp_sample_size_all_panels",
   mhq_scheme_category
 ) %>%
@@ -1028,7 +1028,7 @@ aggregate_sample_size(
 
 ### Generate non-corrected target sample sizes for strata in module x domain x scheme x panel set combinations
 
-Expanding `submodule_domain_scheme_designattr` with strata, collapsing submodules (effectively summing the submodules' spatial sample sizes) and distributing spatial sample sizes over strata.
+Expanding `submodule_domain_scheme_ps_designattr` with strata, collapsing submodules (effectively summing the submodules' spatial sample sizes) and distributing spatial sample sizes over strata.
 
 For types that are subdivided into (surface area based) strata, the 4th root of the number of population units per stratum (in module x domain x scheme x type) is taken to distribute the target sample size at type level.
 This was found to be a good compromise for estimator precision at type level, between the more extreme scenarios of population size versus an area weighed distribution.
@@ -1037,8 +1037,8 @@ Non-core MNE schemes do not adopt sample sizes from the core MNE schemes: only t
 However we do attribute extra sample sizes in non-core MNE schemes, for those types not covered by core schemes -- see object `non_core_types_per_module_and_compartment`.
 
 ```{r}
-module_domain_scheme_stratum_target_sample_size <-
-  submodule_domain_scheme_designattr %>%
+module_domain_scheme_ps_stratum_target_sample_size <-
+  submodule_domain_scheme_ps_designattr %>%
   select(-type_count, -stratum_count) %>% 
   inner_join(
     # note that, for MHQ schemes, submod_dom_scheme_ssf_stratum_nunits was
@@ -1127,7 +1127,7 @@ Compared to the previous result, some non-core-scheme types that are not covered
 
 ```{r paged.print = FALSE}
 aggregate_sample_size(
-  module_domain_scheme_stratum_target_sample_size,
+  module_domain_scheme_ps_stratum_target_sample_size,
   "sp_sample_size_all_panels_stratum",
   mhq_scheme_category
 ) %>%
@@ -1159,8 +1159,8 @@ First determining the infinite sample sizes and some intermediate results, by re
 
 ```{r}
 upper_optim_bound <- 100
-module_domain_scheme_stratum_sample_size_infinite <-
-  module_domain_scheme_stratum_target_sample_size %>%
+module_domain_scheme_ps_stratum_sample_size_infinite <-
+  module_domain_scheme_ps_stratum_target_sample_size %>%
   left_join(
     mhq_scheme_category,
     join_by(scheme),
@@ -1196,7 +1196,7 @@ Check if such cases exist:
 <!-- XXX In this case, type 3260 has not yet got a sufficiently reliable sampling frame, so this must be revisited. -->
 
 ```{r}
-module_domain_scheme_stratum_sample_size_infinite %>%
+module_domain_scheme_ps_stratum_sample_size_infinite %>%
   filter(coef > upper_optim_bound - 1) %>%
   summarize(
     pooled_pop_size = sum(nunits),
@@ -1208,7 +1208,7 @@ module_domain_scheme_stratum_sample_size_infinite %>%
 Overview of pools, pooled budgeted (target) sample sizes, and coefficients to set the infinite population sizes of the strata contained within each pool.
 
 ```{r}
-module_domain_scheme_stratum_sample_size_infinite %>%
+module_domain_scheme_ps_stratum_sample_size_infinite %>%
   filter(!is.na(coef)) %>%
   summarize(
     budgeted_sp_sample_size_all_panels = sum(sp_sample_size_all_panels_stratum),
@@ -1220,7 +1220,7 @@ module_domain_scheme_stratum_sample_size_infinite %>%
 Summary of coefficient values, excluding potential extremes (which relate to insufficient availability of population units).
 
 ```{r}
-module_domain_scheme_stratum_sample_size_infinite %>%
+module_domain_scheme_ps_stratum_sample_size_infinite %>%
   distinct(pool_with_maintained_type_precision, coef) %>%
   filter(coef < upper_optim_bound - 1) %>%
   pull(coef) %>%
@@ -1230,8 +1230,8 @@ module_domain_scheme_stratum_sample_size_infinite %>%
 Applying the finite population correction.
 
 ```{r}
-module_domain_scheme_stratum_sample_size <-
-  module_domain_scheme_stratum_sample_size_infinite %>%
+module_domain_scheme_ps_stratum_sample_size <-
+  module_domain_scheme_ps_stratum_sample_size_infinite %>%
   mutate(
     sp_sample_size_all_panels_stratum = apply_fpc(
       sp_sample_size_all_panels_stratum_inf,
@@ -1263,7 +1263,7 @@ Small differences with previous result arise because of rounding to integer valu
 
 ```{r paged.print = FALSE}
 aggregate_sample_size(
-  module_domain_scheme_stratum_sample_size,
+  module_domain_scheme_ps_stratum_sample_size,
   "sp_sample_size_all_panels_stratum",
   mhq_scheme_category
 ) %>%
@@ -1273,7 +1273,7 @@ aggregate_sample_size(
 Comparing with target sample sizes, which should match earlier results.
 
 ```{r paged.print = FALSE}
-module_domain_scheme_stratum_sample_size %>%
+module_domain_scheme_ps_stratum_sample_size %>%
   distinct(
     module,
     domain,
@@ -1295,7 +1295,7 @@ Expanding with variables and field methods and adjusting sample sizes where need
 <!-- XXXX Set sample size adjustment in 010_settings -->
 
 ```{r include=FALSE}
-submodule_domain_scheme_designattr %>%
+submodule_domain_scheme_ps_designattr %>%
   inner_join(
     mod_scheme_variableset_mainfieldactivity,
     join_by(module, scheme),
@@ -1332,9 +1332,9 @@ for (name in c(
   "module_scheme_props",
   "submodule_domain_scheme_typestats",
   "submodule_domain_scheme_stratumstats",
-  "submodule_domain_scheme_designattr",
-  "module_domain_scheme_stratum_target_sample_size",
-  "module_domain_scheme_stratum_sample_size"
+  "submodule_domain_scheme_ps_designattr",
+  "module_domain_scheme_ps_stratum_target_sample_size",
+  "module_domain_scheme_ps_stratum_sample_size"
 )) {
   cat(name, "\n")
   glimpse(eval(str2lang(name)))

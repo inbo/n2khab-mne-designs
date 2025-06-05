@@ -24,7 +24,7 @@ If the needs are not covered, then overlapping locations between module 1 and 2 
 Spatial sampling frame 0 is the most common one and also the unrestricted one, so we use that one to choose GRTS thresholds.
 
 ```{r paged.print=FALSE}
-module_domain_scheme_stratum_sample_size %>% 
+module_domain_scheme_ps_stratum_sample_size %>% 
   count(sampling_frame_id, sort = TRUE)
 ```
 
@@ -48,7 +48,7 @@ We only take into account sample sizes larger than zero.
 
 ```{r}
 moco_dom_stratum_grtspart <- 
-  module_domain_scheme_stratum_sample_size %>%
+  module_domain_scheme_ps_stratum_sample_size %>%
   select(
     module,
     domain,
@@ -65,7 +65,7 @@ moco_dom_stratum_grtspart <-
   filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
   # joining module combos
   inner_join(
-    scheme_target_paneldesign %>% 
+    scheme_ps_target_paneldesign %>% 
       select(scheme, module_combo_code, module_combo, panel_set) %>% 
       unnest(module_combo),
     join_by(module, scheme),
@@ -249,12 +249,12 @@ Determining the applicable domain relations.
 domain_relations_spsamples <- 
   domain_overlaps %>% 
   semi_join(
-    module_domain_scheme_stratum_sample_size %>% 
+    module_domain_scheme_ps_stratum_sample_size %>% 
       distinct(module, domain),
     join_by(domain)
   ) %>% 
   semi_join(
-    module_domain_scheme_stratum_sample_size %>% 
+    module_domain_scheme_ps_stratum_sample_size %>% 
       distinct(module, domain),
     join_by(included_by == domain)
   )
@@ -266,7 +266,7 @@ Since this object is going to be used to draw actual samples and spare units, sa
 
 ```{r}
 scheme_moco_ps_dom_stratum_sample_size <- 
-  module_domain_scheme_stratum_sample_size %>%
+  module_domain_scheme_ps_stratum_sample_size %>%
   select(
     module,
     domain,
@@ -285,7 +285,7 @@ scheme_moco_ps_dom_stratum_sample_size <-
   filter(!is.na(sp_sample_size_all_panels_stratum)) %>% 
   # joining module combos
   inner_join(
-    scheme_target_paneldesign %>% 
+    scheme_ps_target_paneldesign %>% 
       select(scheme, module_combo_code, module_combo, panel_set) %>% 
       unnest(module_combo),
     join_by(module, scheme),
@@ -509,7 +509,7 @@ stopifnot(
 **Missing functionality**: generate object that reflects relationship between all sampling units and schemes, including non-core schemes, needed for the inference stage.
 Currently, we only consider the needs for sampling and data collection, hence not the exact duplications between (parts of) core-schemes and (parts of) non-core schemes.
 See also the above code comment about non-core schemes.
-In essence this means duplicating existing sampling units using applicable rows from `module_domain_scheme_stratum_sample_size`, `mod_scheme_target_paneldesign` or `scheme_target_paneldesign` with relation to non-core schemes.
+In essence this means duplicating existing sampling units using applicable rows from `module_domain_scheme_ps_stratum_sample_size`, `mod_scheme_ps_target_paneldesign` or `scheme_ps_target_paneldesign` with relation to non-core schemes.
 This object then also contains the spatial poststrata, needed for inference, and we also need to add the sampling weights at that level.
 
 

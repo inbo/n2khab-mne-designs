@@ -157,7 +157,7 @@ tictoc::toc()
 # Going for the indexed approach; slightly faster than cells()
 
 type_spsamplesizes <-
-  module_domain_scheme_stratum_sample_size_2 %>%
+  module_domain_scheme_ps_stratum_sample_size_2 %>%
   filter(module == "mbaa_mne_phase_1", domain == "Flanders") %>%
   distinct(scheme, type, sp_sample_size_all_panels_type)
 

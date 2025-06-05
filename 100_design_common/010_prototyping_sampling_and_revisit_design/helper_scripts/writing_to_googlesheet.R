@@ -181,11 +181,11 @@ non_core_types_per_module_and_compartment %>%
 
 
 # Below code requires availability of:
-# - submodule_domain_scheme_designattr
+# - submodule_domain_scheme_ps_designattr
 # - mhq_mod_dom_type_no_sample
-# - module_domain_scheme_stratum_sample_size
+# - module_domain_scheme_ps_stratum_sample_size
 
-submodule_domain_scheme_designattr %>%
+submodule_domain_scheme_ps_designattr %>%
   summarize(
     submodules = str_flatten(submodule, " | "),
     type_counts = str_flatten(type_count, " | "),
@@ -201,7 +201,7 @@ submodule_domain_scheme_designattr %>%
     sheet = "mod_dom_scheme_design_spatial_before_FPC_redistrib"
   )
 
-module_domain_scheme_stratum_sample_size %>%
+module_domain_scheme_ps_stratum_sample_size %>%
   distinct(
     module,
     domain,
@@ -215,7 +215,7 @@ module_domain_scheme_stratum_sample_size %>%
     sheet = "mod_dom_scheme_design_spatial_after_FPC_redistrib"
   )
 
-module_domain_scheme_stratum_sample_size %>%
+module_domain_scheme_ps_stratum_sample_size %>%
   summarize(
     nunits = sum(nunits),
     .by = c(
@@ -236,7 +236,7 @@ module_domain_scheme_stratum_sample_size %>%
     sheet = "mod_dom_scheme_type_sample_sizes"
   )
 
-module_domain_scheme_stratum_sample_size %>%
+module_domain_scheme_ps_stratum_sample_size %>%
   distinct(
     module,
     domain,
@@ -256,7 +256,7 @@ module_domain_scheme_stratum_sample_size %>%
     sheet = "mod_dom_scheme_type_smplsize_cross"
   )
 
-module_domain_scheme_stratum_sample_size %>%
+module_domain_scheme_ps_stratum_sample_size %>%
   select(
     module,
     domain,

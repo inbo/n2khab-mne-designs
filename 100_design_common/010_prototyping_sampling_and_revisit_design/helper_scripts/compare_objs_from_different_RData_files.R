@@ -71,9 +71,9 @@ get("domain_stratum_nunits", envir = panflpan5_nophabcorrection) %>%
     join_by(domain, stratum)
   )
 
-get("module_domain_scheme_stratum_sample_size", envir = panflpan5_nophabcorrection) %>%
+get("module_domain_scheme_ps_stratum_sample_size", envir = panflpan5_nophabcorrection) %>%
   anti_join(
-    get("module_domain_scheme_stratum_sample_size", envir = panflpan5),
+    get("module_domain_scheme_ps_stratum_sample_size", envir = panflpan5),
     join_by(module, domain, scheme, stratum)
   ) %>%
   select(domain, scheme, stratum)
