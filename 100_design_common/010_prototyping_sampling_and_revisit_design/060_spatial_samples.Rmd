@@ -97,9 +97,11 @@ moco_ps_dom_stratum_grtspart <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>% 
-  # determine rank number of the GRTS partition
+  # Determine rank number of the GRTS partition. We choose to keep different
+  # panel set numbers with the same module combo closer together than identical
+  # panel set numbers with a different module combo
   mutate(
-    grts_part = rank(moco_rank * 1000 + panel_set, ties.method = "min"),
+    grts_part = dense_rank(moco_rank * 1000 + panel_set),
     .by = c(domain, stratum)
   )
 ```
