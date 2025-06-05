@@ -41,12 +41,12 @@ See also the _missing functionality_ in section \@ref(moco).
 Importantly, we prefer to always set the start year as the first year of the monitoring cycle for European nature policy.
 We prefer this in order to align the full GRTS series with each reporting period and sample review cycle, and in order to increase field activity synergy with other monitoring networks that follow the same cycle.
 
-## Module combinations (module combos) per scheme based on common panel design of target variables {#moco}
+## Module combinations (module combos) per scheme x panel set based on common panel design of target variables {#moco}
 
 Determining module combos per scheme based on common panel design characteristics _of target variables_.
 The target variables limit the main field activities of a module x scheme to a great extent, since the latter also comprise variables for explanation & quality control.
 
-First create an object with the 'target' panel designs per module and scheme (target referring to the target variables restriction).
+First create an object with the 'target' panel designs per module x scheme x panel set (target referring to the target variables restriction).
 
 ```{r}
 mod_scheme_targetfieldactivity <- 
@@ -80,19 +80,28 @@ mod_scheme_ps_targetfieldactivity_paneldesign <-
   # add the FAG panel design
   inner_join(
     mod_scheme_ps_fag_paneldesign %>% 
-      distinct(pick(module, scheme, field_activity_group, panel_set, revisit_pattern:last_col())),
+      distinct(pick(
+        module,
+        scheme,
+        panel_set,
+        field_activity_group,
+        revisit_pattern:last_col()
+      )),
     join_by(module, scheme, field_activity_group),
-    relationship = "many-to-one",
+    relationship = "many-to-many",
     unmatched = c("error", "drop")
   ) %>% 
   distinct(pick(
     module,
     scheme,
-    main_field_activity,
     panel_set,
+    main_field_activity,
     revisit_pattern:last_col()
   ))
-if (nrow(mod_scheme_targetfieldactivity_paneldesign) != nrow(mod_scheme_targetfieldactivity)) {
+if (
+  nrow(mod_scheme_targetfieldactivity_paneldesign %>% filter(panel_set == 1L)) !=
+  nrow(mod_scheme_targetfieldactivity)
+) {
   stop("The number of rows changed unexpectedly.")
 }
 mod_scheme_ps_target_paneldesign <- 
@@ -121,11 +130,11 @@ scheme_ps_target_paneldesign <-
     .by = -c(module, code_short)
   ) %>% 
   arrange(module_combo_code, scheme, panel_period_main, cycle_duration_y) %>% 
-  relocate(module_combo_code, module_combo, .after = scheme)
+  relocate(module_combo_code, module_combo, .after = panel_set)
 scheme_ps_target_paneldesign
 ```
 
-We end up with `r nrow(scheme_ps_target_paneldesign)` different scheme x target panel design combinations, each of which applies to one or several modules.
+We end up with `r nrow(scheme_ps_target_paneldesign)` different scheme x panel set x target panel design combinations, each of which applies to one or several modules.
 
 Schemes may have more than one revisit design, i.e. different module combinations x panel sets.
 
@@ -135,14 +144,14 @@ scheme_ps_target_paneldesign %>%
   count(nr_revisitpatterns_per_scheme)
 ```
 
-<!-- It can be seen that module 'pan_transmon_be2100024' (pan2124) is always present when a scheme has more than one revisit design. -->
+<!-- It can be seen that module 'pan_transmon_be2100024' (pan2124) is always present when a scheme has more than two revisit designs. -->
 <!-- So it is logical to handle it specially. -->
 
 ```{r eval=FALSE, include=FALSE}
 # Not run since this chunk is too specific and depends on which modules are active.
 scheme_ps_target_paneldesign %>% 
   mutate(nr_revisitpatterns_per_scheme = n(), .by = scheme) %>% 
-  filter(nr_revisitpatterns_per_scheme > 1) %>% 
+  filter(nr_revisitpatterns_per_scheme > 2) %>% 
   unnest(module_combo) %>% 
   summarize(
     has_pan2124 = any(module_combo_code == "pan2124"),
@@ -164,17 +173,17 @@ mod_scheme_yrs_moco_ps <-
   # explicitly (and only exceptionally) added sampling units for such non-core
   # schemes.
   filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
-  distinct(module, scheme, year_first, year_last, month_first) %>%
+  distinct(module, scheme, panel_set, year_first, year_last, month_first) %>%
   # join module combos:
   inner_join(
     scheme_ps_target_paneldesign %>% 
       select(scheme, module_combo_code, module_combo, panel_set) %>% 
       unnest(module_combo),
-    join_by(module, scheme),
-    relationship = "many-to-one",
+    join_by(module, scheme, panel_set),
+    relationship = "one-to-one",
     unmatched = c("error", "drop")
   ) %>% 
-  arrange(scheme, module_combo_code, panel_set)
+  arrange(scheme, panel_set, module_combo_code)
 ```
 
 ### Conflicting modules in a module combo
@@ -255,10 +264,10 @@ moco_order <- tribble(
   filter(!is.na(module_combo_code))
 ```
 
-Note that panel sets are always ranked in ascending order, assuming that panel set 1 represents the _largest_ number of sampling units.
+Note that panel sets are always numbered in ascending order, assuming that panel set 1 represents the _largest_ number of sampling units.
 This should be taken into account when defining the panel sets.
 
-To maximize matching of spatial samples across schemes, the module combo codes with the same rank within a common panel set rank will be forced to use the same subset of a GRTS series (i.e. GRTS address partition) for a particular stratum and domain!
+To maximize matching of spatial samples across schemes, the module combo codes with the same rank within a common panel set number will be forced to use the same subset of a GRTS series (i.e. GRTS address partition) for a particular stratum and domain!
 
 Check that no module combos exist that are missed by above object.
 
@@ -273,11 +282,11 @@ stopifnot(all(
 Note that _different_ module combos within a scheme are **currently** handled as if they were different panel sets, i.e. they need a separate portion of the GRTS series to sample from; the starting address could be set based on sample size proportion but after that the starting address should be held fixed.
 
 Note that this may not hold in general.
-This is currently invoked by the `pan_transmon_be2100024` module, which explicitly intends to apply the higher frequency monitoring to **new** (hence _extra_) monitoring locations, relative to the other modules.
+It is e.g. invoked by the `pan_transmon_be2100024` module, which explicitly intends to apply the higher frequency monitoring to **new** (hence _extra_) monitoring locations, relative to the other modules.
 However it can also happen that future modules increase frequencies at the locations of _existing_ modules.
 Nevertheless, it should be warned that the latter approach can lead to challenging situations, once an original module stops: the extra module didn't foresee the needed budget to support the base frequency and the remaining visits (of the new module) may be pointless.
 
-It should also be accepted that for rare types, these samples may by necessity overlap between module combos.
+It should also be accepted that for rare types, these samples may by necessity overlap between module combos (or panel sets).
 Hence, this should be simplified afterwards to avoid unnecessary duplication of fieldwork planning.
 
 
