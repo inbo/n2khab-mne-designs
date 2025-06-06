@@ -4,6 +4,12 @@
 
 Determining fixed GRTS address thresholds per domain and stratum to assign to module combos and panel sets, applicable across schemes, in order to maintain maximum synergy across schemes.
 
+While below code was generalized to any number of GRTS partitions, we currently require that no more than two GRTS partitions exist for each domain and stratum:
+
+- these allow the possibility of a split panel design;
+- this strategy allows for a large number of spare units, which also supports potential future sample size increases, e.g. due to new modules in specific SACs, without running the risk of location spillovers between revisit designs (as long as the population is large enough and enough spare units were defined that drive the gap between GRTS partitions);
+- consequently, this means that within each scheme, domain and stratum only two different revisit designs can coexist (typically as panel sets; optionally module combos).
+
 The threshold is the GRTS address start where a series should start.
 For this, also the relationship of module combos between schemes must be investigated and aligned.
 
@@ -104,6 +110,17 @@ moco_ps_dom_stratum_grtspart <-
     grts_part = dense_rank(moco_rank * 1000 + panel_set),
     .by = c(domain, stratum)
   )
+```
+
+Given the earlier requirement of maximum number of different revisit designs, we give an error if `grts_part` > 2 exists:
+
+```{r}
+if (max(moco_ps_dom_stratum_grtspart$grts_part) > 2) {
+  stop(
+    "We have chosen to not support more than two GRTS partitions. ",
+    "Please integrate (revise) revisit designs as needed."
+  )
+}
 ```
 
 Now setting the GRTS threshold (variable `grts_address_start`) for each GRTS partition in a domain x stratum.
