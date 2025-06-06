@@ -165,8 +165,8 @@ dom_stratum_grtspart_threshold <-
   # now determine threshold for each domain x stratum combination
   mutate(
     splits = pmap(
-      list(is_strictly_aquatic, splits, grts_addresses), 
-      function(aq, spl, grts) {
+      list(splits, grts_addresses), 
+      function(spl, grts) {
         spl %>% 
           mutate(
             # TEMPORARY HACK to fix two cases of 3260 (domains BE2100024 and
@@ -179,8 +179,9 @@ dom_stratum_grtspart_threshold <-
               max_sample_size_all_panels
             ),
             ##################################
-            n_spare_units_theoretical = round(max_sample_size_all_panels * 
-              ifelse(aq, spare_coef_aq, spare_coef_default)),
+            n_spare_units_theoretical = round(
+              max_sample_size_all_panels * spare_coef_default
+            ),
             # first GRTS address of a GRTS partition
             grts_address_start = pick_grts_thresholds(
               max_sample_size_all_panels,
@@ -571,7 +572,7 @@ scheme_moco_ps_stratum_sppost_spsamples_spares <-
   ) %>% 
   # determine the coefficient to calculate the theoretical number of spare units
   mutate(
-    spare_coef = ifelse(is_strictly_aquatic, spare_coef_aq, spare_coef_default)
+    spare_coef = spare_coef_default
   ) %>% 
   select(-is_strictly_aquatic) %>% 
   # add list columns for scheme x module combo x panel set x stratum:
