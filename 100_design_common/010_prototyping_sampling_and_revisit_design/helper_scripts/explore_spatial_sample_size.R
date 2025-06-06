@@ -198,3 +198,57 @@ ggsave(
 )
 
 
+## Explore GRTS partitions
+
+dom_stratum_grtspart_threshold %>%
+  filter(n_spare_units_theoretical > 0) %>%
+  mutate(n_spare_units_rel = n_spare_units / n_spare_units_theoretical) %>%
+  ggplot(aes(x = n_spare_units_rel)) +
+  geom_histogram(fill = "white", colour = "grey80", binwidth = 0.2) +
+  facet_wrap(~grts_part, ncol = 1, scales = "free_y")
+
+
+spare_unit_stats <-
+  dom_stratum_grtspart_threshold %>%
+  mutate(
+    spare_unit_prop = n_spare_units / max_sample_size_all_panels,
+    n_parts = n(),
+    range_spare_prop = max(spare_unit_prop) - min(spare_unit_prop),
+    .by = c(domain, stratum)
+  )
+spare_unit_stats %>%
+  summarize(
+    min_spare_unit_prop = min(spare_unit_prop),
+    .by = c(domain, stratum, n_parts, range_spare_prop)
+  ) %>%
+  mutate(n_parts = factor(n_parts)) %>%
+  ggplot(aes(
+    x = min_spare_unit_prop,
+    y = range_spare_prop,
+    colour = n_parts,
+    group = n_parts
+  )) +
+  geom_point(alpha = 0.2)
+
+# investigation of extremes shows that this has to do with very small sample
+# sizes in each domain of pan5 in panel_set 2: since this is forced into its own
+# GRTS partition, its number of spare units can be very low. Still, this feels
+# like an error in the code.
+
+spare_unit_stats %>%
+  filter(range_spare_prop > 0.5) %>%
+  select(-matches("start|end|theoret")) %>%
+  View
+
+spare_unit_stats %>%
+  filter(grts_part == 2, n_parts == 3) %>%
+  select(-matches("start|end|theoret")) %>%
+  View
+
+moco_ps_dom_stratum_grtspart %>%
+  filter(stratum == "4010", grts_part == 2)
+
+module_domain_scheme_ps_stratum_sample_size %>%
+  filter(stratum == "4010", panel_set == 2) %>%
+  select(1:4, stratum:last_col())
+
