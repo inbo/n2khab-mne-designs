@@ -278,7 +278,7 @@ including_domain <- unique(domain_relations_spsamples$included_by)
 
 Below, the number of domain x stratum cases in included domains is shown where this overlap with the including domain does not occur, for each combination of GRTS partition number and applied sample size in the included domain.
 
-```{r}
+```{r paged.print = FALSE}
 grtspart_relations <- 
   dom_stratum_grtspart_threshold %>% 
   filter(domain != including_domain) %>% 
@@ -294,12 +294,12 @@ grtspart_relations <-
     join_by(stratum, grts_part),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
-  )
+  ) %>% 
+  select(-matches("spare|index|gap"))
 grtspart_relations %>% 
   filter(
     !between(grts_address_start, grts_start_largedom, grts_end_largedom)
   ) %>% 
-  select(-matches("spare|index|gap")) %>% 
   count(grts_part, max_sample_size_all_panels) %>% 
   arrange(grts_part, desc(max_sample_size_all_panels))
 ```
@@ -332,9 +332,33 @@ This result is because the GRTS partition's address range depends on the availab
 In the first partition we can safely conclude that in the non-overlapping cases the included domain is simply beyond the including domain's sample and spare units, so there's no conflict in combining both after spatial poststratification (since there exists no 'both' within the included domain).
 However the mismatch happens more in the second panel set than in the first, as the start address of the second panel set is also determined by the first partition's sample size, which differs between the including and the included domain.
 
-In the second partition we may have that the including domain still selected a sampling unit inside the included domain which is outside of the included domain's second partition, effectively generating a non-consecutive GRTS-series for the combined second panel set in the included domain.
-We might prevent this by creating the GRTS partitions only after spatial stratification using the included domains, but once monitoring starts it cannot be done for new modules that define new included domains; so this stratification would be a burden rather than a bless in terms of flexibility.
-Consequently, it will be needed to approach these compound samples as such.
+In the second partition we often have that the including domain still selected a sampling unit inside the included domain which is outside of the included domain's second partition, effectively generating a non-consecutive GRTS-series for the combined second panel set in the included domain.
+
+Note that beside the non-consecutive GRTS-series, this also affects the selection of spare units of a scheme's second panel set in spatial poststrata further on.
+This is because the spare units are selected from all remaining available GRTS addresses in GRTS partition 2, from the including and the included domain.
+So there's room for improvement here.
+
+We might prevent this by creating the GRTS partitions only after spatial stratification using the included domains, but once monitoring starts it cannot be done for new modules that define new included domains without dropping locations of the including domain in favour of using new locations as one GRTS series.
+Also, when the module of the included domains would be halted, the stratification would still need to be kept.
+Hence, using the included domains as cross-module stratification would be a burden rather than a bless in terms of flexibility, and so would shifting the locations of GRTS partition 2 of the including domain that lie within the including domain.
+One might argue to approach these compound GRTS series as two panel sets within the included domain, but this makes for extra complication.
+
+One alternative might be to actually shift GRTS partition 2 of a stratum in an included domain in order to follow on the existing addresses of the same partition from the including domain that lie in the included domain.
+However this would neglect an optimal position of the partition in the whole available GRTS series within the included domain.
+Still, this seems the only reasonable solution, but it calls for more investigation of its effects on the (relative) number of spare units in each partition, per stratum and domain.
+
+Counting, for the second partition, whether in the included domain the GRTS addresses are higher than for the including domain (overshooting) or not.
+
+```{r}
+grtspart_relations %>% 
+  filter(
+    !between(grts_address_start, grts_start_largedom, grts_end_largedom),
+    grts_part == 2,
+  ) %>% 
+  mutate(overshooting = grts_address_start > grts_end_largedom) %>% 
+  count(overshooting)
+```
+
 
 **Missing functionality**: write a file with these thresholds (GRTS partition definitions), so that it can be read in a static way from some point on!!
 
