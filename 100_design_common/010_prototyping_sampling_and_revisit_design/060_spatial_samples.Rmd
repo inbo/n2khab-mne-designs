@@ -250,7 +250,7 @@ dom_stratum_grtspart_threshold %>%
   count(domain, grts_part, name = "number_of_strata")
 ```
 
-It must be kept in mind that the same GRTS partition number for the same stratum does not neccessarily (and often does not) overlap between overlapping domains.
+It must be kept in mind that, in overlapping domains, the same GRTS partition number for the same stratum does not neccessarily (and often does not) represent overlapping GRTS series between these domains.
 
 Below, the number of domain x stratum cases in included domains is shown where this overlap with the including domain does not occur, for each combination of GRTS partition number and applied sample size in the included domain.
 
@@ -278,25 +278,37 @@ grtspart_relations %>%
   arrange(grts_part, desc(max_sample_size_all_panels))
 ```
 
-Number and proportion of cases:
+Sample size, number and proportion of cases:
 
 ```{r}
 grtspart_relations %>% 
-  filter(!between(grts_address_start, grts_start_fl, grts_end_fl)) %>% 
-  nrow()
-nrow(
-  grtspart_relations %>% 
-    filter(!between(grts_address_start, grts_start_fl, grts_end_fl))
-) / nrow(grtspart_relations)
+  summarize(
+    max_sample_size_no_overlap = max(
+      max_sample_size_all_panels[!between(
+        grts_address_start,
+        grts_start_fl,
+        grts_end_fl
+      )]
+    ),
+    max_sample_size_all = max(max_sample_size_all_panels),
+    n_no_overlap = sum(!between(
+      grts_address_start,
+      grts_start_fl,
+      grts_end_fl
+    )),
+    n_all = n(),
+    .by = grts_part
+  ) %>% 
+  mutate(ratio_n = round(n_no_overlap / n_all, 2))
 ```
 
 This result is because the GRTS partition's address range depends on the available addresses of a stratum in an included domain, and these do not necessarily overlap with those of the including domain.
-In the first partition we can safely conclude that in these cases the included domain is simply beyond the including domain's sample and spare units, so there's no conflict in combining both after spatial poststratification (since there exists no 'both' within the .
+In the first partition we can safely conclude that in the non-overlapping cases the included domain is simply beyond the including domain's sample and spare units, so there's no conflict in combining both after spatial poststratification (since there exists no 'both' within the included domain).
 However the mismatch happens more in the second panel set than in the first, as the start address of the second panel set is also determined by the first partition's sample size, which differs between the including and the included domain.
 
 In the second partition we may have that the including domain still selected a sampling unit inside the included domain which is outside of the included domain's second partition, effectively generating a non-consecutive GRTS-series for the combined second panel set in the included domain.
-We might prevent this by creating the GRTS partitions only after spatial stratification using the included domains, but then it is not possible for new modules that define new included domains, so this would be a burden rather than a bless in terms of flexibility.
-Consequently, it will be needed to approach these compound samples as such, and also 
+We might prevent this by creating the GRTS partitions only after spatial stratification using the included domains, but once monitoring starts it cannot be done for new modules that define new included domains; so this stratification would be a burden rather than a bless in terms of flexibility.
+Consequently, it will be needed to approach these compound samples as such.
 
 **Missing functionality**: write a file with these thresholds (GRTS partition definitions), so that it can be read in a static way from some point on!!
 
