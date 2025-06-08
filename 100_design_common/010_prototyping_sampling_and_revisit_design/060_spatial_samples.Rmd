@@ -252,27 +252,47 @@ dom_stratum_grtspart_threshold %>%
 
 It must be kept in mind that, in overlapping domains, the same GRTS partition number for the same stratum does not neccessarily (and often does not) represent overlapping GRTS series between these domains.
 
+Before further investigating this, we first determine the applicable domain relations.
+
+```{r}
+domain_relations_spsamples <- 
+  domain_overlaps %>% 
+  semi_join(
+    module_domain_scheme_ps_stratum_sample_size %>% 
+      distinct(module, domain),
+    join_by(domain)
+  ) %>% 
+  semi_join(
+    module_domain_scheme_ps_stratum_sample_size %>% 
+      distinct(module, domain),
+    join_by(included_by == domain)
+  )
+including_domain <- unique(domain_relations_spsamples$included_by)
+```
+
 Below, the number of domain x stratum cases in included domains is shown where this overlap with the including domain does not occur, for each combination of GRTS partition number and applied sample size in the included domain.
 
 ```{r}
 grtspart_relations <- 
   dom_stratum_grtspart_threshold %>% 
-  filter(domain != "Flanders") %>% 
+  filter(domain != including_domain) %>% 
   inner_join(
     dom_stratum_grtspart_threshold %>% 
-      filter(domain == "Flanders") %>% 
+      filter(domain == including_domain) %>% 
       select(
         stratum,
         grts_part,
-        grts_start_fl = grts_address_start,
-        grts_end_fl = grts_address_end
+        grts_start_largedom = grts_address_start,
+        grts_end_largedom = grts_address_end
       ),
     join_by(stratum, grts_part),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   )
 grtspart_relations %>% 
-  filter(!between(grts_address_start, grts_start_fl, grts_end_fl)) %>% 
+  filter(
+    !between(grts_address_start, grts_start_largedom, grts_end_largedom)
+  ) %>% 
   select(-matches("spare|index|gap")) %>% 
   count(grts_part, max_sample_size_all_panels) %>% 
   arrange(grts_part, desc(max_sample_size_all_panels))
@@ -286,15 +306,15 @@ grtspart_relations %>%
     max_sample_size_no_overlap = max(
       max_sample_size_all_panels[!between(
         grts_address_start,
-        grts_start_fl,
-        grts_end_fl
+        grts_start_largedom,
+        grts_end_largedom
       )]
     ),
     max_sample_size_all = max(max_sample_size_all_panels),
     n_no_overlap = sum(!between(
       grts_address_start,
-      grts_start_fl,
-      grts_end_fl
+      grts_start_largedom,
+      grts_end_largedom
     )),
     n_all = n(),
     .by = grts_part
@@ -334,24 +354,6 @@ moco_ps_dom_stratum_grtspart_threshold <-
 ```
 
 ## Draw spatial samples
-
-Determining the applicable domain relations.
-
-```{r}
-domain_relations_spsamples <- 
-  domain_overlaps %>% 
-  semi_join(
-    module_domain_scheme_ps_stratum_sample_size %>% 
-      distinct(module, domain),
-    join_by(domain)
-  ) %>% 
-  semi_join(
-    module_domain_scheme_ps_stratum_sample_size %>% 
-      distinct(module, domain),
-    join_by(included_by == domain)
-  )
-including_domain <- unique(domain_relations_spsamples$included_by)
-```
 
 Determining the sample sizes at module combo instead of module level.
 Since this object is going to be used to draw actual samples and spare units, sample sizes of zero are dropped.
