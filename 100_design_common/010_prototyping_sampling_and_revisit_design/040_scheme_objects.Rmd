@@ -1258,7 +1258,7 @@ module_domain_scheme_ps_stratum_sample_size <-
   arrange(module, domain, scheme, panel_set, type, stratum)
 ```
 
-### Checks on the resulting sample sizes
+### Investigate the resulting sample sizes {#investigate-sample-sizes}
 
 Rechecking the aggregated sample size, i.e. the calculations at stratum and at scheme level.
 Small differences with previous result arise because of rounding to integer values.
@@ -1290,6 +1290,38 @@ module_domain_scheme_ps_stratum_sample_size %>%
   print(n = Inf)
 ```
 
+Overview of stratum sample sizes (in module x domain x scheme x panel set):
+
+```{r warning=FALSE}
+module_domain_scheme_ps_stratum_sample_size %>% 
+  mutate(is_census = sp_sample_size_all_panels_stratum == nunits) %>% 
+  ggplot(aes(x = sp_sample_size_all_panels_stratum, fill = is_census)) +
+  geom_bar() +
+  facet_wrap(~module, scales = "free")
+```
+
+Listing stratum sample sizes at the level of Flanders.
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size %>%
+  filter(domain == "Flanders") %>%
+  select(domain, scheme, panel_set, stratum, sp_sample_size_all_panels_stratum)
+```
+
+Focusing on small sample sizes:
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size %>% 
+  filter(sp_sample_size_all_panels_stratum <= 10) %>% 
+  mutate(
+    is_census = sp_sample_size_all_panels_stratum == nunits,
+    sp_sample_size_all_panels_stratum = factor(sp_sample_size_all_panels_stratum)
+  ) %>% 
+  ggplot(aes(x = sp_sample_size_all_panels_stratum, fill = is_census)) +
+  geom_bar() +
+  facet_wrap(~module, scales = "free")
+```
+
 Counting the number of domain x stratum combinations that have a sample size of zero, per module x scheme x panel set.
 
 ```{r paged.print = FALSE}
@@ -1310,6 +1342,40 @@ module_domain_scheme_ps_stratum_sample_size_infinite %>%
 This is hard to avoid without using larger sample sizes or a census, which then increases costs.
 This may not be a big problem: these strata would have had a small share in the inference anyway.
 However, it shows that some strata are effectively being missed, most of all in panel set 2.
+
+Also, beware that the estimator variance cannot be estimated at all for sample sizes of 1 that are not a census.
+For the split panel design situation, it is not yet decided though whether sub-estimations will indeed be done separately per panel set, but it would be good to at least have a way to do that.
+
+```{r paged.print = FALSE}
+module_domain_scheme_ps_stratum_sample_size %>%
+  filter(
+    sp_sample_size_all_panels_stratum == 1,
+    nunits > 1
+  ) %>%
+  count(module, scheme, panel_set)
+```
+
+At the Flemish level, we could argue to increase sample sizes of 0 or 1 that are not a census up to 2 (or 1 if that is the population size in the zero-sample-size case), which largely concerns panel set 2 (in panel set 1, it causes a census):
+
+```{r paged.print = FALSE}
+module_domain_scheme_ps_stratum_sample_size %>%
+  filter(
+    sp_sample_size_all_panels_stratum %in% 0:1,
+    sp_sample_size_all_panels_stratum < nunits,
+    domain == "Flanders"
+  ) %>% 
+  select(
+    domain,
+    scheme,
+    panel_set,
+    stratum,
+    sample_size = sp_sample_size_all_panels_stratum,
+    nunits
+  )
+```
+
+In the included domains, a straightforward solution would be to not analyze these cases at stratum level, but immediately at the type level, or even at the typegroup level with sampling weights so that types get equal weights (it might still be a GRTS estimator since we are after this weighted estimator -- to be sought out).
+
 
 ### Adjustments depending on variable sets
 
