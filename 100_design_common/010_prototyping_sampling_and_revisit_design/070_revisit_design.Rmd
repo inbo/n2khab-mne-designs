@@ -389,13 +389,15 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
     ),
     # number of panels in a panel group, to be taken together in repetitions
     # (below)
-    panel_group_size = ifelse(
-      !is.na(limit_n_subpanels_per_panel),
-      limit_n_subpanels_per_panel,
-      1L
+    panel_group_size = case_when(
+      revisit_pattern == "periodic_rotational" ~ 
+        as.integer(panel_count / cycle_duration_y),
+      !is.na(limit_n_subpanels_per_panel) ~ limit_n_subpanels_per_panel,
+      .default = 1L
     ),
     # number of times a panel group must be repeated during a cycle
     panel_group_repetitions = case_when(
+      revisit_pattern == "periodic_rotational" ~ 2L,
       !is.na(limit_n_subpanels_per_panel) ~ as.integer(
         (panel_period_main / panel_subperiod) / limit_n_subpanels_per_panel
       ),
@@ -420,6 +422,7 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
     # number of times a FAG happens at a single location during a single FAG
     # cycle
     n_locvisits_per_fagcycle = case_when(
+      revisit_pattern == "periodic_rotational" ~ panel_group_repetitions,
       revisit_pattern == "pure_panel" ~ 1L,
       .default = as.integer(
         fag_cycle / (panel_count * panel_period) /
@@ -434,7 +437,10 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
     panel_period_chr = simplify_period(panel_period),
     panel_enddate_addition_chr = simplify_period(panel_enddate_addition),
     panel_dateshift_chr = simplify_period(panel_dateshift),
-    revisit_pattern_abbrev = str_sub(revisit_pattern, 1, 3) %>% str_to_upper(),
+    revisit_pattern_abbrev = case_when(
+      revisit_pattern == "periodic_rotational" ~ "ROT",
+      .default = str_sub(revisit_pattern, 1, 3) %>% str_to_upper()
+    ),
     revisit_subpattern_abbrev = ifelse(
       !is.na(revisit_subpattern), 
       str_sub(revisit_subpattern, 1, 3), 
@@ -443,6 +449,15 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
       str_to_upper(),
     # notation_pattern summarises the panel design
     notation_pattern = case_when(
+      revisit_pattern_abbrev == "ROT" ~
+        str_c(
+          revisit_pattern_abbrev, 
+          ifelse(
+            panel_group_size > 1L | panel_group_repetitions > 1L, 
+            str_c("by", panel_group_size, "repeat", panel_group_repetitions),
+            ""
+          )
+        ),
       revisit_pattern_abbrev == "SER" & 
         revisit_subpattern_abbrev %in% c("SER", "PUR") ~
         str_c(
@@ -477,7 +492,7 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
         str_c(panel_period_chr,"[",  "+", panel_enddate_addition_chr, "]")
       ),
       ifelse(
-        str_detect(notation_pattern, "-"),
+        str_detect(notation_pattern, "-") | revisit_pattern_abbrev == "ROT",
         (str_c("for", cycle_duration_y, "y")),
         ""
       ),
