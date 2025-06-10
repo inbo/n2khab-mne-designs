@@ -497,7 +497,7 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
         ""
       ),
       "(",
-      ifelse(auto_continuous_meas, "auto|", ""),
+      ifelse(auto_continuous_meas_ps2, "auto2|", ""),
       ifelse(memship_alignfastest, "fastalign|", ""),
       notation_pattern,
       ")",
@@ -540,7 +540,7 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     limit_n_subperiods,
     panel_group_size,
     panel_group_repetitions,
-    auto_continuous_meas,
+    auto_continuous_meas_ps2,
     memship_alignfastest,
     notation_paneldesign
   )
@@ -701,7 +701,7 @@ scheme_moco_ps_spsubset_panel_calendar <-
       panel_dateshift,
       panel_group_size, 
       panel_group_repetitions, 
-      auto_continuous_meas,
+      auto_continuous_meas_ps2,
       memship_alignfastest,
       notation_paneldesign
     ),
@@ -888,7 +888,7 @@ scheme_moco_ps_stratum_sppost_genericpanelrelations <-
         module_combo_code, 
         panel_set, 
         panel_group_repetitions,
-        auto_continuous_meas, 
+        auto_continuous_meas_ps2, 
         memship_alignfastest,
         panel_count
       ) %>% 
@@ -911,11 +911,12 @@ scheme_moco_ps_stratum_sppost_genericpanelrelations <-
       ) %>% 
       select(-panel_group_repetitions, -compartment) %>% 
       distinct() %>% 
-      # using auto_continuous_meas and memship_alignfastest as attributes next
-      # to panel count, since they trigger a different panel membership approach
+      # using auto_continuous_meas_ps2 and memship_alignfastest as attributes
+      # next to panel count, since they trigger a different panel membership
+      # approach
       nest(panel_counts = c(
         panel_count, 
-        auto_continuous_meas,
+        auto_continuous_meas_ps2,
         memship_alignfastest
       )),
     join_by(scheme, module_combo_code, panel_set),
@@ -924,8 +925,8 @@ scheme_moco_ps_stratum_sppost_genericpanelrelations <-
   ) %>% 
   mutate(
     # generate data frame with the relation between generic panel numbers of
-    # different panel setup (panel count & automated measurements) in a scheme x
-    # moco x panel set. The rows of this data frame will be used for
+    # different panel setup (panel count & ps2 automated measurements) in a
+    # scheme x moco x panel set. The rows of this data frame will be used for
     # partitioning spatial samples in GRTS order.
     generic_panels = map2(panel_counts, max_panel_group_repetitions, function(pc, mpgr) {
       pcs <- pc$panel_count
@@ -939,7 +940,7 @@ scheme_moco_ps_stratum_sppost_genericpanelrelations <-
       pclabels <- str_c(
         pc$panel_count,
         case_when(
-          pc$auto_continuous_meas ~ "auto", 
+          pc$auto_continuous_meas_ps2 ~ "auto2", 
           pc$memship_alignfastest ~ "fastalign",
           .default = ""
         )
@@ -948,10 +949,10 @@ scheme_moco_ps_stratum_sppost_genericpanelrelations <-
       df <- as_tibble(mat)
       for (i in seq_along(pcs)) {
         nr <- pcs[i]
-        auto <- pc$auto_continuous_meas[i]
+        auto2 <- pc$auto_continuous_meas_ps2[i]
         fastalign <- pc$memship_alignfastest[i]
-        df[, i] <- if (auto) {
-          # automated measurements get a special pattern
+        df[, i] <- if (auto2) {
+          # automated measurements in panel set 2 get a special pattern
           rep(seq_len(nr), each = mpgr) %>% 
             rep(max_panel_count / (nr * mpgr))
         } else if (fastalign) {
@@ -989,11 +990,11 @@ scheme_moco_ps_stratum_sppost_genericpanelmemship <-
           cols_vary = "slowest"
         ) %>% 
         mutate(
-          auto_continuous_meas = str_detect(panel_count, "auto"),
+          auto_continuous_meas_ps2 = str_detect(panel_count, "auto2"),
           memship_alignfastest = str_detect(panel_count, "fastalign"),
           panel_count = str_extract(panel_count, "\\d+") %>% as.integer()
         ) %>% 
-        relocate(auto_continuous_meas, memship_alignfastest, .after = panel_count)
+        relocate(auto_continuous_meas_ps2, memship_alignfastest, .after = panel_count)
     })
   ) %>% 
   select(
@@ -1023,7 +1024,7 @@ The 7220 strata can also be used to delineate the target population of `GW_05.1_
 For these strata, we better share this distribution over the panels across schemes for efficiency reasons (matching field activities, reduced number of location visits).
 
 **Missing functionality**: modules (like pan2124) with shorter cycle duration for data collection in groundwater schemes than the cycle applied to (re)install groundwater level devices, may need special attention which we didn't give it yet.
-Notably the implemented approach for 'auto' and 'fastalign' doesn't work out well here.
+Notably the implemented approach for 'auto2' and 'fastalign' doesn't work out well here.
 This is further complicated after the implementation of `year_origin`, which triggered erroneous postponing of groundwater activities to 2026.
 
 ### Panel membership
@@ -1040,7 +1041,7 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
     in_aquatic_subset, 
     spsubset_needed_for_panel,
     fas, 
-    auto_continuous_meas,
+    auto_continuous_meas_ps2,
     memship_alignfastest,
     notation_paneldesign, 
     panel
@@ -1051,8 +1052,8 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
     panel_count = map_int(panels, nrow)
   ) %>% 
   # join the generic panel memberships to the panels based on panel count, on
-  # whether the panel design is for automated continuous measurements, and on
-  # whether the panel membership uses fast alignment:
+  # whether the panel design is for automated continuous measurements in panel
+  # set 2, and on whether the panel membership uses fast alignment:
   inner_join(
     scheme_moco_ps_stratum_sppost_genericpanelmemship %>% 
       rename(stratum_in_aquatic_subset = in_aquatic_subset) %>% 
@@ -1063,7 +1064,7 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
       module_combo_code,
       panel_set,
       panel_count,
-      auto_continuous_meas,
+      auto_continuous_meas_ps2,
       memship_alignfastest
     ),
     relationship = "many-to-many",
@@ -1076,7 +1077,7 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
   ) %>% 
   select(
     -panel_count,
-    -auto_continuous_meas,
+    -auto_continuous_meas_ps2,
     -memship_alignfastest,
     -stratum_in_aquatic_subset
   ) %>% 
