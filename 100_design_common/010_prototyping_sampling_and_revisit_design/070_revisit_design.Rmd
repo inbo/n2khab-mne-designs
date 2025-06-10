@@ -752,6 +752,7 @@ scheme_moco_ps_spsubset_panel_calendar <-
       group_repetitions <- revis$panel_group_repetitions[1]
       n_subperiods <- revis$n_subperiods_per_main_period[1]
       n_subperiods_limit <- revis$limit_n_subperiods[1]
+      rotational <- str_detect(revis$notation_paneldesign[1], "ROT")
       # set the panel order of one cycle according to group_size &
       # group_repetitions
       if (group_size == 1 && group_repetitions == 1) {
@@ -761,6 +762,15 @@ scheme_moco_ps_spsubset_panel_calendar <-
         indexgrouping_pan <- rep(seq_len(nrow(pan) / group_size), each = group_size)
         indexes_grouped <- split(indexes_pan, indexgrouping_pan) %>%
           rep(each = group_repetitions) %>%
+          {
+            if (rotational) {
+              # move last panel group repetition to the front; in the calendar
+              # it must be combined with the first panel group
+              c(.[length(.)], .[-length(.)])
+            } else {
+              .
+            }
+          } %>% 
           unlist() %>%
           unname()
         pan2 <- pan[indexes_grouped, ]
@@ -780,6 +790,21 @@ scheme_moco_ps_spsubset_panel_calendar <-
           map_int(~ .[n_subperiods_limit]) %>% 
           unname()
         revis2 <- revis[indexes_limitsubperiod, ]
+      }
+      # duplicate revis2 rows to align panel group repetitions in rotational
+      # designs
+      if (rotational) {
+        indexes_revis <- seq_len(nrow(revis2))
+        indexgrouping_rot_revis <- rep(
+          seq_len(nrow(revis2) / group_size),
+          each = group_size
+        )
+        indexes_grouped_rot_revis <- 
+          split(indexes_revis, indexgrouping_rot_revis) %>%
+          rep(each = group_repetitions) %>%
+          unlist() %>%
+          unname()
+        revis2 <- revis2[indexes_grouped_rot_revis, ]
       }
       # determine indexes to recycle rows of pan2
       indexes <- rep(seq_len(nrow(pan2)), nrow(revis2) %/% nrow(pan2) + 1) %>%
