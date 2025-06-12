@@ -909,7 +909,8 @@ fa_protocol <-
   )
 
 # List of variables / variable sets to be collected in the field (will expand
-# when mod_scheme_vars expands)
+# when mod_scheme_vars expands). Note: this only concerns MNE, so it still
+# misses the LSVI field measurement of the LSVITERR & LSVIAQ field activities.
 scheme_moco_fa_fieldvar <-
   mod_scheme_vars %>%
   # bring to module combo level
