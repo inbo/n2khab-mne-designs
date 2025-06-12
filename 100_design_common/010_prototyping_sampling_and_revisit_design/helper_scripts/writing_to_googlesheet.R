@@ -339,6 +339,7 @@ compartment_paneldesign_fags %>%
 # - scheme_moco_ps_stratum_sppost_genericpanelrelations
 # - scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar
 # - fag_stratum_grts_calendar
+# - scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar
 
 scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
   distinct(scheme, module_combo_code, panel_set, generic_panels) %>%
@@ -408,4 +409,35 @@ fag_stratum_grts_calendar %>%
   write_sheet(
     ss = gs_id,
     sheet = "FAG_calendar"
+  )
+
+
+
+make_revisdesign_table <- function(scheme, max_year = 2050) {
+  scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
+    count(scheme, panel_set, targetpanel, date_start, date_interval) %>%
+    mutate(
+      ps_targetpanel_n = str_glue("PS{panel_set}{targetpanel} ({n})"),
+      dummy = "X"
+    ) %>%
+    filter(scheme == {{scheme}}, year(date_start) <= max_year) %>%
+    select(-panel_set, -targetpanel, -n, -date_start) %>%
+    pivot_wider(
+      names_from = date_interval,
+      values_from = dummy,
+      values_fill = "",
+      names_sort = TRUE
+    )
+}
+
+make_revisdesign_table("GW_03.3") %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "revisit GW_03.3"
+  )
+
+make_revisdesign_table("SURF_03.4_lentic", 2031) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "revisit SURF_03.4_lentic"
   )
