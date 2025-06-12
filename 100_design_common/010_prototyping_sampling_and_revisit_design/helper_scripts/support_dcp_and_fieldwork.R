@@ -1079,9 +1079,10 @@ fieldwork_2025_prioritization <-
         scheme_ps_targetpanels,
         "GW_03\\.3:(PS1PANEL(09|10|11|12)|PS2PANEL0[56])|SURF_03\\.4_[a-z]+:PS\\dPANEL03"
       ) ~ 1L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL0[78]|PS2PANEL04)") ~ 2L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL0[56]|PS2PANEL03)") ~ 3L,
-      .default = 4L
+      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL08|PS2PANEL04)") ~ 2L,
+      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL07|PS2PANEL03)") ~ 3L,
+      str_detect(scheme_ps_targetpanels, "GW_03\\.3:PS1PANEL0[56]") ~ 4L,
+      .default = 5L
     ),
     wait_watersurface = str_detect(stratum, "^31|^2190_a$"),
     wait_3260 = stratum == "3260"
