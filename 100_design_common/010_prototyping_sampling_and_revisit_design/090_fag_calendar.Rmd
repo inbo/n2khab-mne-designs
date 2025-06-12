@@ -366,6 +366,11 @@ stopifnot(
 Specifically for FAGs with a LOCEVAL activity, we first require that an occasion is not planned too soon after an already available assessment date, if one exists.
 If the year difference between assessment date and the FAG occasion is not larger than the cycle duration, then the FAG occasion can be dropped.
 
+UPDATE: we currently only drop such LOCEVAL activities in the case of LOCEVALAQ activities.
+That is because in LOCEVALTERR (except for 7220) we currently also consider the work to do the habitat mapping in the cell unit, which is new.
+
+<!-- XXXX To be updated once we consider the cell mapping as a separate activity, if chosen so. -->
+
 ```{r}
 loceval_fags <- unique(locevalfag_spsubset_type_cycle$field_activity_group)
 fag_stratum_grts_calendar_result <- 
@@ -374,6 +379,8 @@ fag_stratum_grts_calendar_result <-
   add_assessment_data() %>% 
   filter(
     !(field_activity_group %in% loceval_fags) |
+      # REVISE following condition as needed - see above! XXXXXXXXXXXXXXX
+      field_activity_group == "LOCEVALTERR" |
       is.na(assessment_date) |
       year(date_start) >= year(assessment_date) + year(fag_cycle)
   ) %>% 
