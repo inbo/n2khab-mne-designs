@@ -659,6 +659,13 @@ calculate_weighted_overlap_uniformity <- function(break_points,
 
 #' Select spare units from a sampling frame with sampling units marked
 #'
+#' @details This procedure also copes with the case of a GRTS series in a
+#'   particular spatial poststratum that has multiple subseries ('subsamples')
+#'   marked as 'in_sample', with addresses outside of the sample in between
+#'   these. This can be the consequence of combining different GRTS partitions
+#'   with the same number in the same poststratum, originating from spatial
+#'   sampling in different original domains (including vs included domain).
+#'
 #' @param ssf_sample Data frame that reflects a spatial sampling frame with
 #'   columns.
 #'
@@ -669,12 +676,11 @@ calculate_weighted_overlap_uniformity <- function(break_points,
 #'   - The third and last column must be `sample_status` (character), where
 #'   population units that are in the sample must be labelled as `"in_sample"`;
 #'   all other population units must be `NA`.
-#' @param coef_spare Numeric.
-#' The coefficient to apply to (each) sample size in order to determine the
-#' number of corresponding spare units.
+#' @param coef_spare Numeric. The coefficient to apply to (each) sample size in
+#'   order to determine the number of corresponding spare units.
 #'
-#' @return A data frame of the same form as `ssf_sample`, only containing
-#' the spare units.
+#' @return A data frame of the same form as `ssf_sample`, only containing the
+#'   spare units.
 generate_spare_units <- function(ssf_sample, coef_spare) {
   spare_unit_count <- ssf_sample %>%
     summarize(
