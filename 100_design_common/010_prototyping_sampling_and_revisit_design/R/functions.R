@@ -689,6 +689,32 @@ generate_spare_units <- function(ssf_sample, coef_spare) {
     select(-sample_size)
   ssf_available <-
     ssf_sample %>%
+    arrange(sp_poststratum, grts_address) %>%
+    # marking consecutive subsamples per spatial poststratum
+    mutate(
+      subsample_start = !is.na(sample_status) &
+        sample_status == "in_sample" &
+        is.na(lag(sample_status)),
+      subsample = cumsum(subsample_start),
+      .by = sp_poststratum
+    ) %>%
+    # adding the subsample size (not counting spare units)
+    mutate(
+      subsample_size = sum(!is.na(sample_status)),
+      .by = c(sp_poststratum, subsample)
+    ) %>%
+    # keeping only the largest subsample per spatial poststratum
+    filter(
+      subsample_size == max(subsample_size),
+      .by = sp_poststratum
+    ) %>%
+    # keeping only the last subsample if multiple subsamples still emerged
+    filter(
+      subsample == max(subsample),
+      .by = sp_poststratum
+    ) %>%
+    select(-starts_with("subsample")) %>%
+    # keeping only the units eligible as spare unit
     filter(is.na(sample_status))
   if (nrow(ssf_available) == 0) {
     return(ssf_available)
