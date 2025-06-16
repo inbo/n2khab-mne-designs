@@ -405,6 +405,32 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
       !str_detect(scheme, "^GW") |
       !str_detect(field_activity_group, "GAUGE")
   ) %>% 
+  # Wait at least 3 months after diver installation (this can also be in SURF)
+  # to execute a READDIVER FAG. This drops the READDIVER occasions that have the
+  # same or an older date interval as their corresponding INST FAG. The
+  # remaining READDIVER occasions will mostly have a lag of 6 months.
+  mutate(
+    first_date_diverinst = min(
+      date_start[str_detect(field_activity_group, "INSTWELLDIVER|INSTPIEZWELL")],
+      ymd("21000101"),
+      na.rm = TRUE
+    ),
+    .by = c(
+      scheme,
+      module_combo_code,
+      panel_set,
+      stratum,
+      sp_poststratum,
+      grts_address
+    )
+  ) %>% 
+  filter(
+    (
+      str_detect(field_activity_group, "READDIVER") &
+        date_start >= first_date_diverinst + months(3)
+    ) |
+    !str_detect(field_activity_group, "READDIVER")
+  ) %>% 
   {
     if (params$keep_adhoc_acts) {
       # drop ADHOC FAGs that have no matching start date at their location in the
@@ -429,6 +455,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   } %>% 
   select(!c(
     first_date_gwinst,
+    first_date_diverinst,
     memship_alignfastest,
     panel_enddate_addition,
     panel_dateshift,
