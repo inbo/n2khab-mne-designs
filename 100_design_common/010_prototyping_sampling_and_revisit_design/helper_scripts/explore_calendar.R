@@ -189,3 +189,41 @@ test %>%
 
 
 
+
+# Exploring panel membership of autocontinuous measurements -----------
+
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+  filter(
+    panel == "GW_03.3_TERR_panflpan5_PS1_2panelsof3m(fastalign|SER)[shift(6m)]_PANEL01",
+    date_start == make_date(2025, 07, 01)
+  ) %>%
+  select(stratum, grts_address) %>%
+  semi_join(
+    scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+      filter(
+        notation_paneldesign == "24panelsof3m(SER)",
+        year(date_start) == 2025
+      ),
+    .,
+    join_by(stratum, grts_address)
+  ) %>%
+  count(panel)
+# so, everything from readpanel 1 that is installed in 2025, is in installpanels
+# 5 or 7
+
+# Why are these not covered in panel 01? Are they in panel 02? Or panel set 2?
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+  filter(
+    panel == "GW_03.3_panflpan5_PS1_24panelsof3m(SER)_PANEL05",
+    date_start == make_date(2025, 07, 01)
+  ) %>%
+  select(stratum, grts_address) %>%
+  anti_join(
+    scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+      filter(str_detect(
+        panel, "GW_03.3_(TERR|AQ)_panflpan5_PS1_2panelsof3m\\(fastalign.+_PANEL01"
+      )),
+    join_by(stratum, grts_address)
+  )
+# so, everything from installpanel 5 in 2025 is in readpanel 1
+
