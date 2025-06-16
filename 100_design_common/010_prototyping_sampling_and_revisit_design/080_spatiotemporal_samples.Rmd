@@ -377,11 +377,10 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   ) %>% 
   select(-delay) %>% 
   # drop SURFINSTGAUGE & SPATPOSITGAUGE activities in groundwater schemes that
-  # take place earlier than the first corresponding GWINST FAG. Below code
-  # assumes that the cases under consideration are represented by the
-  # memship_alignfastest variable. Note that we can't use the FAG rank to
-  # accomplish this, since SURFINSTGAUGE & GWINST share the same rank (i.e. they
-  # are preferably carried out in the same date interval).
+  # take place earlier than the first corresponding GWINST FAG. Note that we
+  # can't use the FAG rank to accomplish this, since SURFINSTGAUGE & GWINST
+  # share the same rank (i.e. they are preferably carried out in the same date
+  # interval).
   mutate(
     first_date_gwinst = min(
       date_start[str_detect(field_activity_group, "GWINST")],
@@ -398,8 +397,13 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     )
   ) %>%
   filter(
-    (memship_alignfastest & date_start >= first_date_gwinst) |
-      !memship_alignfastest
+    (
+      str_detect(scheme, "^GW") &
+      str_detect(field_activity_group, "GAUGE") & 
+        date_start >= first_date_gwinst
+      ) |
+      !str_detect(scheme, "^GW") |
+      !str_detect(field_activity_group, "GAUGE")
   ) %>% 
   {
     if (params$keep_adhoc_acts) {
