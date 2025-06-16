@@ -7,6 +7,21 @@
 # Rscript -e 'bookdown::render_book("index.Rmd", "bookdown::html_document2",
 # params = list(save_rdata = TRUE))'
 
+# Optional: reproduce package versions with renv (change FALSE to TRUE)
+reproduce_r_package_versions <- FALSE
+if (reproduce_r_package_versions) {
+  source("renv/activate.R") # activate renv on demand
+  renv::restore() # restore package versions from renv.lock
+  # we only proceed if project library is in sync with renv.lock:
+  status <- renv::status()
+  if (!status$synchronized) {
+    stop(
+      "Restoring package versions went wrong. ",
+      "Please run renv::status() manually, solve problems and try again."
+    )
+  }
+}
+
 library(dplyr)
 library(tidyr)
 library(stringr)
