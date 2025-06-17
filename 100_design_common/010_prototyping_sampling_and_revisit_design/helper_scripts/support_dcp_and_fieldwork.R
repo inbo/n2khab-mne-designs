@@ -222,8 +222,8 @@ n2khab_types_expanded_properties %>%
   arrange(grts_join_method, sample_support_code)
 
 # with the currently active modules, module_combo_code has a single unique value
-# for each scheme. We take advantage of their uniqueness to keep things as
-# simple as possible. Checking that foregoing statement is TRUE:
+# for each scheme. We take advantage of this uniqueness to keep things as simple
+# as possible. Checking that foregoing statement is TRUE:
 scheme_moco_ps_stratum_targetpanel_spsamples %>%
   distinct(scheme, module_combo_code) %>%
   {nrow(.) == nrow(distinct(., scheme))}
@@ -909,7 +909,8 @@ fa_protocol <-
   )
 
 # List of variables / variable sets to be collected in the field (will expand
-# when mod_scheme_vars expands). Note: this only concerns MNE, so it still
+# when mod_scheme_vars expands). Note 1: currently only target variables are
+# involved in mod_scheme_vars. Note 2: this only concerns MNE, so it still
 # misses the LSVI field measurement of the LSVITERR & LSVIAQ field activities.
 scheme_moco_fa_fieldvar <-
   mod_scheme_vars %>%
@@ -1031,9 +1032,9 @@ fag_stratum_grts_calendar_2025_attribs <-
   relocate(scheme_ps_targetpanels)
 
 # Derive an object where stratum x scheme_ps_targetpanels is flattened per
-# location x FAG occasion. Beware that more locations will emerge due to local
-# replacement, so this is misleading for counting & planning (but useful in
-# spatial visualization)
+# location x FAG occasion. Beware that in reality, more locations will emerge
+# due to local replacement, so this is misleading for counting & planning (but
+# useful in spatial visualization)
 fag_grts_calendar_2025_attribs <-
   fag_stratum_grts_calendar_2025_attribs %>%
   mutate(
