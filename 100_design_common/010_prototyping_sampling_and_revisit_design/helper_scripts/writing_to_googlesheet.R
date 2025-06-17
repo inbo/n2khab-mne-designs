@@ -414,7 +414,7 @@ fag_stratum_grts_calendar %>%
 
 # Write revisit layout diagrams -------------------------------------------
 
-make_revisdesign_table <- function(scheme, max_year = 2050) {
+make_revislayout_diagram <- function(scheme, max_year = 2050) {
   scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
     count(scheme, panel_set, targetpanel, date_start, date_interval) %>%
     mutate(
@@ -431,13 +431,13 @@ make_revisdesign_table <- function(scheme, max_year = 2050) {
     )
 }
 
-make_revisdesign_table("GW_03.3") %>%
+make_revislayout_diagram("GW_03.3") %>%
   write_sheet(
     ss = gs_id,
     sheet = "revisit GW_03.3"
   )
 
-make_revisdesign_table("SURF_03.4_lentic", 2031) %>%
+make_revislayout_diagram("SURF_03.4_lentic", 2031) %>%
   write_sheet(
     ss = gs_id,
     sheet = "revisit SURF_03.4_lentic"
