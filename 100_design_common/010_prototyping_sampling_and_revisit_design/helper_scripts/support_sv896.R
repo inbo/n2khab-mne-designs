@@ -68,8 +68,8 @@ simplescheme_type_samplecoords_prepare <-
   st_join(provinces) %>%
   st_join(sac) %>%
   mutate(
-    x = round(st_coordinates(.)[, "X"], 2),
-    y = round(st_coordinates(.)[, "Y"], 2),
+    x = round(st_coordinates(.)[, "X"]),
+    y = round(st_coordinates(.)[, "Y"]),
     compartment = str_extract(scheme, "^[A-Z]+") %>%
       factor(levels = c("GW", "SURF", "SOIL")) %>%
       fct_recode(
