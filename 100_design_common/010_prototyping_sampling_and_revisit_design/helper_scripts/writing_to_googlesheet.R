@@ -412,6 +412,7 @@ fag_stratum_grts_calendar %>%
   )
 
 
+# Write revisit layout diagrams -------------------------------------------
 
 make_revisdesign_table <- function(scheme, max_year = 2050) {
   scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
