@@ -62,7 +62,7 @@ provinces <-
   select(province = name) %>%
   mutate(province = factor(province, levels = province[c(1, 3, 4, 2, 5)]))
 
-compartment_type_samplecoords <-
+simplescheme_type_samplecoords_prepare <-
   scheme_moco_ps_stratum_sppost_spsamples_sf %>%
   filter(!str_detect(scheme, "^HQ")) %>%
   st_join(provinces) %>%
@@ -76,7 +76,15 @@ compartment_type_samplecoords <-
         grondwater = "GW",
         oppervlaktewater = "SURF",
         bodem = "SOIL"
-      )
+      ),
+    scheme_simplified = fct_recode(
+      scheme,
+      GW_03.3 = "GW_05.1_terr",
+      GW_03.3 = "GW_05.2",
+      SURF_03.4 = "SURF_03.4_lentic",
+      SURF_03.4 = "SURF_03.4_lotic"
+    ) %>%
+      fct_relevel("GW_03.3", "SURF_03.4")
   ) %>%
   st_drop_geometry() %>%
   inner_join(
@@ -91,11 +99,46 @@ compartment_type_samplecoords <-
     join_by(type),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
+  )
+
+scheme_names <-
+  read_schemes(lang = "nl") %>%
+  mutate(
+    scheme_name = str_match(
+      scheme_name,
+      ".+\\d\\.?\\d+\\s+(\\w.+)$"
+    )[, 2]
   ) %>%
-  arrange(compartment, typeclass_name, type, province, sac_code) %>%
+  select(scheme, scheme_name) %>%
+  add_row(
+    scheme = "SURF_03.4",
+    scheme_name = "Eutrofiëring via het oppervlaktewater"
+  ) %>%
+  mutate(scheme = factor(
+    scheme,
+    levels = levels(simplescheme_type_samplecoords_prepare$scheme_simplified)
+  ))
+
+simplescheme_type_samplecoords <-
+  simplescheme_type_samplecoords_prepare %>%
+  inner_join(
+    scheme_names,
+    join_by(scheme_simplified == scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  arrange(
+    compartment,
+    scheme_simplified,
+    typeclass_name,
+    type,
+    province,
+    sac_code
+  ) %>%
   # distinct in order to collapse schemes within same compartment
   distinct(
     compartiment = compartment,
+    meetnet = scheme_name,
     typeklasse = typeclass_name,
     habitattype = type,
     x_epsg31370,
@@ -113,14 +156,15 @@ compartment_type_samplecoords <-
 ###########################################################################
 
 # all individual locations
-compartment_type_samplecoords %>%
+simplescheme_type_samplecoords %>%
+  select(-compartiment) %>%
   write_sheet(
     ss = gs_id_public,
-    sheet = "compartment_type_samplecoords"
+    sheet = "meetnet_type_samplecoords"
   )
 
 # totals by typeclass & province
-compartment_type_samplecoords %>%
+simplescheme_type_samplecoords %>%
   count(compartiment, typeklasse, provincie) %>%
   split(.$compartiment) %>%
   walk(\(df) {
@@ -141,7 +185,7 @@ compartment_type_samplecoords %>%
   })
 
 # totals by typeclass & sac
-compartment_type_samplecoords %>%
+simplescheme_type_samplecoords %>%
   count(compartiment, typeklasse, sbzh_code, sbzh_naam) %>%
   split(.$compartiment) %>%
   walk(\(df) {
