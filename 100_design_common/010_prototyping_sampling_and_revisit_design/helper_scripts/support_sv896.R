@@ -68,8 +68,8 @@ simplescheme_type_samplecoords_prepare <-
   st_join(provinces) %>%
   st_join(sac) %>%
   mutate(
-    x_epsg31370 = round(st_coordinates(.)[, "X"], 2),
-    y_epsg31370 = round(st_coordinates(.)[, "Y"], 2),
+    x = round(st_coordinates(.)[, "X"], 2),
+    y = round(st_coordinates(.)[, "Y"], 2),
     compartment = str_extract(scheme, "^[A-Z]+") %>%
       factor(levels = c("GW", "SURF", "SOIL")) %>%
       fct_recode(
@@ -140,9 +140,9 @@ simplescheme_type_samplecoords <-
     compartiment = compartment,
     meetnet = scheme_name,
     typeklasse = typeclass_name,
-    habitattype = type,
-    x_epsg31370,
-    y_epsg31370,
+    "habitat(sub)type" = type,
+    x,
+    y,
     provincie = province,
     sbzh_code = sac_code,
     sbzh_naam = sac_name
