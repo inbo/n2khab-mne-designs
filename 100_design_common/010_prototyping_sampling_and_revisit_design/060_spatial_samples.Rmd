@@ -206,19 +206,19 @@ dom_stratum_grtspart_threshold <-
             # index of the last GRTS address of the GRTS partition if we define
             # it using the index_start of the next partition minus 1. This may
             # be smaller than grts_index_end in overlap cases
-            grts_gap_end = dplyr::lead(
+            grts_index_gap_end = dplyr::lead(
               grts_index_start - 1L, 
               default = length(grts$grts_address)
             ) %>% 
               # not accepting the index 0:
               pmax(1),
-            # GRTS address corresponding to grts_gap_end
-            grts_address_gap_end = sort(grts$grts_address)[grts_gap_end],
+            # GRTS address corresponding to grts_index_gap_end
+            grts_address_gap_end = sort(grts$grts_address)[grts_index_gap_end],
             # maximum number of spare units that we will select in a GRTS
             # partition
             n_spare_units = pmin(
               n_spare_units_theoretical,
-              grts_gap_end - grts_index_end
+              grts_index_gap_end - grts_index_end
             ) %>% 
               # not accepting negative values (overlap cases):
               pmax(0) %>% 
@@ -254,7 +254,7 @@ Cases may exist where GRTS partitions overlap:
 
 ```{r paged.print = FALSE}
 dom_stratum_grtspart_threshold %>% 
-  filter(grts_index_end > grts_gap_end) %>% 
+  filter(grts_index_end > grts_index_gap_end) %>% 
   count(domain, grts_part, name = "number_of_strata")
 ```
 
