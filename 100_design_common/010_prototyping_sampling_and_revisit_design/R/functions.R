@@ -767,7 +767,7 @@ distribute_sample_over_panels <- function(sps, pan) {
   remainder <- nrow(sps) %% nrow(pan)
   pan_row_numbers <- seq_len(nrow(pan))
   if (remainder > 0) {
-    indexes_remainder <- lpm1(remainder, matrix(rep(1, nrow(pan)), ncol = 1))
+    indexes_remainder <- lpm1(remainder, matrix(pan_row_numbers, ncol = 1))
     panels_remainder <- pan_row_numbers[indexes_remainder]
   } else {
     panels_remainder <- pan_row_numbers[0]
