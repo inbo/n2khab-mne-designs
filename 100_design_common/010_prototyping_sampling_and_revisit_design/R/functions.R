@@ -789,27 +789,18 @@ distribute_sample_over_panels <- function(sps, pan) {
 pan_row_numbers
 
 df <- tibble(id = pan_row_numbers, ss_00 = FALSE) # ss = subsample
+ourseed <- runif(1, 100, 1e6)
 for (i in pan_row_numbers) {
   colname <- str_c(
     "ss_",
     str_pad(i, width = nchar(as.character(length(pan_row_numbers))), pad = "0")
   )
+  set.seed(ourseed)
   df <-
     df %>%
     mutate(
-      probs = pick(last_col()) %>%
-        pull() %>%
-        as.numeric(),
-      probs = ifelse(probs == 0, (i - sum(probs)) / (n() - sum(probs)), probs),
-      id = cumsum(
-        probs < 1 &
-          lead(probs, n = 1, default = 0) < 1 &
-          lag(probs, n = 1, default = 0) < 1 &
-          lag(probs, n = 2, default = 0) < 1
-      ),
-      {{colname}} := row_number() %in% lpm1(prob = probs, x = id)
-    ) %>%
-    select(-probs)
+      {{colname}} := row_number() %in% lpm1(prob = i, x = id)
+    )
 }
 result <- df %>%
   mutate(across(where(is.logical), \(x) ifelse(x, "\u2588", "")))
