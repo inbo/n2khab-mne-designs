@@ -872,7 +872,7 @@ Next, this is translated to the actual panels created before.
 
 ### Membership of generic panels
 
-Generating and populating generic panels.
+Generating generic panels.
 
 ```{r}
 set.seed(20241206)
@@ -967,35 +967,107 @@ scheme_moco_ps_stratum_sppost_genericpanelrelations <-
         mutate(id = row_number()) %>% 
         relocate(id)
     }))
+```
+
+Before populating the generic panels with spatial sampling units, we generate and write one-dimensional (temporal) GRTS samples of size 144, each representing a set of 144 consecutive virtual panels with their GRTS address.
+We create a different sample for each  stratum x spatial poststratum x panel set.
+These will be used in the procedure to distribute a spatial sample over an actual set of generic panels.
+The size of 144 is chosen because it is expected that 144 will (almost?) always be a multiple of the maximum panel count, and this is needed for the procedure to work.
+Hence, storing this result for every stratum x spatial poststratum x panel set and reusing it will help in stabilizing panel memberships when sampling frames change.
+
+Also, sharing it among schemes for the same stratum x spatial poststratum x panel set combination ensures maximum synergy among schemes.
+This is especially relevant for the rarer stratum x spatial poststratum combinations, where exact matches of the spatial sample occur _across schemes_.
+
+Note that the addresses will be in the range (0, 255) since a power of 2 is needed in 1D GRTS that has enough resolution.
+
+Checking whether 144 is a multiple of all needed panel counts.
+
+```{r}
+stopifnot(
+  all(unique(scheme_moco_ps_spsubset_fas_panelcount$panel_count) %in%
+        numbers::divisors(144))
+)
+```
+
+Optionally (re)generating 1D (temporal) GRTS addresses for 144 virtual panels per stratum x spatial poststratum x panel set.
+This code should normally not be rerun for the already available combinations.
+
+```{r}
+if (params$reset_virtualpanel_addresses) {
+  set.seed(20250620)
+  stratum_sppost_ps_virtpaneladdr <- 
+    scheme_moco_ps_stratum_sppost_genericpanelrelations %>% 
+    distinct(stratum, sp_poststratum, panel_set) %>% 
+    arrange(stratum, sp_poststratum, panel_set) %>% 
+    mutate(
+      panel_addresses = list(create_1d_grts_sample(144)),
+      .by = c(stratum, sp_poststratum, panel_set)
+    ) %>% 
+    unnest(panel_addresses) %>% 
+    rename(panel_address = address, panel_id = id) %>% 
+    arrange(stratum, sp_poststratum, panel_set, panel_address)
+  write_vc(
+    stratum_sppost_ps_virtpaneladdr,
+    "stratum_sppost_ps_virtpaneladdr",
+    root = file.path(datapath, "text/intermediate"),
+    sorting = c("stratum", "sp_poststratum", "panel_set", "panel_address")
+  )
+}
+```
+
+Reading the virtual panel addresses.
+
+```{r}
+stratum_sppost_ps_virtpaneladdr <- 
+  read_vc(
+    "stratum_sppost_ps_virtpaneladdr",
+    root = file.path(datapath, "text/intermediate")
+  ) %>%
+  as_tibble()
+```
+
+Now populating the generic panels.
+
+```{r}
 scheme_moco_ps_stratum_sppost_genericpanelmemship <- 
   scheme_moco_ps_stratum_sppost_genericpanelrelations %>% 
   mutate(
     # distribute the spatial samples over the rows of foregoing data frame,
     # and rearrange the data so it will be possible to join with 
     # scheme_moco_ps_spsubset_fas_panels
-    panel_membership = map2(spsample, generic_panels, function(sps, gen) {
-      distribute_sample_over_panels(sps, gen) %>% 
-        inner_join(
-          gen,
-          join_by(genericpanels_row == id),
-          relationship = "many-to-one",
-          # "drop" is relevant when nrow(sps) < nrow(gen)
-          unmatched = c("error", "drop")
-        ) %>% 
-        select(-genericpanels_row) %>% 
-        pivot_longer(
-          cols = !grts_address,
-          names_to = "panel_count",
-          values_to = "panel_id",
-          cols_vary = "slowest"
-        ) %>% 
-        mutate(
-          auto_continuous_meas_ps2 = str_detect(panel_count, "auto2"),
-          memship_alignfastest = str_detect(panel_count, "fastalign"),
-          panel_count = str_extract(panel_count, "\\d+") %>% as.integer()
-        ) %>% 
-        relocate(auto_continuous_meas_ps2, memship_alignfastest, .after = panel_count)
-    })
+    panel_membership = pmap(
+      list(stratum, sp_poststratum, panel_set, spsample, generic_panels),
+      function(strat, sppost, ps, sps, gen) {
+        virtualpanels_order <- 
+          stratum_sppost_ps_virtpaneladdr %>% 
+          filter(
+            stratum == strat,
+            sp_poststratum == sppost,
+            panel_set == ps
+          ) %>% 
+          select(panel_address, panel_id)
+        distribute_sample_over_panels(sps, gen, virtualpanels_order) %>% 
+          inner_join(
+            gen,
+            join_by(genericpanels_row == id),
+            relationship = "many-to-one",
+            # "drop" is relevant when nrow(sps) < nrow(gen)
+            unmatched = c("error", "drop")
+          ) %>% 
+          select(-genericpanels_row) %>% 
+          pivot_longer(
+            cols = !grts_address,
+            names_to = "panel_count",
+            values_to = "panel_id",
+            cols_vary = "slowest"
+          ) %>% 
+          mutate(
+            auto_continuous_meas_ps2 = str_detect(panel_count, "auto2"),
+            memship_alignfastest = str_detect(panel_count, "fastalign"),
+            panel_count = str_extract(panel_count, "\\d+") %>% as.integer()
+          ) %>% 
+          relocate(auto_continuous_meas_ps2, memship_alignfastest, .after = panel_count)
+      })
   ) %>% 
   select(
     scheme,
