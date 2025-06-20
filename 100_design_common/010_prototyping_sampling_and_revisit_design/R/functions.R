@@ -786,39 +786,7 @@ distribute_sample_over_panels <- function(sps, pan) {
 
 
 
-pan_row_numbers
 
-df <- tibble(id = pan_row_numbers, ss_00 = FALSE) # ss = subsample
-db_1d <- grtsdb::connect_db(":memory:")
-bbox_1d <- matrix(c(1, 24), ncol = 2)
-cellsize_1d <- 1
-grtsdb::add_level(bbox = bbox_1d, cellsize = cellsize_1d, grtsdb = db_1d)
-res <- grtsdb::extract_sample(
-  samplesize = 24,
-  bbox = bbox_1d,
-  cellsize = cellsize_1d,
-  grtsdb = db_1d
-)
-for (i in pan_row_numbers) {
-  colname <- str_c(
-    "ss_",
-    str_pad(i, width = nchar(as.character(length(pan_row_numbers))), pad = "0")
-  )
-  df <-
-    df %>%
-    mutate(
-      {{colname}} := row_number() %in% (
-        res %>%
-          arrange(ranking) %>%
-          slice_head(n = i) %>%
-          pull(x1c)
-      )
-    )
-}
-result <- df %>%
-  mutate(across(where(is.logical), \(x) ifelse(x, "\u2588", "")))
-
-View(result)
 
 
 #' Subsample and relax an ADHOC FAG in a FAG calendar
