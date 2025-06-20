@@ -785,6 +785,32 @@ distribute_sample_over_panels <- function(sps, pan) {
 
 
 
+
+pan_row_numbers
+
+df <- tibble(id = pan_row_numbers, ss_00 = FALSE) # ss = subsample
+for (i in pan_row_numbers) {
+  colname <- str_c(
+    "ss_",
+    str_pad(i, width = nchar(as.character(length(pan_row_numbers))), pad = "0")
+  )
+  df <-
+    df %>%
+    mutate(
+      probs = pick(last_col()) %>%
+        pull() %>%
+        as.numeric(),
+      probs = ifelse(probs == 0, (i - sum(probs)) / (n() - sum(probs)), probs),
+      {{colname}} := row_number() %in% lpm1(prob = probs, x = id)
+    ) %>%
+    select(-probs)
+}
+result <- df %>%
+  mutate(across(where(is.logical), \(x) ifelse(x, "\u2588", "")))
+
+View(result)
+
+
 #' Subsample and relax an ADHOC FAG in a FAG calendar
 #'
 #' Subsample an ADHOC FAG in a FAG calendar, taking into account a custom
