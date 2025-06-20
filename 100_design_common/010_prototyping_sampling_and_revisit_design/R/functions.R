@@ -801,6 +801,7 @@ for (i in pan_row_numbers) {
         pull() %>%
         as.numeric(),
       probs = ifelse(probs == 0, (i - sum(probs)) / (n() - sum(probs)), probs),
+      id = cumsum(probs < 1 & lag(probs, default = 0) < 1),
       {{colname}} := row_number() %in% lpm1(prob = probs, x = id)
     ) %>%
     select(-probs)
