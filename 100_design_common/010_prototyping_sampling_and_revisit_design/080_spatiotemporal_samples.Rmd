@@ -967,6 +967,69 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <-
   add_assessment_data()
 ```
 
+Writing a csv file with a few (terrestrial) groundwater scheme examples of scheme x module combo x panel set x spatial poststratum x stratum, useful for inspection of changes and versioning.
+
+```{r}
+set.seed(24586)
+scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>% 
+  filter(
+    year(date_start) < year_origin + 12,
+    !in_aquatic_subset,
+    str_detect(scheme, "^GW")
+  ) %>% 
+  unite(
+    scheme_moco_ps_sppost_stratum,
+    scheme,
+    module_combo_code,
+    panel_set,
+    sp_poststratum,
+    stratum
+  ) %>% 
+  filter(between(n(), 60, 600), .by = scheme_moco_ps_sppost_stratum) %>% 
+  nest(.by = scheme_moco_ps_sppost_stratum) %>% 
+  # slice_sample(n = 15) %>% 
+  filter(
+    scheme_moco_ps_sppost_stratum %in% c(
+      "GW_03.3_panfl_pan5_1_BE2200039_9130_fm",
+      "GW_03.3_panfl_pan5_1_Flanders_1310_pol",
+      "GW_03.3_panfl_pan5_1_Flanders_2190_mp",
+      "GW_03.3_panfl_pan5_1_Flanders_6510_hua",
+      "GW_03.3_panfl_pan5_1_Flanders_6510_hus",
+      "GW_03.3_panfl_pan5_1_Flanders_7230",
+      "GW_03.3_panfl_pan5_1_Flanders_91E0_sf",
+      "GW_03.3_panfl_pan5_1_Flanders_remainder_4010",
+      "GW_03.3_panfl_pan5_1_Flanders_remainder_7220",
+      "GW_03.3_panfl_pan5_1_Flanders_remainder_9120",
+      "GW_03.3_panfl_pan5_1_Flanders_remainder_91E0_va",
+      "GW_03.3_panfl_pan5_1_Flanders_remainder_91E0_vc",
+      "GW_03.3_panfl_pan5_2_Flanders_remainder_9190",
+      "GW_05.1_terr_panfl_pan5_2_Flanders_6430_mr",
+      "GW_05.2_panfl_pan5_1_Flanders_6430_mr"
+    )
+  ) %>% 
+  unnest(data) %>% 
+  select(
+    scheme_moco_ps_sppost_stratum,
+    date_start,
+    targetpanel,
+    grts_address
+  ) %>% 
+  mutate(dummy = "X") %>% 
+  pivot_wider(
+    names_from = date_start,
+    values_from = dummy,
+    names_sort = TRUE,
+    values_fill = ""
+  ) %>% 
+  arrange(
+    scheme_moco_ps_sppost_stratum,
+    targetpanel,
+    grts_address
+  ) %>% 
+  write_csv(file.path(datapath, "text/results/extract_spatiotempsam.csv"))
+```
+
+
 ## Overview of most relevant objects in this chapter
 
 Objects subsetted with `[[1]]` mean that they (may) contain more, similarly structured elements.
