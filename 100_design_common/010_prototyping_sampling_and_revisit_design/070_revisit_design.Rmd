@@ -1071,22 +1071,21 @@ Now populating the generic panels.
 ```{r}
 scheme_moco_ps_stratum_sppost_genericpanelmemship <- 
   scheme_moco_ps_stratum_sppost_genericpanelrelations %>% 
+  inner_join(
+    stratum_sppost_ps_virtpaneladdr %>% 
+      nest(panel_addresses = c(panel_address, panel_id)),
+    join_by(stratum, sp_poststratum, panel_set),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
   mutate(
     # distribute the spatial samples over the rows of foregoing data frame,
     # and rearrange the data so it will be possible to join with 
     # scheme_moco_ps_spsubset_fas_panels
     panel_membership = pmap(
-      list(stratum, sp_poststratum, panel_set, spsample, generic_panels),
-      function(strat, sppost, ps, sps, gen) {
-        virtualpanels_order <- 
-          stratum_sppost_ps_virtpaneladdr %>% 
-          filter(
-            stratum == strat,
-            sp_poststratum == sppost,
-            panel_set == ps
-          ) %>% 
-          select(panel_address, panel_id)
-        distribute_sample_over_panels(sps, gen, virtualpanels_order) %>% 
+      list(spsample, generic_panels, panel_addresses),
+      function(sps, gen, pa) {
+        distribute_sample_over_panels(sps, gen, pa) %>% 
           inner_join(
             gen,
             join_by(genericpanels_row == id),
