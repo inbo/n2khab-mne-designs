@@ -850,7 +850,7 @@ scheme_moco_ps_spsubset_panel_calendar %>%
   View("calendar")
 ```
 
-## Panel membership of spatial sampling units
+## Panel membership of spatial sampling units {#panel-memship}
 
 General note: the spatial samples are to be considered dynamic, i.e. dependent on new versions of the spatial sampling frames.
 Consequently, panel membership must also be considered dynamic in time.
@@ -872,7 +872,7 @@ Next, this is translated to the actual panels created before.
 
 ### Membership of generic panels
 
-Generating and populating generic panels.
+Generating generic panels.
 
 ```{r}
 set.seed(20241206)
@@ -967,35 +967,145 @@ scheme_moco_ps_stratum_sppost_genericpanelrelations <-
         mutate(id = row_number()) %>% 
         relocate(id)
     }))
+```
+
+Before populating the generic panels with spatial sampling units, we generate and write one-dimensional (temporal) GRTS samples of size  `r nrvirtpanels`, each representing a full set of `r nrvirtpanels` virtual panels with their GRTS address.
+We create a different sample for each stratum x spatial poststratum x panel set.
+These will be used in the procedure to distribute a spatial sample over an actual set of generic panels.
+The size of `r nrvirtpanels` is chosen because it is expected that `r nrvirtpanels` will (usually?) be a multiple of the maximum panel count, and this is needed for the procedure to work.
+Although making it larger (e.g. 144) would allow for even more flexibility (in terms of different panel counts), the sample size evenness for a smaller number of panels gets worse with a higher number of virtual panels, so that we have settled for `r nrvirtpanels` as a compromise.
+Hence, storing this result for every stratum x spatial poststratum x panel set and reusing it will help in stabilizing panel memberships when sampling frames change.
+
+Also, sharing it among schemes for the same stratum x spatial poststratum x panel set combination ensures maximum synergy among schemes.
+This is especially relevant for the rarer stratum x spatial poststratum combinations, where exact matches of the spatial sample occur _across schemes_.
+
+Note that the addresses will be in the range (0, 63) since a power of 2 is needed in 1D GRTS that has enough resolution.
+
+Checking whether `r nrvirtpanels` is a multiple of all needed panel counts.
+
+```{r}
+stopifnot(
+  all(unique(scheme_moco_ps_spsubset_fas_panelcount$panel_count) %in%
+        numbers::divisors(nrvirtpanels))
+)
+```
+
+Optionally (re)generating 1D (temporal) GRTS addresses for `r nrvirtpanels` virtual panels per stratum x spatial poststratum x panel set.
+This code should normally not be rerun for the already available combinations.
+
+```{r}
+if (params$reset_virtualpanel_addresses) {
+  set.seed(20250620)
+  stratum_sppost_ps_virtpaneladdr <- 
+    scheme_moco_ps_stratum_sppost_genericpanelrelations %>% 
+    distinct(stratum, sp_poststratum, panel_set) %>% 
+    arrange(stratum, sp_poststratum, panel_set) %>% 
+    mutate(
+      panel_addresses = list(create_1d_grts_sample(nrvirtpanels)),
+      .by = c(stratum, sp_poststratum, panel_set)
+    ) %>% 
+    unnest(panel_addresses) %>% 
+    rename(panel_address = address, panel_id = id) %>% 
+    arrange(stratum, sp_poststratum, panel_set, panel_address)
+  write_vc(
+    stratum_sppost_ps_virtpaneladdr,
+    "stratum_sppost_ps_virtpaneladdr",
+    root = file.path(datapath, "text/intermediate"),
+    sorting = c("stratum", "sp_poststratum", "panel_set", "panel_address")
+  )
+}
+```
+
+Reading the virtual panel addresses.
+
+```{r}
+stratum_sppost_ps_virtpaneladdr <- 
+  read_vc(
+    "stratum_sppost_ps_virtpaneladdr",
+    root = file.path(datapath, "text/intermediate")
+  ) %>%
+  as_tibble()
+```
+
+Code to verify the temporal spread of virtual panels in the case of all, 24, 12, 6 and 3 panels (not run).
+
+```{r eval = FALSE}
+plot_panel_spread <- function(nrpanels, sample_size, seed = 123456) {
+  set.seed(seed)
+  stratum_sppost_ps_virtpaneladdr %>% 
+    mutate(
+      panel_id_rescaled = ceiling(
+        panel_id / (nrvirtpanels / nrpanels)
+      ) %>% 
+        as.integer
+    ) %>% 
+    nest(panels = c(panel_address, panel_id, panel_id_rescaled)) %>% 
+    mutate(samples = map(panels, function(pan) {
+      pan %>% 
+        arrange(panel_address) %>% 
+        slice_head(n = sample_size) %>% 
+        select(-panel_id)
+    })) %>% 
+    select(-panels) %>% 
+    mutate(case = row_number()) %>% 
+    slice_sample(n = 20) %>% 
+    unnest(samples) %>% 
+    count(case, panel_id_rescaled, name = "sampled") %>% 
+    mutate(case = factor(case)) %>% 
+    ggplot(aes(x = case, y = panel_id_rescaled, fill = sampled)) +
+    geom_tile() +
+    facet_wrap(~case, nrow = 1, scales = "free_x")
+}
+# plot_panel_spread(nrvirtpanels, 6)
+plot_panel_spread(24, 12)
+plot_panel_spread(24, 6)
+plot_panel_spread(24, 2)
+# plot_panel_spread(12, 6)
+# plot_panel_spread(6, 3)
+plot_panel_spread(3, 2)
+```
+
+Now populating the generic panels.
+
+```{r}
 scheme_moco_ps_stratum_sppost_genericpanelmemship <- 
   scheme_moco_ps_stratum_sppost_genericpanelrelations %>% 
+  inner_join(
+    stratum_sppost_ps_virtpaneladdr %>% 
+      nest(panel_addresses = c(panel_address, panel_id)),
+    join_by(stratum, sp_poststratum, panel_set),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
   mutate(
     # distribute the spatial samples over the rows of foregoing data frame,
     # and rearrange the data so it will be possible to join with 
     # scheme_moco_ps_spsubset_fas_panels
-    panel_membership = map2(spsample, generic_panels, function(sps, gen) {
-      distribute_sample_over_panels(sps, gen) %>% 
-        inner_join(
-          gen,
-          join_by(genericpanels_row == id),
-          relationship = "many-to-one",
-          # "drop" is relevant when nrow(sps) < nrow(gen)
-          unmatched = c("error", "drop")
-        ) %>% 
-        select(-genericpanels_row) %>% 
-        pivot_longer(
-          cols = !grts_address,
-          names_to = "panel_count",
-          values_to = "panel_id",
-          cols_vary = "slowest"
-        ) %>% 
-        mutate(
-          auto_continuous_meas_ps2 = str_detect(panel_count, "auto2"),
-          memship_alignfastest = str_detect(panel_count, "fastalign"),
-          panel_count = str_extract(panel_count, "\\d+") %>% as.integer()
-        ) %>% 
-        relocate(auto_continuous_meas_ps2, memship_alignfastest, .after = panel_count)
-    })
+    panel_membership = pmap(
+      list(spsample, generic_panels, panel_addresses),
+      function(sps, gen, pa) {
+        distribute_sample_over_panels(sps, gen, pa) %>% 
+          inner_join(
+            gen,
+            join_by(genericpanels_row == id),
+            relationship = "many-to-one",
+            # "drop" is relevant when nrow(sps) < nrow(gen)
+            unmatched = c("error", "drop")
+          ) %>% 
+          select(-genericpanels_row) %>% 
+          pivot_longer(
+            cols = !grts_address,
+            names_to = "panel_count",
+            values_to = "panel_id",
+            cols_vary = "slowest"
+          ) %>% 
+          mutate(
+            auto_continuous_meas_ps2 = str_detect(panel_count, "auto2"),
+            memship_alignfastest = str_detect(panel_count, "fastalign"),
+            panel_count = str_extract(panel_count, "\\d+") %>% as.integer()
+          ) %>% 
+          relocate(auto_continuous_meas_ps2, memship_alignfastest, .after = panel_count)
+      })
   ) %>% 
   select(
     scheme,
@@ -1019,9 +1129,6 @@ This actually boils down to distinguishing rivulets and mires as two different s
 This has been applied at the scheme level already, in preparing the scheme-specific spatial sampling frames; however we also need it within schemes where both subsets are present, in order to apply the appropriate field activity group per location.
 Currently we just duplicate the samples for these two spatial subsets...
 The 7220 strata can also be used to delineate the target population of `GW_05.1_{aq,terr}` and of `SURF_*` schemes (much like the code to generate `mod_scheme_mainfieldactivity`).
-
-**Missing functionality**: for the rarer stratum x spatial poststratum combinations, exact matches of the spatial sample occur _across schemes_.
-For these strata, we better share this distribution over the panels across schemes for efficiency reasons (matching field activities, reduced number of location visits).
 
 **Missing functionality**: modules (like pan2124) with shorter cycle duration for data collection in groundwater schemes than the cycle applied to (re)install groundwater level devices, may need special attention which we didn't give it yet.
 Notably the implemented approach for 'auto2' and 'fastalign' doesn't work out well here.

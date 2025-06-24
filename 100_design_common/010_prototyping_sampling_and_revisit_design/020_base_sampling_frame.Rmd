@@ -111,24 +111,28 @@ hmt <- read_habitatmap_terr(keep_aq_types = FALSE, drop_7220 = TRUE)
 typelev <- levels(hmt$habitatmap_terr_types$type)
 hmt_occ <-
   hmt$habitatmap_terr_types %>%
-  semi_join(n2khab_types_expanded,
-    by = "type"
-  ) %>% 
-  # manually fixing the type of two polygons in habitatmap_terr_2023_v1:
-  mutate(
-    source = case_when(
-      polygon_id == "184091_v2023" & type == "2190_overig" ~ "habitatmap_stdized + manual fix",
-      polygon_id == "533826_v2023" & type == "2310" ~ "habitatmap_stdized + manual fix",
-      .default = source
-    ) %>% 
-      factor(),
-    type = case_when(
-      polygon_id == "184091_v2023" & type == "2190_overig" ~ "9120",
-      polygon_id == "533826_v2023" & type == "2310" ~ "2130",
-      .default = type
-    ) %>% 
-      factor(levels = typelev)
-  )
+  semi_join(n2khab_types_expanded, by = "type")
+# manually fixing the type of two polygons in habitatmap_terr_2023_v1:
+if ("habitatmap_terr_2023_v1" %in% versions_set) {
+  hmt_occ <- 
+    hmt_occ %>% 
+    mutate(
+      source = case_when(
+        polygon_id == "184091_v2023" & type == "2190_overig" ~ 
+          "habitatmap_stdized + manual fix",
+        polygon_id == "533826_v2023" & type == "2310" ~ 
+          "habitatmap_stdized + manual fix",
+        .default = source
+      ) %>% 
+        factor(),
+      type = case_when(
+        polygon_id == "184091_v2023" & type == "2190_overig" ~ "9120",
+        polygon_id == "533826_v2023" & type == "2310" ~ "2130",
+        .default = type
+      ) %>% 
+        factor(levels = typelev)
+    )
+}
 hmt_pol <-
   hmt$habitatmap_terr_polygons %>%
   semi_join(hmt_occ, by = "polygon_id") %>%
@@ -735,28 +739,57 @@ stratum_grts_n2khab <-
 
 The aim is to add existing field assessments to the base sampling frame.
 
-These steps require the availability of data that are currently external to this repository and used packages.
+Optionally updating the local copies of these data from the source repository.
 
 ```{r}
-# A bit clumsy; needs maintenance. In the longer term, the management of all
-# this needs more centralization and rigidity.
-mhq_terr_datapath <- file.path(
-  dirname(gitroot),
-  "n2khab-sample-admin/data/mhq_terr/rapportage2025"
-)
-mhq_watersurfaces_datapath <- file.path(
-  dirname(gitroot),
-  "n2khab-sample-admin/data/mhq_watersurfaces/rapportage2025"
-)
-mhq_data_available <- 
-  dir.exists(mhq_terr_datapath) && dir.exists(mhq_watersurfaces_datapath)
+# Updating local data files by copying them from another repository. Better
+# convert this to using the remote! XXXXXXXXXXXXXXXXXXXX (however, at times
+# a specific branch may need to be used)
+if (params$update_raw_textdata) {
+  mhq_terr_datapath <- file.path(
+    dirname(gitroot),
+    "n2khab-sample-admin/data/mhq_terr/rapportage2025"
+  )
+  mhq_watersurfaces_datapath <- file.path(
+    dirname(gitroot),
+    "n2khab-sample-admin/data/mhq_watersurfaces/rapportage2025"
+  )
+  mhq_data_available <- 
+    dir.exists(mhq_terr_datapath) && dir.exists(mhq_watersurfaces_datapath)
+  if (!mhq_data_available) {
+    stop(
+      "Cannot update MHQ field assessment data: ",
+      "source directories are missing."
+    )
+  } else {
+    files <- c(
+      list.files(
+        mhq_terr_datapath,
+        "assessments|popunits|refpoints",
+        full.names = TRUE
+      ),
+      list.files(
+        mhq_watersurfaces_datapath,
+        "assessments|populationunits",
+        full.names = TRUE
+      )
+    )
+    file.copy(
+      files,
+      file.path(datapath, "text/raw/mhq_assessments"),
+      overwrite = TRUE
+    ) %>% 
+      invisible()
+  }
+}
 ```
 
-These data are `r if (!mhq_data_available) "_not_"` available.
+Reading and preprocessing the local files.
 
-```{r eval = mhq_data_available}
+```{r}
+mhq_assessments_datapath <- file.path(datapath, "text/raw/mhq_assessments")
 mhq_terr_popunits <-
-  read_vc("mhq_terr_popunits", root = mhq_terr_datapath) %>%
+  read_vc("mhq_terr_popunits", root = mhq_assessments_datapath) %>%
   as_tibble() %>% 
   mutate(
     type = factor(type, levels = levels(n2khab_types$type)),
@@ -769,7 +802,7 @@ mhq_terr_popunits <-
     grts_address_drawn = grts_ranking_draw
   )
 mhq_terr_refpoints <-
-  read_vc("mhq_terr_refpoints", root = mhq_terr_datapath) %>%
+  read_vc("mhq_terr_refpoints", root = mhq_assessments_datapath) %>%
   as_tibble() %>% 
   distinct() %>% 
   select(
@@ -778,7 +811,7 @@ mhq_terr_refpoints <-
     is_cell_center = is_centroid
   )
 mhq_terr_assessments <-
-  read_vc("mhq_terr_assessments", root = mhq_terr_datapath) %>%
+  read_vc("mhq_terr_assessments", root = mhq_assessments_datapath) %>%
   as_tibble() %>% 
   filter(assessment_date == max(assessment_date), .by = point_code) %>%
   select(point_code, assessment_date, type, is_present, inaccessible) %>% 
@@ -786,10 +819,10 @@ mhq_terr_assessments <-
     inaccessible = factor(inaccessible, levels = c("short term", "long term"))
   )
 mhq_watersurfaces_assessments <-
-  read_vc("mhq_watersurfaces_assessments", root = mhq_watersurfaces_datapath) %>%
+  read_vc("mhq_watersurfaces_assessments", root = mhq_assessments_datapath) %>%
   as_tibble()
 mhq_watersurfaces_populationunits <-
-  read_vc("mhq_watersurfaces_populationunits", root = mhq_watersurfaces_datapath) %>%
+  read_vc("mhq_watersurfaces_populationunits", root = mhq_assessments_datapath) %>%
   as_tibble()
 ```
 
@@ -799,7 +832,7 @@ mhq_watersurfaces_populationunits <-
 
 Determining a list of valid terrestrial population units to update the base sampling frame.
 
-```{r eval = mhq_data_available}
+```{r}
 valid_extra_popunits_cell_all_n2khab <- 
   mhq_terr_popunits %>% 
   # only consider assessment data:
@@ -882,7 +915,7 @@ valid_extra_popunits_cell_all_n2khab <-
 
 Checking that non-replaced GRTS addresses for cell-center types are unique.
 
-```{r eval = mhq_data_available}
+```{r}
 stopifnot(
   valid_extra_popunits_cell_all_n2khab %>% 
     inner_join(
@@ -905,7 +938,7 @@ stopifnot(
 For each _drawn_ GRTS address x type, we expect only one occurrence.
 Listing violations for further enquiry.
 
-```{r paged.print = FALSE, eval = mhq_data_available}
+```{r paged.print = FALSE}
 grtsaddrdrawn_duplicates_in_stratum <- 
   valid_extra_popunits_cell_all_n2khab %>% 
   count(grts_address_drawn, stratum) %>% 
@@ -922,7 +955,7 @@ Applying a temporary fix.
 
 <!-- XXXXXX To be revisited! -->
 
-```{r eval = mhq_data_available && nrow(grtsaddrdrawn_duplicates_in_stratum) > 0}
+```{r eval = nrow(grtsaddrdrawn_duplicates_in_stratum) > 0}
 valid_extra_popunits_cell_all_n2khab <- 
   valid_extra_popunits_cell_all_n2khab %>% 
   # from the duplicates, only keep the one with the highest GRTS address
@@ -939,7 +972,7 @@ valid_extra_popunits_cell_all_n2khab <-
 For each _real_ GRTS address x type, we expect only one occurrence.
 Listing violations for further enquiry.
 
-```{r paged.print = FALSE, eval = mhq_data_available}
+```{r paged.print = FALSE}
 grtsaddr_duplicates_in_stratum <- 
   valid_extra_popunits_cell_all_n2khab %>% 
   count(grts_address, stratum) %>% 
@@ -957,7 +990,7 @@ Applying a temporary fix.
 
 <!-- XXXXXX To be revisited! -->
 
-```{r eval = mhq_data_available && nrow(grtsaddr_duplicates_in_stratum) > 0}
+```{r eval = nrow(grtsaddr_duplicates_in_stratum) > 0}
 valid_extra_popunits_cell_all_n2khab <- 
   valid_extra_popunits_cell_all_n2khab %>% 
   # don't include the duplicates with grts_address != grts_address_drawn; we
@@ -974,7 +1007,7 @@ valid_extra_popunits_cell_all_n2khab <-
 
 Verifying that all strata can be found in `n2khab_strata_expanded`.
 
-```{r eval = mhq_data_available}
+```{r}
 stopifnot(
   valid_extra_popunits_cell_all_n2khab %>%
   distinct(stratum) %>%
@@ -986,7 +1019,7 @@ stopifnot(
 Listing the strata that are not found in `n2khab_strata` and which will be collapsed (unexpanded) in section \@ref(collapse-bsf).
 Best **verify** that `collapse_strata()` indeed covers these cases.
 
-```{r paged.print = FALSE, eval = mhq_data_available}
+```{r paged.print = FALSE}
 valid_extra_popunits_cell_all_n2khab %>%
   distinct(stratum) %>%
   anti_join(n2khab_strata, join_by(stratum))
@@ -994,7 +1027,7 @@ valid_extra_popunits_cell_all_n2khab %>%
 
 We expect that all GRTS addresses, both in `grts_address_drawn` and `grts_address`, exist in the `GRTSmaster_habitats` data source.
 
-```{r eval = mhq_data_available}
+```{r}
 stopifnot(
   valid_extra_popunits_cell_all_n2khab %>% 
     distinct(grts_address) %>% 
@@ -1003,7 +1036,7 @@ stopifnot(
 )
 ```
 
-```{r eval = mhq_data_available}
+```{r}
 valid_extra_popunits_cell_all_n2khab %>% 
   distinct(grts_address_drawn) %>% 
   pull(grts_address_drawn) %>% 
@@ -1012,7 +1045,7 @@ valid_extra_popunits_cell_all_n2khab %>%
 
 Listing violations for `grts_address_drawn`:
 
-```{r eval = mhq_data_available}
+```{r}
 grtsaddrdrawn_invalid <- 
   valid_extra_popunits_cell_all_n2khab %>% 
   distinct(grts_address_drawn) %>% 
@@ -1024,7 +1057,7 @@ Applying a temporary fix.
 
 <!-- XXXXXX To be revisited! -->
 
-```{r eval = mhq_data_available && nrow(grtsaddrdrawn_invalid) > 0}
+```{r eval = nrow(grtsaddrdrawn_invalid) > 0}
 valid_extra_popunits_cell_all_n2khab <- 
   valid_extra_popunits_cell_all_n2khab %>% 
   mutate(
@@ -1065,7 +1098,7 @@ Further, these drawn GRTS addresses should not be used to direct fieldwork, sinc
 Creating a tidy object with a single GRTS address column, plus indication whether this replaces another address or is being replaced.
 Depending on the purpose, one will need to filter the sampling frame one way or another, using this replacement information.
 
-```{r eval = mhq_data_available}
+```{r}
 valid_extra_popunits_cell_all_n2khab_tidy <- 
   valid_extra_popunits_cell_all_n2khab %>% 
   mutate(
@@ -1105,7 +1138,7 @@ valid_extra_popunits_cell_all_n2khab_tidy <-
 
 Checking that combinations of GRTS address x type are unique.
 
-```{r eval = mhq_data_available}
+```{r}
 stopifnot(
   valid_extra_popunits_cell_all_n2khab_tidy %>% 
     distinct(stratum, grts_address) %>% 
@@ -1126,7 +1159,7 @@ As a precaution, we only consider the assessed absences that are not older than:
 
 In order to align with section \@ref(tidy), we don't include the locations that got a replacement, even though in many (but not all) cases those locations are recorded as absences for the considered type.
 
-```{r eval = mhq_data_available}
+```{r}
 absent_popunits_cell_all_n2khab <- 
   mhq_terr_assessments %>% 
   mutate(
@@ -1225,7 +1258,7 @@ absent_popunits_cell_all_n2khab <-
 
 Checking that absences are not present in `valid_extra_popunits_cell_all_n2khab`.
 
-```{r eval = mhq_data_available}
+```{r}
 present_absences_cell_all <- 
   absent_popunits_cell_all_n2khab %>% 
   semi_join(
@@ -1241,7 +1274,7 @@ stopifnot(present_absences_cell_all %>% nrow() == 0)
 
 Updating the base sampling frame `stratum_grts_n2khab` by substituting with cells from `valid_extra_popunits_cell_all_n2khab_tidy`, and dropping those that have been assessed as absences in `absent_popunits_cell_all_n2khab`.
 
-```{r eval = mhq_data_available}
+```{r}
 stratum_grts_n2khab <- 
   bind_rows(
     valid_extra_popunits_cell_all_n2khab_tidy,

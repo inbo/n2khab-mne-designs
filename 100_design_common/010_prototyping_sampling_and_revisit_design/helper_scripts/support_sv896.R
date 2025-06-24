@@ -139,7 +139,7 @@ simplescheme_type_samplecoords <-
   distinct(
     compartiment = compartment,
     meetnet = scheme_name,
-    typeklasse = typeclass_name,
+    habitattypeklasse = typeclass_name,
     "habitat(sub)type" = type,
     x,
     y,
@@ -165,14 +165,14 @@ simplescheme_type_samplecoords %>%
 
 # totals by typeclass & province
 simplescheme_type_samplecoords %>%
-  count(compartiment, typeklasse, provincie) %>%
+  count(compartiment, habitattypeklasse, provincie) %>%
   split(.$compartiment) %>%
   walk(\(df) {
     tab <- str_c(df$compartiment[1], " provincies")
     df %>%
       select(-compartiment) %>%
       pivot_wider(
-        names_from = typeklasse,
+        names_from = habitattypeklasse,
         values_from = n
       ) %>%
       arrange(provincie) %>%
@@ -186,7 +186,7 @@ simplescheme_type_samplecoords %>%
 
 # totals by typeclass & sac
 simplescheme_type_samplecoords %>%
-  count(compartiment, typeklasse, sbzh_code, sbzh_naam) %>%
+  count(compartiment, habitattypeklasse, sbzh_code, sbzh_naam) %>%
   split(.$compartiment) %>%
   walk(\(df) {
     tab <- str_c(df$compartiment[1], " sbzh")
@@ -194,7 +194,7 @@ simplescheme_type_samplecoords %>%
       df %>%
       select(-compartiment) %>%
       pivot_wider(
-        names_from = typeklasse,
+        names_from = habitattypeklasse,
         values_from = n
       ) %>%
       arrange(sbzh_code)

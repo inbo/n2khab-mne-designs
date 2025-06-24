@@ -762,13 +762,31 @@ simplify_period <- function(x) {
 
 
 
-
-distribute_sample_over_panels <- function(sps, pan) {
+#' Distribute a spatially balanced sample over panels in a spatially and
+#' temporally balanced way
+#'
+#' @param sps Tibble with a column `grts_address`, representing a spatial
+#'   sample.
+#' @param pan Tibble of membership-aligned sets of generic panels, each column
+#'   referring to a different number of generic panels and their repetition
+#'   pattern over time. The first column of the tibble must be `id` (incremental
+#'   integer), representing sequential date-intervals.
+#' @param virtpan Tibble consisting of a column `panel_address` and `panel_id`,
+#'   typically derived from `create_1d_grts_sample()`.
+distribute_sample_over_panels <- function(sps, pan, virtpan) {
   remainder <- nrow(sps) %% nrow(pan)
   pan_row_numbers <- seq_len(nrow(pan))
   if (remainder > 0) {
-    indexes_remainder <- lpm1(remainder, matrix(rep(1, nrow(pan)), ncol = 1))
-    panels_remainder <- pan_row_numbers[indexes_remainder]
+    panels_remainder <-
+      virtpan %>%
+      arrange(panel_address) %>%
+      slice_head(n = remainder) %>%
+      arrange(panel_id) %>%
+      mutate(
+        panel_id_rescaled = ceiling(panel_id / (nrow(virtpan) / nrow(pan))) %>%
+          as.integer()
+      ) %>%
+      pull(panel_id_rescaled)
   } else {
     panels_remainder <- pan_row_numbers[0]
   }
@@ -782,6 +800,50 @@ distribute_sample_over_panels <- function(sps, pan) {
     arrange(grts_address) %>%
     mutate(genericpanels_row = sort(c(panels_complete, panels_remainder)))
 }
+
+
+
+
+#' Create a one-dimensional GRTS sample of a given size
+#'
+#' Creates a one-dimensional GRTS sample, where population units are numbered
+#' consecutively and distance between units is defined by the difference in
+#' number.
+#'
+#' @details The size determines the identifiers of the population units: they
+#'   are numbered from 1 to `size`.
+#'
+#' @param size Requested population size
+#' @inheritParams grtsdb::add_level
+#'
+#' @returns Tibble with columns `address` (the GRTS address) and `id` (the
+#'   population unit ID).
+create_1d_grts_sample <- function(size, verbose = FALSE) {
+  n2khab:::require_pkgs("grtsdb")
+  db_1d <- grtsdb::connect_db(":memory:")
+  bbox_1d <- matrix(c(1, size), ncol = 2)
+  cellsize_1d <- 1
+  grtsdb::add_level(
+    bbox = bbox_1d,
+    cellsize = cellsize_1d,
+    grtsdb = db_1d,
+    verbose = verbose
+  )
+  grtsdb::extract_sample(
+    samplesize = size,
+    bbox = bbox_1d,
+    cellsize = cellsize_1d,
+    grtsdb = db_1d,
+    verbose = verbose
+  ) %>%
+    as_tibble() %>%
+    select(address = ranking, id = x1c) %>%
+    mutate(id = as.integer(id)) %>%
+    arrange(address)
+}
+
+
+
 
 
 

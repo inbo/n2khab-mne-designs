@@ -1,8 +1,128 @@
 # Settings
 
 <!-- For the schemes, also recognize that a subset may exist with extra variables. -->
-<!-- Use dummy variables for now, but make sure various variable types exist (repetitions within one year, once per year, continuous measurements which need multiple visits per year but only one value per year, etc.) -->
 <!-- Also include necessary aspects for resource allocation in the sampling design, especially time investments per variable. (this may be added later) -->
+
+## Setting data source versions
+
+This workflow makes use of various data sources read by the `n2khab` package.
+To achieve reproducibility, the versions used in the workflow are set and checked for their existence in the correct directories.
+
+Optionally update xxh64sum reference values from a googlesheet and store them locally.
+
+```{r}
+if (
+  !file.exists(
+    file.path(datapath, "text/raw/n2khab_data_checksums_reference.yml")
+  ) || 
+  params$update_reference_checksums
+) {
+  gs_id_dataversions <- "1E8ERlfYwP3OjluL8d7_4rR1W34ka4LRCE35JTxf3WMI"
+  datasource_versions <- 
+    read_sheet(
+    ss = gs_id_dataversions,
+    sheet = "Data source versions",
+    range = "A:B",
+    col_types = "cc"
+  ) %>% 
+    rename(source_id = SourceID, version_id = VersionID) %>% 
+    mutate(
+      source_id = fct(source_id),
+      version_id = fct(version_id),
+      processed = str_detect(source_id, "GRTSmh_|map_|_simple|_100mseg|_hab$")
+    ) %>% 
+    relocate(processed) %>% 
+    arrange(processed, source_id, version_id)
+  datasource_version_files <- 
+    read_sheet(
+    ss = gs_id_dataversions,
+    sheet = "Data source version files",
+    range = "A:C",
+    col_types = "ccc"
+  ) %>% 
+    rename(version_id = VersionID, filename = 2, xxh64sum = 3) %>% 
+    filter(!is.na(xxh64sum)) %>% 
+    mutate(
+      version_id = factor(
+        version_id,
+        levels = levels(datasource_versions$version_id)
+      )
+    )
+  datasource_versions %>% 
+    inner_join(
+      datasource_version_files,
+      join_by(version_id),
+      relationship = "one-to-many",
+      unmatched = c("drop", "error")
+    ) %>% 
+    arrange(processed, source_id, version_id, filename) %>% 
+    write_vc(
+      file = "n2khab_data_checksums_reference",
+      root = file.path(datapath, "text/raw"),
+      optimize = FALSE,
+      strict = FALSE,
+      sorting = c("processed", "source_id", "version_id", "filename")
+    )
+}
+```
+
+Reading the reference checksum values.
+
+```{r}
+checksums_reference <- 
+  read_vc(
+    file = "n2khab_data_checksums_reference",
+    root = file.path(datapath, "text/raw")
+  ) %>% 
+  as_tibble()
+```
+
+Defining the data source versions to be used in this workflow.
+
+```{r}
+versions_set <- c(
+  "flanders_2018-05-16",
+  "provinces_2018-05-16",
+  "sac_2013-01-18",
+  "habitatmap_terr_2023_v1",
+  "habitatstreams_2023",
+  "watersurfaces_hab_v6",
+  "habitatsprings_2020v2",
+  "habitatquarries_2020v1",
+  "GRTSmaster_habitats_v2",
+  "GRTSmh_brick_v1",
+  "watercourse_100mseg_20200807",
+  "watersurfaces_2024",
+  "shallowgroundwater_v1",
+  "raster_runif_v1"
+)
+stopifnot(all(versions_set %in% unique(checksums_reference$version_id)))
+```
+
+Checking the existence of the correct files in the correct directories.
+
+```{r}
+checksums <- 
+  checksums_reference %>% 
+  filter(version_id %in% versions_set) %>% 
+  mutate(
+    filepath = file.path(
+      locate_n2khab_data(),
+      ifelse(processed, "20_processed", "10_raw"),
+      source_id,
+      filename
+    ),
+    xxh64sum_user = xxh64sum(filepath)
+  )
+checksum_diff <- checksums %>% filter(xxh64sum != xxh64sum_user)
+if (nrow(checksum_diff) > 0) {
+  stop(
+    "Wrong data source versions detected for:\n",
+    str_flatten(unique(checksum_diff$source_id), collapse = "\n")
+  )
+}
+```
+
 
 ## Setting scheme sets and associated target populations (types)
 
@@ -1706,6 +1826,19 @@ mod_scheme_ps_fag_paneldesign %>%
   arrange(field_activity_group)
 ```
 
+
+### Setting the number of virtual panels that drive panel membership
+
+In order to maximize synergies across different panel designs in terms of panel membership of sampling units, spatial sampling units will be distributed to 'virtual' panels in the first place (section \@ref(panel-memship)).
+These can then be aggregated to the required number of panels for a given panel design, which must be a divisor of the number of virtual panels.
+
+Setting the number of virtual panels.
+
+```{r}
+nrvirtpanels <- 48
+```
+
+
 ## Panel design of measurements
 
 `scheme_ps_variableset_paneldesign` is the panel design of measurements.
@@ -1777,8 +1910,6 @@ scheme_ps_variableset_paneldesign <-
   )
 scheme_ps_variableset_paneldesign
 ```
-
-## Setting data source versions for the construction of spatial sampling frames
 
 
 
