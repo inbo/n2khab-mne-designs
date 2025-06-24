@@ -1217,11 +1217,8 @@ orthophoto_2025_stratum_grts <-
     loceval_year = ifelse(year(date_start) < 2025, 2025, year(date_start)) %>%
       as.integer()
   ) %>%
-  select(-scheme, -targetpanel, -date_start) %>%
+  select(-targetpanel, -date_start) %>%
   relocate(panel_set, .after = grts_join_method) %>%
-  # temporarily nest scheme_ps_targetpanel in order to properly calculate median
-  # addresses
-  nest(scheme_ps_targetpanels = scheme_ps_targetpanel) %>%
   # set priorities based on loceval_year; for 2026 differentiate according to
   # GRTS address (because lower GRTS addresses have more chance to end up as
   # replacement). The latter is done within spatial poststratum & panel set
@@ -1231,10 +1228,9 @@ orthophoto_2025_stratum_grts <-
       grts_address <= median(grts_address) ~ 2L,
       .default = 3L
     ),
-    .by = c(stratum, loceval_year, panel_set, sp_poststratum)
+    .by = c(stratum, loceval_year, scheme, panel_set, sp_poststratum)
   ) %>%
-  unnest(scheme_ps_targetpanels) %>%
-  # collapse panel_set since this may sometimes have different values for the
+  # collapse scheme & panel_set since these can have different values for the
   # same location
   summarize(
     # Note that the scheme_ps_targetpanels attribute is a shrinked version of
