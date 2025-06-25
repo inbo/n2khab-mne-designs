@@ -8,7 +8,8 @@
 load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
 
 
-scheme_moco_ps_stratum_sppost_spsamples %>%
+gw_type_grts <-
+  scheme_moco_ps_stratum_sppost_spsamples %>%
   filter(str_detect(scheme, "^GW")) %>%
   inner_join(
     n2khab_strata,
@@ -17,14 +18,30 @@ scheme_moco_ps_stratum_sppost_spsamples %>%
     unmatched = c("error", "drop")
   ) %>%
   unnest(sp_poststr_samples) %>%
-  select(
-    -stratum,
-    -scheme,
-    -module_combo_code,
-    -panel_set,
-    -sp_poststratum,
-    -sample_status
-  ) %>%
-  distinct() %>%
+  add_assessment_data() %>%
+  distinct(
+    type,
+    grts_address,
+    grts_address_final
+  )
+
+gw_type_grts %>%
   count(type) %>%
   write_csv("type_count_groundwater.csv")
+
+
+grts_mh <- read_GRTSmh()
+# create a spatial index of the GRTS addresses
+grts_mh_index <- tibble(
+  id = seq_len(ncell(grts_mh)),
+  grts_address = values(grts_mh)[, 1]
+) %>%
+  filter(!is.na(grts_address))
+
+gw_type_grts %>%
+  add_point_coords_grts(
+    grts_var = "grts_address_final",
+    spatrast = grts_mh,
+    spatrast_index = grts_mh_index
+  ) %>%
+  write_sf("gw_type_grts.gpkg")
