@@ -1,5 +1,37 @@
-```{r save_rdata, eval = params$save_rdata, include = FALSE}
+# Object checksums
+
+Table \@ref(tab:object-checksums) lists the checksums of selected objects; they are also written to a file.
+These objects can optionally be saved as an RData file when this workflow is rendered (see `save_rdata` parameter).
+
+```{r save_rdata, include = FALSE}
 source(file.path(projroot, "R/save_rdata.R"))
 ```
 
+```{r include = FALSE}
+object_checksums <- 
+  tibble(
+  object_name = rdata_set,
+  xxh64sum = map_chr(object_name, \(x) {
+    # terra objects need special handling;
+    # https://github.com/rspatial/terra/issues/1844
+    if (inherits(eval(str2lang(x)), c("SpatRaster", "SpatVector"))) {
+      x <- paste0("terra::wrap(", x, ")")
+    }
+    digest::digest(eval(str2lang(x)), algo = "xxhash64")
+  })
+) %>%
+  arrange(object_name)
+```
 
+(ref:object-checksums) xxHash (64bit) checksum values of selected objects.
+
+```{r object-checksums, echo = FALSE}
+object_checksums %>% 
+  kbl(caption = "(ref:object-checksums)") %>% 
+  kable_styling(full_width = FALSE)
+```
+
+```{r include = FALSE}
+object_checksums %>% 
+  write_csv(file.path(datapath, "text/results/object_checksums.csv"))
+```
