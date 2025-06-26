@@ -1073,40 +1073,42 @@ if (nrnew > 1) {
 
 Code to verify the temporal spread of virtual panels in the case of all, 24, 12, 6 and 3 panels (not run).
 
-```{r eval = FALSE}
-plot_panel_spread <- function(nrpanels, sample_size, seed = 123456) {
-  set.seed(seed)
-  stratum_sppost_ps_virtpaneladdr %>% 
-    mutate(
-      panel_id_rescaled = ceiling(
-        panel_id / (nrvirtpanels / nrpanels)
+```{r}
+if (FALSE) {
+  plot_panel_spread <- function(nrpanels, sample_size, seed = 123456) {
+    set.seed(seed)
+    stratum_sppost_ps_virtpaneladdr %>% 
+      mutate(
+        panel_id_rescaled = ceiling(
+          panel_id / (nrvirtpanels / nrpanels)
+        ) %>% 
+          as.integer
       ) %>% 
-        as.integer
-    ) %>% 
-    nest(panels = c(panel_address, panel_id, panel_id_rescaled)) %>% 
-    mutate(samples = map(panels, function(pan) {
-      pan %>% 
-        arrange(panel_address) %>% 
-        slice_head(n = sample_size) %>% 
-        select(-panel_id)
-    })) %>% 
-    select(-panels) %>% 
-    mutate(case = row_number()) %>% 
-    slice_sample(n = 20) %>% 
-    unnest(samples) %>% 
-    count(case, panel_id_rescaled, name = "sampled") %>% 
-    mutate(case = factor(case)) %>% 
-    ggplot(aes(x = case, y = panel_id_rescaled, fill = sampled)) +
-    geom_tile() +
-    facet_wrap(~case, nrow = 1, scales = "free_x")
+      nest(panels = c(panel_address, panel_id, panel_id_rescaled)) %>% 
+      mutate(samples = map(panels, function(pan) {
+        pan %>% 
+          arrange(panel_address) %>% 
+          slice_head(n = sample_size) %>% 
+          select(-panel_id)
+      })) %>% 
+      select(-panels) %>% 
+      mutate(case = row_number()) %>% 
+      slice_sample(n = 20) %>% 
+      unnest(samples) %>% 
+      count(case, panel_id_rescaled, name = "sampled") %>% 
+      mutate(case = factor(case)) %>% 
+      ggplot(aes(x = case, y = panel_id_rescaled, fill = sampled)) +
+      geom_tile() +
+      facet_wrap(~case, nrow = 1, scales = "free_x")
+  }
+  # plot_panel_spread(nrvirtpanels, 6)
+  plot_panel_spread(24, 12)
+  plot_panel_spread(24, 6)
+  plot_panel_spread(24, 2)
+  # plot_panel_spread(12, 6)
+  # plot_panel_spread(6, 3)
+  plot_panel_spread(3, 2)
 }
-# plot_panel_spread(nrvirtpanels, 6)
-plot_panel_spread(24, 12)
-plot_panel_spread(24, 6)
-plot_panel_spread(24, 2)
-# plot_panel_spread(12, 6)
-# plot_panel_spread(6, 3)
-plot_panel_spread(3, 2)
 ```
 
 Now populating the generic panels.
