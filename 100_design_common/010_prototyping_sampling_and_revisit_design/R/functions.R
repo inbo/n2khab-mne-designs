@@ -829,7 +829,8 @@ create_1d_grts_sample <- function(size, verbose = FALSE) {
     grtsdb = db_1d,
     verbose = verbose
   )
-  grtsdb::extract_sample(
+  result <-
+    grtsdb::extract_sample(
     samplesize = size,
     bbox = bbox_1d,
     cellsize = cellsize_1d,
@@ -840,6 +841,8 @@ create_1d_grts_sample <- function(size, verbose = FALSE) {
     select(address = ranking, id = x1c) %>%
     mutate(id = as.integer(id)) %>%
     arrange(address)
+  DBI::dbDisconnect(db_1d)
+  return(result)
 }
 
 
