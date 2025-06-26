@@ -1028,6 +1028,49 @@ stratum_sppost_ps_virtpaneladdr <-
   as_tibble()
 ```
 
+Automatically amending `stratum_sppost_ps_virtpaneladdr` with missing combinations of stratum x spatial poststratum x panel set, as needed.
+
+```{r}
+stratum_sppost_ps_missing <- 
+  scheme_moco_ps_stratum_sppost_genericpanelrelations %>% 
+  distinct(stratum, sp_poststratum, panel_set) %>% 
+  arrange(stratum, sp_poststratum, panel_set) %>% 
+  anti_join(
+    stratum_sppost_ps_virtpaneladdr,
+    join_by(stratum, sp_poststratum, panel_set)
+  )
+nrnew <- nrow(stratum_sppost_ps_missing)
+if (nrnew > 1) {
+  message(
+    "Updating stratum_sppost_ps_virtpaneladdr with ",
+    nrnew,
+    " new combinations of stratum x spatial poststratum x panel set."
+  )
+  set.seed(20250626)
+  stratum_sppost_ps_missing %>% 
+    mutate(
+      panel_addresses = list(create_1d_grts_sample(nrvirtpanels)),
+      .by = c(stratum, sp_poststratum, panel_set)
+    ) %>% 
+    unnest(panel_addresses) %>% 
+    rename(panel_address = address, panel_id = id) %>% 
+    bind_rows(stratum_sppost_ps_virtpaneladdr) %>% 
+    arrange(stratum, sp_poststratum, panel_set, panel_address) %>% 
+    write_vc(
+      "stratum_sppost_ps_virtpaneladdr",
+      root = file.path(datapath, "text/intermediate"),
+      sorting = c("stratum", "sp_poststratum", "panel_set", "panel_address"),
+      strict = FALSE
+    )
+  stratum_sppost_ps_virtpaneladdr <- 
+    read_vc(
+      "stratum_sppost_ps_virtpaneladdr",
+      root = file.path(datapath, "text/intermediate")
+    ) %>%
+    as_tibble()
+}
+```
+
 Code to verify the temporal spread of virtual panels in the case of all, 24, 12, 6 and 3 panels (not run).
 
 ```{r eval = FALSE}
