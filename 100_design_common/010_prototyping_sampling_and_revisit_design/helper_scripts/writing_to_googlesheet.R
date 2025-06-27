@@ -186,6 +186,11 @@ non_core_types_per_module_and_compartment %>%
 # - module_domain_scheme_ps_stratum_sample_size
 
 submodule_domain_scheme_ps_designattr %>%
+  # first sum over panel_set:
+  summarize(
+    sp_sample_size_all_panels = sum(sp_sample_size_all_panels),
+    .by = c(module, submodule, domain, type_count, scheme, cycle_duration_y)
+  ) %>%
   summarize(
     submodules = str_flatten(submodule, " | "),
     type_counts = str_flatten(type_count, " | "),
@@ -206,8 +211,14 @@ module_domain_scheme_ps_stratum_sample_size %>%
     module,
     domain,
     scheme,
+    panel_set,
     cycle_duration_y,
     sp_sample_size_all_panels
+  ) %>%
+  # summing over panel_set:
+  summarize(
+    sp_sample_size_all_panels = sum(sp_sample_size_all_panels),
+    .by = c(module, domain, scheme, cycle_duration_y)
   ) %>%
   mutate(yearly_sample_size = round(sp_sample_size_all_panels / cycle_duration_y)) %>%
   write_sheet(
@@ -216,15 +227,32 @@ module_domain_scheme_ps_stratum_sample_size %>%
   )
 
 module_domain_scheme_ps_stratum_sample_size %>%
+  # sum nunits over stratum
   summarize(
     nunits = sum(nunits),
     .by = c(
       module,
       domain,
       scheme,
+      panel_set,
       cycle_duration_y,
       type,
       sp_sample_size_all_panels_type
+    )
+  ) %>%
+  # sum sample size over panel_set (pmin() because they can overlap)
+  summarize(
+    sp_sample_size_all_panels_type = pmin(
+      sum(sp_sample_size_all_panels_type),
+      first(nunits)
+    ),
+    .by = c(
+      module,
+      domain,
+      scheme,
+      cycle_duration_y,
+      type,
+      nunits
     )
   ) %>%
   mutate(
@@ -237,13 +265,30 @@ module_domain_scheme_ps_stratum_sample_size %>%
   )
 
 module_domain_scheme_ps_stratum_sample_size %>%
+  # bring to type level
   distinct(
     module,
     domain,
     scheme,
+    panel_set,
     cycle_duration_y,
     type,
-    sp_sample_size_all_panels_type
+    sp_sample_size_all_panels_type,
+    nunits
+  ) %>%
+  # sum sample size over panel_set (pmin() because they can overlap)
+  summarize(
+    sp_sample_size_all_panels_type = pmin(
+      sum(sp_sample_size_all_panels_type),
+      first(nunits)
+    ),
+    .by = c(
+      module,
+      domain,
+      scheme,
+      cycle_duration_y,
+      type
+    )
   ) %>%
   arrange(module, domain, scheme, type) %>%
   pivot_wider(
@@ -257,15 +302,21 @@ module_domain_scheme_ps_stratum_sample_size %>%
   )
 
 module_domain_scheme_ps_stratum_sample_size %>%
-  select(
-    module,
-    domain,
-    scheme,
-    cycle_duration_y,
-    type,
-    stratum,
-    sp_sample_size_all_panels_stratum,
-    nunits
+  # sum sample size over panel_set (pmin() because they can overlap)
+  summarize(
+    sp_sample_size_all_panels_stratum = pmin(
+      sum(sp_sample_size_all_panels_stratum),
+      first(nunits)
+    ),
+    .by = c(
+      module,
+      domain,
+      scheme,
+      cycle_duration_y,
+      type,
+      stratum,
+      nunits
+    )
   ) %>%
   mutate(
     yearly_sample_size = round(sp_sample_size_all_panels_stratum / cycle_duration_y, 1),
