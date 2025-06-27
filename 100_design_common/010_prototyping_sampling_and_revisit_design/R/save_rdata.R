@@ -1,4 +1,6 @@
 rdata_set <- c(
+  "n2khab_data_checksums_reference",
+  "versions_required",
   "schemes",
   "targetpops",
   "modules",
