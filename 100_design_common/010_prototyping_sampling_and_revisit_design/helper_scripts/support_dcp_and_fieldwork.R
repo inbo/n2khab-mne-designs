@@ -1316,7 +1316,7 @@ orthophoto_2025_cell_centers <-
 
 
 
-## Writing object hashes to verify reproducibility ---------------------------
+## Writing object checksums to verify reproducibility -------------------------
 
 tibble(
   name = c(
@@ -1368,7 +1368,7 @@ tibble(
   })
 ) %>%
   arrange(name) %>%
-  write_csv(file.path(datapath, "text/intermediate/fieldworg_hashes.csv"))
+  write_csv(file.path(datapath, "text/intermediate/fieldworg_checksums.csv"))
 
 
 
