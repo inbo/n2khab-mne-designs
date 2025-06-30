@@ -72,6 +72,7 @@ rdata_set <- c(
   "fag_stratum_grts_calendar",
   "fag_grts_calendar",
   # exporting specific functions:
+  "verify_n2khab_data",
   "add_point_coords_grts",
   "filter_grtsraster_by_address",
   "get_level3replacement_cellnrs"
