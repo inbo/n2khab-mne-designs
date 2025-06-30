@@ -104,39 +104,7 @@ stopifnot(all(
 Checking the existence of the correct files in the correct directories.
 
 ```{r}
-checksums <- 
-  n2khab_data_checksums_reference %>% 
-  filter(version_id %in% versions_required) %>% 
-  mutate(
-    filepath_expected = file.path(
-      locate_n2khab_data(),
-      ifelse(processed, "20_processed", "10_raw"),
-      source_id,
-      filename
-    ),
-    file_exists = file.exists(filepath_expected),
-    xxh64sum_user = ifelse(
-      file_exists,
-      xxh64sum(filepath_expected),
-      NA_character_
-    )
-  )
-checksum_missingfile <- checksums %>% filter(!file_exists)
-if (nrow(checksum_missingfile) > 0) {
-  stop(
-    "Missing or incomplete data source:\n",
-    str_flatten(unique(checksum_missingfile$source_id), collapse = "\n"),
-    "\nPlease inspect the required files in `checksum_missingfile`."
-  )
-}
-checksum_diff <- checksums %>% filter(file_exists, xxh64sum != xxh64sum_user)
-if (nrow(checksum_diff) > 0) {
-  stop(
-    "Wrong data source versions detected for:\n",
-    str_flatten(unique(checksum_diff$source_id), collapse = "\n"),
-    "\nPlease inspect the required versions in `versions_required`."
-  )
-}
+verify_n2khab_data(n2khab_data_checksums_reference, versions_required)
 ```
 
 
