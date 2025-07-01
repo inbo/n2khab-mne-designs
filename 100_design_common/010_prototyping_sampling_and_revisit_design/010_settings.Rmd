@@ -22,13 +22,19 @@ if (
     read_sheet(
     ss = gs_id_dataversions,
     sheet = "Data source versions",
-    range = "A:B",
-    col_types = "cc"
+    range = "A:D",
+    col_types = "cccc"
   ) %>% 
-    rename(source_id = SourceID, version_id = VersionID) %>% 
+    select(
+      source_id = SourceID,
+      version_id = VersionID,
+      version_doi = `DOI of version`
+    ) %>% 
     mutate(
       source_id = fct(source_id),
       version_id = fct(version_id),
+      version_doi = str_match(version_doi, "https://doi.org/(.+$)")[, 2] %>% 
+        fct(),
       processed = str_detect(source_id, "GRTSmh_|map_|_simple|_100mseg|_hab$")
     ) %>% 
     relocate(processed) %>% 
