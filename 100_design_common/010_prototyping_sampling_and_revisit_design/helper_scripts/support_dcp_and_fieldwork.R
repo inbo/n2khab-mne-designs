@@ -1320,6 +1320,7 @@ orthophoto_2025_cell_centers <-
 
 tibble(
   name = c(
+    "versions_required",
     "scheme_moco_ps_stratum_targetpanel_spsamples",
     "stratum_schemepstargetpanel_spsamples",
     "schemepstargetpanel_spsamples_terr",
