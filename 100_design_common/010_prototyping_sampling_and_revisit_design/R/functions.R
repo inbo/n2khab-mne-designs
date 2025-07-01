@@ -18,18 +18,32 @@ verify_n2khab_data <- function(reference, requirements) {
     )
   checksum_missingfile <- checksums %>% filter(!file_exists)
   if (nrow(checksum_missingfile) > 0) {
+    assign(
+      "checksum_missingfile",
+      checksum_missingfile,
+      envir = parent.env(environment())
+    )
     stop(
       "Missing or incomplete data sources:\n",
       str_flatten(unique(checksum_missingfile$source_id), collapse = "\n"),
-      "\nPlease inspect the required files in `checksum_missingfile`."
+      "\nPlease inspect the required versions in `checksum_missingfile`. ",
+      "Use n2khab::download_zenodo(\"<doi>\", \"<path>\") as needed. ",
+      "See https://inbo.github.io/n2khab/articles/v020_datastorage.html ."
     )
   }
   checksum_diff <- checksums %>% filter(file_exists, xxh64sum != xxh64sum_user)
   if (nrow(checksum_diff) > 0) {
+    assign(
+      "checksum_diff",
+      checksum_diff,
+      envir = parent.env(environment())
+    )
     stop(
       "Wrong data source versions detected for:\n",
       str_flatten(unique(checksum_diff$source_id), collapse = "\n"),
-      "\nPlease inspect the required versions in `versions_required`."
+      "\nPlease inspect the required versions in `checksum_diff`. ",
+      "Use n2khab::download_zenodo(\"<doi>\", \"<path>\") as needed. ",
+      "See https://inbo.github.io/n2khab/articles/v020_datastorage.html ."
     )
   }
   message("All n2khab_data requirements are fulfilled!")
