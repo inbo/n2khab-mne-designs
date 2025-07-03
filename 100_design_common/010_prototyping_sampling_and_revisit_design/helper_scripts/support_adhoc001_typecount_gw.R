@@ -150,4 +150,4 @@ gw_type_grts %>%
     spatrast = grts_mh,
     spatrast_index = grts_mh_index
   ) %>%
-  write_sf("gw_type_grts.gpkg")
+  write_sf("gw_type_grts.gpkg", delete_dsn = TRUE)
