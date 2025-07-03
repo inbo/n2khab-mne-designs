@@ -75,7 +75,8 @@ rdata_set <- c(
   "verify_n2khab_data",
   "add_point_coords_grts",
   "filter_grtsraster_by_address",
-  "get_level3replacement_cellnrs"
+  "get_level3replacement_cellnrs",
+  "convert_level0_to_level3"
 )
 
 if (params$save_rdata) {
