@@ -112,20 +112,26 @@ add_point_coords_grts <- function(
 ## Locations per type in groundwater monitoring ------------------
 
 gw_type_grts <-
-  scheme_moco_ps_stratum_sppost_spsamples %>%
-  filter(str_detect(scheme, "^GW")) %>%
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+  filter(
+    str_detect(scheme, "^GW"),
+    str_detect(notation_paneldesign, "^24panelsof3m\\(SER\\)")
+  ) %>%
   inner_join(
     n2khab_strata,
     join_by(stratum),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
-  unnest(sp_poststr_samples) %>%
   add_assessment_data() %>%
-  distinct(
-    type,
-    grts_address,
-    grts_address_final
+  summarize(
+    date_start_earliest_visit = min(date_start),
+    date_end_earliest_visit = min(date_end),
+    .by = c(
+      type,
+      grts_address,
+      grts_address_final
+    )
   )
 
 # count locations per type
