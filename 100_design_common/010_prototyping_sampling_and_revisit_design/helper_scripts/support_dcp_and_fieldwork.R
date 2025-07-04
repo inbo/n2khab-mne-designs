@@ -168,6 +168,7 @@ save(
 
 load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
 versions_required <- c(versions_required, "habitatmap_2024_v99_interim")
+verify_n2khab_data(n2khab_data_checksums_reference, versions_required)
 
 ## Sampling unit attributes -----------------------------
 
