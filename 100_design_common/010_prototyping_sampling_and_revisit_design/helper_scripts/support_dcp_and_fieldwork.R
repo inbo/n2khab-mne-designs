@@ -507,9 +507,15 @@ if (FALSE) {
 # polygons have been labelled to contain the specific type. Further, some
 # sampling units concern previously assessed sites with the type, while this
 # information is not present in habitatmap_terr, hence also not in below used
-# hmt_pol_stratum_grts_cell_all_n2khab, so that the polygon_id is missing. In
-# these cases, for now, we will take all replacement cells according to the
-# level 3 cell (further down).
+# hmt_pol_stratum_grts_cell_all_n2khab_collapsed, so that the polygon_id is
+# missing. In these cases, for now, we will take all replacement cells according
+# to the level 3 cell (further down).
+
+# Before joining polygon_ids to stratum x grts_address, we must 'unexpand'
+# hmt_pol_stratum_grts_cell_all_n2khab to match the strata in n2khab_strata.
+hmt_pol_stratum_grts_cell_all_n2khab_collapsed <-
+  hmt_pol_stratum_grts_cell_all_n2khab %>%
+  collapse_strata()
 
 stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells <-
   stratum_schemepstargetpanel_spsamples %>%
@@ -517,7 +523,7 @@ stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells <-
   # adding polygon_id attribute (sometimes missing, sometimes more than one, as
   # explained above)
   left_join(
-    hmt_pol_stratum_grts_cell_all_n2khab,
+    hmt_pol_stratum_grts_cell_all_n2khab_collapsed,
     join_by(stratum, grts_address),
     relationship = "many-to-many",
     unmatched = "drop"
@@ -525,7 +531,7 @@ stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells <-
   # adding all GRTS addresses of the polygon, taking into account the stratum's
   # GRTS join method
   left_join(
-    hmt_pol_stratum_grts_cell_all_n2khab %>%
+    hmt_pol_stratum_grts_cell_all_n2khab_collapsed %>%
       rename(grts_address_replac = grts_address),
     join_by(stratum, polygon_id),
     relationship = "many-to-many",
