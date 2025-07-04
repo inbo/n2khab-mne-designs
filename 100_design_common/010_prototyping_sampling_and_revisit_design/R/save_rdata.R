@@ -76,7 +76,8 @@ rdata_set <- c(
   "add_point_coords_grts",
   "filter_grtsraster_by_address",
   "get_level3replacement_cellnrs",
-  "convert_level0_to_level3"
+  "convert_level0_to_level3",
+  "collapse_strata"
 )
 
 if (params$save_rdata) {
