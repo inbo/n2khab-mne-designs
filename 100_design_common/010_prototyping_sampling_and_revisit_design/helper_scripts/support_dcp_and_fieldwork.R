@@ -913,7 +913,7 @@ plot_replacement_example <- function(
     plot()
 }
 plot_replacement_example(65, 80)
-plot_replacement_example(64, 64)
+plot_replacement_example(46, 64)
 plot_replacement_example(40, 45)
 plot_replacement_example(30, 35)
 plot_replacement_example(12, 20)
@@ -925,6 +925,9 @@ cellnrs_replacement <-
   select(replacement_cells) %>%
   unnest(replacement_cells) %>%
   distinct(cellnr_replac) %>%
+  # not including the 'no replacement cells available' case (i.e. small
+  # polygons)
+  filter(!is.na(cellnr_replac)) %>%
   pull(cellnr_replac)
 
 # generate sf points object of all replacement cell centers
