@@ -167,7 +167,7 @@ save(
 # Then run:
 
 load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
-
+versions_required <- c(versions_required, "habitatmap_2024_v99_interim")
 
 ## Sampling unit attributes -----------------------------
 
