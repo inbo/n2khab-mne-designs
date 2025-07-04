@@ -35,31 +35,6 @@ load(path)
 
 ## Local functions --------------------------
 
-#' Add grts_address_final and other attributes to a stratum x grts_address
-#' object
-#'
-#' grts_address always refers to the GRTS address used in ranking and sampling,
-#' but some locations may not have the targeted stratum and are linked to a
-#' replacement site. This function adds the replacement site
-#' (grts_address_final) and some other attributes from
-#' stratum_grts_n2khab_phabcorrected_no_replacements.
-#'
-#' @param df Data frame holding a stratum and grts_address column.
-add_assessment_data <- function(df) {
-  df %>%
-    inner_join(
-      stratum_grts_n2khab_phabcorrected_no_replacements,
-      join_by(stratum, grts_address),
-      relationship = "many-to-one",
-      unmatched = c("error", "drop")
-    ) %>%
-    mutate(
-      grts_address_final = ifelse(is.na(replaced_by), grts_address, replaced_by)
-    ) %>%
-    relocate(grts_address_final, .after = grts_address) %>%
-    select(-replaced_by)
-}
-
 #' Add point coordinate columns to a data frame with a GRTS address column
 #'
 #' @param df Data frame.
@@ -112,18 +87,16 @@ add_point_coords_grts <- function(
 ## Locations per type in groundwater monitoring ------------------
 
 gw_type_grts <-
-  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
-  filter(
-    str_detect(scheme, "^GW"),
-    str_detect(notation_paneldesign, "^24panelsof3m\\(SER\\)")
-  ) %>%
+  fag_stratum_grts_calendar %>%
+  filter(str_detect(field_activity_group, "^GWINST")) %>%
+  unnest(scheme_moco_ps) %>%
+  filter(str_detect(scheme, "^GW")) %>%
   inner_join(
     n2khab_strata,
     join_by(stratum),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
-  add_assessment_data() %>%
   summarize(
     date_start_earliest_visit = min(date_start),
     date_end_earliest_visit = min(date_end),
@@ -132,7 +105,8 @@ gw_type_grts <-
       grts_address,
       grts_address_final
     )
-  )
+  ) %>%
+  arrange(date_start_earliest_visit, type, grts_address)
 
 # count locations per type
 
