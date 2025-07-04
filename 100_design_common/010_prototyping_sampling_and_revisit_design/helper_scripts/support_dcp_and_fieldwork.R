@@ -486,18 +486,19 @@ if (FALSE) {
 # sampling unit are the other cells that belong to the same habitatmap polygon.
 # In case that this polygon is too large, i.e. exceeds 64 cells, OR if it has at
 # least 32 cells in combination with too 'long' dimensions (evaluated from the
-# bounding box of the polygon's cell centers), then the replacement cells are
-# kept that belong to the same 'level 3' GRTS address as the considered unit (we
-# call this the anchor level 3 cell). The level 3 address is the GRTS address of
-# the enclosing large cell (256 * 256 quare meters; i.e. 64 level 0 units) of
-# the coarser level3 GRTS raster. These replacement cells are still supplemented
-# by those of the 'next' level 3 cell of the polygon if such one exists and if
-# the anchor level 3 cell has at most 16 cells, which is done to end up with a
-# reasonable amount of replacement cells, at the same time applying a decent
-# split of the polygon. With 'next level 3 cell' we mean the next level 3
-# address that is attached to the polygon, or the lowest one if the anchor level
-# 3 cell already had the highest address (since this is how lower level
-# addresses cyclically 'walk through' the higher level addresses).
+# bounding box of the polygon's cell centers), then the replacement cells
+# (within the polygon) are kept that belong to the same 'level 3' GRTS address
+# as the considered unit (we call this the anchor level 3 cell). The level 3
+# address is the GRTS address of the enclosing large cell (256 * 256 quare
+# meters; i.e. 64 level 0 units) of the coarser level3 GRTS raster. These
+# replacement cells are still supplemented by those of the 'next' level 3 cell
+# of the polygon if such one exists and if the anchor level 3 cell has no more
+# than 16 cells, which is done to end up with a reasonable amount of replacement
+# cells, at the same time applying a decent split of the polygon. With 'next
+# level 3 cell' we mean the next level 3 address that is attached to the
+# polygon, or the lowest one if the anchor level 3 cell already had the highest
+# address (since this is how lower level addresses cyclically 'walk through' the
+# higher level addresses).
 
 # Getting the replacement cells based on polygon. Beware that we must rely on
 # grts_address if grts_address_final is different, so we can just use
