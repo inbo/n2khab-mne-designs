@@ -832,12 +832,7 @@ stratum_schemepstargetpanel_spsamples_terr_replacementcells <-
       ),
       function(poladr, d, lev3adr, nextlev3adr) {
         poladr_unique <- unique(poladr$grts_address_replac)
-        if (length(poladr_unique) == 1 && is.na(poladr_unique)) {
-          # if polygon missing (but this needs a solution!), just return all
-          # cells from the level3-cell
-          lev3adr %>%
-            mutate(ranknr = row_number(grts_address_replac))
-        } else if (
+        if (
           length(poladr_unique) > max_allowed_nrcells | (
             d > max_allowed_bboxdiag &
             length(poladr_unique) >= min_nrcells_tosplit
@@ -871,7 +866,10 @@ stratum_schemepstargetpanel_spsamples_terr_replacementcells <-
             lev3_constrained
           }
         } else {
-          # if polygon not too large, just apply polygon-constrained replacement
+          # If polygon not too large, just apply polygon-constrained
+          # replacement. This also handles the case where no replacement cells
+          # are available (small polygons): a single row with NA values is
+          # returned.
           poladr %>%
             distinct(cellnr_replac, grts_address_replac) %>%
             mutate(ranknr = row_number(grts_address_replac))
