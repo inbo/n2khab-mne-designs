@@ -1527,6 +1527,7 @@ tibble(
     "min_nrcells_tosplit",
     "max_allowed_nrcells",
     "max_insufficient_nrcells_level3",
+    "hmt_pol_stratum_grts_cell_all_n2khab_collapsed_extended",
     "stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells",
     "stratum_schemepstargetpanel_spsamples_terr_replacementcells",
     "cellnrs_replacement",
