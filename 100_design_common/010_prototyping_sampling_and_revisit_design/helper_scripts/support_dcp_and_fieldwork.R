@@ -479,6 +479,10 @@ if (FALSE) {
 
 
 
+
+
+
+
 ## Cells for local unit replacement in terrestrial types except 7220 -------
 
 
@@ -500,16 +504,11 @@ if (FALSE) {
 # address (since this is how lower level addresses cyclically 'walk through' the
 # higher level addresses).
 
-# Getting the replacement cells based on polygon. Beware that we must rely on
-# grts_address if grts_address_final is different, so we can just use
-# grts_address. In the case of the 'cell' join method, it is possible to get
-# multiple polygons attached to the same considered cell, provided that these
-# polygons have been labelled to contain the specific type. Further, some
-# sampling units concern previously assessed sites with the type, while this
-# information is not present in habitatmap_terr, hence also not in below used
-# hmt_pol_stratum_grts_cell_all_n2khab_collapsed, so that the polygon_id is
-# missing. In these cases, for now, we will take all replacement cells according
-# to the level 3 cell (further down).
+# I. Getting the replacement cells based on polygon
+# /////////////////////////////////////////////////////////////////////////////
+
+# Beware that we must rely on grts_address if grts_address_final is different,
+# so we can just use grts_address.
 
 # Before joining polygon_ids to stratum x grts_address, we must 'unexpand'
 # hmt_pol_stratum_grts_cell_all_n2khab to match the strata in n2khab_strata.
@@ -517,7 +516,12 @@ hmt_pol_stratum_grts_cell_all_n2khab_collapsed <-
   hmt_pol_stratum_grts_cell_all_n2khab %>%
   collapse_strata()
 
-stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells <-
+# Further, some sampling units concern previously assessed sites with the type,
+# while this information is not present in habitatmap_terr, hence also not in
+# hmt_pol_stratum_grts_cell_all_n2khab_collapsed, so that the polygon_id is
+# missing. Consequently, we need a left join to keep all sampling units, but
+# essentially, we use below object to be able to solve the problem.
+stratum_schemepstargetpanel_spsamples_terr_polygons <-
   stratum_schemepstargetpanel_spsamples %>%
   filter(str_detect(sample_support_code, "cell")) %>%
   # adding polygon_id attribute (sometimes missing, sometimes more than one, as
@@ -527,15 +531,140 @@ stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells <-
     join_by(stratum, grts_address),
     relationship = "many-to-many",
     unmatched = "drop"
+  )
+
+# I.1. Solving the problem of missing polygons
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# We will fetch the missing polygons from the raw habitatmap data source, and
+# use it to extend hmt_pol_stratum_grts_cell_all_n2khab_collapsed.
+
+# It appeared that only cell-centered strata are concerned. We keep checking
+# this in case this would ever change ('cell' types are handled differently).
+stratum_schemepstargetpanel_spsamples_terr_polygons %>%
+  filter(is.na(polygon_id)) %>%
+  distinct(stratum) %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "one-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  distinct(type) %>%
+  inner_join(
+    n2khab_types_expanded_properties %>%
+      select(type, grts_join_method),
+    join_by(type),
+    relationship = "one-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  filter(grts_join_method == "cell") %>%
+  {nrow(.) == 0} %>%
+  stopifnot()
+
+# cell centers of the polygon-less sampling units as points
+stratum_grts_address_nopolygon_sf <-
+  stratum_schemepstargetpanel_spsamples_terr_polygons %>%
+  filter(is.na(polygon_id)) %>%
+  select(stratum, grts_address) %>%
+  add_point_coords_grts(
+    grts_var = "grts_address",
+    spatrast = grts_mh,
+    spatrast_index = grts_mh_index
+  )
+
+# Selecting the missing polygons from the habitatmap. Using terra to read and
+# filter, because it can handle some exotic geometries from habitatmap out of
+# the box (to do this with sf, see /src/miscellaneous/habitatmap.Rmd in the
+# interim branch of n2khab-preprocessing, but this is more laborious)
+missing_polygons <-
+  vect(file.path(
+    locate_n2khab_data(),
+    "10_raw/habitatmap/habitatmap.gpkg"
+  )) %>%
+  .[vect(stratum_grts_address_nopolygon_sf)] %>%
+  st_as_sf() %>%
+  select(polygon_id = globalid_BWK) %>%
+  vect()
+
+# adding all GRTS addresses that belong to these polygons, by cell-center
+missing_pol_grts <-
+  extract(grts_mh, missing_polygons, small = FALSE) %>%
+  as_tibble() %>%
+  inner_join(
+    tibble(
+      ID = seq_len(nrow(missing_polygons)),
+      polygon_id = missing_polygons$polygon_id
+    ),
+    .,
+    join_by(ID),
+    relationship = "one-to-many",
+    unmatched = "error"
+  ) %>%
+  select(-ID, grts_address = GRTSmaster_habitats) %>%
+  # filtering is needed since all polygons are listed by extract():
+  filter(!is.na(grts_address))
+
+# Finally, joining the stratum from the sampling-units-that-missed-their-polygon
+# to the polygon-level. The result has the same columns as
+# hmt_pol_stratum_grts_cell_all_n2khab_collapsed.
+missing_pol_stratum_grts <-
+  stratum_schemepstargetpanel_spsamples_terr_polygons %>%
+  filter(is.na(polygon_id)) %>%
+  select(stratum, grts_address) %>%
+  # joining polygon_id based on the sampling unit's grts_address
+  inner_join(
+    missing_pol_grts,
+    join_by(grts_address),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # joining all GRTS addresses based on polygon_id
+  select(-grts_address) %>%
+  inner_join(
+    missing_pol_grts,
+    join_by(polygon_id),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
+  relocate(polygon_id)
+
+# now combining polygon x stratum x GRTS address from the cell and cell-center
+# types in the unexpanded base sampling frame with missing_pol_stratum_grts
+hmt_pol_stratum_grts_cell_all_n2khab_collapsed_extended <-
+  bind_rows(
+    hmt_pol_stratum_grts_cell_all_n2khab_collapsed,
+    missing_pol_stratum_grts
+  ) %>%
+  mutate(polygon_id = factor(polygon_id))
+
+
+# I.2. Getting the replacement cells based on polygon.
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# Getting the replacement cells based on polygon. Beware that we must rely on
+# grts_address if grts_address_final is different, so we can just use
+# grts_address. In the case of the 'cell' join method, it is possible to get
+# multiple polygons attached to the same considered cell, provided that these
+# polygons have been labelled to contain the specific type.
+stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells <-
+  stratum_schemepstargetpanel_spsamples %>%
+  filter(str_detect(sample_support_code, "cell")) %>%
+  # adding polygon_id attribute (sometimes more than one, as explained above)
+  inner_join(
+    hmt_pol_stratum_grts_cell_all_n2khab_collapsed_extended,
+    join_by(stratum, grts_address),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
   ) %>%
   # adding all GRTS addresses of the polygon, taking into account the stratum's
   # GRTS join method
-  left_join(
-    hmt_pol_stratum_grts_cell_all_n2khab_collapsed %>%
+  inner_join(
+    hmt_pol_stratum_grts_cell_all_n2khab_collapsed_extended %>%
       rename(grts_address_replac = grts_address),
     join_by(stratum, polygon_id),
     relationship = "many-to-many",
-    unmatched = "drop"
+    unmatched = c("error", "drop")
   ) %>%
   select(-polygon_id) %>%
   # we also determine the 'next GRTS address' per grts_address x stratum, which
@@ -611,6 +740,9 @@ stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells %>%
   pull(nrcells) %>%
   summary()
 
+
+# II. Resolving the eligible replacement cells, including the level 3 approach
+# /////////////////////////////////////////////////////////////////////////////
 
 # reading the level0-resolution SpatRaster layer that holds the level 3
 # addresses, to prepare for potential restriction to level 3 cells
@@ -815,6 +947,10 @@ units_cell_replacement_rast <-
     cells = cellnrs_replacement
   )
 global(units_cell_replacement_rast, "notNA")[1, 1] == length(cellnrs_replacement)
+
+
+
+
 
 
 
