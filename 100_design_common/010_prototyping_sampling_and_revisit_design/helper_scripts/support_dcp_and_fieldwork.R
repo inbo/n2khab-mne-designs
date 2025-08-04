@@ -1292,6 +1292,35 @@ fieldwork_2025_prioritization_shorter <-
   ) %>%
   relocate(stratum_scheme_ps_targetpanels)
 
+
+# write a GeoPackage containing both objects as point layers, if needed
+gpkg_path <- file.path(datapath, "binary/results/fieldwork_2025.gpkg")
+if (FALSE) {
+  fieldwork_2025_prioritization_by_stratum %>%
+    add_point_coords_grts(
+      grts_var = "grts_address_final",
+      spatrast = grts_mh,
+      spatrast_index = grts_mh_index
+    ) %>%
+    mutate(date_interval = as.character(date_interval)) %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_2025_prioritization_by_stratum",
+      delete_dsn = TRUE
+    )
+  fieldwork_2025_prioritization_shorter %>%
+    add_point_coords_grts(
+      grts_var = "grts_address_final",
+      spatrast = grts_mh,
+      spatrast_index = grts_mh_index
+    ) %>%
+    mutate(date_interval = as.character(date_interval)) %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_2025_prioritization_shorter"
+    )
+}
+
 # overview fieldwork prioritization 2025 according to schemes & panels:
 fieldwork_2025_targetpanels_prioritization_count <-
   fieldwork_2025_prioritization_by_stratum %>%
