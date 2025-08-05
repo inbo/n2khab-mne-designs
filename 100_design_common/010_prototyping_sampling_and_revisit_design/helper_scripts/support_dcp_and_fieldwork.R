@@ -1294,8 +1294,8 @@ fieldwork_2025_prioritization_shorter <-
 
 
 # write a GeoPackage containing both objects as point layers, if needed
-gpkg_path <- file.path(datapath, "binary/results/fieldwork_2025.gpkg")
 if (FALSE) {
+  gpkg_path <- file.path(datapath, "binary/results/fieldwork_2025.gpkg")
   fieldwork_2025_prioritization_by_stratum %>%
     add_point_coords_grts(
       grts_var = "grts_address_final",
