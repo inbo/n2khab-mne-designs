@@ -203,6 +203,40 @@ domain_grts_n2khab %>%
 <!-- XXXXX ofwel voor Flanders touches=TRUE gebruiken, ofwel voor alle domeinen touches=TRUE gebruiken (maar dit geeft oververtegenwoordiging door eenheden), ofwel houden as-is. -->
 <!-- Onderzoek nodig met welke eenheden dit verschil heeft te maken (beken op de grens?). -->
 
+We also define non-overlapping domain _partitions_ to uniquely characterize each GRTS address.
+Some domain partitions hence represent the remaining part of an including domain, not the complete one, and use the suffix `_remainder`.
+
+```{r}
+domainpart_grts_n2khab <- 
+  domain_grts_n2khab %>% 
+  # adding inclusion level
+  inner_join(
+    domains %>% 
+      st_drop_geometry() %>% 
+      select(domain, inclusion_level),
+    join_by(domain),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>% 
+  # for each GRTS address, only keep the domain with the smallest inclusion
+  # level
+  filter(
+    inclusion_level == min(inclusion_level),
+    .by = grts_address
+  ) %>% 
+  # label remainders using '_remainder'
+  mutate(
+    domain_part = if_else(
+      inclusion_level == min(inclusion_level),
+      domain,
+      str_c(domain, "_remainder")
+    ) %>% 
+      fct_reorder(as.numeric(domain))
+  ) %>% 
+  select(domain_part, grts_address)
+```
+
+
 ## Processing the base sampling frame in preparation of scheme-specific sampling frames
 
 ### Collapse the base sampling frame to match the strata in `n2khab_strata` {#collapse-bsf}
@@ -618,6 +652,7 @@ cat("\n")
 for (name in c(
   "grts_mh_n2khab_index",
   "domain_grts_n2khab",
+  "domainpart_grts_n2khab",
   "stratum_grts_n2khab_collapsed",
   "hmt_pol_phab_cellcenter_n2khab",
   "stratum_grts_phab_cellcenter_n2khab_collapsed",

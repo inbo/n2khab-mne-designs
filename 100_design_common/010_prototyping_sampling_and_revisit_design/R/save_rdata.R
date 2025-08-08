@@ -28,6 +28,7 @@ rdata_set <- c(
   "hmt_pol_stratum_grts_cell_all_n2khab",
   "grts_mh_n2khab_index",
   "domain_grts_n2khab",
+  "domainpart_grts_n2khab",
   "stratum_units_non_cell_n2khab",
   "units_non_cell_n2khab_grts",
   "stratum_grts_n2khab",
