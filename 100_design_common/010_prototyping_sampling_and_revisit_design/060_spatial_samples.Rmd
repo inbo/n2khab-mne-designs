@@ -681,7 +681,7 @@ However, given samples that belong to different and potentially overlapping doma
 
 - **Panel memberships** will be based on the GRTS series for each revisit design of a stratum in a scheme, hence for a module combo x panel set that applies to this scheme (this has already been prepared by implementing the GRTS partition thresholds).
 This is done in order to maintain long-term spatial balance per revisit design and to minimize the possibility that sampling units jump from one revisit design to another as a consequence of changes in the spatial sampling frame.
-Furthermore, the panel membership design is created separately for each included (or multiple non-overlapping) domain and for the remainder of the including domain.
+Furthermore, the panel membership design is created separately for each included (or multiple non-overlapping) domain and for the remainder of the including domain -- if sampling has indeed taken place both at the level of an including and an included domain.
 Otherwise the units of an included domain would not be well spread over the panels when specifically looking at an included domain (for which a module is obviously present, hence an inference requested).
 - We will refer to these mutually exclusive domains / domain remainders as _**spatial poststrata**_, as they will effectively be used for poststratification in the inference about the overall (including) domain.
 We regard them as poststrata rather than strata, since their spatial sample size is not predetermined.
@@ -690,7 +690,6 @@ We regard them as poststrata rather than strata, since their spatial sample size
 The _number_ of spare units will be determined based on the stratum sample size of each spatial poststratum, for a given revisit design (~ module combo x panel set) in a scheme.
 
 Now generating the spatial poststrata (which replace the domain level) and adding spare units.
-(Note: for domain-specific inferences, re-introduction of domains is needed, where units in overlapped domains will be reused for each domain but with different sampling weights.)
 
 ```{r}
 scheme_moco_ps_stratum_sppost_spsamples_spares <- 
@@ -824,8 +823,28 @@ scheme_moco_ps_stratum_sppost_spsamples_spares %>%
   count(sp_poststratum)
 ```
 
-In general, note that the above spatial poststrata are to be interpreted within a module combo x scheme x stratum; this holds especially for the 'remainder' poststratum which is defined relative to the smaller poststrata (domains).
-This is stratum dependent since not each stratum is represented in the smaller poststrata (domains).
+In general, note that the above spatial poststrata are to be interpreted within a scheme x module combo x panel set x stratum; this holds especially for the 'remainder' poststratum which is defined relative to the smaller poststrata (domains).
+This is stratum dependent since not each stratum is represented in the smaller poststrata (domains), or has been subjected to domain-specific sampling in a particular scheme x module combo x panel set (e.g. due to a sample size of zero; section \@ref(investigate-sample-sizes)).
+
+As a consequence, it can occur that spatial poststratum membership is not the same between different levels of scheme x module combo x panel set for a common location x stratum that is situated inside a smaller domain: if for some reason this included domain has not been separately sampled in a scheme x module combo x panel set, the location can still be present in the sample of the _including_ domain and at the same time be sampled for the _included_ domain in another scheme x module combo x panel set.
+In this case, multiple values of `sp_poststratum` will co-occur for the same site in R objects.
+Also, this makes clear that the _value_ of `sp_poststratum` is only set as the smaller domain _if_ specific sampling effectively took place at that level; otherwise the larger domain remains set.
+
+This co-occurrence does not cause problems for the panel memberships since the latter are created for each scheme x module combo x panel set x poststratum, but it must be taken into account when doing inferences for a smaller domain or to derive its achieved sample sizes.
+To do that, the geographical membership to this small domain must still be derived directly by joining with `domainpart_grts_n2khab`.
+
+More generally, for _domain-specific inferences_, re-introduction of domains is needed, where the same units in overlapped domains will be reused in the inference of each domain in turn but with another sampling weight.
+In order to avoid the complexity of multi-domain membership, we can instead use the domain partitions that are unique to each population unit, as defined in `domainpart_grts_n2khab`.
+The domain partitions are the smallest domains plus the remainders of sequentially including domains.
+For the domain partitions, we neglect that some are not being used to predetermine sample size; we just use all defined ones.
+
+- To make inferences for a _larger (including) domain_ that includes smaller ones, i.e. where both including and included domains were independently sampled in the same scheme x module combo x panel set, we should:
+  - first combine the different domain partitions as needed to assemble the sampling units belonging to the larger domain;
+  - then use the spatial poststrata to apply appropriate sampling weights to sampling units.
+- To make inferences for an _(innermost) included domain_, we must also use the matching domain partition to assemble the sampling units -- not the spatial poststratum, as explained above.
+
+
+**Missing functionality**: directly include the domain partition in sample objects.
 
 Overall distribution of sample status (across all modules, schemes and strata):
 
