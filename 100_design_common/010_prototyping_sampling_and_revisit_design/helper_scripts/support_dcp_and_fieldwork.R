@@ -1255,7 +1255,7 @@ fag_grts_calendar_2025_attribs_sf <-
   )
 
 # prioritization of fieldwork 2025 with stratum distinguished (preferred for
-# counts and for planning of biotic FAGs):
+# counts and for planning):
 fieldwork_2025_prioritization_by_stratum <-
   fag_stratum_grts_calendar_2025_attribs %>%
   mutate(
@@ -1286,8 +1286,8 @@ fieldwork_2025_prioritization_by_stratum <-
     field_activity_group
   )
 
-# prioritization of fieldwork 2025 with stratum collapsed (preferred for
-# planning of non-biotic FAGs)
+# prioritization of fieldwork 2025 with stratum collapsed (only useful for
+# exploration purposes)
 fieldwork_2025_prioritization_shorter <-
   fieldwork_2025_prioritization_by_stratum %>%
   unite_stratum_and_schemepstargetpanels() %>%
@@ -1327,17 +1327,6 @@ if (FALSE) {
       gpkg_path,
       layer = "fieldwork_2025_prioritization_by_stratum",
       delete_dsn = TRUE
-    )
-  fieldwork_2025_prioritization_shorter %>%
-    add_point_coords_grts(
-      grts_var = "grts_address_final",
-      spatrast = grts_mh,
-      spatrast_index = grts_mh_index
-    ) %>%
-    mutate(date_interval = as.character(date_interval)) %>%
-    write_sf(
-      gpkg_path,
-      layer = "fieldwork_2025_prioritization_shorter"
     )
 }
 
@@ -1649,7 +1638,6 @@ tibble(
     "fag_grts_calendar_2025_attribs",
     "fag_grts_calendar_2025_attribs_sf",
     "fieldwork_2025_prioritization_by_stratum",
-    "fieldwork_2025_prioritization_shorter",
     "fieldwork_2025_targetpanels_prioritization_count",
     "fieldwork_2025_dates_prioritization_count",
     "orthophoto_2025_type_grts",
