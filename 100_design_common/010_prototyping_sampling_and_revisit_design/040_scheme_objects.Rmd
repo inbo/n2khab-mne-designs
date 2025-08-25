@@ -1157,8 +1157,11 @@ module_domain_scheme_ps_stratum_target_sample_size <-
 Note that the above values for `sp_sample_size_all_panels_stratum` are pro-forma target sample sizes: they would apply if the populations were infinite.
 Since they are finite _and_ since unequal population sizes apply, only the target sample sizes at an aggregated level matter, in verifying the finite-population sample sizes that we calculate below.
 
-Rechecking the aggregated sample size.
-Compared to the previous result, some non-core-scheme types that are not covered by core schemes cause a limited addition of sampling in non-core schemes.
+Recalculating the aggregated sample size.
+Compared to the previous result:
+
+- reductions due to sample size limitation are obvious;
+- some non-core-scheme types that are not covered by core schemes cause a limited addition of sampling in non-core schemes.
 
 ```{r paged.print = FALSE}
 aggregate_sample_size(
@@ -1174,14 +1177,18 @@ aggregate_sample_size(
 Overdimensioning spatial sample sizes to represent the infinite case and subsequently applying finite population correction in order to achieve sample sizes at a pooled level, aimed at the same size as the preset ones.
 
 The infinite sample size is to be obtained by applying a fixed coefficient per module x scheme x panel set in MNE, or per module x category (x panel set) in MHQ (MHQ doesn't have a panel set > 1) -- we call such level a 'pool' -- to the target sample sizes per stratum (in module x domain x scheme x panel set).
-This is needed to make sure the allocation for the _infinite_ population remains spread over types (within a pool) in the same way (usually evenly spread) as in the above pro-forma stratum-level sample sizes, which we (for simplicity) assume to correspond to a similar estimator precision at the type level.
+This is needed to make sure the allocation for the _infinite_ population remains spread over types (within a pool) in the same way as in the above pro-forma stratum-level sample sizes.
 
-The reason to not set a separate coefficient for each domain (with 'predetermined sample size') of the same module x scheme-or-category x panel set (pool), hence include domain in the definition of a pool, is to enforce equal estimator precision across domains within such modules x scheme-or-category (pools): all type-level sample sizes for the infinite population will remain equal across domains in a pool.
-This is with the exception of specific submodules having introduced differences between infinite-population sample sizes of types, but also then this distribution is maintained.
+The reason to not set a separate coefficient for each domain (with 'predetermined sample size') of the same module x scheme-or-category x panel set (pool), hence include domain in the definition of a pool, is to maintain the relative (c.q. enforce equal) estimator precision across domains within such modules x scheme-or-category (pools): the ratios between type-level sample sizes for the infinite population will be maintained across domains in a pool.
+Often this means 'equal estimator precision', but this is with the exception of specific submodules having introduced differences between infinite-population sample sizes of types.
+Also in these cases this distribution is maintained.
+In the case of sample size limitation, we don't want target sample sizes to be changed due to FPC-induced sample size redistribution: they should remain fixed.
+For this reason, cases with a limited target sample size are included in a single separate pool and will not be handled by FPC.
+
 A consequence of the finite population correction may be that the budgeted sample size at the domain level is somewhat shifted among domains, but the fact that this avoids differences in degree of overdimensioning across domains can be regarded as an advantage.
 Hence the 'predetermined sample size' for domains in the same module refers specifically to:
 
-- the fact that the sample size for _infinite_ populations is preset per domain x scheme in MNE (per domain x category in MHQ), in order to serve the domains proportionally (equal precision at domain x scheme-or-category x type level);
+- the fact that the sample size for _infinite_ populations is preset per domain x scheme in MNE (per domain x category in MHQ), in order to serve the domains proportionally (equal, reduced or enhanced precision at domain x scheme-or-category x type level);
 - the resulting FPC-corrected sample sizes per domain x scheme, i.e. the fact that a sample size is applied ('determined') at the domain level.
 
 But as one can see, it is essentially the 'module x scheme x panel set' level (or 'module x category' level) sample size that is literally 'predetermined'.
@@ -1370,7 +1377,7 @@ module_domain_scheme_ps_stratum_sample_size %>%
   count(module, scheme, panel_set)
 ```
 
-We can see that most cases occur in panel set 2: this is because it received the smallest portion of sample sizes.
+We can see that more cases occur in panel set 2: this is because it received the smallest portion of sample sizes.
 This is merely a consequence of stratification of small (e.g. < 1) infinite sample sizes in combination with finite population correction:
 
 ```{r paged.print = FALSE}
