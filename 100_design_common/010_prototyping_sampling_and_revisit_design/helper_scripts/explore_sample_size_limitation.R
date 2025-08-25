@@ -256,7 +256,7 @@ loceval_2025_ref <-
     year(date_start) < 2026
   ) %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
-  select(stratum, grts_address)
+  select(stratum, grts_address, grts_address_final)
 
 # LOCEVAL FAGs for cell types currently scheduled in 2025 but nowhere in the new
 # FAG calendar
@@ -265,6 +265,29 @@ cal_new %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
   distinct(stratum, grts_address) %>%
   anti_join(loceval_2025_ref, ., join_by(stratum, grts_address))
+
+# LOCEVAL FAGs for cell types currently scheduled in 2025 but nowhere in the new
+# FAG calendar partim GW
+loceval_2025_ref_missing_gw <-
+  cal_new %>%
+  filter(str_detect(field_activity_group, "^GW")) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  distinct(stratum, grts_address) %>%
+  anti_join(loceval_2025_ref, ., join_by(stratum, grts_address))
+loceval_2025_ref_missing_gw
+loceval_2025_ref_missing_gw %>%
+  count(stratum)
+
+# LOCEVAL FAGs for cell types scheduled in 2025 in the new FAG calendar but
+# absent from current 2025 schedule
+cal_new %>%
+  filter(
+    str_detect(field_activity_group, "LOCEVAL"),
+    year(date_start) < 2026
+  ) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  distinct(stratum, grts_address, grts_address_final) %>%
+  anti_join(loceval_2025_ref, join_by(stratum, grts_address))
 
 # LOCEVAL FAGs for cell types currently scheduled in 2025 AND present in the new
 # FAG calendar: counting the corresponding LOCEVALs per year in the new FAG
