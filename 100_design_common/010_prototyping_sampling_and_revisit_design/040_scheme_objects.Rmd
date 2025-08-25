@@ -1031,6 +1031,8 @@ Expanding `submodule_domain_scheme_ps_designattr` with strata, collapsing submod
 For types that are subdivided into (surface area based) strata, the 4th root of the number of population units per stratum (in module x domain x scheme x type) is taken to distribute the target sample size at type level.
 This was found to be a good compromise for estimator precision at type level, between the more extreme scenarios of population size versus an area weighed distribution.
 
+Also, we implement the maximum sampling proportions at the domain x scheme x type level (see section \@ref(max-sampleprop)).
+
 Non-core MNE schemes do not adopt sample sizes from the core MNE schemes: only the locations that are common between the respective sampling frames will be adopted in the non-core schemes, hence this can be a subset and it happens at the spatial sampling stage.
 However we do attribute extra sample sizes in non-core MNE schemes, for those types not covered by core schemes -- see object `non_core_types_per_module_and_compartment`.
 
@@ -1106,6 +1108,40 @@ module_domain_scheme_ps_stratum_target_sample_size <-
     ),
     .by = c(module, domain, scheme, panel_set, type)
   ) %>%
+  # using the grts_join_method to exclude strata from sample size limitation
+  inner_join(
+    n2khab_types_expanded_properties %>% 
+      select(type, grts_join_method),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # marking schemes eligible for sample size limitation
+  left_join(
+    schemes_limited_sampling,
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  # applying sample size limitation at domain x scheme x stratum, effectively
+  # using the sum of stratum sample sizes across modules and panel sets to set
+  # conditions and drive the redistribution of the total limited sample size
+  mutate(
+    sp_sample_size_all_panels_stratum_previous = 
+      sp_sample_size_all_panels_stratum,
+    sp_sample_size_all_panels_stratum = ifelse(
+      !is.na(regex_grts_join_method) & 
+        str_detect(grts_join_method, regex_grts_join_method) &
+        (sum(sp_sample_size_all_panels_stratum) > 
+           first(nunits) * first(sampling_max_prop)),
+      first(nunits) * first(sampling_max_prop) * sp_sample_size_all_panels_stratum /
+        sum(sp_sample_size_all_panels_stratum),
+      sp_sample_size_all_panels_stratum),
+    spss_stratum_limited = sp_sample_size_all_panels_stratum_previous !=
+      sp_sample_size_all_panels_stratum,
+    .by = c(domain, scheme, stratum) # modules & panel_sets are taken together
+  ) %>% 
+  select(-matches("grts_join_method|previous"), -sampling_max_prop) %>% 
   mutate(
     sp_sample_size_all_panels = ifelse(
       all(is.na(sp_sample_size_all_panels_stratum)),
