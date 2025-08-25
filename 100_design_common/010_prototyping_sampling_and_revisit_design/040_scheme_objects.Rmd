@@ -1155,6 +1155,16 @@ module_domain_scheme_ps_stratum_target_sample_size <-
     sp_sample_size_all_panels_stratum
   )) %>% 
   select(-sampling_prop) %>% 
+  # recalculating type-level sample sizes
+  mutate(
+    sp_sample_size_all_panels_type = ifelse(
+      all(is.na(sp_sample_size_all_panels_stratum)),
+      first(sp_sample_size_all_panels_stratum),
+      sum(sp_sample_size_all_panels_stratum, na.rm = TRUE)
+    ),
+    .by = c(module, domain, scheme, panel_set, type)
+  ) %>% 
+  # recalculating total sample sizes
   mutate(
     sp_sample_size_all_panels = ifelse(
       all(is.na(sp_sample_size_all_panels_stratum)),
