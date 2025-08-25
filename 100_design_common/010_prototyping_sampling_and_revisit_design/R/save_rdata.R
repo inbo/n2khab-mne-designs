@@ -93,7 +93,14 @@ if (params$save_rdata) {
     file = file.path(
       datapath,
       "binary/results",
-      str_c("objects", module_suffix, phabcorr_suffix, ".RData")
+      str_c(
+        "objects",
+        module_suffix,
+        phabcorr_suffix,
+        ifelse(params$sample_adjustment_scenario == "", "", "_"),
+        params$sample_adjustment_scenario,
+        ".RData"
+      )
     )
   )
 }
