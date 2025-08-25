@@ -1137,7 +1137,7 @@ module_domain_scheme_ps_stratum_target_sample_size <-
       first(nunits) * first(sampling_max_prop) * sp_sample_size_all_panels_stratum /
         sum(sp_sample_size_all_panels_stratum),
       sp_sample_size_all_panels_stratum),
-    spss_stratum_limited = sp_sample_size_all_panels_stratum_previous !=
+    spss_stratum_truncated = sp_sample_size_all_panels_stratum_previous !=
       sp_sample_size_all_panels_stratum,
     .by = c(domain, scheme, stratum) # modules & panel_sets are taken together
   ) %>% 
@@ -1235,7 +1235,7 @@ module_domain_scheme_ps_stratum_sample_size_infinite <-
   arrange(module, scheme) %>%
   mutate(
     pool_with_maintained_type_precision = case_when(
-      spss_stratum_limited ~ "limited_strata",
+      spss_stratum_truncated ~ "limited_strata",
       str_detect(scheme, "^HQ") ~
         str_c(module, "MHQ", category, str_c("PS", panel_set), sep = "_"),
       .default = str_c(module, scheme, str_c("PS", panel_set), sep = "_")
@@ -1300,7 +1300,7 @@ module_domain_scheme_ps_stratum_sample_size <-
   module_domain_scheme_ps_stratum_sample_size_infinite %>%
   mutate(
     sp_sample_size_all_panels_stratum = ifelse(
-      spss_stratum_limited,
+      spss_stratum_truncated,
       sp_sample_size_all_panels_stratum,
       apply_fpc(
         sp_sample_size_all_panels_stratum_inf,
