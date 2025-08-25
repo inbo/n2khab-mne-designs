@@ -1142,6 +1142,19 @@ module_domain_scheme_ps_stratum_target_sample_size <-
     .by = c(domain, scheme, stratum) # modules & panel_sets are taken together
   ) %>% 
   select(-matches("grts_join_method|previous"), -sampling_max_prop) %>% 
+  # marking scheme x types eligible for proportional sample size reduction
+  left_join(
+    scheme_localtype_reducedsampling,
+    join_by(scheme, type),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  mutate(sp_sample_size_all_panels_stratum = ifelse(
+    !is.na(sampling_prop),
+    sp_sample_size_all_panels_stratum * sampling_prop,
+    sp_sample_size_all_panels_stratum
+  )) %>% 
+  select(-sampling_prop) %>% 
   mutate(
     sp_sample_size_all_panels = ifelse(
       all(is.na(sp_sample_size_all_panels_stratum)),
