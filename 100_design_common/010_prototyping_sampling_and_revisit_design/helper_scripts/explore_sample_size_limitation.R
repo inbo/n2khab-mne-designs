@@ -101,7 +101,7 @@ compare_ssizes_per_stratum <- function(df, dfref = ssizes_ref) {
       sum(sp_sample_size_all_panels_stratum),
       first(nunits)
     ),
-    .by = c(module, domain, scheme, stratum, nunits, spss_stratum_limited)
+    .by = c(module, domain, scheme, stratum, nunits, spss_stratum_truncated)
   ) %>%
   inner_join(
     dfref %>%
@@ -124,7 +124,7 @@ compare_ssizes_per_stratum <- function(df, dfref = ssizes_ref) {
 # counting planned vs obtained sample size differences
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
-  count(spss_stratum_limited, ssize_differs)
+  count(spss_stratum_truncated, ssize_differs)
 
 # investigate unplanned but obtained sample size differences (they are always
 # lower): this is the consequence of the lower target sample size ranges in the
@@ -133,13 +133,13 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 # lower FPC-corrected sample size. The diference is limited though.
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
-  filter(!spss_stratum_limited, ssize_differs)
+  filter(!spss_stratum_truncated, ssize_differs)
 
 # graph of relative sample size decrease per stratum, distinguishing planned vs
 # unplanned sample size limitation
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_diff_rel = (ssize_stratum_altered - ssize_stratum) / ssize_stratum) %>%
-  ggplot(aes(x = ssize_diff_rel, colour = spss_stratum_limited)) +
+  ggplot(aes(x = ssize_diff_rel, colour = spss_stratum_truncated)) +
   geom_density()
 
 # graph of relative sample size decrease per stratum
@@ -159,9 +159,9 @@ compare_ssizes_per_stratum(ssizes_new) %>%
   select(-scheme) %>%
   filter(!is.na(compartment)) %>%
   filter(compartment == "GW") %>%
-  filter(spss_stratum_limited | abs(ssize_diff_rel) > 0.05) %>%
+  filter(spss_stratum_truncated | abs(ssize_diff_rel) > 0.05) %>%
   distinct() %>%
-  ggplot(aes(x = stratum_domain, y = ssize_diff_rel, fill = spss_stratum_limited)) +
+  ggplot(aes(x = stratum_domain, y = ssize_diff_rel, fill = spss_stratum_truncated)) +
   geom_col() +
   facet_wrap(~compartment) +
   coord_flip()
@@ -182,7 +182,7 @@ targetsizes_new %>%
     stratum,
     nunits,
     targsize_stratum_altered = sp_sample_size_all_panels_stratum,
-    spss_stratum_limited
+    spss_stratum_truncated
   ) %>%
   inner_join(
     targetsizes_ref %>%
@@ -198,7 +198,7 @@ targetsizes_new %>%
     relationship = "one-to-one",
     unmatched = "error"
   ) %>%
-  filter(!spss_stratum_limited) %>%
+  filter(!spss_stratum_truncated) %>%
   mutate(
     targsize_differs = targsize_stratum_altered != targsize_stratum,
     targsize_diff_rel = (targsize_stratum_altered - targsize_stratum) / targsize_stratum
@@ -355,7 +355,7 @@ ssizes_new %>%
     stratum,
     nunits,
     sp_sample_size_all_panels_stratum,
-    spss_stratum_limited
+    spss_stratum_truncated
   )
 moco_ssizes_new %>%
   filter(scheme == "GW_03.3", stratum == "7140_base") %>%
