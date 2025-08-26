@@ -469,7 +469,9 @@ write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW", types 
     write_sf(path_gpkg, layer = layername, delete_layer = TRUE)
 }
 
-write_to_gpkg_layer(sps_ref, "sps_ref")
+# write_to_gpkg_layer(sps_ref, "GW_ref")
+# write_to_gpkg_layer(sps_ref, "GW_NONCELL_ref", types = non_cell_types)
+# write_to_gpkg_layer(sps_ref, "SOIL_ref", "^SOIL")
 write_to_gpkg_layer(sps_new, str_c("GW_", scenario_name))
 write_to_gpkg_layer(
   sps_new,
