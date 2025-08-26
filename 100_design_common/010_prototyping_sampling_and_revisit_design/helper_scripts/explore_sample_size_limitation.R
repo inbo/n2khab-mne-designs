@@ -34,7 +34,6 @@ cal_new <- get(
 )
 
 
-
 moco_ssizes_new <- get(
   "scheme_moco_ps_dom_stratum_sample_size",
   envir = eval(str2lang(scenario_name))
@@ -47,20 +46,47 @@ targetsizes_new <- get(
 
 type_properties <- get("n2khab_types_expanded_properties", envir = ref)
 mhq_scheme_category <- get("mhq_scheme_category", envir = ref)
+n2khab_strata <- get("n2khab_strata", envir = ref)
 dom_scheme_stratum_nunits <-
   get("submod_dom_scheme_ssf_stratum_nunits", envir = ref) %>%
   distinct(domain, scheme, stratum, nunits)
+
+cell_types <-
+  type_properties %>%
+  filter(
+    str_detect(grts_join_method, "cell"),
+    type != "7140_mrd"
+  )
+non_cell_types <-
+  type_properties %>%
+  filter(
+    !str_detect(grts_join_method, "cell") | type == "7140_mrd"
+  )
+
 
 
 # COMPARING SAMPLE SIZES --------------------------------------------------
 
 ## Total sample sizes per scheme -------------------------------------------
 
-get_total_sample_sizes <- function(df) {
-  df %>%
+get_total_sample_sizes <- function(df, types = NULL) {
+  df1 <- df %>%
     st_drop_geometry() %>%
-    distinct(scheme, module_combo_code, stratum, grts_address) %>%
-    count(scheme, module_combo_code)
+    distinct(scheme, module_combo_code, stratum, grts_address)
+  if (is.null(types)) {
+    df1 %>%
+      count(scheme, module_combo_code)
+  } else {
+    df1 %>%
+      inner_join(
+        n2khab_strata,
+        join_by(stratum),
+        relationship = "many-to-one",
+        unmatched = c("error", "drop")
+      ) %>%
+      semi_join(types, join_by(type)) %>%
+      count(scheme, module_combo_code)
+  }
 }
 
 get_total_sample_sizes(sps_ref)
@@ -85,13 +111,6 @@ aggregate_sample_size(
 
 ## Stratum sample sizes for cell types --------------------------------
 
-cell_types <-
-  type_properties %>%
-  filter(
-    str_detect(grts_join_method, "cell"),
-    type != "7140_mrd"
-  )
-
 compare_ssizes_per_stratum <- function(df, dfref = ssizes_ref) {
   df %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
@@ -101,7 +120,7 @@ compare_ssizes_per_stratum <- function(df, dfref = ssizes_ref) {
       sum(sp_sample_size_all_panels_stratum),
       first(nunits)
     ),
-    .by = c(module, domain, scheme, stratum, nunits, spss_stratum_limited)
+    .by = c(module, domain, scheme, stratum, nunits, spss_stratum_truncated)
   ) %>%
   inner_join(
     dfref %>%
@@ -124,7 +143,28 @@ compare_ssizes_per_stratum <- function(df, dfref = ssizes_ref) {
 # counting planned vs obtained sample size differences
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
-  count(spss_stratum_limited, ssize_differs)
+  count(spss_stratum_truncated, ssize_differs)
+
+# counting obtained sample size differences
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
+  count(ssize_differs)
+
+# quantiles of sample size differences
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_diff = ssize_stratum_altered - ssize_stratum) %>%
+  pull(ssize_diff) %>%
+  quantile(seq(0, 1, 0.1))
+
+# quantiles of relative sample size differences
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(
+    ssize_diff_rel = round(
+      (ssize_stratum_altered - ssize_stratum) / ssize_stratum,
+      2
+    )) %>%
+  pull(ssize_diff_rel) %>%
+  quantile(seq(0, 1, 0.1))
 
 # investigate unplanned but obtained sample size differences (they are always
 # lower): this is the consequence of the lower target sample size ranges in the
@@ -133,13 +173,13 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 # lower FPC-corrected sample size. The diference is limited though.
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
-  filter(!spss_stratum_limited, ssize_differs)
+  filter(!spss_stratum_truncated, ssize_differs)
 
 # graph of relative sample size decrease per stratum, distinguishing planned vs
 # unplanned sample size limitation
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_diff_rel = (ssize_stratum_altered - ssize_stratum) / ssize_stratum) %>%
-  ggplot(aes(x = ssize_diff_rel, colour = spss_stratum_limited)) +
+  ggplot(aes(x = ssize_diff_rel, colour = spss_stratum_truncated)) +
   geom_density()
 
 # graph of relative sample size decrease per stratum
@@ -159,9 +199,9 @@ compare_ssizes_per_stratum(ssizes_new) %>%
   select(-scheme) %>%
   filter(!is.na(compartment)) %>%
   filter(compartment == "GW") %>%
-  filter(spss_stratum_limited | abs(ssize_diff_rel) > 0.05) %>%
+  filter(spss_stratum_truncated | abs(ssize_diff_rel) > 0.05) %>%
   distinct() %>%
-  ggplot(aes(x = stratum_domain, y = ssize_diff_rel, fill = spss_stratum_limited)) +
+  ggplot(aes(x = stratum_domain, y = ssize_diff_rel, fill = spss_stratum_truncated)) +
   geom_col() +
   facet_wrap(~compartment) +
   coord_flip()
@@ -182,7 +222,7 @@ targetsizes_new %>%
     stratum,
     nunits,
     targsize_stratum_altered = sp_sample_size_all_panels_stratum,
-    spss_stratum_limited
+    spss_stratum_truncated
   ) %>%
   inner_join(
     targetsizes_ref %>%
@@ -198,7 +238,7 @@ targetsizes_new %>%
     relationship = "one-to-one",
     unmatched = "error"
   ) %>%
-  filter(!spss_stratum_limited) %>%
+  filter(!spss_stratum_truncated) %>%
   mutate(
     targsize_differs = targsize_stratum_altered != targsize_stratum,
     targsize_diff_rel = (targsize_stratum_altered - targsize_stratum) / targsize_stratum
@@ -245,6 +285,10 @@ get(
   filter(ssize_type_2 != ssize_type)
 
 
+## Total sample size for non-cell types --------------------------------
+
+get_total_sample_sizes(sps_ref, non_cell_types)
+get_total_sample_sizes(sps_new, non_cell_types)
 
 # COMPARE FAG CALENDARS ---------------------------------------------------
 
@@ -256,7 +300,7 @@ loceval_2025_ref <-
     year(date_start) < 2026
   ) %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
-  select(stratum, grts_address)
+  select(stratum, grts_address, grts_address_final)
 
 # LOCEVAL FAGs for cell types currently scheduled in 2025 but nowhere in the new
 # FAG calendar
@@ -265,6 +309,30 @@ cal_new %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
   distinct(stratum, grts_address) %>%
   anti_join(loceval_2025_ref, ., join_by(stratum, grts_address))
+
+# LOCEVAL FAGs for cell types currently scheduled in 2025 but nowhere in the new
+# FAG calendar partim GW
+loceval_2025_ref_missing_gw <-
+  cal_new %>%
+  filter(str_detect(field_activity_group, "^GW")) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  distinct(stratum, grts_address) %>%
+  anti_join(loceval_2025_ref, ., join_by(stratum, grts_address))
+loceval_2025_ref_missing_gw
+loceval_2025_ref_missing_gw %>%
+  count(stratum) %>%
+  print(n = Inf)
+
+# LOCEVAL FAGs for cell types scheduled in 2025 in the new FAG calendar but
+# absent from current 2025 schedule
+cal_new %>%
+  filter(
+    str_detect(field_activity_group, "LOCEVAL"),
+    year(date_start) < 2026
+  ) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  distinct(stratum, grts_address, grts_address_final) %>%
+  anti_join(loceval_2025_ref, join_by(stratum, grts_address))
 
 # LOCEVAL FAGs for cell types currently scheduled in 2025 AND present in the new
 # FAG calendar: counting the corresponding LOCEVALs per year in the new FAG
@@ -355,7 +423,7 @@ ssizes_new %>%
     stratum,
     nunits,
     sp_sample_size_all_panels_stratum,
-    spss_stratum_limited
+    spss_stratum_truncated
   )
 moco_ssizes_new %>%
   filter(scheme == "GW_03.3", stratum == "7140_base") %>%
@@ -371,10 +439,24 @@ moco_ssizes_new %>%
 
 # WRITING GPKG LAYERS -----------------------------------------------------
 
-write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW") {
-  df %>%
-    filter(str_detect(scheme, regex_compartment)) %>%
-    semi_join(cell_types, join_by(stratum == type)) %>%
+write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW", types = NULL) {
+  df1 <- df %>% filter(str_detect(scheme, regex_compartment))
+  if (is.null(types)) {
+    df1 <-
+      df1 %>%
+      semi_join(cell_types, join_by(stratum == type))
+  } else {
+    df1 <-
+      df1 %>%
+      inner_join(
+        n2khab_strata,
+        join_by(stratum),
+        relationship = "many-to-one",
+        unmatched = c("error", "drop")
+      ) %>%
+      semi_join(types, join_by(type))
+  }
+  df1 %>%
     distinct(scheme, module_combo_code, stratum, grts_address, grts_address_final, geometry) %>%
     mutate(compartment = str_match(scheme, "^(\\w+)_")[, 2]) %>%
     select(compartment, stratum, grts_address, grts_address_final) %>%
@@ -387,5 +469,13 @@ write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW") {
     write_sf(path_gpkg, layer = layername, delete_layer = TRUE)
 }
 
-write_to_gpkg_layer(sps_ref, "sps_ref")
-write_to_gpkg_layer(sps_new, scenario_name)
+# write_to_gpkg_layer(sps_ref, "GW_ref")
+# write_to_gpkg_layer(sps_ref, "GW_NONCELL_ref", types = non_cell_types)
+# write_to_gpkg_layer(sps_ref, "SOIL_ref", "^SOIL")
+write_to_gpkg_layer(sps_new, str_c("GW_", scenario_name))
+write_to_gpkg_layer(
+  sps_new,
+  str_c("GW_NONCELL_", scenario_name),
+  types = non_cell_types
+)
+write_to_gpkg_layer(sps_new, str_c("SOIL_", scenario_name), "^SOIL")

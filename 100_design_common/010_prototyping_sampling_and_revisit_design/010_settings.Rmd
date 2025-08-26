@@ -660,13 +660,13 @@ year_origin <- 2024L
 ```
 
 
-## Setting maximum sampling proportions {#max-sampleprop}
+## Limiting sample sizes {#ssize-limit}
 
 In some schemes, equipment or fieldwork can be somewhat invasive and we need to limit the degree of disturbance.
 For these schemes, we set a maximum proportion of a type's population size in a domain as available for sampling.
 
 ```{r}
-schemes_limited_sampling <- 
+schemes_truncatedsampling <- 
   schemes %>% 
   filter(str_detect(scheme, "^(GW|SOIL)_")) %>% 
   select(scheme) %>% 
@@ -679,6 +679,20 @@ schemes_limited_sampling <-
   )
 ```
 
+Further, we direct that the target sample size of specific types must be reduced in some schemes.
+We do this in case they occur in a low number of distinct sites, while their population size is locally quite large, so that this would still lead to too high local sampling densities.
+
+```{r}
+scheme_localtype_reducedsampling <- 
+  targetpops %>% 
+  filter(
+    str_detect(scheme, "."),
+    type %in% c("")
+  ) %>% 
+  mutate(sampling_prop = 1)
+```
+
+This adjustment will be applied _after_ the previous one, i.e. the maximum sampling proportion.
 
 ## Setting the default proportion of spare units
 
