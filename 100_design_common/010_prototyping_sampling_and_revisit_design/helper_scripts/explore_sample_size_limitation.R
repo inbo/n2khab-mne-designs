@@ -34,7 +34,6 @@ cal_new <- get(
 )
 
 
-
 moco_ssizes_new <- get(
   "scheme_moco_ps_dom_stratum_sample_size",
   envir = eval(str2lang(scenario_name))
@@ -47,20 +46,47 @@ targetsizes_new <- get(
 
 type_properties <- get("n2khab_types_expanded_properties", envir = ref)
 mhq_scheme_category <- get("mhq_scheme_category", envir = ref)
+n2khab_strata <- get("n2khab_strata", envir = ref)
 dom_scheme_stratum_nunits <-
   get("submod_dom_scheme_ssf_stratum_nunits", envir = ref) %>%
   distinct(domain, scheme, stratum, nunits)
+
+cell_types <-
+  type_properties %>%
+  filter(
+    str_detect(grts_join_method, "cell"),
+    type != "7140_mrd"
+  )
+non_cell_types <-
+  type_properties %>%
+  filter(
+    !str_detect(grts_join_method, "cell") | type == "7140_mrd"
+  )
+
 
 
 # COMPARING SAMPLE SIZES --------------------------------------------------
 
 ## Total sample sizes per scheme -------------------------------------------
 
-get_total_sample_sizes <- function(df) {
-  df %>%
+get_total_sample_sizes <- function(df, types = NULL) {
+  df1 <- df %>%
     st_drop_geometry() %>%
-    distinct(scheme, module_combo_code, stratum, grts_address) %>%
-    count(scheme, module_combo_code)
+    distinct(scheme, module_combo_code, stratum, grts_address)
+  if (is.null(types)) {
+    df1 %>%
+      count(scheme, module_combo_code)
+  } else {
+    df1 %>%
+      inner_join(
+        n2khab_strata,
+        join_by(stratum),
+        relationship = "many-to-one",
+        unmatched = c("error", "drop")
+      ) %>%
+      semi_join(types, join_by(type)) %>%
+      count(scheme, module_combo_code)
+  }
 }
 
 get_total_sample_sizes(sps_ref)
@@ -84,13 +110,6 @@ aggregate_sample_size(
 
 
 ## Stratum sample sizes for cell types --------------------------------
-
-cell_types <-
-  type_properties %>%
-  filter(
-    str_detect(grts_join_method, "cell"),
-    type != "7140_mrd"
-  )
 
 compare_ssizes_per_stratum <- function(df, dfref = ssizes_ref) {
   df %>%
@@ -245,6 +264,10 @@ get(
   filter(ssize_type_2 != ssize_type)
 
 
+## Total sample size for non-cell types --------------------------------
+
+get_total_sample_sizes(sps_ref, non_cell_types)
+get_total_sample_sizes(sps_new, non_cell_types)
 
 # COMPARE FAG CALENDARS ---------------------------------------------------
 
@@ -395,10 +418,24 @@ moco_ssizes_new %>%
 
 # WRITING GPKG LAYERS -----------------------------------------------------
 
-write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW") {
-  df %>%
-    filter(str_detect(scheme, regex_compartment)) %>%
-    semi_join(cell_types, join_by(stratum == type)) %>%
+write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW", types = NULL) {
+  df1 <- df %>% filter(str_detect(scheme, regex_compartment))
+  if (is.null(types)) {
+    df1 <-
+      df1 %>%
+      semi_join(cell_types, join_by(stratum == type))
+  } else {
+    df1 <-
+      df1 %>%
+      inner_join(
+        n2khab_strata,
+        join_by(stratum),
+        relationship = "many-to-one",
+        unmatched = c("error", "drop")
+      ) %>%
+      semi_join(types, join_by(type))
+  }
+  df1 %>%
     distinct(scheme, module_combo_code, stratum, grts_address, grts_address_final, geometry) %>%
     mutate(compartment = str_match(scheme, "^(\\w+)_")[, 2]) %>%
     select(compartment, stratum, grts_address, grts_address_final) %>%
@@ -413,4 +450,9 @@ write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW") {
 
 write_to_gpkg_layer(sps_ref, "sps_ref")
 write_to_gpkg_layer(sps_new, str_c("GW_", scenario_name))
+write_to_gpkg_layer(
+  sps_new,
+  str_c("GW_NONCELL_", scenario_name),
+  types = non_cell_types
+)
 write_to_gpkg_layer(sps_new, str_c("SOIL_", scenario_name), "^SOIL")
