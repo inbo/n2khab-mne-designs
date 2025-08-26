@@ -170,7 +170,7 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 # lower): this is the consequence of the lower target sample size ranges in the
 # new (smaller) precision pools (i.e. after excluding strata with sample size
 # limitation), leading to lower coef for infinite sample size and consequently
-# lower FPC-corrected sample size. The diference is limited though.
+# lower FPC-corrected sample size. The difference is limited though.
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
   filter(!spss_stratum_truncated, ssize_differs)
