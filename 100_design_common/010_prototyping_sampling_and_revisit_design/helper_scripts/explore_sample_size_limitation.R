@@ -145,6 +145,27 @@ compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
   count(spss_stratum_truncated, ssize_differs)
 
+# counting obtained sample size differences
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
+  count(ssize_differs)
+
+# quantiles of sample size differences
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_diff = ssize_stratum_altered - ssize_stratum) %>%
+  pull(ssize_diff) %>%
+  quantile(seq(0, 1, 0.1))
+
+# quantiles of relative sample size differences
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(
+    ssize_diff_rel = round(
+      (ssize_stratum_altered - ssize_stratum) / ssize_stratum,
+      2
+    )) %>%
+  pull(ssize_diff_rel) %>%
+  quantile(seq(0, 1, 0.1))
+
 # investigate unplanned but obtained sample size differences (they are always
 # lower): this is the consequence of the lower target sample size ranges in the
 # new (smaller) precision pools (i.e. after excluding strata with sample size
