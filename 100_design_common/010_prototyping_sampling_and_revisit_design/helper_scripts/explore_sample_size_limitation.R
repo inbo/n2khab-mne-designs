@@ -276,7 +276,8 @@ loceval_2025_ref_missing_gw <-
   anti_join(loceval_2025_ref, ., join_by(stratum, grts_address))
 loceval_2025_ref_missing_gw
 loceval_2025_ref_missing_gw %>%
-  count(stratum)
+  count(stratum) %>%
+  print(n = Inf)
 
 # LOCEVAL FAGs for cell types scheduled in 2025 in the new FAG calendar but
 # absent from current 2025 schedule
