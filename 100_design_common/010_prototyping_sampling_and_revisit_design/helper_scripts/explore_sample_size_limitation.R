@@ -32,13 +32,6 @@ cal_new <- get(
   "fag_stratum_grts_calendar",
   envir = eval(str2lang(scenario_name))
 )
-non_cell_types <-
-  type_properties %>%
-  filter(
-    !str_detect(grts_join_method, "cell") | type == "7140_mrd"
-  )
-
-
 
 
 moco_ssizes_new <- get(
@@ -151,6 +144,27 @@ compare_ssizes_per_stratum <- function(df, dfref = ssizes_ref) {
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
   count(spss_stratum_truncated, ssize_differs)
+
+# counting obtained sample size differences
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
+  count(ssize_differs)
+
+# quantiles of sample size differences
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_diff = ssize_stratum_altered - ssize_stratum) %>%
+  pull(ssize_diff) %>%
+  quantile(seq(0, 1, 0.1))
+
+# quantiles of relative sample size differences
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(
+    ssize_diff_rel = round(
+      (ssize_stratum_altered - ssize_stratum) / ssize_stratum,
+      2
+    )) %>%
+  pull(ssize_diff_rel) %>%
+  quantile(seq(0, 1, 0.1))
 
 # investigate unplanned but obtained sample size differences (they are always
 # lower): this is the consequence of the lower target sample size ranges in the
@@ -455,7 +469,9 @@ write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW", types 
     write_sf(path_gpkg, layer = layername, delete_layer = TRUE)
 }
 
-write_to_gpkg_layer(sps_ref, "sps_ref")
+# write_to_gpkg_layer(sps_ref, "GW_ref")
+# write_to_gpkg_layer(sps_ref, "GW_NONCELL_ref", types = non_cell_types)
+# write_to_gpkg_layer(sps_ref, "SOIL_ref", "^SOIL")
 write_to_gpkg_layer(sps_new, str_c("GW_", scenario_name))
 write_to_gpkg_layer(
   sps_new,
