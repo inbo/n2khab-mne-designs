@@ -412,4 +412,5 @@ write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW") {
 }
 
 write_to_gpkg_layer(sps_ref, "sps_ref")
-write_to_gpkg_layer(sps_new, scenario_name)
+write_to_gpkg_layer(sps_new, str_c("GW_", scenario_name))
+write_to_gpkg_layer(sps_new, str_c("SOIL_", scenario_name), "^SOIL")
