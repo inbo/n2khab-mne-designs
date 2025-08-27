@@ -207,6 +207,40 @@ compare_ssizes_per_stratum(ssizes_new) %>%
   coord_flip()
 
 
+plot_abs_sample_sizes <- function(df, flanders = TRUE) {
+  compare_ssizes_per_stratum(df) %>%
+    mutate(
+      compartment = str_match(scheme, "^(\\w+)_")[, 2] %>% factor()
+    ) %>%
+    select(-scheme) %>%
+    filter(!is.na(compartment)) %>%
+    distinct() %>%
+    pivot_longer(
+      starts_with("ssize"),
+      names_to = "scenario",
+      values_to = "sample_size"
+    ) %>%
+    mutate(scenario = fct_recode(
+      scenario,
+      new = "ssize_stratum_altered",
+      ref = "ssize_stratum"
+    )) %>%
+    {
+      if (flanders) {
+        filter(., domain == "Flanders")
+      } else {
+        filter(., domain != "Flanders")
+      }
+    } %>%
+    ggplot(aes(x = stratum, y = sample_size, fill = scenario, label = sample_size)) +
+    geom_col(position = "identity", alpha = 0.4) +
+    geom_text(size = 3.5) +
+    facet_grid(compartment + domain ~ ., scales = "free_y") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1))
+}
+plot_abs_sample_sizes(ssizes_new)
+plot_abs_sample_sizes(ssizes_new, flanders = FALSE)
+
 # comparing and checking unplanned differences in target sample size: apart from
 # left-out-types from the densification submodules, differences have to do with
 # the different weights that the domains get in each scheme, within the
