@@ -249,9 +249,11 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 # new (smaller) precision pools (i.e. after excluding strata with sample size
 # limitation), leading to lower coef for infinite sample size and consequently
 # lower FPC-corrected sample size. The difference is limited though.
-compare_ssizes_per_stratum(ssizes_new) %>%
-  mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
-  filter(!spss_stratum_truncated, ssize_differs)
+if (FALSE) {
+  compare_ssizes_per_stratum(ssizes_new) %>%
+    mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
+    filter(!spss_stratum_truncated, ssize_differs)
+}
 ```
 
 ```{r}
@@ -262,78 +264,79 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 # the different weights that the domains get in each scheme, within the
 # densification submodule in pan5; hence this is restricted to the types that
 # are densified.
-targetsizes_new %>%
-  select(
-    module,
-    domain,
-    scheme,
-    panel_set,
-    stratum,
-    nunits,
-    targsize_stratum_altered = sp_sample_size_all_panels_stratum,
-    spss_stratum_truncated
+if (FALSE) {
+  targetsizes_new %>%
+    select(
+      module,
+      domain,
+      scheme,
+      panel_set,
+      stratum,
+      nunits,
+      targsize_stratum_altered = sp_sample_size_all_panels_stratum,
+      spss_stratum_truncated
+    ) %>%
+    inner_join(
+      targetsizes_ref %>%
+        select(
+          module,
+          domain,
+          scheme,
+          panel_set,
+          stratum,
+          targsize_stratum = sp_sample_size_all_panels_stratum
+        ),
+      join_by(module, domain, scheme, panel_set, stratum),
+      relationship = "one-to-one",
+      unmatched = "error"
+    ) %>%
+    filter(!spss_stratum_truncated) %>%
+    mutate(
+      targsize_differs = targsize_stratum_altered != targsize_stratum,
+      targsize_diff_rel = (targsize_stratum_altered - targsize_stratum) / targsize_stratum
+    ) %>%
+    filter(targsize_differs) %>%
+    summarize(
+      targsize_diff_rel_min = min(targsize_diff_rel),
+      targsize_diff_rel_max = max(targsize_diff_rel),
+      .by = c(scheme, domain, stratum)
+    ) %>%
+    arrange(scheme, stratum, domain) %>%
+    print(n = Inf)
+  
+  get(
+    "submodule_domain_scheme_ps_designattr",
+    envir = eval(str2lang(scenario_name))
   ) %>%
-  inner_join(
-    targetsizes_ref %>%
-      select(
-        module,
-        domain,
-        scheme,
-        panel_set,
-        stratum,
-        targsize_stratum = sp_sample_size_all_panels_stratum
-      ),
-    join_by(module, domain, scheme, panel_set, stratum),
-    relationship = "one-to-one",
-    unmatched = "error"
-  ) %>%
-  filter(!spss_stratum_truncated) %>%
-  mutate(
-    targsize_differs = targsize_stratum_altered != targsize_stratum,
-    targsize_diff_rel = (targsize_stratum_altered - targsize_stratum) / targsize_stratum
-  ) %>%
-  filter(targsize_differs) %>%
-  summarize(
-    targsize_diff_rel_min = min(targsize_diff_rel),
-    targsize_diff_rel_max = max(targsize_diff_rel),
-    .by = c(scheme, domain, stratum)
-  ) %>%
-  arrange(scheme, stratum, domain) %>%
-  print(n = Inf)
-
-get(
-  "submodule_domain_scheme_ps_designattr",
-  envir = eval(str2lang(scenario_name))
-) %>%
-  select(
-    module,
-    submodule,
-    domain,
-    scheme,
-    type_count_2 = type_count,
-    panel_set,
-    ssize_all_2 = sp_sample_size_all_panels,
-    ssize_type_2 = sp_sample_size_all_panels_type
-  ) %>%
-  inner_join(
-    ref$submodule_domain_scheme_ps_designattr %>%
-      select(
-        module,
-        submodule,
-        domain,
-        scheme,
-        type_count = type_count,
-        panel_set,
-        ssize_all = sp_sample_size_all_panels,
-        ssize_type = sp_sample_size_all_panels_type
-      ),
-    join_by(module, submodule, domain, scheme, panel_set),
-    relationship = "one-to-one",
-    unmatched = "error"
-  ) %>%
-  filter(ssize_type_2 != ssize_type)
+    select(
+      module,
+      submodule,
+      domain,
+      scheme,
+      type_count_2 = type_count,
+      panel_set,
+      ssize_all_2 = sp_sample_size_all_panels,
+      ssize_type_2 = sp_sample_size_all_panels_type
+    ) %>%
+    inner_join(
+      ref$submodule_domain_scheme_ps_designattr %>%
+        select(
+          module,
+          submodule,
+          domain,
+          scheme,
+          type_count = type_count,
+          panel_set,
+          ssize_all = sp_sample_size_all_panels,
+          ssize_type = sp_sample_size_all_panels_type
+        ),
+      join_by(module, submodule, domain, scheme, panel_set),
+      relationship = "one-to-one",
+      unmatched = "error"
+    ) %>%
+    filter(ssize_type_2 != ssize_type)
+}
 ```
-
 
 Relative sample size decrease per stratum.
 
