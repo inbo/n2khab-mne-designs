@@ -6,7 +6,7 @@ csl: "`r if (curl::has_internet()) 'https://raw.githubusercontent.com/citation-s
 bibliography: ../../../refs_mne_design.yaml
 params:
   lang: nl
-  scenario_name: sstruncgw0.1soil0.33_nodens7140oli2190_mp_transferdens_extra3reduc0.5
+  scenario_name: !r rmarkdown::yaml_front_matter("index.Rmd")$params$sample_adjustment_scenario
 engine: knitr
 format:
   html:
@@ -194,19 +194,21 @@ aggregate_sample_size(
   mhq_scheme_category
 ) %>%
   print(n = Inf)
-
 ```
 
 Table of sample size differences per module, domain, scheme and stratum (only for cell types).
 
 ```{r}
 compare_ssizes_per_stratum(ssizes_new) %>% 
-  our_scroll_kbl(width = "100%", height = "800px")
+  our_scroll_kbl(width = "100%", height = "500px")
 ```
+
+<br/>
 
 Percentage of changed sample sizes in above table.
 
 ```{r}
+#| paged.print: FALSE
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
   count(ssize_differs)
@@ -215,6 +217,7 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 Percentage of changed sample sizes in above table, depending on whether sample was truncated using a maximum population proportion, or not.
 
 ```{r}
+#| paged.print: FALSE
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
   count(spss_stratum_truncated, ssize_differs)
@@ -353,6 +356,7 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 Plotting relative sample size decrease per stratum in the **groundwater** compartment, limited to sample size truncations plus sample size changes larger than 5%.
 
 ```{r}
+#| fig.height: 12
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(
     ssize_diff_rel = (ssize_stratum_altered - ssize_stratum) / ssize_stratum,
@@ -373,6 +377,7 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 Plotting relative sample size decrease per stratum in the **soil** compartment, limited to sample size truncations plus sample size changes larger than 5%.
 
 ```{r}
+#| fig.height: 14
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(
     ssize_diff_rel = (ssize_stratum_altered - ssize_stratum) / ssize_stratum,
@@ -393,12 +398,16 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 Plotting all absolute sample sizes in both scenarios and compartments, in domain Flanders.
 
 ```{r}
+#| fig.height: 10
+#| fig.width: 12
 plot_abs_sample_sizes(ssizes_new, flanders = TRUE)
 ```
 
 Plotting all absolute sample sizes in both scenarios and compartments, in the other domains.
 
 ```{r}
+#| fig.height: 10
+#| fig.width: 12
 plot_abs_sample_sizes(ssizes_new, flanders = FALSE)
 ```
 
@@ -446,7 +455,7 @@ loceval_2025_ref
 ```
 
 LOCEVAL FAGs for cell types currently scheduled in 2025 but nowhere in the new
-FAG calendar.
+FAG calendar (i.e. all compartments, including biotic).
 
 ```{r}
 cal_new %>%
@@ -468,8 +477,14 @@ loceval_2025_ref_missing_gw <-
   distinct(stratum, grts_address) %>%
   anti_join(loceval_2025_ref, ., join_by(stratum, grts_address))
 loceval_2025_ref_missing_gw
+```
+
+Distribution of the above result according to strata:
+
+```{r}
+#| paged.print: FALSE
 loceval_2025_ref_missing_gw %>%
-  count(stratum) %>%
+  count(stratum) %>% 
   print(n = Inf)
 ```
 
@@ -491,6 +506,7 @@ FAG calendar: counting the corresponding LOCEVALs per year in the new FAG
 calendar.
 
 ```{r}
+#| paged.print: FALSE
 cal_new %>%
   filter(str_detect(field_activity_group, "LOCEVAL")) %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
@@ -505,12 +521,14 @@ cal_new %>%
 Reference:
 
 ```{r}
+#| paged.print: FALSE
 show_mhq_overlap(sps_ref)
 ```
 
 New:
 
 ```{r}
+#| paged.print: FALSE
 show_mhq_overlap(sps_new)
 ```
 
