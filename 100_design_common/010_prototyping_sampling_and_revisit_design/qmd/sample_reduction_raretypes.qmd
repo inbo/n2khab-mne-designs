@@ -59,7 +59,7 @@ our_scroll_kbl <- function(df, width = NULL, height = NULL) {
   our_kbl(df) %>% 
     scroll_box(width = width, height = height)
 }
-scenario_name <- rmarkdown::yaml_front_matter('../index.Rmd')$params$sample_adjustment_scenario
+scenario_name <- rmarkdown::yaml_front_matter(file.path(projroot, 'index.Rmd'))$params$sample_adjustment_scenario
 path_ref <- file.path(datapath, "binary/results/objects_panflpan5.RData")
 path_new <- file.path(
   datapath,
@@ -260,9 +260,11 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 # new (smaller) precision pools (i.e. after excluding strata with sample size
 # limitation), leading to lower coef for infinite sample size and consequently
 # lower FPC-corrected sample size. The difference is limited though.
-compare_ssizes_per_stratum(ssizes_new) %>%
-  mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
-  filter(!spss_stratum_truncated, ssize_differs)
+if (FALSE) {
+  compare_ssizes_per_stratum(ssizes_new) %>%
+    mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
+    filter(!spss_stratum_truncated, ssize_differs)
+}
 ```
 
 ```{r}
@@ -273,78 +275,79 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 # the different weights that the domains get in each scheme, within the
 # densification submodule in pan5; hence this is restricted to the types that
 # are densified.
-targetsizes_new %>%
-  select(
-    module,
-    domain,
-    scheme,
-    panel_set,
-    stratum,
-    nunits,
-    targsize_stratum_altered = sp_sample_size_all_panels_stratum,
-    spss_stratum_truncated
+if (FALSE) {
+  targetsizes_new %>%
+    select(
+      module,
+      domain,
+      scheme,
+      panel_set,
+      stratum,
+      nunits,
+      targsize_stratum_altered = sp_sample_size_all_panels_stratum,
+      spss_stratum_truncated
+    ) %>%
+    inner_join(
+      targetsizes_ref %>%
+        select(
+          module,
+          domain,
+          scheme,
+          panel_set,
+          stratum,
+          targsize_stratum = sp_sample_size_all_panels_stratum
+        ),
+      join_by(module, domain, scheme, panel_set, stratum),
+      relationship = "one-to-one",
+      unmatched = "error"
+    ) %>%
+    filter(!spss_stratum_truncated) %>%
+    mutate(
+      targsize_differs = targsize_stratum_altered != targsize_stratum,
+      targsize_diff_rel = (targsize_stratum_altered - targsize_stratum) / targsize_stratum
+    ) %>%
+    filter(targsize_differs) %>%
+    summarize(
+      targsize_diff_rel_min = min(targsize_diff_rel),
+      targsize_diff_rel_max = max(targsize_diff_rel),
+      .by = c(scheme, domain, stratum)
+    ) %>%
+    arrange(scheme, stratum, domain) %>%
+    print(n = Inf)
+  
+  get(
+    "submodule_domain_scheme_ps_designattr",
+    envir = eval(str2lang(scenario_name))
   ) %>%
-  inner_join(
-    targetsizes_ref %>%
-      select(
-        module,
-        domain,
-        scheme,
-        panel_set,
-        stratum,
-        targsize_stratum = sp_sample_size_all_panels_stratum
-      ),
-    join_by(module, domain, scheme, panel_set, stratum),
-    relationship = "one-to-one",
-    unmatched = "error"
-  ) %>%
-  filter(!spss_stratum_truncated) %>%
-  mutate(
-    targsize_differs = targsize_stratum_altered != targsize_stratum,
-    targsize_diff_rel = (targsize_stratum_altered - targsize_stratum) / targsize_stratum
-  ) %>%
-  filter(targsize_differs) %>%
-  summarize(
-    targsize_diff_rel_min = min(targsize_diff_rel),
-    targsize_diff_rel_max = max(targsize_diff_rel),
-    .by = c(scheme, domain, stratum)
-  ) %>%
-  arrange(scheme, stratum, domain) %>%
-  print(n = Inf)
-
-get(
-  "submodule_domain_scheme_ps_designattr",
-  envir = eval(str2lang(scenario_name))
-) %>%
-  select(
-    module,
-    submodule,
-    domain,
-    scheme,
-    type_count_2 = type_count,
-    panel_set,
-    ssize_all_2 = sp_sample_size_all_panels,
-    ssize_type_2 = sp_sample_size_all_panels_type
-  ) %>%
-  inner_join(
-    ref$submodule_domain_scheme_ps_designattr %>%
-      select(
-        module,
-        submodule,
-        domain,
-        scheme,
-        type_count = type_count,
-        panel_set,
-        ssize_all = sp_sample_size_all_panels,
-        ssize_type = sp_sample_size_all_panels_type
-      ),
-    join_by(module, submodule, domain, scheme, panel_set),
-    relationship = "one-to-one",
-    unmatched = "error"
-  ) %>%
-  filter(ssize_type_2 != ssize_type)
+    select(
+      module,
+      submodule,
+      domain,
+      scheme,
+      type_count_2 = type_count,
+      panel_set,
+      ssize_all_2 = sp_sample_size_all_panels,
+      ssize_type_2 = sp_sample_size_all_panels_type
+    ) %>%
+    inner_join(
+      ref$submodule_domain_scheme_ps_designattr %>%
+        select(
+          module,
+          submodule,
+          domain,
+          scheme,
+          type_count = type_count,
+          panel_set,
+          ssize_all = sp_sample_size_all_panels,
+          ssize_type = sp_sample_size_all_panels_type
+        ),
+      join_by(module, submodule, domain, scheme, panel_set),
+      relationship = "one-to-one",
+      unmatched = "error"
+    ) %>%
+    filter(ssize_type_2 != ssize_type)
+}
 ```
-
 
 Relative sample size decrease per stratum.
 
@@ -451,7 +454,9 @@ get_integrated_ssizes_per_domain(sps_new, soil_thresh, "^SOIL") %>%
 
 ## Comparing FAG calendars
 
-LOCEVAL FAGs for cell types _currently_ scheduled in 2025.
+### LOCEVAL FAGs that were currently scheduled in 2025 for groundwater
+
+LOCEVAL FAGs for cell types _currently_ scheduled in 2025, that serve **groundwater** schemes.
 
 ```{r}
 loceval_2025_ref <-
@@ -461,7 +466,9 @@ loceval_2025_ref <-
     year(date_start) < 2026
   ) %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
-  select(stratum, grts_address, grts_address_final)
+  unnest(scheme_moco_ps) %>% 
+  filter(str_detect(scheme, "^GW")) %>% 
+  distinct(stratum, grts_address, grts_address_final)
 loceval_2025_ref
 ```
 
@@ -499,7 +506,7 @@ loceval_2025_ref_missing_gw %>%
   print(n = Inf)
 ```
 
-LOCEVAL FAGs for cell types _scheduled in 2025 in the new FAG calendar but absent from current 2025 schedule_.
+LOCEVAL FAGs for cell types _scheduled in 2025 in the new FAG calendar for **groundwater** but absent from current 2025 schedule_.
 
 ```{r}
 cal_new %>%
@@ -508,11 +515,13 @@ cal_new %>%
     year(date_start) < 2026
   ) %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
+  unnest(scheme_moco_ps) %>% 
+  filter(str_detect(scheme, "^GW")) %>% 
   distinct(stratum, grts_address, grts_address_final) %>%
   anti_join(loceval_2025_ref, join_by(stratum, grts_address))
 ```
 
-LOCEVAL FAGs for cell types currently scheduled in 2025 AND present in the new
+LOCEVAL FAGs for cell types currently scheduled in 2025 for groundwater AND present in the new
 FAG calendar: counting the corresponding LOCEVALs per year in the new FAG
 calendar.
 
@@ -524,6 +533,45 @@ cal_new %>%
   semi_join(loceval_2025_ref, join_by(stratum, grts_address)) %>%
   mutate(year_start = year(date_start)) %>%
   count(year_start)
+```
+
+
+### GW sampling FAGs
+
+GW sampling FAGs for cell types _currently_ scheduled in 2025 or 2026.
+
+```{r}
+gwsamp_2025_ref <-
+  cal_ref %>%
+  filter(
+    str_detect(field_activity_group, "SHALLSAMP"),
+    year(date_start) < 2027
+  ) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  summarize(
+    first_year = year(min(date_start)),
+    .by = c(stratum, grts_address, grts_address_final)
+  )
+gwsamp_2025_ref
+```
+
+Temporal redistribution of these FAGs from old to new calendar.
+
+```{r}
+cal_new %>%
+  filter(str_detect(field_activity_group, "SHALLSAMP")) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  summarize(
+    new_first_date = min(date_start),
+    .by = c(stratum, grts_address, grts_address_final)
+  ) %>% 
+  right_join(
+    gwsamp_2025_ref,
+    join_by(stratum, grts_address, grts_address_final),
+    relationship = "one-to-one"
+  ) %>% 
+  count(first_year, new_first_date) %>% 
+  our_kbl()
 ```
 
 
