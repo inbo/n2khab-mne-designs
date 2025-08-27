@@ -443,7 +443,9 @@ get_integrated_ssizes_per_domain(sps_new, soil_thresh, "^SOIL") %>%
 
 ## Comparing FAG calendars
 
-LOCEVAL FAGs for cell types _currently_ scheduled in 2025.
+### LOCEVAL FAGs that were currently scheduled in 2025 for groundwater
+
+LOCEVAL FAGs for cell types _currently_ scheduled in 2025, that serve **groundwater** schemes.
 
 ```{r}
 loceval_2025_ref <-
@@ -453,7 +455,9 @@ loceval_2025_ref <-
     year(date_start) < 2026
   ) %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
-  select(stratum, grts_address, grts_address_final)
+  unnest(scheme_moco_ps) %>% 
+  filter(str_detect(scheme, "^GW")) %>% 
+  distinct(stratum, grts_address, grts_address_final)
 loceval_2025_ref
 ```
 
@@ -491,7 +495,7 @@ loceval_2025_ref_missing_gw %>%
   print(n = Inf)
 ```
 
-LOCEVAL FAGs for cell types _scheduled in 2025 in the new FAG calendar but absent from current 2025 schedule_.
+LOCEVAL FAGs for cell types _scheduled in 2025 in the new FAG calendar for **groundwater** but absent from current 2025 schedule_.
 
 ```{r}
 cal_new %>%
@@ -500,11 +504,13 @@ cal_new %>%
     year(date_start) < 2026
   ) %>%
   semi_join(cell_types, join_by(stratum == type)) %>%
+  unnest(scheme_moco_ps) %>% 
+  filter(str_detect(scheme, "^GW")) %>% 
   distinct(stratum, grts_address, grts_address_final) %>%
   anti_join(loceval_2025_ref, join_by(stratum, grts_address))
 ```
 
-LOCEVAL FAGs for cell types currently scheduled in 2025 AND present in the new
+LOCEVAL FAGs for cell types currently scheduled in 2025 for groundwater AND present in the new
 FAG calendar: counting the corresponding LOCEVALs per year in the new FAG
 calendar.
 
@@ -516,6 +522,45 @@ cal_new %>%
   semi_join(loceval_2025_ref, join_by(stratum, grts_address)) %>%
   mutate(year_start = year(date_start)) %>%
   count(year_start)
+```
+
+
+### GW sampling FAGs
+
+GW sampling FAGs for cell types _currently_ scheduled in 2025 or 2026.
+
+```{r}
+gwsamp_2025_ref <-
+  cal_ref %>%
+  filter(
+    str_detect(field_activity_group, "SHALLSAMP"),
+    year(date_start) < 2027
+  ) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  summarize(
+    first_year = year(min(date_start)),
+    .by = c(stratum, grts_address, grts_address_final)
+  )
+gwsamp_2025_ref
+```
+
+Temporal redistribution of these FAGs from old to new calendar.
+
+```{r}
+cal_new %>%
+  filter(str_detect(field_activity_group, "SHALLSAMP")) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  summarize(
+    new_first_date = min(date_start),
+    .by = c(stratum, grts_address, grts_address_final)
+  ) %>% 
+  right_join(
+    gwsamp_2025_ref,
+    join_by(stratum, grts_address, grts_address_final),
+    relationship = "one-to-one"
+  ) %>% 
+  count(first_year, new_first_date) %>% 
+  our_kbl()
 ```
 
 
