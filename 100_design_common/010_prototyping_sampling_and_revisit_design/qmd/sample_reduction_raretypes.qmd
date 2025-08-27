@@ -1,0 +1,530 @@
+---
+title: "Revising sample sizes with regard to disturbance of rare types"
+date: today
+published-title: Date
+csl: "`r if (curl::has_internet()) 'https://raw.githubusercontent.com/citation-style-language/styles/master/research-institute-for-nature-and-forest.csl' else system.file('research-institute-for-nature-and-forest.csl', package = 'INBOmd')`"
+bibliography: ../../../refs_mne_design.yaml
+params:
+  lang: nl
+  scenario_name: sstruncgw0.1soil0.33_nodens7140oli2190_mp_transferdens_extra3reduc0.5
+engine: knitr
+format:
+  html:
+    embed-resources: true
+    include-in-header: ../../../header_qmd.html
+    theme: cosmo
+    keep-md: true
+    number-sections: true
+    code-fold: true
+    fig-width: 10
+    fig-height: 5
+    df-print: paged
+    toc: true
+    toc-location: left
+    toc-depth: 4
+    toc-expand: true
+---
+
+```{r setup, message = FALSE}
+options(scipen = 999)
+conflictRules("git2rdata", exclude = c("pull", "meta"))
+conflictRules("tidyr", exclude = "extract")
+conflictRules("knitr", exclude = "spin")
+conflictRules("kableExtra", exclude = "group_rows")
+lang <- params$lang
+library(rprojroot)
+projroot <- find_root(is_rstudio_project)
+gitroot <- find_root(is_git_root)
+source(file.path(projroot, "R/functions.R"))
+datapath <- file.path(projroot, "data")
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(forcats)
+library(lubridate)
+library(ggplot2)
+library(sf)
+opts_chunk$set(
+  echo = TRUE,
+  dpi = 300,
+  fig.align = "center"
+)
+our_kbl <- function(df) {
+  df %>% 
+    kbl(table.attr = 'data-quarto-disable-processing="true"') %>% 
+    kable_styling(full_width = FALSE, bootstrap_options = "striped")
+}
+our_scroll_kbl <- function(df, width = NULL, height = NULL) {
+  our_kbl(df) %>% 
+    scroll_box(width = width, height = height)
+}
+scenario_name <- params$scenario_name
+path_ref <- file.path(datapath, "binary/results/objects_panflpan5.RData")
+path_new <- file.path(
+  datapath,
+  str_glue("binary/results/objects_panflpan5_{scenario_name}.RData")
+)
+path_gpkg <- file.path(datapath, "binary/intermediate/spatial_sampling.gpkg")
+```
+
+
+## Data setup {-}
+
+The two involved RData files have been created by running following shell command in the `010_prototyping_sampling_and_revisit_design` directory, at tag `poc_0.13.0` and at the specific branch with a sample scenario, respectively.
+
+```bash
+Rscript -e 'bookdown::render_book("index.Rmd", "bookdown::html_document2", params = list(regenerate_binary_files = FALSE, active_modules = c("pan_effectmon_flanders", "pan_effectmon_sac5_custommeas"), update_spatiotemp_gsheet = FALSE, save_rdata = TRUE))'
+```
+
+Lazy loading the objects of these RData files in separate environments.
+
+```{r}
+prepare_lazy_get(path_ref, new_envir_name = "ref")
+prepare_lazy_get(path_new, new_envir_name = scenario_name)
+```
+
+Loading specific objects in the global environment.
+
+```{r}
+# ls(envir = ref)
+sps_ref <- get("scheme_moco_ps_stratum_sppost_spsamples_sf", envir = ref)
+sps_new <- get(
+  "scheme_moco_ps_stratum_sppost_spsamples_sf",
+  envir = eval(str2lang(scenario_name))
+)
+ssizes_ref <- get("module_domain_scheme_ps_stratum_sample_size", envir = ref)
+ssizes_new <- get(
+  "module_domain_scheme_ps_stratum_sample_size",
+  envir = eval(str2lang(scenario_name))
+)
+cal_ref <- get("fag_stratum_grts_calendar", envir = ref)
+cal_new <- get(
+  "fag_stratum_grts_calendar",
+  envir = eval(str2lang(scenario_name))
+)
+
+
+moco_ssizes_new <- get(
+  "scheme_moco_ps_dom_stratum_sample_size",
+  envir = eval(str2lang(scenario_name))
+)
+targetsizes_ref <- get("module_domain_scheme_ps_stratum_target_sample_size", envir = ref)
+targetsizes_new <- get(
+  "module_domain_scheme_ps_stratum_target_sample_size",
+  envir = eval(str2lang(scenario_name))
+)
+
+type_properties <- get("n2khab_types_expanded_properties", envir = ref)
+mhq_scheme_category <- get("mhq_scheme_category", envir = ref)
+n2khab_strata <- get("n2khab_strata", envir = ref)
+dom_scheme_stratum_nunits <-
+  get("submod_dom_scheme_ssf_stratum_nunits", envir = ref) %>%
+  distinct(domain, scheme, stratum, nunits)
+```
+
+Defining cell types & non-cell types.
+
+```{r}
+cell_types <-
+  type_properties %>%
+  filter(
+    str_detect(grts_join_method, "cell"),
+    type != "7140_mrd"
+  )
+non_cell_types <-
+  type_properties %>%
+  filter(
+    !str_detect(grts_join_method, "cell") | type == "7140_mrd"
+  )
+```
+
+
+## Comparing sample sizes
+
+Grand totals per scheme: reference.
+
+```{r}
+get_total_sample_sizes(sps_ref)
+```
+
+Grand totals per scheme: new.
+
+```{r}
+get_total_sample_sizes(sps_new)
+```
+
+Same, but limited to non-cell types. Reference.
+
+```{r}
+get_total_sample_sizes(sps_ref, non_cell_types)
+```
+
+Same, but limited to non-cell types. New.
+
+```{r}
+get_total_sample_sizes(sps_new, non_cell_types)
+```
+
+Yearly totals, distinguishing modules. Reference.
+
+```{r}
+aggregate_sample_size(
+  ssizes_ref,
+  "sp_sample_size_all_panels_stratum",
+  mhq_scheme_category
+) %>%
+  print(n = Inf)
+```
+
+Yearly totals, distinguishing modules. New.
+
+```{r}
+aggregate_sample_size(
+  ssizes_new,
+  "sp_sample_size_all_panels_stratum",
+  mhq_scheme_category
+) %>%
+  print(n = Inf)
+
+```
+
+Table of sample size differences per module, domain, scheme and stratum (only for cell types).
+
+```{r}
+compare_ssizes_per_stratum(ssizes_new) %>% 
+  our_scroll_kbl(width = "100%", height = "800px")
+```
+
+Percentage of changed sample sizes in above table.
+
+```{r}
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
+  count(ssize_differs)
+```
+
+Percentage of changed sample sizes in above table, depending on whether sample was truncated using a maximum population proportion, or not.
+
+```{r}
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
+  count(spss_stratum_truncated, ssize_differs)
+```
+
+Quantiles of absolute and relative sample size differences.
+
+```{r}
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_diff = ssize_stratum_altered - ssize_stratum) %>%
+  pull(ssize_diff) %>%
+  quantile(seq(0, 1, 0.1))
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(
+    ssize_diff_rel = round(
+      (ssize_stratum_altered - ssize_stratum) / ssize_stratum,
+      2
+    )) %>%
+  pull(ssize_diff_rel) %>%
+  quantile(seq(0, 1, 0.1))
+```
+
+
+```{r}
+#| echo: FALSE
+#| eval: FALSE
+# investigate unplanned but obtained sample size differences (they are always
+# lower): this is the consequence of the lower target sample size ranges in the
+# new (smaller) precision pools (i.e. after excluding strata with sample size
+# limitation), leading to lower coef for infinite sample size and consequently
+# lower FPC-corrected sample size. The difference is limited though.
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_differs = ssize_stratum_altered != ssize_stratum) %>%
+  filter(!spss_stratum_truncated, ssize_differs)
+```
+
+```{r}
+#| echo: FALSE
+#| eval: FALSE
+# comparing and checking unplanned differences in target sample size: apart from
+# left-out-types from the densification submodules, differences have to do with
+# the different weights that the domains get in each scheme, within the
+# densification submodule in pan5; hence this is restricted to the types that
+# are densified.
+targetsizes_new %>%
+  select(
+    module,
+    domain,
+    scheme,
+    panel_set,
+    stratum,
+    nunits,
+    targsize_stratum_altered = sp_sample_size_all_panels_stratum,
+    spss_stratum_truncated
+  ) %>%
+  inner_join(
+    targetsizes_ref %>%
+      select(
+        module,
+        domain,
+        scheme,
+        panel_set,
+        stratum,
+        targsize_stratum = sp_sample_size_all_panels_stratum
+      ),
+    join_by(module, domain, scheme, panel_set, stratum),
+    relationship = "one-to-one",
+    unmatched = "error"
+  ) %>%
+  filter(!spss_stratum_truncated) %>%
+  mutate(
+    targsize_differs = targsize_stratum_altered != targsize_stratum,
+    targsize_diff_rel = (targsize_stratum_altered - targsize_stratum) / targsize_stratum
+  ) %>%
+  filter(targsize_differs) %>%
+  summarize(
+    targsize_diff_rel_min = min(targsize_diff_rel),
+    targsize_diff_rel_max = max(targsize_diff_rel),
+    .by = c(scheme, domain, stratum)
+  ) %>%
+  arrange(scheme, stratum, domain) %>%
+  print(n = Inf)
+
+get(
+  "submodule_domain_scheme_ps_designattr",
+  envir = eval(str2lang(scenario_name))
+) %>%
+  select(
+    module,
+    submodule,
+    domain,
+    scheme,
+    type_count_2 = type_count,
+    panel_set,
+    ssize_all_2 = sp_sample_size_all_panels,
+    ssize_type_2 = sp_sample_size_all_panels_type
+  ) %>%
+  inner_join(
+    ref$submodule_domain_scheme_ps_designattr %>%
+      select(
+        module,
+        submodule,
+        domain,
+        scheme,
+        type_count = type_count,
+        panel_set,
+        ssize_all = sp_sample_size_all_panels,
+        ssize_type = sp_sample_size_all_panels_type
+      ),
+    join_by(module, submodule, domain, scheme, panel_set),
+    relationship = "one-to-one",
+    unmatched = "error"
+  ) %>%
+  filter(ssize_type_2 != ssize_type)
+```
+
+
+Relative sample size decrease per stratum.
+
+```{r}
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_diff_rel = (ssize_stratum_altered - ssize_stratum) / ssize_stratum) %>%
+  ggplot(aes(x = ssize_diff_rel)) +
+  geom_density()
+```
+
+Relative sample size decrease per stratum, distinguishing truncated vs not-truncated sample size.
+
+```{r}
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(ssize_diff_rel = (ssize_stratum_altered - ssize_stratum) / ssize_stratum) %>%
+  ggplot(aes(x = ssize_diff_rel, colour = spss_stratum_truncated)) +
+  geom_density()
+```
+
+Plotting relative sample size decrease per stratum in the **groundwater** compartment, limited to sample size truncations plus sample size changes larger than 5%.
+
+```{r}
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(
+    ssize_diff_rel = (ssize_stratum_altered - ssize_stratum) / ssize_stratum,
+    compartment = str_match(scheme, "^(\\w+)_")[, 2] %>% factor(),
+    stratum_domain = str_c(stratum, "_", domain) %>% fct_rev()
+  ) %>%
+  select(-scheme) %>%
+  filter(!is.na(compartment)) %>%
+  filter(compartment == "GW") %>%
+  filter(spss_stratum_truncated | abs(ssize_diff_rel) > 0.05) %>%
+  distinct() %>%
+  ggplot(aes(x = stratum_domain, y = ssize_diff_rel, fill = spss_stratum_truncated)) +
+  geom_col() +
+  facet_wrap(~compartment) +
+  coord_flip()
+```
+
+Plotting relative sample size decrease per stratum in the **soil** compartment, limited to sample size truncations plus sample size changes larger than 5%.
+
+```{r}
+compare_ssizes_per_stratum(ssizes_new) %>%
+  mutate(
+    ssize_diff_rel = (ssize_stratum_altered - ssize_stratum) / ssize_stratum,
+    compartment = str_match(scheme, "^(\\w+)_")[, 2] %>% factor(),
+    stratum_domain = str_c(stratum, "_", domain) %>% fct_rev()
+  ) %>%
+  select(-scheme) %>%
+  filter(!is.na(compartment)) %>%
+  filter(compartment == "SOIL") %>%
+  filter(spss_stratum_truncated | abs(ssize_diff_rel) > 0.05) %>%
+  distinct() %>%
+  ggplot(aes(x = stratum_domain, y = ssize_diff_rel, fill = spss_stratum_truncated)) +
+  geom_col() +
+  facet_wrap(~compartment) +
+  coord_flip()
+```
+
+Plotting all absolute sample sizes in both scenarios and compartments, in domain Flanders.
+
+```{r}
+plot_abs_sample_sizes(ssizes_new, flanders = TRUE)
+```
+
+Plotting all absolute sample sizes in both scenarios and compartments, in the other domains.
+
+```{r}
+plot_abs_sample_sizes(ssizes_new, flanders = FALSE)
+```
+
+Up to here, domains were considered independently (samples are indeed drawn independently).
+But domains can overlap.
+Below, the integrated sample proportions (sample size / population size) per domain are calculated for each stratum, and filtered according to a proportion threshold that is exceeded (i.e. the compartment-specific proportion threshold used by the scenario).
+This is only done for the new scenario.
+
+Some 'overshooting' of the sample proportion limit is possible due to:
+
+- 'independency' of densification in included domains
+- (few cases:) increasing zero- or one-sized strata to two units at Flemish level
+
+In groundwater:
+
+```{r}
+gw_thresh <- as.numeric(str_match(scenario_name, "gw([\\d\\.]+)")[,2])
+get_integrated_ssizes_per_domain(sps_new, gw_thresh, "^GW") %>% 
+  our_kbl()
+```
+
+In soil:
+
+```{r}
+soil_thresh <- as.numeric(str_match(scenario_name, "soil([\\d\\.]+)")[,2])
+get_integrated_ssizes_per_domain(sps_new, soil_thresh, "^SOIL") %>% 
+  our_kbl()
+```
+
+
+## Comparing FAG calendars
+
+LOCEVAL FAGs for cell types _currently_ scheduled in 2025.
+
+```{r}
+loceval_2025_ref <-
+  cal_ref %>%
+  filter(
+    str_detect(field_activity_group, "LOCEVAL"),
+    year(date_start) < 2026
+  ) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  select(stratum, grts_address, grts_address_final)
+loceval_2025_ref
+```
+
+LOCEVAL FAGs for cell types currently scheduled in 2025 but nowhere in the new
+FAG calendar.
+
+```{r}
+cal_new %>%
+  filter(str_detect(field_activity_group, "LOCEVAL")) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  distinct(stratum, grts_address) %>%
+  anti_join(loceval_2025_ref, ., join_by(stratum, grts_address)) %>% 
+  print(n = Inf)
+```
+
+LOCEVAL FAGs for cell types currently scheduled in 2025 but nowhere in the new
+FAG calendar, partim **groundwater**.
+
+```{r}
+loceval_2025_ref_missing_gw <-
+  cal_new %>%
+  filter(str_detect(field_activity_group, "^GW")) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  distinct(stratum, grts_address) %>%
+  anti_join(loceval_2025_ref, ., join_by(stratum, grts_address))
+loceval_2025_ref_missing_gw
+loceval_2025_ref_missing_gw %>%
+  count(stratum) %>%
+  print(n = Inf)
+```
+
+LOCEVAL FAGs for cell types _scheduled in 2025 in the new FAG calendar but absent from current 2025 schedule_.
+
+```{r}
+cal_new %>%
+  filter(
+    str_detect(field_activity_group, "LOCEVAL"),
+    year(date_start) < 2026
+  ) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  distinct(stratum, grts_address, grts_address_final) %>%
+  anti_join(loceval_2025_ref, join_by(stratum, grts_address))
+```
+
+LOCEVAL FAGs for cell types currently scheduled in 2025 AND present in the new
+FAG calendar: counting the corresponding LOCEVALs per year in the new FAG
+calendar.
+
+```{r}
+cal_new %>%
+  filter(str_detect(field_activity_group, "LOCEVAL")) %>%
+  semi_join(cell_types, join_by(stratum == type)) %>%
+  semi_join(loceval_2025_ref, join_by(stratum, grts_address)) %>%
+  mutate(year_start = year(date_start)) %>%
+  count(year_start)
+```
+
+
+## Comparing MHQ overlap
+
+Reference:
+
+```{r}
+show_mhq_overlap(sps_ref)
+```
+
+New:
+
+```{r}
+show_mhq_overlap(sps_new)
+```
+
+
+
+## Writing to GeoPackage layers
+
+```{r}
+# Run the outcommented ones only once (hence, interactively):
+# write_to_gpkg_layer(sps_ref, "GW_ref")
+# write_to_gpkg_layer(sps_ref, "GW_NONCELL_ref", types = non_cell_types)
+# write_to_gpkg_layer(sps_ref, "SOIL_ref", "^SOIL")
+write_to_gpkg_layer(sps_new, str_c("GW_", scenario_name))
+write_to_gpkg_layer(
+  sps_new,
+  str_c("GW_NONCELL_", scenario_name),
+  types = non_cell_types
+)
+write_to_gpkg_layer(sps_new, str_c("SOIL_", scenario_name), "^SOIL")
+```
+
+
+
+
