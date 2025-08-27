@@ -193,7 +193,7 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 compare_ssizes_per_stratum(ssizes_new) %>%
   mutate(
     ssize_diff_rel = (ssize_stratum_altered - ssize_stratum) / ssize_stratum,
-    compartment = str_match(scheme, "^(\\w+)_")[, 2],
+    compartment = str_match(scheme, "^(\\w+)_")[, 2] %>% factor(),
     stratum_domain = str_c(stratum, "_", domain) %>% fct_rev()
   ) %>%
   select(-scheme) %>%
