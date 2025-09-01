@@ -1427,7 +1427,7 @@ module_domain_scheme_ps_stratum_sample_size %>%
 ```
 
 At the Flemish level, we could argue to increase sample sizes of 0 or 1 that are not a census up to 2 (or 1 if that is the population size in the zero-sample-size case), which largely concerns panel set 2 (in panel set 1, it causes a census).
-Since we also reduced sample sizes of small populations (see Section \@ref(ssize-limit)), we could also apply this in the included domains.
+Since we also reduced sample sizes of small populations of specific schemes (see Section \@ref(ssize-limit)), we could also apply this in the included domains, but we choose to do this in panel set 1 only in order to limit the effect on sample proportions.
 In order to limit the abundant effect of the (naturally) small sample sizes of watersurface strata in that case, we consider the type level instead of the stratum level to achieve a sample size of 2 if the domain is not Flanders (hence an included domain), for watersurface types.
 
 Number of domain x scheme x panel set x stratum occasions that would be improved:
@@ -1445,12 +1445,13 @@ module_domain_scheme_ps_stratum_sample_size %>%
     (
       sp_sample_size_all_panels_stratum %in% 0:1 &
       sp_sample_size_all_panels_stratum < nunits &
-      (domain == "Flanders" | !is_watersurface)
+      (domain == "Flanders" | !is_watersurface & panel_set == 1)
     ) |
     # use type-level for watersurfaces in included domains
       (
         is_watersurface &
           domain != "Flanders" &
+          panel_set == 1 &
           # note the use of 'type' here:
           sp_sample_size_all_panels_type %in% 0:1 &
           # simpler would be to use sp_sample_size_all_panels_stratum %in% 0:1
@@ -1479,7 +1480,7 @@ _It might still be a GRTS estimator since we can consider a stratified random sa
 
 ### Implementing some minimal post-hoc sample size increases
 
-Implementing aforementioned increase of sample size:
+Implementing aforementioned increase of sample size (panel set 2 only in 'Flanders'):
 
 - at stratum level in domain 'Flanders' and for non-watersurface types;
 - at type level for watersurface types in smaller domains.
@@ -1495,11 +1496,12 @@ module_domain_scheme_ps_stratum_sample_size <-
       (
         sp_sample_size_all_panels_stratum %in% 0:1 &
           sp_sample_size_all_panels_stratum < nunits &
-          (domain == "Flanders" | !is_watersurface)
+          (domain == "Flanders" | !is_watersurface & panel_set == 1)
       ) |
         (
           is_watersurface &
             domain != "Flanders" &
+            panel_set == 1 &
             sp_sample_size_all_panels_type %in% 0:1 &
             (nunits_cum <= 2 | nunits_largest)
         ),
