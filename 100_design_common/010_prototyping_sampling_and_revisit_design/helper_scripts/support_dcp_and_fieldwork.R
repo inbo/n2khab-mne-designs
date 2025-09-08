@@ -275,6 +275,39 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
 
 
 
+## Inspecting VBI locations that overlap sampling units --------------------------
+
+# vbi_overlaps represents the VBI plot centers that overlap MNE sampling units.
+# For privacy reasons, the full list of VBI locations is not stored publicly.
+
+vbi_overlaps %>%
+  inner_join(
+    stratum_schemepstargetpanel_spsamples %>%
+      filter(is_forest) %>%
+      select(
+        stratum,
+        grts_address_final,
+        scheme_ps_targetpanels
+      ),
+    join_by(grts_address == grts_address_final),
+    relationship = "one-to-one",
+    unmatched = c("error", "drop")
+  )
+
+# representing as points object
+vbi_overlaps_sf <-
+  vbi_overlaps %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370)
+
+
+
+
+
+
+
+
+
+
 ## Sampling unit geometries --------------------------------------
 
 # obtaining geometries of the sampling units themselves:
@@ -1607,6 +1640,7 @@ tibble(
     "scheme_moco_ps_stratum_targetpanel_spsamples",
     "stratum_schemepstargetpanel_spsamples",
     "schemepstargetpanel_spsamples_terr",
+    "vbi_overlaps",
     "units_7220",
     "units_cell_cellcenter",
     "units_cell_rast",
