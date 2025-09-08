@@ -1209,9 +1209,8 @@ fag_stratum_grts_calendar_2025_attribs <-
 
 # Derive an object where stratum x scheme_ps_targetpanels is flattened per
 # location x FAG occasion. Beware that in reality, more locations will emerge
-# due to local replacement, so this is misleading for counting & LOCEVAL
-# planning (but useful in spatial visualization). However, we prefer to use this
-# for planning of non-biotic FAGs!
+# due to local replacement, so this is misleading for counting & planning (but
+# useful in spatial visualization).
 #
 # First defining a reusable function before creating the object
 unite_stratum_and_schemepstargetpanels <- function(df) {
@@ -1313,7 +1312,7 @@ fieldwork_2025_prioritization_shorter <-
   relocate(stratum_scheme_ps_targetpanels)
 
 
-# write a GeoPackage containing both objects as point layers, if needed
+# write a GeoPackage containing the first object as point layer, if needed
 if (FALSE) {
   gpkg_path <- file.path(datapath, "binary/results/fieldwork_2025.gpkg")
   fieldwork_2025_prioritization_by_stratum %>%
