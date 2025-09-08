@@ -203,6 +203,16 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
   mutate(
     is_forest = str_detect(type, "^9|^2180|^rbbppm")
   ) %>%
+  left_join(
+    mhq_samples %>%
+      mutate(in_mhq_samples = TRUE),
+    join_by(grts_address, stratum),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  mutate(
+    in_mhq_samples = ifelse(is.na(in_mhq_samples), FALSE, in_mhq_samples)
+  ) %>%
   distinct(
     scheme,
     module_combo_code,
@@ -218,6 +228,7 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
     grts_address_final,
     domain_part,
     targetpanel,
+    in_mhq_samples,
     last_type_assessment = assessment_date,
     last_type_assessment_in_field = assessed_in_field,
     last_inaccessible = inaccessible
@@ -743,6 +754,7 @@ stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells <-
     scheme_ps_targetpanels,
     grts_address,
     grts_address_final,
+    in_mhq_samples,
     last_type_assessment,
     last_type_assessment_in_field,
     last_inaccessible,
@@ -1205,6 +1217,10 @@ fag_stratum_grts_calendar_2025_attribs <-
         grts_join_method,
         grts_address,
         grts_address_final,
+        # retaining 3 cols that drive subsampling location(s) in the unit:
+        is_forest,
+        in_mhq_samples,
+        last_type_assessment_in_field,
         domain_part,
         targetpanel
       ) %>%
@@ -1214,7 +1230,7 @@ fag_stratum_grts_calendar_2025_attribs <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
-  relocate(grts_address_final, domain_part, .after = grts_address) %>%
+  relocate(grts_address_final:domain_part, .after = grts_address) %>%
   select(-module_combo_code) %>%
   # flatten scheme x panel set x targetpanel to unique strings per stratum x
   # location x FAG occasion. Note that the scheme_ps_targetpanels attribute is a
