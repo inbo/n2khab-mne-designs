@@ -11,7 +11,7 @@ type_chosen <- "6510_hus"
 
 path_gpkg <- file.path(
   datapath,
-  "binary/intermediate/",
+  "binary/intermediate/explore_one_type",
   str_c(type_chosen, ".gpkg")
 )
 
