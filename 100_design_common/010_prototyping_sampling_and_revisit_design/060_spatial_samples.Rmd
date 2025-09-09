@@ -436,9 +436,9 @@ moco_ps_dom_stratum_grtspart_threshold <-
       select(domain, stratum, grts_part, grts_address_start),
     join_by(grts_part, domain, stratum),
     relationship = "many-to-one",
-    # it's possible that sample size reductions introduced new zero sample
-    # sizes, so we must allow some rows of the thresholds data frame to be
-    # dropped:
+    # it it possible that some stored thresholds are unneeded for the currently
+    # selected module combo x panel set x domain x stratum combinations, so they
+    # can be dropped
     unmatched = c("error", "drop")
   )
 ```
@@ -947,6 +947,48 @@ scheme_moco_ps_stratum_sppost_spsamples_spares_sf <-
   unnest(sp_poststr_samples_spareunits) %>% 
   add_assessment_data() %>% 
   add_point_coords_grts(grts_var = "grts_address_final")
+```
+
+
+## Updating overlap with VBI locations
+
+Rewriting the file representing sampling units that overlap VBI locations.
+
+```{r message = FALSE}
+if (params$update_vbi_overlaps) {
+  source(file.path(projroot, "R/update_vbi_overlaps.R"))
+}
+```
+
+Reading and inspecting overlapped VBI locations.
+
+```{r}
+vbi_overlaps <-
+  read_vc("vbi_overlaps", root = file.path(datapath, "text/raw")) %>%
+  as_tibble()
+vbi_overlaps %>% 
+  inner_join(
+    scheme_moco_ps_stratum_sppost_spsamples %>%
+      unnest(sp_poststr_samples) %>% 
+      select(-sample_status) %>% 
+      add_assessment_data() %>%
+      mutate(is_forest = str_detect(stratum, "^9|^2180|^rbbppm")) %>%
+      filter(is_forest) %>%
+      distinct(
+        scheme,
+        panel_set,
+        stratum,
+        grts_address_final
+      ),
+    join_by(grts_address == grts_address_final),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>% 
+  pivot_wider(
+    names_from = scheme,
+    values_from = panel_set,
+    names_prefix = "panel_set_"
+  )
 ```
 
 

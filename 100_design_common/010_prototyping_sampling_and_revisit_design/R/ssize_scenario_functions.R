@@ -141,7 +141,11 @@ get_integrated_ssizes_per_domain(sps_new, 0.2, "^GW")
 
 # WRITING GPKG LAYERS -----------------------------------------------------
 
-write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW", types = NULL) {
+write_to_gpkg_layer <- function(df,
+                                layername,
+                                regex_compartment = "^GW",
+                                types = NULL,
+                                targetcal = targetcal_new) {
   df1 <- df %>% filter(str_detect(scheme, regex_compartment))
   if (is.null(types)) {
     df1 <-
@@ -158,15 +162,63 @@ write_to_gpkg_layer <- function(df, layername, regex_compartment = "^GW", types 
       ) %>%
       semi_join(types, join_by(type))
   }
+  # check that schemes occur in only one module combo (we currently rely on this
+  # simplification)
+  targetcal %>%
+    distinct(scheme, module_combo_code) %>%
+    semi_join(df1, join_by(scheme, module_combo_code)) %>%
+    count(scheme) %>%
+    filter(n > 1) %>%
+    {nrow(.) == 0} %>%
+    {if (!.) stop("The same scheme occurs in multiple module combos.")}
+
   df1 %>%
-    distinct(scheme, module_combo_code, stratum, grts_address, grts_address_final, geometry) %>%
-    mutate(compartment = str_match(scheme, "^(\\w+)_")[, 2]) %>%
-    select(compartment, stratum, grts_address, grts_address_final) %>%
+    distinct(
+      scheme,
+      panel_set,
+      stratum,
+      grts_address,
+      grts_address_final,
+      geometry
+    ) %>%
+    # adding targetpanel
+    inner_join(
+      targetcal %>%
+        distinct(
+          scheme,
+          panel_set,
+          stratum,
+          grts_address,
+          grts_address_final,
+          targetpanel
+        ),
+      join_by(scheme, panel_set, stratum, grts_address, grts_address_final),
+      relationship = "one-to-one",
+      unmatched = c("error", "drop")
+    ) %>%
+    mutate(
+      compartment = str_match(scheme, "^(\\w+)_")[, 2],
+      scheme_ps_targetpanel = str_glue(
+        "{ scheme }:PS{ panel_set }{ targetpanel }"
+      )
+    ) %>%
+    select(
+      compartment,
+      scheme_ps_targetpanel,
+      stratum,
+      grts_address,
+      grts_address_final
+    ) %>%
     group_by(compartment, grts_address, grts_address_final, geometry) %>%
     summarize(
       strata = str_flatten(sort(unique(stratum)), collapse = " | "),
       n_strata = length(unique(stratum)),
+      # note that we loose the connection between stratum & targetpanel; hence
+      # this is for background information, not for planning
+      scheme_ps_targetpanels =
+        str_flatten(sort(unique(scheme_ps_targetpanel)), collapse = " | "),
       .groups = "drop"
     ) %>%
+    relocate(geometry, .after = everything()) %>%
     write_sf(path_gpkg, layer = layername, delete_layer = TRUE)
 }
