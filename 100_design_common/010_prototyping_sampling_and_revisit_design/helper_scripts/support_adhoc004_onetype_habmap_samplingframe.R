@@ -51,6 +51,6 @@ stratum_grts_n2khab_phabcorrected_no_replacements %>%
   ) %>%
   write_sf(
     path_gpkg,
-    layer = "base_sampling_frame",
+    layer = str_c("base_sampling_frame ", type_chosen),
     delete_layer = TRUE
   )
