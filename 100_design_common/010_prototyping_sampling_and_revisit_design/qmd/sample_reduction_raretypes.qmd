@@ -66,6 +66,8 @@ path_new <- file.path(
   str_glue("binary/results/objects_panflpan5_{scenario_name}.RData")
 )
 path_gpkg <- file.path(datapath, "binary/intermediate/spatial_sampling.gpkg")
+ssize_plotpath <- file.path(projroot, "plots/2025-09 sample_size_changes/")
+if (!dir.exists(ssize_plotpath)) dir.create(ssize_plotpath, recursive = TRUE)
 ```
 
 **SCENARIO: `r scenario_name`**
@@ -222,7 +224,7 @@ compare_ssizes_per_stratum(ssizes_new) %>%
 
 <br/>
 
-Percentage of changed sample sizes in above table.
+Number of changed sample sizes in above table.
 
 ```{r}
 #| paged.print: FALSE
@@ -231,7 +233,7 @@ compare_ssizes_per_stratum(ssizes_new) %>%
   count(ssize_differs)
 ```
 
-Percentage of changed sample sizes in above table, depending on whether sample was truncated using a maximum population proportion, or not.
+Number of changed sample sizes in above table, depending on whether sample was truncated using a maximum population proportion, or not.
 
 ```{r}
 #| paged.print: FALSE
@@ -424,8 +426,7 @@ flanders_ssizes <- plot_abs_sample_sizes(ssizes_new, flanders = TRUE)
 flanders_ssizes
 ggsave(
   file.path(
-    projroot,
-    "plots/sample_size_changes/",
+    ssize_plotpath,
     str_c("flanders_ssizes_", scenario_name, ".png")
   ),
   flanders_ssizes,
@@ -443,8 +444,7 @@ sacs_ssizes <- plot_abs_sample_sizes(ssizes_new, flanders = FALSE)
 sacs_ssizes
 ggsave(
   file.path(
-    projroot,
-    "plots/sample_size_changes/",
+    ssize_plotpath,
     str_c("sacs_ssizes_", scenario_name, ".png")
   ),
   sacs_ssizes,
@@ -467,7 +467,7 @@ Some 'overshooting' of the sample proportion limit is possible due to:
 In groundwater:
 
 ```{r}
-gw_thresh <- as.numeric(str_match(scenario_name, "gw([\\d\\.]+)")[,2])
+gw_thresh <- as.numeric(str_match(scenario_name, "sstrunc.*gw([\\d\\.]+)")[,2])
 get_integrated_ssizes_per_domain(sps_new, gw_thresh, "^GW") %>% 
   our_kbl()
 ```
@@ -475,7 +475,7 @@ get_integrated_ssizes_per_domain(sps_new, gw_thresh, "^GW") %>%
 In soil:
 
 ```{r}
-soil_thresh <- as.numeric(str_match(scenario_name, "soil([\\d\\.]+)")[,2])
+soil_thresh <- as.numeric(str_match(scenario_name, "sstrunc.*soil([\\d\\.]+)")[,2])
 get_integrated_ssizes_per_domain(sps_new, soil_thresh, "^SOIL") %>% 
   our_kbl()
 ```
