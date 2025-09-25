@@ -73,9 +73,24 @@ gwinst_planning <-
         collapse = " | "
       )
     }) %>%
-      factor()
+      factor(),
+    wait_watersurface = str_detect(stratum, "^31|^2190_a"),
+    wait_3260 = stratum == "3260",
+    wait_7220 = str_detect(stratum, "^7220"),
+    wait_floating = stratum == "7140_mrd",
+    wait_any = if_any(starts_with("wait"))
   ) %>%
-  arrange(date_start_earliest_visit, stratum, grts_address) %>%
+  relocate(wait_any, .before = wait_watersurface) %>%
+  arrange(
+    date_start_earliest_visit,
+    wait_watersurface,
+    wait_3260,
+    wait_7220,
+    wait_floating,
+    wait_any,
+    stratum,
+    grts_address
+  ) %>%
   relocate(scheme_ps_targetpanels) %>%
   relocate(starts_with("date"), .after = scheme_ps_targetpanels)
 
