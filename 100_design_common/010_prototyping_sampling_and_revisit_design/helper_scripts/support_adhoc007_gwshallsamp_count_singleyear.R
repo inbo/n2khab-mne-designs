@@ -21,7 +21,15 @@ shallsamp_singleyear %>%
   # (alternatively, to keep all but one columns:)
   # distinct(pick(-field_activity_group))
 
-shallsamp_singleyear
+# if we simplify aquatic units to their GRTS address, how many (less) do we get?
+shallsamp_singleyear %>%
+  mutate(stratum = ifelse(
+    str_detect(field_activity_group, "SURF") & stratum != "7220",
+    "AQ",
+    as.character(stratum)
+  )) %>%
+  distinct(pick(-field_activity_group)) %>%
+  nrow()
 
 shallsamp_singleyear %>%
   distinct(stratum, grts_address, date_start) %>%
