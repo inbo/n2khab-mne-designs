@@ -16,6 +16,8 @@ shallsamp_singleyear <-
   ) %>%
   # de-duplicating 7220
   distinct(stratum, grts_address, date_start)
+  # (alternatively, to keep all but one columns:)
+  # distinct(pick(-field_activity_group))
 
 shallsamp_singleyear
 
