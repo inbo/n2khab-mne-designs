@@ -1,0 +1,23 @@
+# Counting the number of shallow groundwater sampling occasions
+
+# First run setup chunk
+#
+# Then run:
+
+load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
+
+single_year <- 2026
+
+shallsamp_singleyear <-
+  fag_stratum_grts_calendar %>%
+  filter(
+    year(date_start) == single_year,
+    str_detect(field_activity_group, "SHALLSAMP")
+  ) %>%
+  # de-duplicating 7220
+  distinct(stratum, grts_address, date_start)
+
+shallsamp_singleyear
+
+shallsamp_singleyear %>%
+  count(date_start)
