@@ -903,10 +903,11 @@ submodule_domain_scheme_ps_designattr <-
       # NA in MNE means adopting the locations of the core scheme in the same compartment:
       !is_core_scheme & !str_detect(scheme, "^HQ") ~ NA_real_,
       module == "pan_effectmon_flanders" & submodule == "main" ~ case_when(
-        # the surplus in GW & SOIL is a protection against underprecision, and
-        # was transferred from the extra submodule
-        scheme == "GW_03.3" ~ 167 + (133 * 0.5),
-        scheme == "SOIL_03.2" ~ 400 + (1600/6 * 0.5),
+        # the first surplus in GW & SOIL is a protection against underprecision,
+        # and was transferred from the extra submodule. The second surplus is to
+        # compensate for sample size reduction in rare types
+        scheme == "GW_03.3" ~ 167 + (133 * 0.5) + 84,
+        scheme == "SOIL_03.2" ~ 400 + (1600/6 * 0.5) + 204,
         scheme == "SURF_03.4_lentic" ~ 106,
         scheme == "SURF_03.4_lotic" ~ 27
       ),
@@ -914,8 +915,8 @@ submodule_domain_scheme_ps_designattr <-
       module == "pan_effectmon_sac5_custommeas" & 
         submodule == "main" & 
         !str_detect(scheme, "^HQ") ~ case_when(
-          scheme == "GW_03.3" ~ (28 + (22 * 0.5)) * prop_domain_per_mne_scheme_submod,
-          scheme == "SOIL_03.2" ~ (67 + (44 * 0.5)) * prop_domain_per_mne_scheme_submod,
+          scheme == "GW_03.3" ~ (28 + (22 * 0.5) + 14) * prop_domain_per_mne_scheme_submod,
+          scheme == "SOIL_03.2" ~ (67 + (44 * 0.5) + 34) * prop_domain_per_mne_scheme_submod,
           scheme == "SURF_03.4_lentic" ~ 18 * prop_domain_per_mne_scheme_submod,
           scheme == "SURF_03.4_lotic" ~ 5 * prop_domain_per_mne_scheme_submod
         ),
@@ -1031,6 +1032,8 @@ Expanding `submodule_domain_scheme_ps_designattr` with strata, collapsing submod
 For types that are subdivided into (surface area based) strata, the 4th root of the number of population units per stratum (in module x domain x scheme x type) is taken to distribute the target sample size at type level.
 This was found to be a good compromise for estimator precision at type level, between the more extreme scenarios of population size versus an area weighed distribution.
 
+Also, we implement the maximum sampling proportions at the domain x scheme x type level, as well as type specific sample size reductions (see section \@ref(ssize-limit)).
+
 Non-core MNE schemes do not adopt sample sizes from the core MNE schemes: only the locations that are common between the respective sampling frames will be adopted in the non-core schemes, hence this can be a subset and it happens at the spatial sampling stage.
 However we do attribute extra sample sizes in non-core MNE schemes, for those types not covered by core schemes -- see object `non_core_types_per_module_and_compartment`.
 
@@ -1106,6 +1109,64 @@ module_domain_scheme_ps_stratum_target_sample_size <-
     ),
     .by = c(module, domain, scheme, panel_set, type)
   ) %>%
+  # using the grts_join_method to exclude strata from sample size truncation
+  inner_join(
+    n2khab_types_expanded_properties %>% 
+      select(type, grts_join_method),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # marking schemes eligible for sample size truncation
+  left_join(
+    schemes_truncatedsampling,
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  # applying sample size truncation at domain x scheme x stratum, effectively
+  # using the sum of stratum sample sizes across modules and panel sets to set
+  # conditions and drive the redistribution of the total limited sample size
+  mutate(
+    sp_sample_size_all_panels_stratum_previous = 
+      sp_sample_size_all_panels_stratum,
+    sp_sample_size_all_panels_stratum = ifelse(
+      !is.na(regex_grts_join_method) & 
+        str_detect(grts_join_method, regex_grts_join_method) &
+        (sum(sp_sample_size_all_panels_stratum) > 
+           first(nunits) * first(sampling_max_prop)),
+      first(nunits) * first(sampling_max_prop) * sp_sample_size_all_panels_stratum /
+        sum(sp_sample_size_all_panels_stratum),
+      sp_sample_size_all_panels_stratum),
+    spss_stratum_truncated = sp_sample_size_all_panels_stratum_previous !=
+      sp_sample_size_all_panels_stratum,
+    .by = c(domain, scheme, stratum) # modules & panel_sets are taken together
+  ) %>% 
+  select(-matches("grts_join_method|previous"), -sampling_max_prop) %>% 
+  # marking scheme x types eligible for proportional sample size reduction
+  left_join(
+    scheme_localtype_reducedsampling,
+    join_by(scheme, type),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  # applying sample size reduction
+  mutate(sp_sample_size_all_panels_stratum = ifelse(
+    !is.na(sampling_prop),
+    sp_sample_size_all_panels_stratum * sampling_prop,
+    sp_sample_size_all_panels_stratum
+  )) %>% 
+  select(-sampling_prop) %>% 
+  # recalculating type-level sample sizes
+  mutate(
+    sp_sample_size_all_panels_type = ifelse(
+      all(is.na(sp_sample_size_all_panels_stratum)),
+      first(sp_sample_size_all_panels_stratum),
+      sum(sp_sample_size_all_panels_stratum, na.rm = TRUE)
+    ),
+    .by = c(module, domain, scheme, panel_set, type)
+  ) %>% 
+  # recalculating total sample sizes
   mutate(
     sp_sample_size_all_panels = ifelse(
       all(is.na(sp_sample_size_all_panels_stratum)),
@@ -1121,8 +1182,11 @@ module_domain_scheme_ps_stratum_target_sample_size <-
 Note that the above values for `sp_sample_size_all_panels_stratum` are pro-forma target sample sizes: they would apply if the populations were infinite.
 Since they are finite _and_ since unequal population sizes apply, only the target sample sizes at an aggregated level matter, in verifying the finite-population sample sizes that we calculate below.
 
-Rechecking the aggregated sample size.
-Compared to the previous result, some non-core-scheme types that are not covered by core schemes cause a limited addition of sampling in non-core schemes.
+Recalculating the aggregated sample size.
+Compared to the previous result:
+
+- reductions due to sample size limitation are obvious;
+- some non-core-scheme types that are not covered by core schemes cause a limited addition of sampling in non-core schemes.
 
 ```{r paged.print = FALSE}
 aggregate_sample_size(
@@ -1138,14 +1202,18 @@ aggregate_sample_size(
 Overdimensioning spatial sample sizes to represent the infinite case and subsequently applying finite population correction in order to achieve sample sizes at a pooled level, aimed at the same size as the preset ones.
 
 The infinite sample size is to be obtained by applying a fixed coefficient per module x scheme x panel set in MNE, or per module x category (x panel set) in MHQ (MHQ doesn't have a panel set > 1) -- we call such level a 'pool' -- to the target sample sizes per stratum (in module x domain x scheme x panel set).
-This is needed to make sure the allocation for the _infinite_ population remains spread over types (within a pool) in the same way (usually evenly spread) as in the above pro-forma stratum-level sample sizes, which we (for simplicity) assume to correspond to a similar estimator precision at the type level.
+This is needed to make sure the allocation for the _infinite_ population remains spread over types (within a pool) in the same way as in the above pro-forma stratum-level sample sizes.
 
-The reason to not set a separate coefficient for each domain (with 'predetermined sample size') of the same module x scheme-or-category x panel set (pool), hence include domain in the definition of a pool, is to enforce equal estimator precision across domains within such modules x scheme-or-category (pools): all type-level sample sizes for the infinite population will remain equal across domains in a pool.
-This is with the exception of specific submodules having introduced differences between infinite-population sample sizes of types, but also then this distribution is maintained.
+The reason to not set a separate coefficient for each domain (with 'predetermined sample size') of the same module x scheme-or-category x panel set (pool), hence include domain in the definition of a pool, is to maintain the relative (c.q. enforce equal) estimator precision across domains within such modules x scheme-or-category (pools): the ratios between type-level sample sizes for the infinite population will be maintained across domains in a pool.
+Often this means 'equal estimator precision', but this is with the exception of specific submodules having introduced differences between infinite-population sample sizes of types.
+Also in these cases this distribution is maintained.
+In the case of sample size limitation, we don't want target sample sizes to be changed due to FPC-induced sample size redistribution: they should remain fixed.
+For this reason, cases with a limited target sample size are included in a single separate pool and will not be handled by FPC.
+
 A consequence of the finite population correction may be that the budgeted sample size at the domain level is somewhat shifted among domains, but the fact that this avoids differences in degree of overdimensioning across domains can be regarded as an advantage.
 Hence the 'predetermined sample size' for domains in the same module refers specifically to:
 
-- the fact that the sample size for _infinite_ populations is preset per domain x scheme in MNE (per domain x category in MHQ), in order to serve the domains proportionally (equal precision at domain x scheme-or-category x type level);
+- the fact that the sample size for _infinite_ populations is preset per domain x scheme in MNE (per domain x category in MHQ), in order to serve the domains proportionally (equal, reduced or enhanced precision at domain x scheme-or-category x type level);
 - the resulting FPC-corrected sample sizes per domain x scheme, i.e. the fact that a sample size is applied ('determined') at the domain level.
 
 But as one can see, it is essentially the 'module x scheme x panel set' level (or 'module x category' level) sample size that is literally 'predetermined'.
@@ -1168,10 +1236,11 @@ module_domain_scheme_ps_stratum_sample_size_infinite <-
   ) %>%
   arrange(module, scheme) %>%
   mutate(
-      pool_with_maintained_type_precision = ifelse(
-      str_detect(scheme, "^HQ"),
-      str_c(module, "MHQ", category, str_c("PS", panel_set), sep = "_"),
-      str_c(module, scheme, str_c("PS", panel_set), sep = "_")
+    pool_with_maintained_type_precision = case_when(
+      spss_stratum_truncated ~ "limited_strata",
+      str_detect(scheme, "^HQ") ~
+        str_c(module, "MHQ", category, str_c("PS", panel_set), sep = "_"),
+      .default = str_c(module, scheme, str_c("PS", panel_set), sep = "_")
     )
   ) %>%
   mutate(
@@ -1226,15 +1295,19 @@ module_domain_scheme_ps_stratum_sample_size_infinite %>%
   summary()
 ```
 
-Applying the finite population correction.
+Applying the finite population correction, except for the `limited_strata` pool where the target sample size is taken.
 
 ```{r}
 module_domain_scheme_ps_stratum_sample_size <-
   module_domain_scheme_ps_stratum_sample_size_infinite %>%
   mutate(
-    sp_sample_size_all_panels_stratum = apply_fpc(
-      sp_sample_size_all_panels_stratum_inf,
-      nunits
+    sp_sample_size_all_panels_stratum = ifelse(
+      spss_stratum_truncated,
+      sp_sample_size_all_panels_stratum,
+      apply_fpc(
+        sp_sample_size_all_panels_stratum_inf,
+        nunits
+      )
     ),
     # recalculating type-level sample sizes (since type level did not define the
     # pool)
@@ -1329,7 +1402,7 @@ module_domain_scheme_ps_stratum_sample_size %>%
   count(module, scheme, panel_set)
 ```
 
-We can see that most cases occur in panel set 2: this is because it received the smallest portion of sample sizes.
+We can see that more cases occur in panel set 2: this is because it received the smallest portion of sample sizes.
 This is merely a consequence of stratification of small (e.g. < 1) infinite sample sizes in combination with finite population correction:
 
 ```{r paged.print = FALSE}
@@ -1354,14 +1427,41 @@ module_domain_scheme_ps_stratum_sample_size %>%
   count(module, scheme, panel_set)
 ```
 
-At the Flemish level, we could argue to increase sample sizes of 0 or 1 that are not a census up to 2 (or 1 if that is the population size in the zero-sample-size case), which largely concerns panel set 2 (in panel set 1, it causes a census):
+At the Flemish level, we could argue to increase sample sizes of 0 or 1 that are not a census up to 2 (or 1 if that is the population size in the zero-sample-size case), which largely concerns panel set 2 (in panel set 1, it causes a census).
+Since we also reduced sample sizes of small populations of specific schemes (see Section \@ref(ssize-limit)), we could also apply this in the included domains, but we choose to do this in panel set 1 only in order to limit the effect on sample proportions.
+In order to limit the abundant effect of the (naturally) small sample sizes of watersurface strata in that case, we consider the type level instead of the stratum level to achieve a sample size of 2 if the domain is not Flanders (hence an included domain), for watersurface types.
+
+Number of domain x scheme x panel set x stratum occasions that would be improved:
 
 ```{r paged.print = FALSE}
 module_domain_scheme_ps_stratum_sample_size %>%
+  mutate(
+    is_watersurface = str_detect(stratum, "^31|^2190_a"),
+    nunits_largest = nunits == max(nunits),
+    nunits_cum = cumsum(sort(nunits, decreasing = TRUE)),
+    .by = c(module, domain, scheme, panel_set, type)
+  ) %>% 
   filter(
-    sp_sample_size_all_panels_stratum %in% 0:1,
-    sp_sample_size_all_panels_stratum < nunits,
-    domain == "Flanders"
+    # use stratum-level for non-watersurfaces or domain Flanders
+    (
+      sp_sample_size_all_panels_stratum %in% 0:1 &
+      sp_sample_size_all_panels_stratum < nunits &
+      (domain == "Flanders" | !is_watersurface & panel_set == 1)
+    ) |
+    # use type-level for watersurfaces in included domains
+      (
+        is_watersurface &
+          domain != "Flanders" &
+          panel_set == 1 &
+          # note the use of 'type' here:
+          sp_sample_size_all_panels_type %in% 0:1 &
+          # simpler would be to use sp_sample_size_all_panels_stratum %in% 0:1
+          # for the below condition (and at the time of coding it gave the same
+          # result), but it may be that we can only achieve a sample size of 2
+          # by collapsing two strata that have nunits = 1, so below is a more
+          # general approach
+          (nunits_cum <= 2 | nunits_largest)
+      )
   ) %>% 
   select(
     domain,
@@ -1373,29 +1473,50 @@ module_domain_scheme_ps_stratum_sample_size %>%
   )
 ```
 
-In the included domains, a straightforward solution would be to not analyze these cases at stratum level, but immediately at the type level, or even at the typegroup level with sampling weights so that types get equal weights.
-It might still be a GRTS estimator since we can consider a stratified random sample as a simple random sample with unequal inclusion probabilities -- to be sought out.
+**_TO CONSIDER / TO DO_:**\
+_Maybe we can refrain from implementing the additional units in included domains for SURF and HQ schemes (cf. originally we only did it for the Flemish domain), since we only reduced the sample sizes for terrestrial types, in GW and SOIL schemes._
+_What if omitting them?_
+_In the included domains, a straightforward solution would be to not analyze these cases at stratum level, but immediately at the type level, or even at the typegroup level with sampling weights so that types get equal weights._
+_It might still be a GRTS estimator since we can consider a stratified random sample as a simple random sample with unequal inclusion probabilities -- to be sought out._
 
-### Implementing some minimal post-hoc sample size increases in domain 'Flanders'
+### Implementing some minimal post-hoc sample size increases
 
-Implementing aforementioned increase of sample size in domain 'Flanders'.
+Implementing aforementioned increase of sample size (panel set 2 only in 'Flanders'):
+
+- at stratum level in domain 'Flanders' and for non-watersurface types;
+- at type level for watersurface types in smaller domains.
 
 ```{r}
 module_domain_scheme_ps_stratum_sample_size <- 
   module_domain_scheme_ps_stratum_sample_size %>%
   mutate(
+    is_watersurface = str_detect(stratum, "^31|^2190_a"),
+    nunits_largest = nunits == max(nunits),
+    nunits_cum = cumsum(sort(nunits, decreasing = TRUE)),
     sp_sample_size_all_panels_stratum = ifelse(
-      sp_sample_size_all_panels_stratum %in% 0:1 &
-        sp_sample_size_all_panels_stratum < nunits &
-        domain == "Flanders",
+      (
+        sp_sample_size_all_panels_stratum %in% 0:1 &
+          sp_sample_size_all_panels_stratum < nunits &
+          (domain == "Flanders" | !is_watersurface & panel_set == 1)
+      ) |
+        (
+          is_watersurface &
+            domain != "Flanders" &
+            panel_set == 1 &
+            sp_sample_size_all_panels_type %in% 0:1 &
+            (nunits_cum <= 2 | nunits_largest)
+        ),
       pmin(nunits, 2L),
       sp_sample_size_all_panels_stratum
     ),
+    # diff =
+    #   sp_sample_size_all_panels_stratum_2 - sp_sample_size_all_panels_stratum,
     # recalculating type-level sample sizes
     sp_sample_size_all_panels_type = 
       sum(sp_sample_size_all_panels_stratum, na.rm = TRUE),
     .by = c(module, domain, scheme, panel_set, type)
   ) %>%
+  select(-is_watersurface, -nunits_largest, -nunits_cum) %>% 
   mutate(
     # recalculating total sample sizes
     sp_sample_size_all_panels = 
