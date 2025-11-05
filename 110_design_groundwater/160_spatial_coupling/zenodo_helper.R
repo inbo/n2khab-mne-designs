@@ -24,12 +24,15 @@ get_zenodo_library <- function() {
             )
 
   flanders <- c(FALSE, "10.5281/zenodo.3386224")
+  provinces <- c(FALSE, "10.5281/zenodo.3386237")
   habitatmap <- c(FALSE, "10.5281/zenodo.3354381")
   habitatmap_stdized <- c(TRUE, "10.5281/zenodo.3355192")
   habitatmap_terr <- c(TRUE, "10.5281/zenodo.3468948")
   habitatsprings <- c(FALSE, "10.5281/zenodo.3550994")
   habitatstreams <- c(FALSE, "10.5281/zenodo.3386245") # type 3260
   habitatquarries <- c(FALSE, "10.5281/zenodo.4072967")
+  raster_runif <- c(FALSE, "10.5281/zenodo.4745984")
+  sac <- c(FALSE, "10.5281/zenodo.3386815")
 
   watersurfaces <- c(FALSE, "10.5281/zenodo.3386857")
   watercourses <- c(FALSE, "10.5281/zenodo.4420905")
@@ -43,12 +46,15 @@ get_zenodo_library <- function() {
 
   zl <- t(data.frame(
     flanders,
+    provinces,
     habitatmap,
     habitatmap_stdized,
     habitatmap_terr,
     habitatsprings,
     habitatstreams,
     habitatquarries,
+    raster_runif,
+    sac,
     watersurfaces,
     watercourses,
     shallowgroundwater,
