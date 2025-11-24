@@ -14,6 +14,8 @@ documentclass: "article"
 csl: https://raw.githubusercontent.com/citation-style-language/styles/master/research-institute-for-nature-and-forest.csl
 bibliography: ../../refs_mne_design.yaml
 site: bookdown::bookdown_site
+params:
+  reproduce_r_package_versions: FALSE
 output:
   bookdown::pdf_book:
     base_format: INBOmd::inbo_rapport
@@ -35,9 +37,23 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-options(stringsAsFactors = FALSE,
-        knitr.table.format = "pandoc")
-library(tidyverse)
+if (params$reproduce_r_package_versions) {
+  source("renv/activate.R") # activate renv on demand
+  renv::restore() # restore package versions from renv.lock
+  # we only proceed if project library is in sync with renv.lock:
+  status <- renv::status()
+  if (!status$synchronized) {
+    stop(
+      "Restoring package versions went wrong. ",
+      "Please run renv::status() manually, solve problems and try again."
+    )
+  }
+}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+library(purrr)
 library(knitr)
 library(lme4)
 library(readxl)
