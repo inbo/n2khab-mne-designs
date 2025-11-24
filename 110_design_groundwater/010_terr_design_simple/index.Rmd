@@ -313,7 +313,7 @@ Zijn er observaties die meer dan één keer meetellen omwille van meerdere gekop
 XG3lang %>% 
     distinct(Location, Type) %>% 
     count(Location) %>% 
-    count(n)
+    count(n, name = "nn")
 ```
 
 Dus 15 locaties worden 2 keer gebruikt omdat ze aan twee verschillende types zijn opgehangen.
@@ -644,7 +644,7 @@ Zijn er observaties die meer dan één keer meetellen omwille van meerdere gekop
 GWnutr_anal %>% 
     distinct(Location, Type) %>% 
     count(Location) %>% 
-    count(n)
+    count(n, name = "nn")
 ```
 
 Dus 11 locaties worden 2 keer gebruikt omdat ze aan twee verschillende types zijn opgehangen.
@@ -751,7 +751,12 @@ modelvar %>% kable()
 give_me_some_samplesize <- 
     function(minqual, var_spat, n_years){
         minqual %>% 
-        inner_join(var_spat) %>% 
+        inner_join(
+            var_spat,
+            join_by(target_variable),
+            relationship = "many-to-many",
+            unmatched = "error"
+        ) %>% 
         mutate(
         n_locs_per_year = ifelse(str_detect(target_variable, "G3"),
                                  var_spatial / (var_mu * n_types),
