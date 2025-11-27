@@ -55,10 +55,14 @@ p
 ggsave("n_locs_per_typegroup.png", p, width = 11, height = 6)
 
 ## minimum detectable difference (expressed relative to a reference value), in a
-## one-sided test for a relative error margin of 15%, type I error = 0.1 and
-## power = 0.8
+## one-sided test for a (two-sided) relative error margin of 15%, using type I
+## error = 0.1 and power = 0.8
 
-# coefficient to multiply the error margin in the log scale, to achieve the MDF
-qnorm(0.8)/qnorm(0.9) + 1 # 1.66
-# relative MDF
-10^(log10(1.15)*1.66) - 1
+# coefficient to multiply the (one-sided) error margin in the log scale, to
+# achieve the MDF in the log scale
+1 + qnorm(0.8)/qnorm(0.9) # 1.6567205
+# error margin in the log scale for one-sided test (derived from the two-sided
+# case); alpha = 0.1
+qnorm(0.9)/qnorm(0.95)*log10(1.15) # 0.04729139, i.e. 11% (1.11) in the absolute scale
+# relative MDF (i.e. expressed as a fraction)
+10^(qnorm(0.9)/qnorm(0.95)*log10(1.15) * (1 + qnorm(0.8)/qnorm(0.9))) - 1 # 19.8%
