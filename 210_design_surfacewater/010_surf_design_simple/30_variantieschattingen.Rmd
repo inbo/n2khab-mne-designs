@@ -166,6 +166,24 @@ chem_lentic %>%
   ylab("Number of locations")
 ```
 
+Verdeling van de tijdsstap (in dagen) tussen twee opeenvolgende bemonsteringen op dezelfde locatie.
+We knippen de lange staart naar rechts (zeer lage aantallen) bewust af.
+
+```{r}
+chem_lentic %>% 
+  distinct(pick(-type)) %>% 
+  arrange(loc_code, date_sampling) %>% 
+  mutate(
+    date_sampling_previous = lag(date_sampling),
+    .by = loc_code
+  ) %>% 
+  filter(!is.na(date_sampling_previous)) %>% 
+  mutate(timestep_days = as.integer(date_sampling - date_sampling_previous)) %>% 
+  ggplot(aes(x = timestep_days)) +
+  geom_bar(fill = "white", colour = "grey70") +
+  scale_x_continuous(breaks = seq(0, 700, 7), limits = c(0, 106))
+```
+
 Voor totaal fosfor zijn er van minder locaties waarden beschikbaar.
 
 ```{r}
@@ -374,6 +392,25 @@ chem_lotic %>%
   geom_histogram(bins = 50, fill = "white", colour = "grey70") +
   ylab("Number of locations") +
   facet_wrap(~ type, scales = "free")
+```
+
+Verdeling van de tijdsstap (in dagen) tussen twee opeenvolgende bemonsteringen op dezelfde locatie.
+We knippen de lange staart naar rechts voor 3260 (zeer lage aantallen) bewust af.
+
+```{r warning=FALSE}
+chem_lotic %>% 
+  distinct(type, loc_code, date_sampling) %>% 
+  arrange(type, loc_code, date_sampling) %>% 
+  mutate(
+    date_sampling_previous = lag(date_sampling),
+    .by = c(type, loc_code)
+  ) %>% 
+  filter(!is.na(date_sampling_previous)) %>% 
+  mutate(timestep_days = as.integer(date_sampling - date_sampling_previous)) %>% 
+  ggplot(aes(x = timestep_days)) +
+  geom_bar(fill = "white", colour = "grey70") +
+  scale_x_continuous(breaks = seq(0, 700, 7), limits = c(0, 180)) +
+  facet_wrap(~ type, ncol = 1, scales = "free_y")
 ```
 
 Het aantal locaties met een meetwaarde verschilt tussen de doelvariabelen, en is hoogst bij nitraat en laagst bij orthofosfaat.
