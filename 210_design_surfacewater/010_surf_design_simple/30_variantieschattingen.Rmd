@@ -262,6 +262,61 @@ chem_lentic_long %>%
 
 Er zijn in de jitterplots duidelijke patronen te zien van waarden die artificieel zijn ingesteld, omdat het waarden zijn beneden de bepaalbaarheidsgrens.
 
+### Schatting van varianties
+
+Met behulp van eenvoudige mixel models (één per doelvariabele) bepalen we een puntschatting van $\sigma_s$ (variatie tussen locaties) en $\sigma_t$ (variatie tussen datums).
+Conform de design onderscheiden we deze varianties genest binnen type en jaar.
+Op de dataset passen we tevens de restrictie toe van de temporele doelpopulatie.
+Het opnemen van de zesjaarperiode als extra niveau had geen wezenlijke invloed op het resultaat en had tevens een hogere AIC; dit is daarom niet behouden.
+
+```{r}
+models_lentic <- 
+  chem_lentic_long %>% 
+  inner_join(
+    target_temporal %>% filter(str_detect(scheme, "lentic")),
+    join_by(variable == target_variable),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  filter(ifelse(
+    month_min > month_max,
+    month_sampling >= month_min | month_sampling <= month_max,
+    month_sampling >= month_min & month_sampling <= month_max
+  )) %>% 
+  # # below conversion to factor appeared unneeded for random intercept model
+  # mutate(
+  #   year_sampling = factor(year_sampling),
+  #   month_day = factor(month_day)
+  # ) %>%
+  nest(chemdata = -variable) %>% 
+  mutate(
+    model = map(chemdata, function(cd) {
+      lme(
+        value_log ~ 1,
+        random = ~ 1 | type / year_sampling / loc_code / month_day,
+        data = cd
+      )
+    })
+  )
+
+models_lentic$model %>% 
+  map(summary) %>% 
+  set_names(models_lentic$variable)
+```
+
+Samengevat zijn dit de schattingen van interesse:
+
+```{r}
+modelvar_lentic <- 
+  tribble(
+    ~target_variable, ~stdev_spatial, ~stdev_temporal,
+    "nh4", 0.3415818, 0.2953212,
+    "no3", 0.3804577, 0.3136056,
+    "ptot", 0.3553246, 0.196444
+  )
+modelvar_lentic %>% kable()
+```
+
 
 ## Voor SURF_03.4_lotic
 
@@ -507,4 +562,69 @@ chem_lotic_long %>%
   facet_wrap(~type, ncol = 1, scales = "free")
 ```
 
+### Schatting van varianties
 
+Met behulp van eenvoudige mixel models (één per doelvariabele) bepalen we een puntschatting van $\sigma_s$ (variatie tussen locaties) en $\sigma_t$ (variatie tussen datums).
+Conform de design onderscheiden we deze varianties genest binnen type en jaar.
+Op de dataset passen we tevens de restrictie toe van de temporele doelpopulatie.
+
+
+Het gaat maar om twee types in dit geval, die sterk verschillend zijn.
+De kleine (en kortdurende) dataset van 7220 liet niet toe om verschillende random effecten te combineren.
+De random effecten voor locatie en voor datum in 7220, wanneer apart begroot, liggen wel in dezelfde lijn als 3260.
+Aangezien de gecombineerde analyse voor 3260 en 7220 quasi hetzelfde resultaat teruggeeft als 3260 alleen, is de analyse beperkt tot 3260, met het idee hetzelfde ritme toe te passen in de 7220-beeksystemen.
+
+Het opnemen van de zesjaarperiode als extra niveau had een lagere AIC en is daarom in dit geval behouden.
+De reden hiervoor is ongetwijfeld de langere tijdreeks in vergelijking met stilstaande wateren.
+
+```{r}
+models_lotic <- 
+  chem_lotic_long %>% 
+  inner_join(
+    target_temporal %>% filter(str_detect(scheme, "lotic")),
+    join_by(variable == target_variable),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  filter(ifelse(
+    month_min > month_max,
+    month_sampling >= month_min | month_sampling <= month_max,
+    month_sampling >= month_min & month_sampling <= month_max
+  )) %>% 
+  filter(type == "3260") %>% 
+  # # below conversion to factor appeared unneeded for random intercept model
+  # mutate(
+  #   year_sampling = factor(year_sampling),
+  #   month_day = factor(month_day)
+  # ) %>%
+  nest(chemdata = -variable) %>% 
+  mutate(
+    model = map(chemdata, function(cd) {
+      lme(
+        value_log ~ 1,
+        random = ~ 1 | sixyear_period / year_sampling / loc_code / month_day,
+        data = cd
+      )
+    })
+  )
+
+models_lotic$model %>% 
+  map(summary) %>% 
+  set_names(models_lotic$variable)
+```
+
+Samengevat zijn dit de schattingen van interesse:
+
+```{r}
+modelvar_lotic <- 
+  tribble(
+    ~target_variable, ~stdev_spatial, ~stdev_temporal,
+    "nh4", 0.2965573, 0.2927624,
+    "no3", 0.4027446, 0.1853182,
+    "po4", 1.452144e-10, 0.3954125
+  )
+modelvar_lotic %>% kable()
+```
+
+In dit resultaat valt op dat voor PO4 de locatieverschillen verwaarloosbaar klein zijn in vergelijking met de temporele verschillen.
+Het verschil is veel beperkter voor NO3, en tevens omgekeerd.
