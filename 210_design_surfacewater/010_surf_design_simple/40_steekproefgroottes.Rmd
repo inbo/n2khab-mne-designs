@@ -8,12 +8,18 @@ Bron van de instelwaarden: het 'gewenste' scenario B in [deze googlesheet](https
 
 ```{r}
 minimumquality <- 
-  tibble(
-    target_variable = c("nh4", "no3", "ptot", "po4"),
-    alpha = 0.1,
-    relative_errormargin = 0.05
+  tribble(
+    ~scheme, ~target_variable, 
+    "SURF_03.4_lentic", "nh4",
+    "SURF_03.4_lentic", "no3",
+    "SURF_03.4_lentic", "ptot",
+    "SURF_03.4_lotic", "nh4",
+    "SURF_03.4_lotic", "no3",
+    "SURF_03.4_lotic", "po4",
   ) %>% 
+  expand_grid(relative_errormargin = c(0.05, 0.1, 0.15)) %>% 
   mutate(
+    alpha = 0.1,
     logscale_errormargin = log10(1 + relative_errormargin),
     var_mu = (logscale_errormargin / qnorm(1 - alpha/2))^2
   )
