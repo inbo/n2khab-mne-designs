@@ -26,3 +26,313 @@ minimumquality <-
 minimumquality %>% kable()
 ```
 
+## Eenheidskosten
+
+Voor de kostenoptimalisatie hanteren we:
+
+```{r}
+cost_spatial <- 2
+cost_temporal <- 1
+```
+
+## Steekproefgroottebepaling in ruimte en tijd
+
+### Verband tussen $n_{tg}$ en $m$
+
+We berekenen $n_{tg}$ voor een combinatie van foutenmarges en aantal herhalingen $m$.
+We geven in de meeste resultaten een jaarlijks aantal locaties weer door $n_{tg}$ te delen door 6.
+
+```{r}
+modelvar <- 
+  modelvar_lentic %>% 
+  mutate(scheme = "SURF_03.4_lentic") %>% 
+  bind_rows(
+    modelvar_lotic %>% 
+      mutate(scheme = "SURF_03.4_lotic")
+  )
+```
+
+```{r}
+sample_sizes <- 
+  minimumquality %>% 
+  left_join(
+    modelvar,
+    join_by(scheme, target_variable),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  left_join(
+    target_temporal,
+    join_by(scheme, target_variable),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  mutate(
+    nr_months = ifelse(
+      month_max >= month_min,
+      month_max - month_min + 1,
+      13 - month_max + month_min
+    ),
+    var_spatial = sd_spatial^2,
+    var_temporal = sd_temporal^2,
+    n_tg_max = (var_spatial + var_temporal) / var_mu,
+    # m_max = var_temporal / (var_mu - var_spatial),
+    relative_sd = sd_temporal / sd_spatial,
+    m_opt = sd_temporal / sd_spatial * sqrt(cost_spatial / cost_temporal),
+    m_to_ntg = pmap(
+      list(nr_months, var_mu, var_spatial, var_temporal),
+      function(nmon, vm, vs, vt) {
+        tibble(
+          m = seq_len(nmon * 2),
+          n_tg = vs / vm + 1 / m * vt / vm,
+          n_tg_yearly = n_tg / 6
+        )
+      }
+    )
+  ) %>% 
+  unnest(m_to_ntg) %>% 
+  mutate(cost_yearly = n_tg_yearly * (cost_spatial + m * cost_temporal))
+```
+
+Het verband tussen het jaarlijks aantal locaties en het aantal herhalingen, voor één typegroep, bij drie mogelijke relatieve foutenmarges.
+
+```{r}
+sample_sizes %>% 
+  plot_sample_sizes()
+```
+
+De vorige figuur, ingezoomd op foutenmarges 10% en 15%.
+
+```{r}
+sample_sizes %>% 
+  filter(relative_errormargin >= 0.1) %>% 
+  plot_sample_sizes(y_add = 8) +
+  geom_text(
+    aes(label = round(n_tg_yearly)),
+    colour = "white",
+    size = 3,
+    vjust = -1
+  )
+```
+
+Als controle rekenen we nog eens terug naar de relatieve foutenmarge die we hiermee verwachten bij een betrouwbaarheidsniveau van 90%, gegeven de combinaties van $m$ en $n_{tg}$ en de met het model geschatte spatiale en temporele variantie.
+
+```{r paged.print = FALSE}
+sample_sizes %>% 
+  select(
+    scheme,
+    target_variable,
+    target_relerrmarg = relative_errormargin,
+    n_tg,
+    m,
+    var_spatial,
+    var_temporal) %>% 
+  mutate(
+    var_mu = n_tg^(-1) * (var_spatial + m^(-1) * var_temporal),
+    logscale_errormargin = sqrt(var_mu) * qnorm(1 - 0.1 / 2),
+    relative_errormargin = 10^logscale_errormargin - 1,
+    match = round(relative_errormargin, 2) == target_relerrmarg
+  ) %>% 
+  count(scheme, target_variable, match)
+```
+
+### Relatieve jaarlijkse kost van de beschikbare opties
+
+De relatieve jaarlijkse kost van de beschouwde foutenmarges vanaf 10%, voor het aantal locaties specifiek per doelvariabele:
+
+```{r}
+sample_sizes %>% 
+  filter(relative_errormargin >= 0.1) %>% 
+  mutate(
+    relative_errormargin = relative_errormargin %>% 
+      scales::label_percent()(.) %>% 
+      fct()
+  ) %>% 
+  ggplot(aes(
+    x = m,
+    y = cost_yearly,
+    colour = relative_errormargin,
+    group = relative_errormargin
+  )) + 
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = 1:50) +
+  facet_wrap(~ scheme + target_variable, scales = "free_x") +
+  labs(
+    x = "Yearly repetitions per location",
+    y = "Relative yearly cost"
+  )
+```
+
+In de onderstaande figuur standaardiseren we de relatieve jaarlijkse kost, waarbij we een maandelijkse frequentie beschouwen als referentie (100%).
+Dit resultaat is onafhankelijk van de beschouwde foutenmarge.
+
+```{r}
+sample_sizes %>% 
+  mutate(
+    cost_yearly_rel = cost_yearly / cost_yearly[m == nr_months],
+    .by = c(scheme, target_variable, relative_errormargin)
+  ) %>% 
+  # cost_yearly_rel no longer depends on relative_errormargin!
+  distinct(scheme, target_variable, m, cost_yearly_rel) %>% 
+  ggplot(aes(
+    x = m,
+    y = cost_yearly_rel,
+    colour = target_variable,
+    group = target_variable
+  )) + 
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = 1:50) +
+  scale_y_continuous(labels = scales::percent) +
+  facet_wrap(~ scheme, scales = "free_x") +
+  labs(
+    x = "Yearly repetitions per location",
+    y = "Relative yearly cost"
+  )
+```
+
+De kostenoptimalisatie leidt tot ongeveer één herhaling per locatie.
+
+```{r paged.print = FALSE}
+sample_sizes %>% 
+  distinct(scheme, target_variable, relative_sd, m_opt)
+```
+
+Dit komt doordat zowel de kosten als de variabiliteit een gelijkaardige spatiale en temporele component hebben.
+Het is evenwel wenselijk om ook op locatiebasis een waarde te kunnen toetsen aan een referentiewaarde.
+Tevens voor de trendberekeningen is het beter om een lokaal voldoende stabiele toestandsbeschrijving te bekomen.
+
+Om die reden gaan we het aantal herhalingen toch hoger leggen.
+We kijken zowel naar de kostprijs als naar het effect op de lokale relatieve foutenmarge, om deze afweging te maken.
+
+### Lokale relatieve foutenmarge
+
+Indien we _in elk meetnet per doelvariabele_ het aantal locaties vastzetten (getal in wit) dat overeen komt met een _maandelijkse herhaling_ voor een relatieve foutenmarge van 10%, dan is dit het effect van het aantal herhalingen op de relatieve foutenmarge:
+
+```{r}
+m_to_errmarg <- 
+  sample_sizes %>% 
+  filter(m == nr_months, relative_errormargin == 0.1) %>% 
+  select(
+    scheme, 
+    target_variable,
+    alpha,
+    var_spatial,
+    var_temporal,
+    nr_months,
+    n_tg,
+    n_tg_yearly
+  ) %>% 
+  mutate(
+    calc_errmarg = pmap(
+      list(nr_months, n_tg, var_spatial, var_temporal, alpha),
+      function(nmon, ntg, vs, vt, a) {
+        tibble(
+          m = seq_len(nmon * 2),
+          sd_mu = sqrt(1 / ntg * (vs + 1 / m * vt)),
+          relative_errormargin = 10^(sd_mu * qnorm(1 - a / 2)) - 1
+        )
+      }
+    )
+  ) %>% 
+  unnest(calc_errmarg) %>% 
+  mutate(cost_yearly = n_tg_yearly * (cost_spatial + m * cost_temporal))
+
+plot_m_to_errmarg(m_to_errmarg)
+```
+
+In realiteit worden de doelvariabelen op eenzelfde aantal locaties bemeten.
+Zetten we dit aantal vast _per meetnet_ volgens de meest eisende doelvariabele, dan bekomen we volgende, meer relevante grafiek.
+
+```{r}
+m_to_errmarg_fixed_n <- 
+  sample_sizes %>% 
+  filter(m == nr_months, relative_errormargin == 0.1) %>% 
+  select(
+    scheme, 
+    target_variable,
+    alpha,
+    var_spatial,
+    var_temporal,
+    nr_months,
+    n_tg,
+    n_tg_yearly
+  ) %>% 
+  mutate(
+    n_tg = max(n_tg),
+    n_tg_yearly = n_tg / 6,
+    .by = scheme
+      ) %>% 
+  mutate(
+    calc_errmarg = pmap(
+      list(nr_months, n_tg, var_spatial, var_temporal, alpha),
+      function(nmon, ntg, vs, vt, a) {
+        tibble(
+          m = seq_len(nmon * 2),
+          sd_mu = sqrt(1 / ntg * (vs + 1 / m * vt)),
+          relative_errormargin = 10^(sd_mu * qnorm(1 - a / 2)) - 1
+        )
+      }
+    )
+  ) %>% 
+  unnest(calc_errmarg) %>% 
+  mutate(cost_yearly = n_tg_yearly * (cost_spatial + m * cost_temporal))
+
+plot_m_to_errmarg(m_to_errmarg_fixed_n, facet_scales = "fixed")
+```
+
+Aantal herhalingen nodig op een locatie voor een bepaalde lokale relatieve foutenmarge, bij een betrouwbaarheidsniveau ($1 - \alpha$) van 90%:
+
+```{r}
+local_errmarg_to_m <- 
+  tibble(
+    relative_errormargin_local = seq(0.3, 0.9, 0.01),
+    logscale_errormargin_local = log10(1 + relative_errormargin_local),
+    var_local_estimator = (logscale_errormargin_local / qnorm(1 - 0.1 / 2))^2
+  ) %>% 
+  expand_grid(modelvar) %>% 
+  mutate(m_local = sd_temporal^2 / var_local_estimator)
+local_errmarg_to_m_filtered <- 
+  local_errmarg_to_m %>% 
+  filter(relative_errormargin_local %in% c(0.4, 0.5, 0.6)) %>% 
+  mutate(m_local_rounded = round(m_local))
+local_errmarg_to_m %>% 
+  ggplot(aes(
+    x = relative_errormargin_local,
+    y = m_local,
+    colour = target_variable,
+    group = target_variable
+  )) +
+  geom_line() +
+  geom_point(
+    data = local_errmarg_to_m_filtered,
+    mapping = aes(
+      x = relative_errormargin_local,
+      y = m_local,
+      colour = target_variable
+    ),
+    show.legend = FALSE
+  ) +
+  geom_text(
+    data = local_errmarg_to_m_filtered,
+    mapping = aes(
+      x = relative_errormargin_local,
+      y = m_local,
+      label = m_local_rounded
+    ),
+    vjust = -0.5,
+    hjust = -0.5,
+    show.legend = FALSE
+  ) +
+  scale_x_continuous(breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(breaks = seq(0, 100, 5), minor_breaks = seq(0, 100, 1)) +
+  facet_wrap(~ scheme, scales = "free_y") +
+  labs(
+    x = "Local relative error margin",
+    y = "Repetitions needed per location"
+  )
+```
+
+
+
