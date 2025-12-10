@@ -1,0 +1,43 @@
+# Conclusies {#conclusies}
+
+Als we uitgaan van:
+
+- 50 resp. 25 jaarlijkse locaties per typegroep in beide meetnetten, voor een relatieve foutenmarge van 10% resp. 15%
+- 4 typegroepen in SURF_03.4_lentic en 2 typegroepen in SURF_03.4_lotic
+- 6 herhalingen voor SURF_03.4_lentic (3 NO3 + 3 Ptot)
+- 3 herhalingen voor SURF_03.4_lotic (ivm PO4)
+
+Dan bekomen we deze totale aantallen:
+
+```{r}
+sample_sizes %>% 
+  distinct(relative_errormargin, scheme) %>% 
+  filter(relative_errormargin >= 0.1) %>% 
+  mutate(
+    n_tg = case_when(
+      relative_errormargin == 0.1 ~ 50L * 6L,
+      relative_errormargin == 0.15 ~ 25L * 6L,
+      .default = NA_integer_
+    ),
+    m = ifelse(scheme == "SURF_03.4_lentic", 6L, 3L),
+    n_visits_tg = n_tg * m,
+    n_visits = ifelse(scheme == "SURF_03.4_lentic", n_visits_tg * 4, n_visits_tg * 2)
+  ) %>% 
+  arrange(relative_errormargin, scheme) %>% 
+  kable()
+```
+
+In één typegroep (7220 in SURF_03.4_lotic) is het aantal beschikbare locaties beperkend (minder dan 50 locaties), zodat we deze uitkomsten naar beneden kunnen stellen (met minstens 750 locaties voor foutenmarge 10%, en met minstens 300 locaties bij foutenmarge 15%).
+
+<!-- Samenstelling typegroepen: -->
+
+<!-- ```{r} -->
+<!-- n2khabmon::read_scheme_types(lang = "nl") %>%  -->
+<!--   filter(str_detect(scheme, "SURF_03\\.4")) %>%  -->
+<!--   select(scheme, typegroup, type) %>%  -->
+<!--   arrange(typegroup) -->
+<!-- ``` -->
+
+
+
+
