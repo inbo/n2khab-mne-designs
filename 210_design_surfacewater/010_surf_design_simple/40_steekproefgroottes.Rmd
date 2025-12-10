@@ -75,6 +75,7 @@ sample_sizes <-
     ),
     var_spatial = sd_spatial^2,
     var_temporal = sd_temporal^2,
+    ratio_vart_varmu = var_temporal / var_mu,
     n_tg_max = (var_spatial + var_temporal) / var_mu,
     # m_max = var_temporal / (var_mu - var_spatial),
     relative_sd = sd_temporal / sd_spatial,
@@ -113,6 +114,27 @@ sample_sizes %>%
     size = 3,
     vjust = -1
   )
+```
+
+De term die toeneemt met het aantal herhalingen in \@ref(eq:ntg-ifv-m) betreft $m^{-1} \cdot \sigma^2_t/\sigma^2_{\hat{\mu}}$.
+De factor $\sigma^2_t/\sigma^2_{\hat{\mu}}$ wordt hieronder uitgezet ten opzichte van de ingestelde foutenmarge.
+
+```{r}
+sample_sizes %>% 
+  mutate(
+    relative_errormargin = relative_errormargin %>%
+      scales::label_percent()(.) %>%
+      fct()
+  ) %>% 
+  distinct(scheme, target_variable, relative_errormargin, ratio_vart_varmu) %>% 
+  ggplot(aes(
+    x = relative_errormargin,
+    y = ratio_vart_varmu,
+    fill = target_variable,
+    group = target_variable
+  )) +
+  geom_col(position = "dodge") +
+  facet_wrap(~ scheme)
 ```
 
 Als controle rekenen we nog eens terug naar de relatieve foutenmarge die we hiermee verwachten bij een betrouwbaarheidsniveau van 90%, gegeven de combinaties van $m$ en $n_{tg}$ en de met het model geschatte spatiale en temporele variantie.
