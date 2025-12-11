@@ -135,27 +135,6 @@ sample_sizes %>%
   )
 ```
 
-De term die toeneemt met het aantal herhalingen in \@ref(eq:ntg-ifv-m) betreft $m^{-1} \cdot \sigma^2_t/\sigma^2_{\hat{\mu}}$.
-De factor $\sigma^2_t/\sigma^2_{\hat{\mu}}$ wordt hieronder uitgezet ten opzichte van de ingestelde foutenmarge.
-
-```{r}
-sample_sizes %>% 
-  mutate(
-    relative_errormargin = relative_errormargin %>%
-      scales::label_percent()(.) %>%
-      fct()
-  ) %>% 
-  distinct(scheme, target_variable, relative_errormargin, ratio_vart_varmu) %>% 
-  ggplot(aes(
-    x = relative_errormargin,
-    y = ratio_vart_varmu,
-    fill = target_variable,
-    group = target_variable
-  )) +
-  geom_col(position = "dodge") +
-  facet_wrap(~ scheme)
-```
-
 Als controle rekenen we nog eens terug naar de relatieve foutenmarge die we hiermee verwachten bij een betrouwbaarheidsniveau van 90%, gegeven de combinaties van $m$ en $n_{tg}$ en de met het model geschatte spatiale en temporele variantie.
 
 ```{r paged.print = FALSE}
@@ -244,21 +223,27 @@ sample_sizes %>%
   distinct(scheme, target_variable, relative_sd, m_opt_rounded)
 ```
 
-Dit komt doordat zowel de kosten als de variabiliteit een gelijkaardige spatiale en temporele component hebben.
-Het is evenwel wenselijk om ook op locatiebasis een waarde te kunnen toetsen aan een referentiewaarde.
-Tevens voor de trendberekeningen is het beter om een lokaal voldoende stabiele toestandsbeschrijving te bekomen.
+De 'optimaal 1 herhaling per locatie' komt doordat zowel de kosten als de variabiliteit een gelijkaardige spatiale en temporele component hebben.
+Dit betreft het kostenoptimum voor de toestandsbepaling op niveau Vlaanderen.
+Het is evenwel wenselijk om toch door middel van herhalingen een iets stabielere toestandsbeschrijving te bekomen _op locatiebasis_, dit om de trendresultaten te verbeteren, die daar baat bij hebben.
 
-Om die reden gaan we het aantal herhalingen toch hoger leggen.
-We kijken zowel naar de kostprijs als naar het effect op de lokale relatieve foutenmarge, om deze afweging te maken.
+Om die reden gaan we het aantal herhalingen per jaar toch hoger leggen.
+Het effect op de precisie van trendberekeningen (over minstens drie uit elkaar liggende meetjaren, elk met een aantal herhalingen) is echter niet even eenvoudig met formules te voorspellen als de toestand.
+Het is hiervoor meer aangewezen om simulaties uit te voeren op basis van een populatiemodel, wat buiten de scope van huidig document valt.
 
-### Effect van aantal herhalingen op globale en lokale foutenmarge
+### Keuze van het aantal herhalingen
 
-Indien we _in elk meetnet per doelvariabele_ het aantal locaties vastzetten (getal in wit) dat overeen komt met een _maandelijkse herhaling_ voor een relatieve foutenmarge van 10%, dan is dit het effect van het aantal herhalingen op de relatieve foutenmarge:
+Om het aantal herhalingen te kiezen, kijken we voor een vast gekozen aantal locaties naar **twee criteria**:
 
-```{r}
+- het aantal herhalingen waarvoor het effect op de foutenmarge stabiliseert, en dit voor de variabele met de breedste foutenmarge (= de variabele waarvoor we de foutenmarge onder controle houden);
+- het aantal herhalingen moet tevens voldoen aan de opgelegde maximale foutenmarge van het betrokken scenario, waarbij we desgevallend minieme overschrijdingen van deze limiet (< 0.5%) verwaarlozen.
+
+Indien we _in elk deelmeetnet per doelvariabele_ het aantal locaties vastzetten (getal in wit op grafiek) dat overeen komt met een _maandelijkse herhaling_ voor de relatieve foutenmarges van 10% of meer, dan is dit het effect van het aantal herhalingen op de relatieve foutenmarge, bij een betrouwbaarheidsniveau ($1 - \alpha$) van 90%:
+
+```{r fig.width = 10, fig.height = 8}
 m_to_errmarg <- 
   sample_sizes %>% 
-  filter(m == nr_months, relative_errormargin == 0.1) %>% 
+  filter(m == nr_months, relative_errormargin >= 0.1) %>% 
   select(
     scheme, 
     target_variable,
@@ -288,16 +273,17 @@ plot_m_to_errmarg(m_to_errmarg)
 ```
 
 In realiteit worden de doelvariabelen op eenzelfde aantal locaties bemeten.
-Zetten we dit aantal vast _per meetnet_ volgens de meest eisende doelvariabele, dan bekomen we volgende, meer relevante grafiek.
+Zetten we dit aantal vast _per deelmeetnet_ volgens de meest eisende doelvariabele, dan bekomen we volgende, meer relevante grafiek.
 
-```{r}
+```{r fig.width = 10, fig.height = 8}
 m_to_errmarg_fixed_n <- 
   sample_sizes %>% 
-  filter(m == nr_months, relative_errormargin == 0.1) %>% 
+  filter(m == nr_months, relative_errormargin >= 0.1) %>% 
   select(
     scheme, 
     target_variable,
     alpha,
+    relative_errormargin,
     var_spatial,
     var_temporal,
     nr_months,
@@ -307,8 +293,9 @@ m_to_errmarg_fixed_n <-
   mutate(
     n_tg = max(n_tg),
     n_tg_yearly = n_tg / 6,
-    .by = scheme
+    .by = c(scheme, relative_errormargin)
       ) %>% 
+  select(-relative_errormargin) %>% 
   mutate(
     calc_errmarg = pmap(
       list(nr_months, n_tg, var_spatial, var_temporal, alpha),
@@ -324,10 +311,68 @@ m_to_errmarg_fixed_n <-
   unnest(calc_errmarg) %>% 
   mutate(cost_yearly = n_tg_yearly * (cost_spatial + m * cost_temporal))
 
-plot_m_to_errmarg(m_to_errmarg_fixed_n, facet_scales = "fixed")
+plot_m_to_errmarg(m_to_errmarg_fixed_n, facet_scales = "fixed") +
+  scale_y_continuous(breaks = seq(0, 1, 0.01))
 ```
 
-Aantal herhalingen nodig op een locatie voor een bepaalde lokale relatieve foutenmarge, bij een betrouwbaarheidsniveau ($1 - \alpha$) van 90%:
+Hier zien we, volgens verwachtingen, dat NO3 de breedste foutenmarge heeft, en ook dat we die onder controle hebben.
+Andere variabelen bekomen dan een smallere foutenmarge.
+
+Als we het jaarlijks aantal locaties vastzetten op het bovenliggende vijftal,
+dan bekomen we onderstaand resultaat.
+
+```{r fig.width = 10, fig.height = 8}
+m_to_errmarg_fixed_n_ceiling <- 
+  sample_sizes %>% 
+  filter(m == nr_months, relative_errormargin >= 0.1) %>% 
+  select(
+    scheme, 
+    target_variable,
+    alpha,
+    relative_errormargin,
+    var_spatial,
+    var_temporal,
+    nr_months,
+    n_tg,
+    n_tg_yearly
+  ) %>% 
+  mutate(
+    n_tg = max(n_tg),
+    n_tg_yearly = ceiling((n_tg / 6) / 5) * 5,
+    n_tg = n_tg_yearly * 6,
+    .by = c(scheme, relative_errormargin)
+      ) %>% 
+  select(-relative_errormargin) %>% 
+  mutate(
+    calc_errmarg = pmap(
+      list(nr_months, n_tg, var_spatial, var_temporal, alpha),
+      function(nmon, ntg, vs, vt, a) {
+        tibble(
+          m = seq_len(nmon * 2),
+          sd_mu = sqrt(1 / ntg * (vs + 1 / m * vt)),
+          relative_errormargin = 10^(sd_mu * qnorm(1 - a / 2)) - 1
+        )
+      }
+    )
+  ) %>% 
+  unnest(calc_errmarg) %>% 
+  mutate(cost_yearly = n_tg_yearly * (cost_spatial + m * cost_temporal))
+
+plot_m_to_errmarg(m_to_errmarg_fixed_n_ceiling, facet_scales = "fixed") +
+  scale_y_continuous(breaks = seq(0, 1, 0.01))
+```
+
+We kunnen hieruit **besluiten** dat:
+
+- voor een **foutenmarge van maximum 10%**:
+  - in _SURF_03.4_lentic_ jaarlijks 50 locaties per typegroep met 3 herhalingen voor NO3 en 3 herhalingen voor Ptot volstaan (dus 6 bezoeken in totaal; NO3 en Ptot hebben een andere periode in het jaar);
+  - in _SURF_03.4_lotic_ jaarlijks 45 locaties per typegroep met 3 herhalingen voor NO3 en PO4 volstaan (dus 3 bezoeken in totaal);
+- voor een **foutenmarge van maximum 15%**:
+  - in _SURF_03.4_lentic_ jaarlijks 25 locaties per typegroep met 3 herhalingen voor NO3 en 3 herhalingen voor Ptot volstaan (dus 6 bezoeken in totaal; NO3 en Ptot hebben een andere periode in het jaar);
+  - in _SURF_03.4_lotic_ jaarlijks 25 locaties per typegroep met 3 herhalingen voor NO3 en PO4 volstaan (dus 3 bezoeken in totaal).
+
+Ter informatie wordt hieronder ook het verband weergegeven tussen de _lokale_ relatieve foutenmarge en het aantal herhalingen dat daarvoor nodig is op _één locatie_, bij een betrouwbaarheidsniveau ($1 - \alpha$) van 90%.
+Merk op dat de resultaten voor PO4 in SURF_03.4_lotic minder betrouwbaar zijn (zie eerder).
 
 ```{r}
 local_errmarg_to_m <- 
