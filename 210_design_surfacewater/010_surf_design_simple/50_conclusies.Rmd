@@ -1,13 +1,15 @@
 # Conclusies {#conclusies}
 
-Als we uitgaan van:
+We herhalen het resultaat van sectie \@ref(steekproefgrootte) en berekenen de totale steekproefgroottes.
 
-- 50 resp. 25 jaarlijkse locaties per typegroep in beide meetnetten, voor een relatieve foutenmarge van 10% resp. 15%
-- 4 typegroepen in SURF_03.4_lentic en 2 typegroepen in SURF_03.4_lotic
-- 6 herhalingen voor SURF_03.4_lentic (3 NO3 + 3 Ptot)
-- 3 herhalingen voor SURF_03.4_lotic (ivm PO4)
+We stellen dit voorop als minimale noden in een serieel alternerend herbezoekpatroon over de jaren (i.e. elk jaar andere locaties bezoeken, volgens een cyclus van 6 jaar):
 
-Dan bekomen we deze totale aantallen:
+- 50 resp. 25 jaarlijkse locaties per typegroep in _SURF_03.4_lentic_, voor een relatieve foutenmarge van 10% resp. 15%;
+- 45 resp. 25 jaarlijkse locaties per typegroep in _SURF_03.4_lotic_, voor een relatieve foutenmarge van 10% resp. 15%;
+- 6 herhalingen per jaar voor _SURF_03.4_lentic_ (3 NO3 + 3 Ptot, elk in een ander tijdsvenster);
+- 3 herhalingen per jaar voor _SURF_03.4_lotic_ (3 NO3 + 3 PO4).
+
+Hieruit bekomen we het totaal aantal bemonsteringen in een cyclus van 6 jaar voor 4 typegroepen in SURF_03.4_lentic en 2 typegroepen in SURF_03.4_lotic (n_tg = aantal locaties per typegroep over 6 jaar, m = aantal herhalingen per jaar, n_visits_tg = aantal bemonsteringen voor een typegroep over 6 jaar, n_visits = aantal bemonsteringen voor alle typegroepen):
 
 ```{r}
 sample_sizes %>% 
@@ -15,19 +17,24 @@ sample_sizes %>%
   filter(relative_errormargin >= 0.1) %>% 
   mutate(
     n_tg = case_when(
-      relative_errormargin == 0.1 ~ 50L * 6L,
+      relative_errormargin == 0.1 & scheme == "SURF_03.4_lentic" ~ 50L * 6L,
+      relative_errormargin == 0.1 & scheme == "SURF_03.4_lotic" ~ 45L * 6L,
       relative_errormargin == 0.15 ~ 25L * 6L,
       .default = NA_integer_
     ),
     m = ifelse(scheme == "SURF_03.4_lentic", 6L, 3L),
     n_visits_tg = n_tg * m,
-    n_visits = ifelse(scheme == "SURF_03.4_lentic", n_visits_tg * 4, n_visits_tg * 2)
+    n_visits = ifelse(
+      scheme == "SURF_03.4_lentic",
+      n_visits_tg * 4,
+      n_visits_tg * 2
+    )
   ) %>% 
   arrange(relative_errormargin, scheme) %>% 
   kable()
 ```
 
-In één typegroep (7220 in SURF_03.4_lotic) is het aantal beschikbare locaties beperkend (minder dan 50 locaties), zodat we deze uitkomsten naar beneden kunnen stellen (met minstens 750 locaties voor foutenmarge 10%, en met minstens 300 locaties bij foutenmarge 15%).
+In één typegroep (7220 in SURF_03.4_lotic) is het aantal beschikbare locaties beperkend (minder dan 50 locaties), zodat we deze uitkomsten naar beneden kunnen stellen (minstens 660 locaties minder voor foutenmarge 10%, en minstens 300 locaties minder voor foutenmarge 15%).
 
 <!-- Samenstelling typegroepen: -->
 
