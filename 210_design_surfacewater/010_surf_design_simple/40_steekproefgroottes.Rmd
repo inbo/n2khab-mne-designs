@@ -26,6 +26,26 @@ minimumquality <-
 minimumquality %>% kable()
 ```
 
+Ter informatie wordt hieronder nog het verband weergegeven tussen een ingestelde foutenmarge en de overeenkomstige minimaal detecteerbare overschrijding (relatief t.o.v. grenswaarde), voor een eenzijdige toets met $\alpha = 0.10$ en power $\pi = 0.80$.
+
+```{r}
+tibble(
+  relative_errormargin = seq(0.01, 0.2, 0.01),
+  logscale_errormargin = log10(1 + relative_errormargin),
+  sd_mu = logscale_errormargin / qnorm(1 - 0.1 / 2),
+  threshold_one_sided = qnorm(1 - 0.1) * sd_mu,
+  threshold_exceedance = qnorm(0.8) * sd_mu,
+  logscale_detectable_difference = threshold_one_sided + threshold_exceedance,
+  relative_detectable_difference = 10^logscale_detectable_difference - 1
+) %>% 
+  ggplot(aes(x = relative_errormargin, y = relative_detectable_difference)) +
+  geom_line() +
+  scale_x_continuous(labels = scales::percent) +
+  scale_y_continuous(labels = scales::percent)
+```
+
+Met $\alpha = 0.10$ en $\pi = 0.80$ hebben we namelijk dat de exponent in \@ref(eq:rel-detectable-diff) `r round((qnorm(1 - 0.1) + qnorm(0.8)) / qnorm(1 - 0.1 / 2), 3)` bedraagt, wat voor waarden tussen 0% en 100% een quasi rechtlijnig verband veroorzaakt.
+
 ## Eenheidskosten
 
 ```{r}
