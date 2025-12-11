@@ -37,7 +37,12 @@ plot_sample_sizes <- function(ssizes, y_add = 0) {
 
 plot_m_to_errmarg <- function(df, facet_scales = "free_y") {
   df %>%
-    ggplot(aes(x = m, y = relative_errormargin, linetype = target_variable)) +
+    ggplot(aes(
+      x = m,
+      y = relative_errormargin,
+      linetype = target_variable,
+      group = str_c(target_variable, n_tg)
+    )) +
     geom_line(colour = "white") +
     geom_point(aes(colour = cost_yearly)) +
     geom_text(
