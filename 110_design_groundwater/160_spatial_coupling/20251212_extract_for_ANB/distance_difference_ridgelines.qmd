@@ -1,0 +1,289 @@
+---
+title: "Water Level Difference-Distance Ridgeplots"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+... the usual.
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("gridExtra") |> void() # panels with ggplot
+library("ggcorrplot")|> void() # correlation, grid visualization
+library("mapview")   |> void() # map visualization
+library("ggridges")  |> void() # density ridges
+
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# data is loaded from cache
+source("./auxiliary_data_queries.R")
+metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
+
+# for reference
+cluster_dist <- 3400 # m # parameter for clustering, used on data loading
+
+
+# for a uniform look
+soilclass_colors <- c(
+  "heavy" = "sienna",
+  "light" = "burlywood",
+  "peat" = "darkseagreen",
+  "unknown" = "slategray"
+)
+```
+
+
+```{r parameters}
+#| code-fold: false
+extent <- 500 # m # data included
+maxx <- 1000 # 768 # upper limit for regression
+
+bin_target <- 100 # alternative: observations per bin
+cap_dw <- 8 # m # maximum accepted water level difference
+```
+
+
+
+The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to assemble the data set loaded here; helper functions are collected in `auxiliary_data_queries.R`.
+
+
+
+```{r load-data}
+
+meta_data <- join_auxiliary_cache(label = "metadata") %>%
+  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx") # %>%
+  # join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+
+diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
+  filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
+
+meta_join <- meta_data %>%
+  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class
+         # emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         # emd_qdiff, emd_residual_qdiff
+         )
+
+diff_meta <- diff_data %>%
+  select(pp_idx1, pp_idx2) %>%
+  distinct() %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+    ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+    dh = elevation_dhmv2-elevation_dhmv1,
+    dz = fdepth2-fdepth1,
+    dwadi = wata_min_dist2-wata_min_dist1,
+    dslope = slope_r2.5m2-slope_r2.5m1,
+    melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+    mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+    mslope = abs(dh) / ds
+  ) %>%
+  filter(ds <= extent)
+
+```
+
+
+
+```{r glimpse-data}
+
+# diff_meta %>% glimpse
+# diff_data %>% glimpse
+
+diff_meta <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz, # damp, dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    ) 
+  ) 
+
+diff_joined <- diff_meta %>% 
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# glimpse(diff_joined)
+
+```
+
+```{r}
+
+diff_equigrouped <- diff_joined %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup
+
+```
+
+
+# equibin ridges
+
+::: {.panel-tabset group="soilclass"}
+## heavy
+
+```{r diff-ridges-equibin-dw-heavy}
+#| label: fig-ridges-equibin-dw-heavy
+#| fig-cap: "mTAW heavy"
+diff_equigrouped %>%
+  filter(soilclass == "heavy", ds < 100) %>% 
+  ggplot(aes(x = dw, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = pi, bandwidth = 0.02,
+    fill = soilclass_colors[["heavy"]],
+    alpha = 0.8
+  ) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean abs mTAW difference", y = "well pair distance") +
+  xlim(0, 1.0) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+```{r diff-ridges-equibin-dm-heavy}
+#| label: fig-ridges-equibin-dm-heavy
+#| fig-cap: "mMaaiveld heavy"
+diff_equigrouped %>%
+  filter(soilclass == "heavy", ds < 100) %>% 
+  ggplot(aes(x = dm, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = pi, bandwidth = 0.02,
+    fill = soilclass_colors[["heavy"]],
+    alpha = 0.8
+  ) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean abs mMaaiveld difference", y = "well pair distance") +
+  xlim(0, 1.0) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+## light
+
+```{r diff-ridges-equibin-dw-light}
+#| label: fig-ridges-equibin-dw-light
+#| fig-cap: "mTAW light"
+diff_equigrouped %>%
+  filter(soilclass == "light", ds < 100) %>% 
+  ggplot(aes(x = dw, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = pi, bandwidth = 0.02,
+    fill = soilclass_colors[["light"]],
+    alpha = 0.8
+  ) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean abs mTAW difference", y = "well pair distance") +
+  xlim(0, 1.0) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+```{r diff-ridges-equibin-dm-light}
+#| label: fig-ridges-equibin-dm-light
+#| fig-cap: "mMaaiveld light"
+diff_equigrouped %>%
+  filter(soilclass == "light", ds < 100) %>% 
+  ggplot(aes(x = dm, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = pi, bandwidth = 0.02,
+    fill = soilclass_colors[["light"]],
+    alpha = 0.8
+  ) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean abs mMaaiveld difference", y = "well pair distance") +
+  xlim(0, 1.0) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+## peat
+
+```{r diff-ridges-equibin-dw-peat}
+#| label: fig-ridges-equibin-dw-peat
+#| fig-cap: "mTAW peat"
+diff_equigrouped %>%
+  filter(soilclass == "peat", ds < 100) %>% 
+  ggplot(aes(x = dw, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = pi, bandwidth = 0.02,
+    fill = soilclass_colors[["peat"]],
+    alpha = 0.8
+  ) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean abs mTAW difference", y = "well pair distance") +
+  xlim(0, 1.0) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+```{r diff-ridges-equibin-dm-peat}
+#| label: fig-ridges-equibin-dm-peat
+#| fig-cap: "mMaaiveld peat"
+diff_equigrouped %>%
+  filter(soilclass == "peat", ds < 100) %>% 
+  ggplot(aes(x = dm, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = pi, bandwidth = 0.02,
+    fill = soilclass_colors[["peat"]],
+    alpha = 0.8
+  ) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean abs mMaaiveld difference", y = "well pair distance") +
+  xlim(0, 1.0) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+:::

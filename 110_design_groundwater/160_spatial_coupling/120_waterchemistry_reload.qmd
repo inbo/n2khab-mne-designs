@@ -24,8 +24,17 @@ ChemVarWID -> holds the ID of compounds;
 
 
 You have only one choice:
+
 ```{r mmi}
-max_measurement_interval <- 64
+max_measurement_interval <- 32 # 128
+```
+
+
+... but I have another one:
+
+```{r logtrafo}
+log_trafo <- \(x) log10(1e-6 + x)
+
 ```
 
 
@@ -151,23 +160,23 @@ legend_colors <- c(
 ```
 
 
-```{r pca-data-distributions}
-#| label: fig-pca-data-distributions
+```{r log-data-distributions}
+#| label: fig-log-data-distributions
 #| fig-cap: "Distributions of log concentrations of groundwater chemicals."
 ggplot(NULL) +
   geom_density(
-    aes(x = log10(all_chem %>% pull(!!sel[1])),
+    aes(x = log_trafo(all_chem %>% pull(!!sel[1])),
     color = sel[1])
   ) +
   geom_density(
-    aes(x = log10(all_chem %>% pull(!!sel[2])),
+    aes(x = log_trafo(all_chem %>% pull(!!sel[2])),
     color = sel[2])
   ) +
   geom_density(
-    aes(x = log10(all_chem %>% pull(!!sel[3])),
+    aes(x = log_trafo(all_chem %>% pull(!!sel[3])),
     color = sel[3])
   ) +
-  labs(x = "log10 concentration") +
+  labs(x = "log trafo(concentration)") +
   scale_color_manual(values = legend_colors) + 
   theme_bw() + theme(legend.position = "right")
 ```
@@ -176,11 +185,11 @@ ggplot(NULL) +
 ```{r pca-data-3d}
 #| label: fig-pca-data-scatter
 #| fig-cap: "Log concentrations of groundwater chemicals, data space visualization."
-scatterplot3d(log10(all_chem[, sel]),
-  main = "log10 concentrations",
-  xlab = paste0("log(c(", sel[1], "))", collapse = ""),
-  ylab = paste0("log(c(", sel[2], "))", collapse = ""),
-  zlab = paste0("log(c(", sel[3], "))", collapse = ""),
+scatterplot3d(log_trafo(all_chem[, sel]),
+  main = "log trafo(concentrations)",
+  xlab = paste0("log trafo(c(", sel[1], "))", collapse = ""),
+  ylab = paste0("log trafo(c(", sel[2], "))", collapse = ""),
+  zlab = paste0("log trafo(c(", sel[3], "))", collapse = ""),
   pch = 16, color = "steelblue", angle = 30
   )
 
@@ -192,19 +201,19 @@ correlation
 
 # log, filter na/inf
 std_chem <- all_chem %>%
-  mutate(across(any_of(sel), function(vec) log10(vec))) %>%
+  mutate(across(any_of(sel), log_trafo)) %>%
   filter(if_all(everything(), ~!is.na(.))) %>% 
   filter(if_all(everything(), ~is.finite(.)))
 
 # center
 means <- colMeans(std_chem[, sel], na.rm = TRUE)
-std_chem <- std_chem %>%
-  mutate(across(any_of(sel), function (vec) vec - mean(vec, na.rm = TRUE)))
+# std_chem <- std_chem %>%
+#   mutate(across(any_of(sel), function (vec) vec - mean(vec, na.rm = TRUE)))
 
 # scale
 vars <- colMeans(abs(std_chem[, sel]), na.rm = TRUE)
-std_chem <- std_chem %>%
-  mutate(across(any_of(sel), function (vec) vec / mean(abs(vec), na.rm = TRUE)))
+# std_chem <- std_chem %>%
+#   mutate(across(any_of(sel), function (vec) vec / var(abs(vec), na.rm = TRUE)))
 
 chemcov <- cov(std_chem[, sel], use = "complete.obs")
 knitr::kable(chemcov, digits = 2)
@@ -214,14 +223,39 @@ knitr::kable(chemcov, digits = 2)
 #| label: fig-pca-data-std
 #| fig-cap: "Standardized log concentrations of groundwater chemicals. These are data input to a PCA."
 scatterplot3d(std_chem[, sel],
-  main = "log10 concentrations",
-  xlab = paste0("standardized log(c(", sel[1], "))", collapse = ""),
-  ylab = paste0("standardized log(c(", sel[2], "))", collapse = ""),
-  zlab = paste0("standardized log(c(", sel[3], "))", collapse = ""),
+  main = "log trafo(concentration)",
+  xlab = paste0("log(c(", sel[1], "))", collapse = ""),
+  ylab = paste0("log(c(", sel[2], "))", collapse = ""),
+  zlab = paste0("log(c(", sel[3], "))", collapse = ""),
   pch = 16, color = "steelblue", angle = 30
   )
 
 ```
+
+
+```{r standardized-data-distributions}
+#| label: fig-standardized-data-distributions
+#| fig-cap: "Distributions of log concentrations of groundwater chemicals. Should be the same as above."
+
+ggplot(NULL) +
+  geom_density(
+    aes(x = std_chem %>% pull(!!sel[1]),
+    color = sel[1])
+  ) +
+  geom_density(
+    aes(x = std_chem %>% pull(!!sel[2]),
+    color = sel[2])
+  ) +
+  geom_density(
+    aes(x = std_chem %>% pull(!!sel[3]),
+    color = sel[3])
+  ) +
+  labs(x = "log trafo(concentration)") +
+  scale_color_manual(values = legend_colors) + 
+  theme_bw() + theme(legend.position = "right")
+
+```
+
 
 
 eigenanalysis:
@@ -243,7 +277,7 @@ std_chem[, pcs] <- datamat %*% t(pca.mat)
 #| label: fig-pca-data-pca
 #| fig-cap: "PCA space of groundwater chemicals. The first axis will be used for differential data analysis (variograms)."
 scatterplot3d(std_chem[, pcs],
-  main = "log10 concentrations",
+  main = "PCA of log trafo(concentrations)",
   xlab = paste0(pcs[1], " (", pca.weight_[1], ")"),
   ylab = paste0(pcs[2], " (", pca.weight_[2], ")"),
   zlab = paste0(pcs[3], " (", pca.weight_[3], ")"),

@@ -20,11 +20,11 @@ The analysis was carried out per soil type.
 Visualization ([@sec-variograms]) and an overview table ([@sec-overview]) are available at the end of this document.
 
 
-- Only chemical measurements in the same soilclass were included (XXXXXXTODO observation pairs).
-- The maximally allowed time interval between two measurements is **32 days**.
-- Dynamic-width bins with homogeneous filling were defined.
-- The difference measure is mean absolute difference of *standardized* log(concentration) or PC values. (standardized `= (value-mean)/sd` ). Raw concentrations were appended, too, for transparency.
-- Many simultaneous measurements happen at the same site, therefore observation counts are zero-inflated. Those well group measurements show unexpectedly large variation, complicating Matérn regression. Those were excluded by filtering out the closest bin for regression (shown in red).
+- Only same-day chemical measurements in the same soilclass were included (18211 observations).
+- Once more, dynamic-width bins with homogeneous filling were defined.
+- The difference measure is mean absolute difference of *standardized* log(concentration) or PC values. (standardized `= (value-mean)/sd` )
+- Many simultaneous measurements happen at the same site, therefore observation counts are zero-inflated. Those well group measurements show unexpectedly large variation, complicating Matérn regression. Those were excluded by filtering for `dx > 2m` (approximatly one bin).
+- raw concentrations were appended, too, for transparency.
 
 
 # preparation
@@ -55,7 +55,6 @@ diffdata_export_file <- paste0("data/waterchemistry_diffdata_cl", cluster_dist, 
 # parameters
 extent <- 256 # m
 n_bins <- 50
-bin_target <- 64
 ```
 
 
@@ -179,7 +178,6 @@ diff_all %>% ggplot(aes(x = ds)) +
 
 ```
 
-
 # binning
 
 
@@ -212,11 +210,16 @@ diff_equigrouped <- diff_all %>%
   ) %>% ungroup %>% arrange(ds) %>%
   group_by(soilclass) %>% 
   mutate(
+    # distance_equibin = cut(ds,
+    #   breaks = seq(
+    #     -0, extent,
+    #     length.out = as.integer(extent/2)+1
+    #   )
+    # ) # cut to equal sized bins
     distance_equibin = cut_number(
-      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+      ds, as.integer(n_bins)
     ) # cut to equal sized bins
   ) %>%
-  relocate(distance_equibin) %>% 
   ungroup
 
     
@@ -257,29 +260,6 @@ diff_binned %>%
   theme_bw()
 ```
 
-
-# ridges
-
-```{r diff-ridges-ppo4}
-#| label: fig-ridges-ppo4
-#| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (x-axis), the distribution of water level differences (y-axis, grey density distributions) increases (indicated by quantile lines)."
-
-diff_equigrouped %>%
-  filter(ds < 100, soilclass == "heavy") %>%
-  ggplot(aes(x = dnnh4, y = distance_equibin)) +
-  geom_density_ridges(rel_min_height = 0.05,
-    quantile_lines = TRUE, quantiles = 4,
-    scale = 4.0, bandwidth = 0.05) +
-  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
-  labs(x = "log concentration difference", y = "pair distance") +
-  xlim(0, 2) +
-  theme_bw() + coord_flip() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
-
-```
-
-
-# Regression
 
 ## Regression Procedure Wrapper
 
@@ -469,6 +449,194 @@ common_maxx <- 256
 
 # variograms {#sec-variograms}
 
+## PC1
+
+```{r dchem-column-pc1}
+#| code-fold: false
+column <- "dPC1"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-pc1}
+#| label: fig-dchem-regression-heavy-pc1
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-pc1}
+#| label: fig-dchem-regression-light-pc1
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-pc1}
+#| label: fig-dchem-regression-peat-pc1
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+## PC2
+
+```{r dchem-column-pc2}
+#| code-fold: false
+column <- "dPC2"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-pc2}
+#| label: fig-dchem-regression-heavy-pc2
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-pc2}
+#| label: fig-dchem-regression-light-pc2
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-pc2}
+#| label: fig-dchem-regression-peat-pc2
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+## PC3
+
+```{r dchem-column-pc3}
+#| code-fold: false
+column <- "dPC3"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-pc3}
+#| label: fig-dchem-regression-heavy-pc3
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-pc3}
+#| label: fig-dchem-regression-light-pc3
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-pc3}
+#| label: fig-dchem-regression-peat-pc3
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
 
 ## $NH_4$
 
