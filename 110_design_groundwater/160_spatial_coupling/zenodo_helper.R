@@ -24,6 +24,7 @@ get_zenodo_library <- function() {
             )
 
   flanders <- c(FALSE, "10.5281/zenodo.3386224")
+  ecoregions <- c(FALSE, "10.5281/zenodo.3386208")
   provinces <- c(FALSE, "10.5281/zenodo.3386237")
   habitatmap <- c(FALSE, "10.5281/zenodo.3354381")
   habitatmap_stdized <- c(TRUE, "10.5281/zenodo.3355192")
@@ -46,6 +47,7 @@ get_zenodo_library <- function() {
 
   zl <- t(data.frame(
     flanders,
+    ecoregions,
     provinces,
     habitatmap,
     habitatmap_stdized,
