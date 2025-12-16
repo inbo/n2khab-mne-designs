@@ -1,5 +1,5 @@
 ---
-title: "Water Chemistry Variograms"
+title: "Water Chemistry Variograms: Ecoregion"
 bibliography: references_csl.json
 format:
   html:
@@ -55,7 +55,7 @@ diffdata_export_file <- paste0("data/waterchemistry_diffdata_cl", cluster_dist, 
 # parameters
 extent <- 256 # m
 n_bins <- 50
-bin_target <- 64
+bin_target <- 32
 ```
 
 
@@ -218,6 +218,7 @@ diff_equigrouped <- diff_all %>%
   summarize(
     n_obs = sum(as.integer(!is.na(dPC1))),
     soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     # dt = mean(abs(date2-date1), na.rm = TRUE),
@@ -231,9 +232,9 @@ diff_equigrouped <- diff_all %>%
     dPC1 = 1/(n_obs)*sum(abs(dPC1), na.rm = TRUE),
     dPC2 = 1/(n_obs)*sum(abs(dPC2), na.rm = TRUE),
     dPC3 = 1/(n_obs)*sum(abs(dPC3), na.rm = TRUE),
-    .by = c(ecoregion, pair)
+    .by = c(pair)
   ) %>% ungroup %>% arrange(ds) %>%
-  group_by(soilclass) %>% 
+  group_by(ecoregion) %>% 
   mutate(
     distance_equibin = cut_number(
       ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
@@ -263,7 +264,7 @@ diff_binned <- diff_equigrouped %>%
     dPC1 = mean(dPC1, na.rm = TRUE), 
     dPC2 = mean(dPC2, na.rm = TRUE), 
     dPC3 = mean(dPC3, na.rm = TRUE), 
-    .by = c(distance_equibin, soilclass)
+    .by = c(distance_equibin, ecoregion)
   ) %>%
   ungroup %>% arrange(ds)
 
@@ -274,48 +275,13 @@ diff_binned <- diff_equigrouped %>%
 ```{r equibin-samplesize}
 #| label: fig-equibin-sample-size
 diff_binned %>%
-  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
-  geom_step() +
-  geom_hline(yintercept = 0, color = "darkgrey") +
-  theme_bw()
-
-```
-
-
-```{r equibin-samplesize-ecoregion}
-#| label: fig-equibin-sample-size-ecoregion
-#| eval: false
-
-diff_ecoregion <- diff_equigrouped %>%
-  summarize(
-    cnt = n(),
-    ds = mean(ds), 
-    # dt = mean(dt), 
-    n_obs = sum(n_obs),
-    # semivariance_groupmean = mean(semivar, na.rm = TRUE),
-    # semivariance_all = combine_grouped(semivar, cnt),
-    dPC1_all = combine_grouped(dPC1, n_obs),
-    dnnh4 = mean(dnnh4, na.rm = TRUE), 
-    dnno3 = mean(dnno3, na.rm = TRUE), 
-    dppo4 = mean(dppo4, na.rm = TRUE), 
-    dnnh4r = mean(dnnh4r, na.rm = TRUE), 
-    dnno3r = mean(dnno3r, na.rm = TRUE), 
-    dppo4r = mean(dppo4r, na.rm = TRUE), 
-    dPC1 = mean(dPC1, na.rm = TRUE), 
-    dPC2 = mean(dPC2, na.rm = TRUE), 
-    dPC3 = mean(dPC3, na.rm = TRUE), 
-    .by = c(distance_equibin, ecoregion)
-  ) %>%
-  ungroup %>% arrange(ds)
-
-
-diff_ecoregion %>%
   ggplot(aes(x = ds, y = cnt, color = ecoregion)) +
   geom_step() +
   geom_hline(yintercept = 0, color = "darkgrey") +
   theme_bw()
 
 ```
+
 
 
 # Regression
@@ -402,22 +368,22 @@ list_of_variables <- c(
     "dnnh4r" , "dnno3r" , "dppo4r",
     "dPC1" , "dPC2" , "dPC3"
 )
-list_of_soilclasses <- c("heavy", "light", "peat")
+list_of_ecoregiones <- diff_all %>% distinct(ecoregion) %>% pull()
 regression_storage <- matrix(rep(NA,
-  length(list_of_variables) * length(list_of_soilclasses)
+  length(list_of_variables) * length(list_of_ecoregiones)
   ), length(list_of_variables), byrow = TRUE)
 regression_storage <- as.data.frame(regression_storage)
 
-colnames(regression_storage) <- list_of_soilclasses
+colnames(regression_storage) <- list_of_ecoregiones
 rownames(regression_storage) <- list_of_variables
 
 
-regression_by_soilclass <- function(
+regression_by_ecoregion <- function(
     regression_data, 
     sc, reg_var,
     maxx = extent, maxy = NULL, 
     ...) {
-  diff_sc <- regression_data %>% filter(soilclass == sc)
+  diff_sc <- regression_data %>% filter(ecoregion == sc)
   
   x <- diff_sc$ds
   y <- trafo(diff_sc %>% pull(!!reg_var))
@@ -501,7 +467,7 @@ column <- "dppo4"
 # column <- "dPC1"
 
 
-common_ylim <- 2
+common_ylim <- 1.
 common_maxx <- 256
 ```
 
@@ -516,15 +482,14 @@ common_maxx <- 256
 column <- "dnnh4"
 ```
 
-::: {.panel-tabset group="soilclass"}
+::: {.panel-tabset group="ecoregion"}
 
-### heavy
+### Kempen
 
-```{r dchem-regression-heavy-nh4}
-#| label: fig-dchem-regression-heavy-nh4
-regression_by_soilclass(
+```{r}
+regression_by_ecoregion(
   diff_binned,
-  "heavy",
+  "Kempen",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -536,13 +501,12 @@ regression_by_soilclass(
 ```
 
 
-### light
+### cuesta's
 
-```{r dchem-regression-light-nh4}
-#| label: fig-dchem-regression-light-nh4
-regression_by_soilclass(
+```{r}
+regression_by_ecoregion(
   diff_binned,
-  sc = "light",
+  sc = "cuesta's",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -553,13 +517,61 @@ regression_by_soilclass(
 ```
 
 
-### peat
+### grindrivieren
 
-```{r dchem-regression-peat-nh4}
-#| label: fig-dchem-regression-peat-nh4
-regression_by_soilclass(
+```{r}
+regression_by_ecoregion(
   diff_binned,
-  sc = "peat",
+  sc = "grindrivieren",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### polders en de getijdenschelde
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "polders en de getijdenschelde",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### zuidoostelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  sc = "zuidoostelijke heuvelzone",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### zuidwestelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  sc = "zuidwestelijke heuvelzone",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -579,15 +591,14 @@ regression_by_soilclass(
 column <- "dnno3"
 ```
 
-::: {.panel-tabset group="soilclass"}
+::: {.panel-tabset group="ecoregion"}
 
-### heavy
+### Kempen
 
-```{r dchem-regression-heavy-no3}
-#| label: fig-dchem-regression-heavy-no3
-regression_by_soilclass(
+```{r}
+regression_by_ecoregion(
   diff_binned,
-  "heavy",
+  "Kempen",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -599,13 +610,12 @@ regression_by_soilclass(
 ```
 
 
-### light
+### cuesta's
 
-```{r dchem-regression-light-no3}
-#| label: fig-dchem-regression-light-no3
-regression_by_soilclass(
+```{r}
+regression_by_ecoregion(
   diff_binned,
-  sc = "light",
+  sc = "cuesta's",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -616,13 +626,61 @@ regression_by_soilclass(
 ```
 
 
-### peat
+### grindrivieren
 
-```{r dchem-regression-peat-no3}
-#| label: fig-dchem-regression-peat-no3
-regression_by_soilclass(
+```{r}
+regression_by_ecoregion(
   diff_binned,
-  sc = "peat",
+  sc = "grindrivieren",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### polders en de getijdenschelde
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "polders en de getijdenschelde",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### zuidoostelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  sc = "zuidoostelijke heuvelzone",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### zuidwestelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  sc = "zuidwestelijke heuvelzone",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -642,15 +700,14 @@ regression_by_soilclass(
 column <- "dppo4"
 ```
 
-::: {.panel-tabset group="soilclass"}
+::: {.panel-tabset group="ecoregion"}
 
-### heavy
+### Kempen
 
-```{r dchem-regression-heavy-po4}
-#| label: fig-dchem-regression-heavy-po4
-regression_by_soilclass(
+```{r}
+regression_by_ecoregion(
   diff_binned,
-  "heavy",
+  "Kempen",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -662,13 +719,12 @@ regression_by_soilclass(
 ```
 
 
-### light
+### cuesta's
 
-```{r dchem-regression-light-po4}
-#| label: fig-dchem-regression-light-po4
-regression_by_soilclass(
+```{r}
+regression_by_ecoregion(
   diff_binned,
-  sc = "light",
+  sc = "cuesta's",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -679,13 +735,61 @@ regression_by_soilclass(
 ```
 
 
-### peat
+### grindrivieren
 
-```{r dchem-regression-peat-po4}
-#| label: fig-dchem-regression-peat-po4
-regression_by_soilclass(
+```{r}
+regression_by_ecoregion(
   diff_binned,
-  sc = "peat",
+  sc = "grindrivieren",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### polders en de getijdenschelde
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "polders en de getijdenschelde",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### zuidoostelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  sc = "zuidoostelijke heuvelzone",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### zuidwestelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  sc = "zuidwestelijke heuvelzone",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -698,196 +802,6 @@ regression_by_soilclass(
 
 :::
 
-
-
-## $NH_4$ Raw
-
-```{r dchem-column-nh4r}
-#| code-fold: false
-column <- "dnnh4r"
-```
-
-::: {.panel-tabset group="soilclass"}
-
-### heavy
-
-```{r dchem-regression-heavy-nh4r}
-#| label: fig-dchem-regression-heavy-nh4r
-regression_by_soilclass(
-  diff_binned,
-  "heavy",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) # + ylim(0, common_ylim)
-
-```
-
-
-### light
-
-```{r dchem-regression-light-nh4r}
-#| label: fig-dchem-regression-light-nh4r
-regression_by_soilclass(
-  diff_binned,
-  sc = "light",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) # + ylim(0, common_ylim)
-```
-
-
-### peat
-
-```{r dchem-regression-peat-nh4r}
-#| label: fig-dchem-regression-peat-nh4r
-regression_by_soilclass(
-  diff_binned,
-  sc = "peat",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) # + ylim(0, common_ylim)
-```
-
-
-:::
-
-## $NO_3$ Raw
-
-```{r dchem-column-no3r}
-#| code-fold: false
-column <- "dnno3r"
-```
-
-::: {.panel-tabset group="soilclass"}
-
-### heavy
-
-```{r dchem-regression-heavy-no3r}
-#| label: fig-dchem-regression-heavy-no3r
-regression_by_soilclass(
-  diff_binned,
-  "heavy",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) # + ylim(0, common_ylim)
-
-```
-
-
-### light
-
-```{r dchem-regression-light-no3r}
-#| label: fig-dchem-regression-light-no3r
-regression_by_soilclass(
-  diff_binned,
-  sc = "light",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) # + ylim(0, common_ylim)
-```
-
-
-### peat
-
-```{r dchem-regression-peat-no3r}
-#| label: fig-dchem-regression-peat-no3r
-regression_by_soilclass(
-  diff_binned,
-  sc = "peat",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) # + ylim(0, common_ylim)
-```
-
-
-:::
-
-## $PO_4$ Raw
-
-```{r dchem-column-po4r}
-#| code-fold: false
-column <- "dppo4r"
-```
-
-::: {.panel-tabset group="soilclass"}
-
-### heavy
-
-```{r dchem-regression-heavy-po4r}
-#| label: fig-dchem-regression-heavy-po4r
-regression_by_soilclass(
-  diff_binned,
-  "heavy",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) # + ylim(0, common_ylim)
-
-```
-
-
-### light
-
-```{r dchem-regression-light-po4r}
-#| label: fig-dchem-regression-light-po4r
-regression_by_soilclass(
-  diff_binned,
-  sc = "light",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) # + ylim(0, common_ylim)
-```
-
-
-### peat
-
-```{r dchem-regression-peat-po4r}
-#| label: fig-dchem-regression-peat-po4r
-regression_by_soilclass(
-  diff_binned,
-  sc = "peat",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) # + ylim(0, common_ylim)
-```
-
-
-:::
 
 
 # overview {#sec-overview}
@@ -895,3 +809,18 @@ regression_by_soilclass(
 ```{r}
 knitr::kable(regression_storage, digits = 2)
 ```
+
+
+ [1] "westelijke interfluvia"           "polders en de getijdenschelde"
+ [3] "zuidoostelijke heuvelzone"        "Pleistocene riviervalleien"
+ [5] "Kempen"                           "krijt-leemgebieden"
+ [7] "Midden-Vlaamse overgangsgebieden" "cuesta's"
+ [9] "kustduinen"                       "grindrivieren"
+[11] "zuidwestelijke heuvelzone"
+
+"Kempen"
+"cuesta's"
+"grindrivieren"
+"polders en de getijdenschelde"
+"zuidoostelijke heuvelzone"
+"zuidwestelijke heuvelzone"
