@@ -113,6 +113,16 @@ soilclass_colors <- c(
   "peat" = "darkseagreen",
   "unknown" = "slategray"
 )
+
+ecoregion_colors <- c(
+  "Kempen" = "sienna",
+  "cuesta's" = "burlywood",
+  "grindrivieren" = "darkseagreen",
+  "polders en de getijdenschelde" = "slategray",
+  "zuidoostelijke heuvelzone" = "darkorchid",
+  "zuidwestelijke heuvelzone" = "coral"
+)
+
 ```
 
 
@@ -197,6 +207,24 @@ Binning is flexible, and we compare the differences below, with `n_bins =` `{r} 
 More on that below.
 
 
+*Edit 2025/12/16: for an extra analysis, ecoregion of the reference point is added to the data set.*
+
+```{r prepare-ecoregion}
+
+# n2khab::read_ecoregions() %>% sf::st_drop_geometry() %>% distinct(region_name)
+ecoregio_lookup <- diff_meta %>% 
+  sf::st_as_sf(coords = c("x1", "y1"), crs = 31370) %>% 
+  select(pp_idx1) %>% 
+  sf::st_join(
+    n2khab::read_ecoregions() %>% 
+      select(region_name) %>% 
+      rename(ecoregion = region_name)
+  ) %>% 
+  sf::st_drop_geometry() %>% 
+  mutate(ecoregion = stringr::str_replace(ecoregion, "Ecoregio van de ", "")) %>% 
+  distinct()
+
+```
 
 ```{r glimpse-data}
 
@@ -212,6 +240,11 @@ diff_meta <- diff_meta %>%
       dwadi, dslope,
       melevation, mslope
   ) %>%
+  left_join(
+    ecoregio_lookup,
+    by = join_by(pp_idx1),
+    relationship = "many-to-one"
+  ) %>% 
   mutate(
     pair = factor(paste0(
       as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
@@ -257,6 +290,7 @@ diff_widegroup <- diff_joined %>%
     cnt = n(),
     #cnt = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     semivar = 1/(2*cnt)*sum(dw^2, na.rm = TRUE),
@@ -278,6 +312,20 @@ diff_widegroup %>%
   geom_point(aes(cex = sqrt(cnt)), alpha = 0.16) +
   scale_fill_manual(values = soilclass_colors) +
   scale_color_manual(values = soilclass_colors) +
+  theme_bw()
+```
+
+
+```{r glimpse-ecoregion}
+#| label: fig-bubbletea-ecoregion
+#| fig-cap: "Another irrelevant ''bubble tea plot''™. This time with ecoregion. The size of the bubbles scales with the number of observations. Yes, this was only a humble first glimpse at the data; yes, I used `sqrt` as a 'cheat' to limit bubble size differences; yes, we will do better below. But the colors are nice."
+diff_widegroup %>%
+  ggplot(aes(x = ds, y = log(1.0+dw),
+         color = ecoregion)) +
+  geom_point(aes(cex = sqrt(cnt)), alpha = 0.16) +
+  scale_fill_manual(values = ecoregion_colors) +
+  scale_color_manual(values = ecoregion_colors) +
+  xlim(0., 128.) +
   theme_bw()
 ```
 
@@ -322,6 +370,7 @@ This is a promising pattern: differences are lowest on short distances, and incr
 We better expect to re-capture it in the analysis below.
 
 
+
 # grouping and binning
 
 ## pooled data: what to pool? {#sec-pooling}
@@ -334,6 +383,7 @@ diff_grouped <- diff_joined %>%
   summarize(
     n_obs = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
@@ -470,6 +520,7 @@ diff_equigrouped <- diff_joined %>%
   summarize(
     n_obs = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
