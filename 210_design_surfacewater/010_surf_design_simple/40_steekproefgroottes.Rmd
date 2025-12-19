@@ -48,12 +48,17 @@ Met $\alpha = 0.10$ en $\pi = 0.80$ hebben we namelijk dat de exponent in \@ref(
 
 ## Eenheidskosten
 
-```{r}
-cost_spatial <- 2
-cost_temporal <- 1
-```
+Voor de kostenoptimalisatie stellen we de spatiale en de temporele eenheidskost in als hieronder.
+Het is de verhouding die bepalend is; daarom volstaat het om met een relatieve kost te werken.
 
-Voor de kostenoptimalisatie stellen we de spatiale eenheidskost in op `r cost_spatial` en de temporele op `r cost_temporal`.
+```{r paged.print = FALSE}
+unit_costs <- tribble(
+  ~scheme, ~cost_spatial, ~cost_temporal,
+  "SURF_03.4_lentic", 0.85, 1,
+  "SURF_03.4_lotic", 0.90, 1
+)
+unit_costs
+```
 
 ## Steekproefgroottebepaling in ruimte en tijd {#steekproefgrootte}
 
@@ -86,6 +91,12 @@ sample_sizes <-
     join_by(scheme, target_variable),
     relationship = "many-to-one",
     unmatched = "drop"
+  ) %>% 
+  inner_join(
+    unit_costs,
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = "error"
   ) %>% 
   mutate(
     nr_months = ifelse(
@@ -252,7 +263,9 @@ m_to_errmarg <-
     var_temporal,
     nr_months,
     n_tg,
-    n_tg_yearly
+    n_tg_yearly,
+    cost_spatial,
+    cost_temporal
   ) %>% 
   mutate(
     calc_errmarg = pmap(
@@ -288,7 +301,9 @@ m_to_errmarg_fixed_n <-
     var_temporal,
     nr_months,
     n_tg,
-    n_tg_yearly
+    n_tg_yearly,
+    cost_spatial,
+    cost_temporal
   ) %>% 
   mutate(
     n_tg = max(n_tg),
@@ -334,7 +349,9 @@ m_to_errmarg_fixed_n_ceiling <-
     var_temporal,
     nr_months,
     n_tg,
-    n_tg_yearly
+    n_tg_yearly,
+    cost_spatial,
+    cost_temporal
   ) %>% 
   mutate(
     n_tg = max(n_tg),
