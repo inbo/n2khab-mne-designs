@@ -57,6 +57,21 @@ diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist
 extent <- 256 # m
 n_bins <- 50
 bin_target <- 32
+
+
+ecoregion_colors <- c(
+  "zuidoostelijke heuvelzone" = "darkorchid",
+  "Kempen" = "sienna",
+  "polders en de getijdenschelde" = "slategray",
+  "kustduinen" = "burlywood",
+  "Pleistocene riviervalleien" = "deepskyblue",
+  "zuidwestelijke heuvelzone" = "coral",
+  "Midden-Vlaamse overgangsgebieden" = "gold",
+  "krijt-leemgebieden" = "honeydew",
+  "cuesta's" = "palevioletred",
+  "grindrivieren" = "darkseagreen",
+  "westelijke interfluvia" = "hotpink"
+)
 ```
 
 
@@ -323,7 +338,11 @@ fit_matern <- function(x, y, distweighted = FALSE, ...) {
 }
 
 
-plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
+plot_matern <- function(
+    optimizer_results,
+    y_label = "semivariance (m²)",
+    color = "black"
+  ) {
 
   # retrieve everything 
   fcn <- optimizer_results$fcn
@@ -346,8 +365,8 @@ plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
     geom_vline(xintercept = range, color = "darkgrey") +
     geom_hline(yintercept = nugget, color = "darkgrey") +
     geom_hline(yintercept = sill, color = "darkgrey") +
-    geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.2) +
-    geom_line(aes(x = plotx, y = predict(plotx))) +
+    geom_point(size = 2.5, colour = color, fill = "white", alpha = 0.2) +
+    geom_line(aes(x = plotx, y = predict(plotx)), colour = color) +
     labs(title = paste0("Matérn regression: ",
       paste(round(optimizer_results$par, 4), collapse = ", "))) +
     xlab("distance (m)") + ylab(y_label) +
@@ -427,7 +446,7 @@ regression_by_ecoregion <- function(
     )
   ylabel <- "mean difference (pair-averaged, then binned)"
   # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
-  g <- plot_matern(matern_fit, y_label = ylabel)
+  g <- plot_matern(matern_fit, y_label = ylabel, color = ecoregion_colors[[sc]])
 
   x_excl <- diff_sc$ds
   y_excl <- trafo(diff_sc %>% pull(!!reg_var))
@@ -485,12 +504,130 @@ column <- "dnnh4"
 
 ::: {.panel-tabset group="ecoregion"}
 
+### zuidoostelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "zuidoostelijke heuvelzone",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
 ### Kempen
 
 ```{r}
 regression_by_ecoregion(
   diff_binned,
   "Kempen",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### polders en de getijdenschelde
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "polders en de getijdenschelde",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### kustduinen
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "kustduinen",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### Pleistocene riviervalleien
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "Pleistocene riviervalleien",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### zuidwestelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "zuidwestelijke heuvelzone",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### Midden-Vlaamse overgangsgebieden
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "Midden-Vlaamse overgangsgebieden",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+### krijt-leemgebieden
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "krijt-leemgebieden",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -534,45 +671,12 @@ regression_by_ecoregion(
 ```
 
 
-### polders en de getijdenschelde
+### westelijke interfluvia
 
 ```{r}
 regression_by_ecoregion(
   diff_binned,
-  "polders en de getijdenschelde",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, common_ylim)
-
-```
-
-
-### zuidoostelijke heuvelzone
-
-```{r}
-regression_by_ecoregion(
-  diff_binned,
-  sc = "zuidoostelijke heuvelzone",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, common_ylim)
-```
-
-
-### zuidwestelijke heuvelzone
-
-```{r}
-regression_by_ecoregion(
-  diff_binned,
-  sc = "zuidwestelijke heuvelzone",
+  sc = "westelijke interfluvia",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -594,12 +698,130 @@ column <- "dnno3"
 
 ::: {.panel-tabset group="ecoregion"}
 
+### zuidoostelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "zuidoostelijke heuvelzone",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
 ### Kempen
 
 ```{r}
 regression_by_ecoregion(
   diff_binned,
   "Kempen",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### polders en de getijdenschelde
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "polders en de getijdenschelde",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### kustduinen
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "kustduinen",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### Pleistocene riviervalleien
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "Pleistocene riviervalleien",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### zuidwestelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "zuidwestelijke heuvelzone",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### Midden-Vlaamse overgangsgebieden
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "Midden-Vlaamse overgangsgebieden",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+### krijt-leemgebieden
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "krijt-leemgebieden",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -643,45 +865,12 @@ regression_by_ecoregion(
 ```
 
 
-### polders en de getijdenschelde
+### westelijke interfluvia
 
 ```{r}
 regression_by_ecoregion(
   diff_binned,
-  "polders en de getijdenschelde",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, common_ylim)
-
-```
-
-
-### zuidoostelijke heuvelzone
-
-```{r}
-regression_by_ecoregion(
-  diff_binned,
-  sc = "zuidoostelijke heuvelzone",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, common_ylim)
-```
-
-
-### zuidwestelijke heuvelzone
-
-```{r}
-regression_by_ecoregion(
-  diff_binned,
-  sc = "zuidwestelijke heuvelzone",
+  sc = "westelijke interfluvia",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -703,12 +892,130 @@ column <- "dppo4"
 
 ::: {.panel-tabset group="ecoregion"}
 
+### zuidoostelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "zuidoostelijke heuvelzone",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
 ### Kempen
 
 ```{r}
 regression_by_ecoregion(
   diff_binned,
   "Kempen",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### polders en de getijdenschelde
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "polders en de getijdenschelde",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### kustduinen
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "kustduinen",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### Pleistocene riviervalleien
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "Pleistocene riviervalleien",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### zuidwestelijke heuvelzone
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "zuidwestelijke heuvelzone",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### Midden-Vlaamse overgangsgebieden
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "Midden-Vlaamse overgangsgebieden",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+### krijt-leemgebieden
+
+```{r}
+regression_by_ecoregion(
+  diff_binned,
+  "krijt-leemgebieden",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -752,45 +1059,12 @@ regression_by_ecoregion(
 ```
 
 
-### polders en de getijdenschelde
+### westelijke interfluvia
 
 ```{r}
 regression_by_ecoregion(
   diff_binned,
-  "polders en de getijdenschelde",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, common_ylim)
-
-```
-
-
-### zuidoostelijke heuvelzone
-
-```{r}
-regression_by_ecoregion(
-  diff_binned,
-  sc = "zuidoostelijke heuvelzone",
-  reg_var = column,
-  maxx = common_maxx, maxy = Inf,
-  distweighted = TRUE,
-  par = c(1., 10, 0., 1.),
-  lower = c(0.0, 0.0, 0., 0.99),
-  upper = c(4., 200, 0.48, 1.01)
-) + ylim(0, common_ylim)
-```
-
-
-### zuidwestelijke heuvelzone
-
-```{r}
-regression_by_ecoregion(
-  diff_binned,
-  sc = "zuidwestelijke heuvelzone",
+  sc = "westelijke interfluvia",
   reg_var = column,
   maxx = common_maxx, maxy = Inf,
   distweighted = TRUE,
@@ -810,18 +1084,3 @@ regression_by_ecoregion(
 ```{r}
 knitr::kable(regression_storage, digits = 2)
 ```
-
-
- [1] "westelijke interfluvia"           "polders en de getijdenschelde"
- [3] "zuidoostelijke heuvelzone"        "Pleistocene riviervalleien"
- [5] "Kempen"                           "krijt-leemgebieden"
- [7] "Midden-Vlaamse overgangsgebieden" "cuesta's"
- [9] "kustduinen"                       "grindrivieren"
-[11] "zuidwestelijke heuvelzone"
-
-"Kempen"
-"cuesta's"
-"grindrivieren"
-"polders en de getijdenschelde"
-"zuidoostelijke heuvelzone"
-"zuidwestelijke heuvelzone"

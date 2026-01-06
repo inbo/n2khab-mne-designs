@@ -97,7 +97,7 @@ print_regression_results <- function(orsl, label = "", indicate_threshold = TRUE
 
 
   print(
-    sprintf("%s: conv %i at (%s), mse %.1f", label, conv, par, eps)
+    glue::glue("{label}: conv {conv} at ({par}), mse {round(eps, 1)}")
   )
 
   if (indicate_threshold) {
@@ -108,11 +108,11 @@ print_regression_results <- function(orsl, label = "", indicate_threshold = TRUE
       prep_fcn = shift_nugget_matern4p
     )
     print(
-      sprintf("==> Threshold of dw > 1cm reached at %.3f m distance.", threshold)
-
+      glue::glue("==> Threshold of dw > 1cm reached at {round(threshold, 3)} m distance.")
     )
+
   } else {
-    print(sprintf("==> Sigma range is %.1f m.", orsl$par[2]))
+    print(glue::glue("==> Sigma range is {round(orsl$par[2], 1)} m."))
   }
 }
 
@@ -264,7 +264,7 @@ regression_by_soilclass <- function(
 
 
   sink_path <- here::here("cache", "regression")
-  sink_file <- sprintf("%s_%s_%s.parquet", label, reg_var, sc)
+  sink_file <- glue::glue("{label}_{reg_var}_{sc}.parquet")
   write_parquet(diff_sc, sink = here::here(sink_path, sink_file))
 
   x <- diff_sc$ds
@@ -294,7 +294,7 @@ regression_by_soilclass <- function(
 
   if (return_fit) return(matern_fit)
 
-  sink_file <- sprintf("%s_%s_%s.rds", label, reg_var, sc)
+  sink_file <- glue::glue("{label}_{reg_var}_{sc}.rds")
   saveRDS(matern_fit, file = here::here(sink_path, sink_file))
 
   print_regression_results(matern_fit, label = "regression:")
