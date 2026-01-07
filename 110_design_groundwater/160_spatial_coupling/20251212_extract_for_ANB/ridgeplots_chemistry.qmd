@@ -30,10 +30,9 @@ if (getOption("browser") == "") options(browser = "librewolf")
 
 # user-set parameters
 cluster_dist <- 3400 # m # parameter for clustering
-t_interval <- 32
 data_export_file <- glue::glue("data/waterlevel_data_cl{cluster_dist}.parquet")
-chem_export_file <- glue::glue("data/waterchemistry_data_cl{cluster_dist}_{t_interval}d.parquet")
-diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist}_{t_interval}d.parquet")
+chem_export_file <- glue::glue("data/waterchemistry_data_cl{cluster_dist}_alltimesd.parquet")
+diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist}_alltimesd.parquet")
 
 # parameters
 #  extent <- 256 # m
@@ -72,7 +71,8 @@ pp_chem <- std_chem %>%
 
 ```{r load-diffdata}
 
-diff_data <- read_parquet(diffdata_export_file)
+diff_data <- read_parquet(diffdata_export_file) %>% 
+  filter(dt < 1)
 
 pp_join <- pp_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
@@ -83,8 +83,7 @@ pp_join <- pp_data %>%
          )
 
 diff_meta <- diff_data %>%
-  select(pp_idx1, pp_idx2) %>%
-  distinct() %>%
+  distinct(pp_idx1, pp_idx2) %>%
   left_join(
     pp_join,
     by = join_by(pp_idx1 == pp_idx),
@@ -233,7 +232,7 @@ plot_ridge <- function(sc, chemvar) {
     ggplot(aes(x = !!rlang::sym(chemvar), y = distance_equibin)) +
     geom_density_ridges(rel_min_height = 0.05,
       quantile_lines = TRUE, quantiles = 4,
-      scale = pi, bandwidth = 0.02,
+      scale = pi, bandwidth = 0.05,
       fill = soilclass_colors[[sc]],
       alpha = 0.8
     ) +

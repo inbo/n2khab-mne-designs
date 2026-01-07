@@ -26,7 +26,7 @@ ChemVarWID -> holds the ID of compounds;
 You have only one choice:
 
 ```{r mmi}
-max_measurement_interval <- 7 # 32 # 64 # 128
+max_measurement_interval <- "alltimes" # <- 7 # 32 # 64 # 128
 ```
 
 
@@ -409,9 +409,12 @@ query_measurement <- function (pp1, pp2){
       suffix = c("1", "2")
     ) %>%
     mutate(
-      across(c(date1, date2), function(x) as.Date(as.character(x), format = "%Y%m%d")),
+      across(
+        c(date1, date2),
+        function(x) as.Date(as.character(x), format = "%Y%m%d")
+      ),
       dt = date2 - date1) %>% 
-    filter(dt >= 0, dt < max_measurement_interval) %>%
+    filter(dt >= 0) %>% #, dt < max_measurement_interval) %>%
     mutate(
       dnnh4 = nnh42 - nnh41,
       dnno3 = nno32 - nno31,
@@ -438,8 +441,8 @@ query_measurement <- function (pp1, pp2){
     reframe(head(pick(everything()), 1)) %>% 
     arrange(dt) %>% 
     group_by(date2) %>% 
-    reframe(head(pick(everything()), 1)) %>% 
-    select(-dt)
+    reframe(head(pick(everything()), 1)) # %>% 
+    # select(-dt)
   # knitr::kable(pair_diff %>% select(pp_idx1, date1, dt, date2, pp_idx2))
 
 
@@ -477,4 +480,11 @@ diff_data <- bind_rows(
 close(pb)
 write_parquet(diff_data, sink = diffdata_export_file)
 
+```
+
+
+```{r}
+diff_data %>%
+  ggplot2::ggplot(aes(x = log2(1+as.integer(dt)))) +
+  geom_histogram(bins = 101)
 ```

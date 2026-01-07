@@ -13,7 +13,7 @@ knitr:
 ---
 
 ```{r set-time-interval}
-t_interval <- 7
+t_interval <- 1
 ```
 
 # summary (tl;dr)
@@ -23,8 +23,8 @@ The analysis was carried out per soil type.
 Visualization ([@sec-variograms]) and an overview table ([@sec-overview]) are available at the end of this document.
 
 
-- Only chemical measurements in the same soilclass were included (XXXXXXTODO observation pairs).
-- The maximally allowed time interval between two measurements is **`{r} t_interval` days**.
+- Only chemical measurements in the same soilclass were included (12173 observation pairs).
+- The maximally allowed time interval between two measurements is **`{r} t_interval` day**: only measurements taken on the same date were retained.
 - Dynamic-width bins with homogeneous filling were defined.
 - The difference measure is mean absolute difference of *standardized* log(concentration) or PC values. (standardized `= (value-mean)/sd` ). Raw concentrations were appended, too, for transparency.
 - Many simultaneous measurements happen at the same site, therefore observation counts are zero-inflated. Those well group measurements show unexpectedly large variation, complicating Matérn regression. Those were excluded by filtering out the closest bin for regression (shown in red).
@@ -50,13 +50,13 @@ if (getOption("browser") == "") options(browser = "librewolf")
 # user-set parameters
 cluster_dist <- 3400 # m # parameter for clustering
 data_export_file <- glue::glue("data/waterlevel_data_cl{cluster_dist}.parquet")
-chem_export_file <- glue::glue("data/waterchemistry_data_cl{cluster_dist}_{t_interval}d.parquet")
-diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist}_{t_interval}d.parquet")
+chem_export_file <- glue::glue("data/waterchemistry_data_cl{cluster_dist}_alltimesd.parquet")
+diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist}_alltimesd.parquet")
 
 # parameters
-extent <- 256 # m
+extent <- 512 # m
 n_bins <- 50
-bin_target <- 64
+bin_target <- 96
 ```
 
 
@@ -76,6 +76,7 @@ pp_chem <- std_chem %>%
     across(everything(), ~mean(., na.rm = TRUE)),
     .by = pp_idx
   )
+
 ```
 
 
@@ -104,7 +105,8 @@ mapview(st_data,
 
 ```{r load-diffdata}
 
-diff_data <- read_parquet(diffdata_export_file)
+diff_data <- read_parquet(diffdata_export_file) %>%
+  filter(dt < t_interval)
 
 pp_join <- pp_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
@@ -114,9 +116,13 @@ pp_join <- pp_data %>%
          emd_qdiff, emd_residual_qdiff
          )
 
+diff_data %>%
+  distinct(pp_idx1, pp_idx2) %>%
+  nrow() %>%
+  print()
+
 diff_meta <- diff_data %>%
-  select(pp_idx1, pp_idx2) %>%
-  distinct() %>%
+  distinct(pp_idx1, pp_idx2) %>%
   left_join(
     pp_join,
     by = join_by(pp_idx1 == pp_idx),

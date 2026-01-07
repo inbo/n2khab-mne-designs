@@ -32,9 +32,9 @@ if (getOption("browser") == "") options(browser = "librewolf")
 
 # user-set parameters
 cluster_dist <- 3400 # m # parameter for clustering
-data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
-chem_export_file <- paste0("data/waterchemistry_data_cl", cluster_dist, ".parquet")
-diffdata_export_file <- paste0("data/waterchemistry_diffdata_cl", cluster_dist, ".parquet")
+data_export_file <- glue::glue("data/waterlevel_data_cl{cluster_dist}.parquet")
+chem_export_file <- glue::glue("data/waterchemistry_data_cl{cluster_dist}_alltimesd.parquet")
+diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist}_alltimesd.parquet")
 
 # parameters
 #  extent <- 256 # m
@@ -73,7 +73,8 @@ pp_chem <- std_chem %>%
 
 ```{r load-diffdata}
 
-diff_data <- read_parquet(diffdata_export_file)
+diff_data <- read_parquet(diffdata_export_file) %>% 
+  filter(dt < 1)
 
 pp_join <- pp_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
@@ -230,11 +231,11 @@ diff_binned %>%
 plot_ridge <- function(sc, chemvar) {
 
   diff_equigrouped %>%
-    filter(soilclass == sc, ds < 100) %>% 
+    filter(soilclass == sc, ds < 100, ds > 0) %>% 
     ggplot(aes(x = !!rlang::sym(chemvar), y = distance_equibin)) +
-    geom_density_ridges(rel_min_height = 0.05,
+    geom_density_ridges(rel_min_height = 0.08,
       quantile_lines = TRUE, quantiles = 4,
-      scale = pi, bandwidth = 0.02,
+      scale = pi, bandwidth = 0.05,
       fill = soilclass_colors[[sc]],
       alpha = 0.8
     ) +
