@@ -103,9 +103,35 @@ mapview(st_data,
 ```
 
 
+loading the differentials and inspecting time intervals:
+
 ```{r load-diffdata}
 
-diff_data <- read_parquet(diffdata_export_file) %>%
+diff_data <- read_parquet(diffdata_export_file)
+
+dt <- diff_data %>%
+  mutate(dt = as.numeric(date2 - date1, "days")) %>%
+  pull(dt)
+
+breaks <- c(0., 0.4, 1.1, 6., 8., 13., 15., 20., 22., 25., 35., 50., 60., 80., 120., 400.)
+hist(dt[dt <= max(breaks)], breaks)
+
+message(sum(dt == 0) / length(dt))
+
+```
+
+The vast majority of measurements happened on the same date.
+No indication of relevant weekly or monthly repeats.
+
+:::{.callout-warning}
+We will proceed with measurements which were recorded on the same day.
+:::
+
+
+
+```{r join-diffdata}
+
+diff_data <- diff_data %>%
   filter(dt < t_interval)
 
 pp_join <- pp_data %>%
