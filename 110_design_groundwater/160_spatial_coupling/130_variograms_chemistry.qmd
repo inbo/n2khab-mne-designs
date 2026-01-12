@@ -1,5 +1,5 @@
 ---
-title: "Water Level Variograms: Daily Data"
+title: "Water Chemistry Variograms: Same Day Data"
 bibliography: references_csl.json
 format:
   html:
@@ -12,10 +12,6 @@ knitr:
     echo: true
 ---
 
-```{r set-time-interval}
-t_interval <- 1
-```
-
 # summary (tl;dr)
 
 Variogram analysis of groundwater chemistry indicates close range spatial co-variation.
@@ -23,11 +19,20 @@ The analysis was carried out per soil type.
 Visualization ([@sec-variograms]) and an overview table ([@sec-overview]) are available at the end of this document.
 
 
-- Only chemical measurements in the same soilclass were included (12173 observation pairs).
-- The maximally allowed time interval between two measurements is **`{r} t_interval` day**: only measurements taken on the same date were retained.
+- Only chemical measurements in the same soilclass were included (18664 observation pairs).
+- The maximally allowed time interval between two measurements is **24 hours**: only measurements taken on the same date were retained.
 - Dynamic-width bins with homogeneous filling were defined.
-- The difference measure is mean absolute difference of *standardized* log(concentration) or PC values. (standardized `= (value-mean)/sd` ). Raw concentrations were appended, too, for transparency.
-- Many simultaneous measurements happen at the same site, therefore observation counts are zero-inflated. Those well group measurements show unexpectedly large variation, complicating Matérn regression. Those were excluded by filtering out the closest bin for regression (shown in red).
+- The difference measure is mean absolute difference of log10(concentration) ~~or PC values~~. Raw concentrations were appended, too, for transparency.
+- Many simultaneous measurements happen at the same location, therefore observation counts are zero-inflated. Those well group measurements show unexpectedly large variation, complicating Matérn regression. Those were excluded by filtering out "pairs" with less than $1 m$ distance for regression.
+
+
+Further, technical data characteristics, see `120_waterchemistry_reload`:
+
+- concentrations in units of `MEQ` ("milli-equivalents")
+- PCA discarded (technical complication: only when all measurements simultaneously; not much insight)
+- only measurements on the same day (`dt < 1`)
+- only first difference (anyways, only on the same day)
+- no comparison of the site to itself
 
 
 # preparation
@@ -55,8 +60,9 @@ diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist
 
 # parameters
 extent <- 512 # m
-n_bins <- 50
-bin_target <- 96
+# n_bins <- 50
+min_pair_distance <- 1 # m
+bin_target <- 128
 ```
 
 
@@ -71,7 +77,7 @@ pp_data <- read_parquet(data_export_file)
 std_chem <- read_parquet(file = chem_export_file) %>%
   mutate(date = as.Date(as.character(date), format = "%Y%m%d"))
 pp_chem <- std_chem %>%
-  select(-date) %>% 
+  select(pp_idx, sample_idx, date, meq_nh4_log, meq_nh4_raw) %>% 
   summarize(
     across(everything(), ~mean(., na.rm = TRUE)),
     .by = pp_idx
@@ -90,15 +96,16 @@ st_data <- pp_data %>%
     by = join_by(pp_idx),
     relationship = "one-to-one"
   ) %>% 
-  filter(!is.na(nnh4_raw)) %>% 
+  filter(!is.na(meq_nh4_log)) %>% 
   sf::st_as_sf(coords = c("x", "y"), crs = 31370)
 
-mapview(st_data,
-  map.types = c("CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap", "OpenTopoMap"),
-  zcol = "nnh4_raw",
-  cex = 3,
-  legend = TRUE
-)
+# # mapview output de-activated because it slows quarto rendering noticably
+# mapview(st_data,
+#   map.types = c("CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap", "OpenTopoMap"),
+#   zcol = "meq_nh4_raw",
+#   cex = 3,
+#   legend = TRUE
+# )
 
 ```
 
@@ -107,10 +114,12 @@ loading the differentials and inspecting time intervals:
 
 ```{r load-diffdata}
 
-diff_data <- read_parquet(diffdata_export_file)
+diff_data_raw <- read_parquet(diffdata_export_file) %>%
+  filter(!is_same_location) # only different locations
 
-dt <- diff_data %>%
-  mutate(dt = as.numeric(date2 - date1, "days")) %>%
+dt <- diff_data_raw %>%
+  filter(is_first_dnh4 | is_first_dno3 | is_first_dpo4) %>% 
+  # mutate(dt = as.numeric(date2 - date1, "days")) %>% already stored
   pull(dt)
 
 breaks <- c(0., 0.4, 1.1, 6., 8., 13., 15., 20., 22., 25., 35., 50., 60., 80., 120., 400.)
@@ -121,18 +130,70 @@ message(sum(dt == 0) / length(dt))
 ```
 
 The vast majority of measurements happened on the same date.
-No indication of relevant weekly or monthly repeats.
+There are relevant weekly/bi-weekly/monthly repeats, but those are filtered to reduce 
+uncertainty from temporal difference.
 
 :::{.callout-warning}
 We will proceed with measurements which were recorded on the same day.
+
 :::
 
 
+```{r timefilter-diff-data}
+
+join_a_chemical <- function(.data, chem) {
+  # .data <- diff_backbone
+  # chem <- "nh4"
+
+  cols <- c(
+    "pp_idx1", "date1", "pp_idx2", "date2", "dt",
+    glue::glue("meq_{chem}_log1"),
+    glue::glue("meq_{chem}_log2"),
+    glue::glue("d{chem}"),
+    glue::glue("d{chem}r"),
+    glue::glue("is_first_d{chem}")
+  )
+  
+  .data %>% 
+    left_join(
+      diff_data_raw %>% 
+        select(!!!rlang::syms(cols)) %>%
+        filter(!!as.symbol(glue::glue("is_first_d{chem}"))) %>% 
+        filter(dt < 1)
+      ,
+      by = join_by(pp_idx1, date1, pp_idx2),
+      suffix = c("", glue::glue("_{chem}")),
+      relationship = "many-to-many"
+    ) %>%
+    return()
+}
+
+diff_backbone <- diff_data_raw %>%
+  distinct(pp_idx1, date1, pp_idx2) %>%
+  mutate(date2 = NA, dt = NA)
+
+diff_data_mixed <- diff_backbone %>%
+  join_a_chemical("nh4") %>%
+  join_a_chemical("no3") %>%
+  join_a_chemical("po4") %>%
+  select(-date2, -dt)
+
+diff_data <- diff_data_mixed  %>%
+  filter(!(is.na(dnh4)&is.na(dno3)&is.na(dpo4)))
+
+diff_data %>%
+  mutate(
+    nan_nh4 = is.na(dnh4),
+    nan_no3 = is.na(dno3),
+    nan_po4 = is.na(dpo4)
+  ) %>% 
+  count(nan_nh4, nan_no3, nan_po4) %>%
+  knitr::kable()
+
+```
+
 
 ```{r join-diffdata}
-
-diff_data <- diff_data %>%
-  filter(dt < t_interval)
 
 pp_join <- pp_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
@@ -141,11 +202,6 @@ pp_join <- pp_data %>%
          emd_n, emd_amp1, emd_amp2, emd_ampsum,
          emd_qdiff, emd_residual_qdiff
          )
-
-diff_data %>%
-  distinct(pp_idx1, pp_idx2) %>%
-  nrow() %>%
-  print()
 
 diff_meta <- diff_data %>%
   distinct(pp_idx1, pp_idx2) %>%
@@ -191,19 +247,18 @@ diff_all <- diff_meta %>%
       melevation, mslope
   ) %>%
   mutate(
-    pair = factor(paste0(
-      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
-    )
+    pair = factor(glue::glue("{pp_idx1}_{pp_idx2}"))
   ) %>%
   left_join(diff_data,
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
   ) %>%
-  filter(
-    # ds >= extent/n_bins
-    date2 - date1 == 0
-  ) %>%
-  mutate(date = date1) %>% select(-date1, -date2)
+  filter(ds >= min_pair_distance) %>% 
+  # filter(
+  #   # ds >= extent/n_bins
+  #   date2 - date1 == 0 # already filtered
+  # ) %>%
+  mutate(date = date1) %>% select(-date1)
   # mutate(dt = abs(difftime(date1, date2, units = "days")))
 
 
@@ -211,6 +266,7 @@ diff_all %>% ggplot(aes(x = ds)) +
   geom_histogram(bins = 256, fill = "lightgray", color = "black") +
   theme_bw()
 
+# diff_all %>% glimpse()
 ```
 
 
@@ -225,23 +281,31 @@ After some good prior experience, I will once more apply binning with variable b
 ```{r equibin-preparation}
 #| code-fold: false
 
+# this is the full length data, just with a group column.
 diff_equigrouped <- diff_all %>%
   summarize(
-    n_obs = sum(as.integer(!is.na(dPC1))),
+    n_obs = sum(as.integer(!(
+      is.na(dnh4[is_first_dnh4]) |
+      is.na(dno3[is_first_dno3]) |
+      is.na(dpo4[is_first_dpo4])
+    ))),
+    n_nh4 = sum(as.integer(!is.na(dnh4[is_first_dnh4]))),
+    n_no3 = sum(as.integer(!is.na(dno3[is_first_dno3]))),
+    n_po4 = sum(as.integer(!is.na(dpo4[is_first_dpo4]))),
     soilclass = first(soilclass1),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     # dt = mean(abs(date2-date1), na.rm = TRUE),
     # semivar = 1/(2*n_obs)*sum(dPC1^2, na.rm = TRUE),
-    dnnh4 = 1/(n_obs)*sum(abs(dnnh4), na.rm = TRUE),
-    dnno3 = 1/(n_obs)*sum(abs(dnno3), na.rm = TRUE),
-    dppo4 = 1/(n_obs)*sum(abs(dppo4), na.rm = TRUE),
-    dnnh4r = 1/(n_obs)*sum(abs(dnnh4r), na.rm = TRUE),
-    dnno3r = 1/(n_obs)*sum(abs(dnno3r), na.rm = TRUE),
-    dppo4r = 1/(n_obs)*sum(abs(dppo4r), na.rm = TRUE),
-    dPC1 = 1/(n_obs)*sum(abs(dPC1), na.rm = TRUE),
-    dPC2 = 1/(n_obs)*sum(abs(dPC2), na.rm = TRUE),
-    dPC3 = 1/(n_obs)*sum(abs(dPC3), na.rm = TRUE),
+    dnh4 = 1/(n_nh4)*sum(abs(dnh4[is_first_dnh4]), na.rm = TRUE),
+    dno3 = 1/(n_no3)*sum(abs(dno3[is_first_dno3]), na.rm = TRUE),
+    dpo4 = 1/(n_po4)*sum(abs(dpo4[is_first_dpo4]), na.rm = TRUE),
+    dnh4r = 1/(n_nh4)*sum(abs(dnh4r[is_first_dnh4]), na.rm = TRUE),
+    dno3r = 1/(n_no3)*sum(abs(dno3r[is_first_dno3]), na.rm = TRUE),
+    dpo4r = 1/(n_po4)*sum(abs(dpo4r[is_first_dpo4]), na.rm = TRUE),
+    # dPC1 = 1/(n_obs)*sum(abs(dPC1), na.rm = TRUE),
+    # dPC2 = 1/(n_obs)*sum(abs(dPC2), na.rm = TRUE),
+    # dPC3 = 1/(n_obs)*sum(abs(dPC3), na.rm = TRUE),
     .by = pair 
   ) %>% ungroup %>% arrange(ds) %>%
   group_by(soilclass) %>% 
@@ -255,29 +319,42 @@ diff_equigrouped <- diff_all %>%
 
     
 combine_grouped <- function (val, cnt) sum(val*cnt, na.rm = TRUE)/sum(cnt, na.rm = TRUE)
+mean_finite <- function (val) mean(val[is.finite(val)], na.rm = TRUE)
 
+# Here, grouped observations get thrown into bins.
 diff_binned <- diff_equigrouped %>%
   summarize(
     cnt = n(),
     ds = mean(ds), 
     # dt = mean(dt), 
     n_obs = sum(n_obs),
+    n_nh4 = sum(n_nh4),
+    n_no3 = sum(n_no3),
+    n_po4 = sum(n_po4),
     # semivariance_groupmean = mean(semivar, na.rm = TRUE),
     # semivariance_all = combine_grouped(semivar, cnt),
-    dPC1_all = combine_grouped(dPC1, n_obs),
-    dnnh4 = mean(dnnh4, na.rm = TRUE), 
-    dnno3 = mean(dnno3, na.rm = TRUE), 
-    dppo4 = mean(dppo4, na.rm = TRUE), 
-    dnnh4r = mean(dnnh4r, na.rm = TRUE), 
-    dnno3r = mean(dnno3r, na.rm = TRUE), 
-    dppo4r = mean(dppo4r, na.rm = TRUE), 
-    dPC1 = mean(dPC1, na.rm = TRUE), 
-    dPC2 = mean(dPC2, na.rm = TRUE), 
-    dPC3 = mean(dPC3, na.rm = TRUE), 
+    # dPC1_all = combine_grouped(dPC1, n_obs),
+    dnh4  = mean_finite(dnh4),
+    dno3  = mean_finite(dno3),
+    dpo4  = mean_finite(dpo4),
+    dnh4r = mean_finite(dnh4r),
+    dno3r = mean_finite(dno3r),
+    dpo4r = mean_finite(dpo4r),
+    # dPC1 = mean(dPC1, na.rm = TRUE), 
+    # dPC2 = mean(dPC2, na.rm = TRUE), 
+    # dPC3 = mean(dPC3, na.rm = TRUE), 
     .by = c(distance_equibin, soilclass)
   ) %>%
-  ungroup %>% arrange(ds)
+  ungroup %>%
+  arrange(ds) %>%
+  filter(ds <= extent)
 
+N_pairs <- sum(diff_binned$cnt)
+print(N_pairs)
+print(sum(diff_binned$n_obs))
+print(sum(diff_binned$n_nh4))
+print(sum(diff_binned$n_no3))
+print(sum(diff_binned$n_po4))
 ```
 
 
@@ -300,12 +377,12 @@ diff_binned %>%
 
 diff_equigrouped %>%
   filter(ds < 100, soilclass == "heavy") %>%
-  ggplot(aes(x = dnnh4, y = distance_equibin)) +
+  ggplot(aes(x = dnh4, y = distance_equibin)) +
   geom_density_ridges(rel_min_height = 0.05,
     quantile_lines = TRUE, quantiles = 4,
     scale = 4.0, bandwidth = 0.05) +
   # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
-  labs(x = "log concentration difference", y = "pair distance") +
+  labs(x = "log10 meq concentration difference", y = "pair distance") +
   xlim(0, 2) +
   theme_bw() + coord_flip() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
@@ -393,9 +470,9 @@ trafo <- function(x) x
 
 
 list_of_variables <- c(
-    "dnnh4" , "dnno3" , "dppo4",
-    "dnnh4r" , "dnno3r" , "dppo4r",
-    "dPC1" , "dPC2" , "dPC3"
+    "dnh4" , "dno3" , "dpo4",
+    "dnh4r" , "dno3r" , "dpo4r"
+    #, "dPC1" , "dPC2" , "dPC3"
 )
 list_of_soilclasses <- c("heavy", "light", "peat")
 regression_storage <- matrix(rep(NA,
@@ -418,7 +495,7 @@ regression_by_soilclass <- function(
   y <- trafo(diff_sc %>% pull(!!reg_var))
 
   # DO NOT exclude the first two bins
-  minx <- 1.0*extent/n_bins
+  minx <- 0 # 1.0*extent/n_bins
   lowy <- y[x <= minx]
   lowx <- x[x <= minx]
   y <- y[x > minx]
@@ -486,9 +563,9 @@ I will cycle through those.
 ```{r dchem-column-overview}
 #| code-fold: false
 
-column <- "dnnh4"
-column <- "dnno3"
-column <- "dppo4"
+column <- "dnh4"
+column <- "dno3"
+column <- "dpo4"
 # column <- "dPC1"
 # column <- "dPC2"
 # column <- "dPC3"
@@ -496,7 +573,7 @@ column <- "dppo4"
 # column <- "dPC1"
 
 
-common_ylim <- 2
+common_ylim <- 1.0
 common_maxx <- 256
 ```
 
@@ -508,7 +585,7 @@ common_maxx <- 256
 
 ```{r dchem-column-nh4}
 #| code-fold: false
-column <- "dnnh4"
+column <- "dnh4"
 ```
 
 ::: {.panel-tabset group="soilclass"}
@@ -571,7 +648,7 @@ regression_by_soilclass(
 
 ```{r dchem-column-no3}
 #| code-fold: false
-column <- "dnno3"
+column <- "dno3"
 ```
 
 ::: {.panel-tabset group="soilclass"}
@@ -634,7 +711,7 @@ regression_by_soilclass(
 
 ```{r dchem-column-po4}
 #| code-fold: false
-column <- "dppo4"
+column <- "dpo4"
 ```
 
 ::: {.panel-tabset group="soilclass"}
@@ -699,7 +776,7 @@ regression_by_soilclass(
 
 ```{r dchem-column-nh4r}
 #| code-fold: false
-column <- "dnnh4r"
+column <- "dnh4r"
 ```
 
 ::: {.panel-tabset group="soilclass"}
@@ -762,7 +839,7 @@ regression_by_soilclass(
 
 ```{r dchem-column-no3r}
 #| code-fold: false
-column <- "dnno3r"
+column <- "dno3r"
 ```
 
 ::: {.panel-tabset group="soilclass"}
@@ -825,7 +902,7 @@ regression_by_soilclass(
 
 ```{r dchem-column-po4r}
 #| code-fold: false
-column <- "dppo4r"
+column <- "dpo4r"
 ```
 
 ::: {.panel-tabset group="soilclass"}
