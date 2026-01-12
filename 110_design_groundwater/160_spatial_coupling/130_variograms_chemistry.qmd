@@ -232,6 +232,51 @@ diff_meta <- diff_data %>%
 ```
 
 
+
+Ecoregions (not used herein):
+
+```{r prepare-ecoregion}
+ecoregions <- n2khab::read_ecoregions() %>% 
+  select(region_name) %>% 
+  rename(ecoregion = region_name) %>% 
+  mutate(ecoregion = stringr::str_replace(ecoregion, "Ecoregio van de ", ""))
+
+# n2khab::read_ecoregions() %>% sf::st_drop_geometry() %>% distinct(region_name)
+ecoregion_lookup <- bind_rows(
+  diff_meta %>% select(pp_idx1, x1, y1) %>% rename(pp_idx = pp_idx1, x = x1, y = y1),
+  diff_meta %>% select(pp_idx2, x2, y2) %>% rename(pp_idx = pp_idx2, x = x2, y = y2)
+  ) %>%
+  distinct() %>% 
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370) %>% 
+  sf::st_join(ecoregions)
+
+# ecoregion_lookup %>% 
+#   count(ecoregion) %>% arrange(desc(n)) %>% knitr::kable()
+
+missing_points <- ecoregion_lookup %>% filter(is.na(ecoregion))
+# mapview::mapview(ecoregions) +
+#   mapview::mapview(missing_points)
+
+```
+
+```{r join-ecoregion}
+
+diff_meta <- diff_meta %>%
+  left_join(
+    ecoregion_lookup,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one"
+  )
+
+diff_meta <- diff_meta %>%
+  filter(ecoregion != "NA")
+  
+# diff_meta %>% 
+#   count(ecoregion) %>% arrange(desc(n)) %>% knitr::kable()
+
+```
+
+
 ```{r glimpse-data}
 
 # diff_meta %>% glimpse
@@ -240,7 +285,8 @@ diff_meta <- diff_data %>%
 diff_all <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
-      soilclass1, wata_dist_class1, wata_dist_class2,
+      soilclass1, ecoregion,
+      wata_dist_class1, wata_dist_class2,
       ds, dh, dz,
       # damp, dqdiff,
       dwadi, dslope,
@@ -293,6 +339,7 @@ diff_equigrouped <- diff_all %>%
     n_no3 = sum(as.integer(!is.na(dno3[is_first_dno3]))),
     n_po4 = sum(as.integer(!is.na(dpo4[is_first_dpo4]))),
     soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     # dt = mean(abs(date2-date1), na.rm = TRUE),
@@ -369,6 +416,8 @@ diff_binned %>%
 ```
 
 
+
+
 # ridges
 
 ```{r diff-ridges-ppo4}
@@ -376,7 +425,10 @@ diff_binned %>%
 #| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (x-axis), the distribution of water level differences (y-axis, grey density distributions) increases (indicated by quantile lines)."
 
 diff_equigrouped %>%
-  filter(ds < 100, soilclass == "heavy") %>%
+  filter(
+    ds < 100,
+    soilclass == "heavy"
+  ) %>%
   ggplot(aes(x = dnh4, y = distance_equibin)) +
   geom_density_ridges(rel_min_height = 0.05,
     quantile_lines = TRUE, quantiles = 4,
