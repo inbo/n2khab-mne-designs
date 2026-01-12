@@ -1,5 +1,6 @@
 
-
+## some uniform colors
+# https://r-charts.com/colors/
 
 soilclass_colors <- c(
   "heavy" = "sienna",
@@ -8,6 +9,19 @@ soilclass_colors <- c(
   "unknown" = "slategray"
 )
 
+ecoregion_colors <- c(
+  "zuidoostelijke heuvelzone" = "darkorchid",
+  "Kempen" = "sienna",
+  "polders en de getijdenschelde" = "slategray",
+  "kustduinen" = "burlywood",
+  "Pleistocene riviervalleien" = "deepskyblue",
+  "zuidwestelijke heuvelzone" = "coral",
+  "Midden-Vlaamse overgangsgebieden" = "gold",
+  "krijt-leemgebieden" = "honeydew",
+  "cuesta's" = "palevioletred",
+  "grindrivieren" = "darkseagreen",
+  "westelijke interfluvia" = "hotpink"
+)
 
 # wrap a regression function to generate residuals
 # the result is the parameter to be minimized.
