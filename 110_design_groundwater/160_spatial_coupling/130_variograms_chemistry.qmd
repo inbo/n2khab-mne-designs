@@ -76,12 +76,16 @@ pp_data <- read_parquet(data_export_file)
 
 std_chem <- read_parquet(file = chem_export_file) %>%
   mutate(date = as.Date(as.character(date), format = "%Y%m%d"))
-pp_chem <- std_chem %>%
+pp_chem_nh4 <- std_chem %>%
   select(pp_idx, sample_idx, date, meq_nh4_log, meq_nh4_raw) %>% 
   summarize(
     across(everything(), ~mean(., na.rm = TRUE)),
     .by = pp_idx
   )
+
+# std_chem %>%
+#   filter(pp_idx %in% c(4178, 2586)) %>%
+#   arrange(desc(date))
 
 ```
 
@@ -92,7 +96,7 @@ There are maps available (here: example for $NH_4$), yet measurement pairs are r
 
 st_data <- pp_data %>%
   left_join(
-    pp_chem,
+    pp_chem_nh4,
     by = join_by(pp_idx),
     relationship = "one-to-one"
   ) %>% 
@@ -129,12 +133,12 @@ message(sum(dt == 0) / length(dt))
 
 ```
 
-The vast majority of measurements happened on the same date.
-There are relevant weekly/bi-weekly/monthly repeats, but those are filtered to reduce 
+The vast majority (>80%) of measurements happened on the same date.
+There are relevant weekly/bi-weekly/monthly repeats, but those are filtered herein to reduce 
 uncertainty from temporal difference.
 
 :::{.callout-warning}
-We will proceed with measurements which were recorded on the same day.
+We will proceed with measurements which were recorded **on the same day**.
 
 :::
 
@@ -202,6 +206,9 @@ pp_join <- pp_data %>%
          emd_n, emd_amp1, emd_amp2, emd_ampsum,
          emd_qdiff, emd_residual_qdiff
          )
+# pp_join %>% nrow()
+# pp_join %>% distinct() %>% nrow()
+# yes, they are unique
 
 diff_meta <- diff_data %>%
   distinct(pp_idx1, pp_idx2) %>%
@@ -229,7 +236,10 @@ diff_meta <- diff_data %>%
       mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
   )
 
+
 ```
+
+`diff_meta` are the observed, distinct pairs. There are <19k.
 
 
 
@@ -280,7 +290,6 @@ diff_meta <- diff_meta %>%
 ```{r glimpse-data}
 
 # diff_meta %>% glimpse
-# diff_data %>% glimpse
 
 diff_all <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
@@ -313,14 +322,20 @@ diff_all %>% ggplot(aes(x = ds)) +
   theme_bw()
 
 # diff_all %>% glimpse()
+# diff_all %>% filter(is_first_dnh4) %>% glimpse()
+# diff_all %>% filter(pair == "4178_2586") %>% glimpse()
+# diff_all %>% filter(pair == "4178_2586") %>% select(ds, date, dnh4)
+
 ```
+
+`diff_all` contains all the observations of water chemistry at the pairs (~53k), but only those which are "firsts" for differences of either chemical.
 
 
 # binning
 
 
 After some good prior experience, I will once more apply binning with variable bin width, to achieve **equal sample size per bin**.
-
+Many location pairs are repeatedly measured, i.e. both of the pair are simultaneously measured on different days.
 
 
 
@@ -364,6 +379,9 @@ diff_equigrouped <- diff_all %>%
   relocate(distance_equibin) %>% 
   ungroup
 
+# diff_equigrouped %>% glimpse()
+# diff_equigrouped %>% head(9) %>% tail(1) %>% knitr::kable()
+# 4178_2586
     
 combine_grouped <- function (val, cnt) sum(val*cnt, na.rm = TRUE)/sum(cnt, na.rm = TRUE)
 mean_finite <- function (val) mean(val[is.finite(val)], na.rm = TRUE)
@@ -396,13 +414,16 @@ diff_binned <- diff_equigrouped %>%
   arrange(ds) %>%
   filter(ds <= extent)
 
-N_pairs <- sum(diff_binned$cnt)
-print(N_pairs)
+print(diff_binned %>% pull(cnt) %>% sum())
+print(diff_binned %>% filter(ds < 100) %>% pull(cnt) %>% sum())
 print(sum(diff_binned$n_obs))
 print(sum(diff_binned$n_nh4))
 print(sum(diff_binned$n_no3))
 print(sum(diff_binned$n_po4))
 ```
+
+There are 18345 pairs, which are assigned to a distance bin. 
+Repeated observations (simultaneous measurement on different occasions) are averaged.
 
 
 
