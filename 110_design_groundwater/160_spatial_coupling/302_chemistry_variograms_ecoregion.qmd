@@ -13,21 +13,6 @@ knitr:
 ---
 
 
-# summary (tl;dr)
-
-Variogram analysis of groundwater chemistry indicates close range spatial co-variation.
-The analysis was carried out per soil type.
-Visualization ([@sec-variograms]) and an overview table ([@sec-overview]) are available at the end of this document.
-
-
-- The allowed time interval between two measurements is **< 1 days** (quasi-simultaneous).
-- Dynamic-width bins with homogeneous filling were defined.
-- The difference measure is mean absolute difference of `log(1e-6 + concentration)`. Raw concentrations are also shown below.
-- Many simultaneous measurements happen at the same site, therefore observation counts are zero-inflated. Those well group measurements show unexpectedly large variation, complicating Matérn regression. Those were excluded by filtering out the closest bin for regression (shown in red).
-
-
-
-# preparation
 
 ```{r setup}
 #| include: false
@@ -43,6 +28,8 @@ library("ggridges")  |> void() # density ridges
 
 
 if (getOption("browser") == "") options(browser = "librewolf") 
+source("regression_tools.R") 
+
 
 # user-set parameters
 cluster_dist <- 3400 # m # parameter for clustering
@@ -429,9 +416,6 @@ diff_binned %>%
 ## Regression Procedure Wrapper
 
 ```{r regression-wrapper}
-
-source("regression_tools.R") 
-
 
 fit_matern <- function(x, y, distweighted = FALSE, ...) {
   target_fcn <- wrap_target_function

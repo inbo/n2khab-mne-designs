@@ -17,7 +17,7 @@ ecoregion_colors <- c(
   "Pleistocene riviervalleien" = "deepskyblue",
   "zuidwestelijke heuvelzone" = "coral",
   "Midden-Vlaamse overgangsgebieden" = "gold",
-  "krijt-leemgebieden" = "honeydew",
+  "krijt-leemgebieden" = "honeydew3",
   "cuesta's" = "palevioletred",
   "grindrivieren" = "darkseagreen",
   "westelijke interfluvia" = "hotpink"
