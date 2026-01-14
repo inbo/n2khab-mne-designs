@@ -29,8 +29,6 @@ Visualization ([@sec-variograms]) and an overview table ([@sec-overview]) are av
 
 # preparation
 
-... the usual.
-
 ```{r setup}
 #| include: false
 void <- suppressPackageStartupMessages
@@ -236,8 +234,10 @@ ecoregion_lookup <- bind_rows(
   sf::st_as_sf(coords = c("x", "y"), crs = 31370) %>% 
   sf::st_join(ecoregions)
 
-# ecoregion_lookup %>% 
-#   count(ecoregion) %>% arrange(desc(n)) %>% knitr::kable()
+ecoregion_lookup %>% 
+  sf::st_drop_geometry() %>% 
+  count(ecoregion) %>% arrange(desc(n)) %>%
+  knitr::kable()
 
 missing_points <- ecoregion_lookup %>% filter(is.na(ecoregion))
 # mapview::mapview(ecoregions) +
@@ -257,7 +257,10 @@ diff_meta <- diff_meta %>%
   )
 
 diff_meta <- diff_meta %>%
-  filter(ecoregion != "NA")
+  filter(
+    ecoregion != "NA",
+    !is.na(ecoregion)
+  )
   
 # diff_meta %>% 
 #   count(ecoregion) %>% arrange(desc(n)) %>% knitr::kable()
