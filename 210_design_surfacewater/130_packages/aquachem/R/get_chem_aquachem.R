@@ -25,13 +25,13 @@ get_chem_aquachem <- function(locs,
             locs %>%
             distinct(.data$loc_code)
 
-        try(db_drop_table(con, "##locs"),
+        try(DBI::dbRemoveTable(con, "#locs"),
             silent = TRUE)
 
         locs <-
             copy_to(con,
                     locs,
-                    "##locs")%>%
+                    "#locs") %>%
             dplyr::inner_join(tbl(con, "FactResultAqua",copy = TRUE) %>%
                            dplyr::select(loc_code = .data$CODE),
                        .,
