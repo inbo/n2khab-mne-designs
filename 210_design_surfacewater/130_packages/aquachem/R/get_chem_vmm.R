@@ -167,7 +167,13 @@ get_chem_vmm <-function(con,
             mutate(y = unlist(purrr::map(link_data$geometry,2)))%>%
             mutate(nearest=st_nearest_feature(.,geodata))%>%
             st_join(geodata)%>%
-            mutate(NAAM = toupper(NAAM))%>%
+            mutate(
+              # since following two fields are going to be used in pattern
+              # matching, NAs are not allowed and need a quickfix
+              vhag_code = ifelse(is.na(vhag_code), "missing", vhag_code),
+              NAAM = ifelse(is.na(NAAM), "MISSING", NAAM),
+              NAAM = toupper(NAAM)
+            )%>%
             #check if stream names of VMMData and Geodatafiles are equal
             mutate(check_vhag= str_detect(vhag, vhag_code))%>%
             mutate(check_name= str_detect(river_name, NAAM))%>%
