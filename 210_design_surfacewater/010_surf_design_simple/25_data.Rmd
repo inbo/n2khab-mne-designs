@@ -84,14 +84,28 @@ chem_lentic_long %>%
   nrow(.) == 0
 ```
 
-De dataset bevat geen nulwaarden in de doelvariabelen.
+De dataset bevat een belangrijk aandeel ontbrekende waarden beneden de bepaalbaarheidsgrens.
 
 ```{r paged.print = FALSE}
 chem_lentic_long %>% 
   summarize(
-    n_zero = sum(value == 0),
+    n_observations = n(),
+    n_below_loq = sum(below_loq),
+    proportion_below_loq = round(n_below_loq / n_observations, 2),
     .by = variable
   )
+```
+
+Voor totaal fosfor zijn er minder waarden beschikbaar.
+
+Binnen één meetjaar is de bepaalbaarheidsgrens dezelfde per doelvariabele:
+
+```{r}
+chem_lentic_long %>% 
+  filter(below_loq) %>% 
+  distinct(variable, loq, year_sampling) %>% 
+  pivot_wider(names_from = year_sampling, values_from = loq, names_sort = TRUE) %>% 
+  kable()
 ```
 
 In de verkenning beschouwen we een locatie als 'bemeten' indien minstens één doelvariabele is bemeten.
