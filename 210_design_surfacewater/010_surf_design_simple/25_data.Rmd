@@ -1,6 +1,7 @@
 # Data en verkenning
 
 De hieronder gehanteerde datasets werden in 2022 samengesteld door Tom De Dobbelaer [@de_dobbelaer_data_2022].
+We hebben deze bijkomend geüpdatet met behulp van gegevens over de bepaalbaarheidsgrens, die bij (een deel van) de observaties beschikbaar waren in de databanken.
 
 _Merk op_ dat we voorlopig ook NH4 opnemen in de analyse, ter informatie.
 Vermits het geen primaire milieuvariabele is, zullen we ze vermoedelijk terug schrappen in een latere versie.
@@ -15,10 +16,10 @@ We lezen de data voor SURF_03.4_lentic in en doen enkele voorbewerkingen.
 De variabelen `nh4`, `no3` en `ptot` vertegenwoordigen de concentratie van respectievelijk NH~4~^+^-N, NO~3~^-^-N en P~tot~, uitgedrukt in mg/l.
 
 ```{r}
-chem_lentic <- 
+chem_lentic_long <- 
   read_vc("lentic_chem", root = datapath) %>% 
   as_tibble() %>% 
-  select(-x, -y, -area, -target) %>% 
+  select(loc_code, FieldSamplingDate, habfield) %>% 
   distinct() %>% 
   mutate(
     loc_code = factor(loc_code),
@@ -36,42 +37,35 @@ chem_lentic <-
     .keep = "unused"
   ) %>% 
   relocate(type) %>% 
-  relocate(nh4, no3, ptot, .after = last_col()) %>% 
-  arrange(type, loc_code, date_sampling)
+  inner_join(
+    read_vc(
+      "lentic_chem_improved_values",
+      root = file.path(datapath, "intermediate")
+    ) %>% 
+      as_tibble(),
+    join_by(loc_code, date_sampling),
+    relationship = "many-to-many",
+    unmatched = "drop"
+  ) %>% 
+  mutate(value_log = log10(value)) %>% 
+  relocate(value_log, .after = value) %>% 
+  arrange(type, loc_code, date_sampling, variable)
 # setting year_month as factor with all relevant levels, for plotting
 year_months_lentic <- 
   expand_grid(
-    yr = chem_lentic$year_sampling %>% 
+    yr = chem_lentic_long$year_sampling %>% 
       range() %>% 
       full_seq(period = 1),
     m = 1:12
   ) %>% 
   mutate(year_month = str_c(yr, "_", str_pad(m, 2, pad = "0"))) %>% 
   pull(year_month)
-chem_lentic <- 
-  chem_lentic %>% 
+chem_lentic_long <- 
+  chem_lentic_long %>% 
   mutate(year_month = factor(year_month, levels = year_months_lentic))
 ```
 
-In de korte vorm van de dataset komt één rij overeen met één locatie op één datum, die voor één of meer variabelen (als kolommen) is bemeten.
-
-We leiden ook een lange vorm af van de dataset, waarbij elke meetwaarde in een afzonderlijke rij komt, en waarbij we ook de log~10~-getransformeerde waarde van de doelvariabelen toevoegen.
-
-```{r}
-chem_lentic_long <- 
-  chem_lentic %>% 
-  pivot_longer(
-    c(nh4, no3, ptot),
-    names_to = "variable",
-    values_to = "value"
-  ) %>% 
-  mutate(
-    variable = factor(variable),
-    value_log = log10(value)
-  ) %>% 
-  filter(!is.na(value)) %>% 
-  arrange(variable, type, loc_code, date_sampling)
-```
+In deze dataset komt elke meetwaarde voor in een afzonderlijke rij.
 
 Structuur van de dataset:
 
@@ -81,13 +75,13 @@ glimpse(chem_lentic_long)
 
 ### Beknopte dataverkenning
 
-Het aantal rijen per type, locatie en datum zou 1 moeten zijn in de korte vorm van de dataset:
+Het aantal rijen per type, locatie, datum en variabele zou 1 moeten zijn:
 
 ```{r}
-chem_lentic %>% 
-  count(type, loc_code, date_sampling) %>% 
-    filter(n > 1) %>% 
-    nrow(.) == 0
+chem_lentic_long %>% 
+  count(type, loc_code, date_sampling, variable) %>% 
+  filter(n > 1) %>% 
+  nrow(.) == 0
 ```
 
 De dataset bevat geen nulwaarden in de doelvariabelen.
@@ -101,11 +95,12 @@ chem_lentic_long %>%
 ```
 
 In de verkenning beschouwen we een locatie als 'bemeten' indien minstens één doelvariabele is bemeten.
+Of de meetwaarde onder of boven de bepaalbaarheidsgrens is, maakt daarbij niet uit.
 
 Aantal bemeten locaties per type.
 
 ```{r paged.print = FALSE}
-chem_lentic %>% 
+chem_lentic_long %>% 
   distinct(type, loc_code) %>% 
   count(type)
 ```
@@ -113,8 +108,8 @@ chem_lentic %>%
 Aantal bemeten locaties per kalendermaand.
 
 ```{r out.width="90%"}
-chem_lentic %>% 
-  distinct(pick(-type)) %>% 
+chem_lentic_long %>% 
+  distinct(loc_code, date_sampling, year_month) %>% 
   count(year_month) %>% 
   complete(year_month, fill = list(n = 0)) %>% 
   ggplot(aes(x = year_month, y = n, group = 1)) +
@@ -125,7 +120,8 @@ chem_lentic %>%
 Aantal bemeten locaties per type en per kalendermaand.
 
 ```{r fig.height = 12, fig.width = 8, out.width="70%"}
-chem_lentic %>% 
+chem_lentic_long %>% 
+  distinct(type, loc_code, date_sampling, year_month) %>% 
   count(type, year_month) %>% 
   mutate(type = fct_drop(type)) %>% 
   complete(type, year_month, fill = list(n = 0)) %>% 
@@ -139,7 +135,7 @@ chem_lentic %>%
 Verdeling van de tijdsspanne (in maanden) tussen eerste en laatste bemonstering per locatie.
 
 ```{r}
-chem_lentic %>% 
+chem_lentic_long %>% 
   summarize(
     timespan_months = 
       ceiling(as.integer(max(date_sampling) - min(date_sampling) + 1) / 30),
@@ -156,8 +152,8 @@ chem_lentic %>%
 Verdeling van het aantal bezoeken per locatie.
 
 ```{r}
-chem_lentic %>% 
-  distinct(pick(-type)) %>% 
+chem_lentic_long %>% 
+  distinct(loc_code, date_sampling) %>% 
   count(loc_code, name = "n_visits") %>% 
   count(n_visits) %>% 
   ggplot(aes(x = n_visits, y = n, label = n)) +
@@ -171,8 +167,8 @@ Verdeling van de tijdsstap (in dagen) tussen twee opeenvolgende bemonsteringen o
 We knippen de lange staart naar rechts (zeer lage aantallen) bewust af.
 
 ```{r warning = FALSE}
-chem_lentic %>% 
-  distinct(pick(-type)) %>% 
+chem_lentic_long %>% 
+  distinct(loc_code, date_sampling) %>% 
   arrange(loc_code, date_sampling) %>% 
   mutate(
     date_sampling_previous = lag(date_sampling),
@@ -194,7 +190,7 @@ chem_lentic_long %>%
 
 Histogrammen van de doelvariabelen in originele en in logschaal.
 
-```{r}
+```{r warning=FALSE}
 chem_lentic_long %>% 
   ggplot(aes(x = value)) +
   geom_histogram(bins = 50, fill = "white", colour = "grey70") +
@@ -211,14 +207,14 @@ chem_lentic_long %>%
 
 Violinplots met jitter, van de doelvariabelen in originele en in logschaal.
 
-```{r}
+```{r warning=FALSE}
 chem_lentic_long %>% 
   ggplot(aes(x = variable, y = value)) +
   geom_jitter(alpha = 0.1) +
   geom_violin(colour = "violet", fill = NA, linewidth = 1)
 ```
 
-```{r}
+```{r warning=FALSE}
 chem_lentic_long %>% 
   ggplot(aes(x = variable, y = value)) +
   geom_jitter(alpha = 0.1) +
@@ -226,7 +222,7 @@ chem_lentic_long %>%
   scale_y_log10()
 ```
 
-Er zijn in de jitterplots duidelijke patronen te zien van waarden die artificieel zijn ingesteld, omdat het waarden zijn beneden de bepaalbaarheidsgrens.
+Er zijn in de jitterplots duidelijke patronen te zien van discrete waarden; dit moet een gevolg zijn van de meetmethode en/of afrondingen.
 
 
 ## Dataset SURF_03.4_lotic
