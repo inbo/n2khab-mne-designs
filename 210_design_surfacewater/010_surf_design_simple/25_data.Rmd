@@ -344,6 +344,7 @@ glimpse(chem_lotic_long)
 ```
 
 Voor type 3260 is er een groot aantal nulwaarden in de doelvariabelen.
+In werkelijkheid zijn dit metingen lager dan de bepaalbaarheidsgrens, en dus ontbrekende waarden.
 
 ```{r paged.print = FALSE}
 chem_lotic_long %>% 
@@ -354,23 +355,118 @@ chem_lotic_long %>%
   )
 ```
 
-We verwijderen voor dit type deze waarden uit de lange dataset omdat:
+Bij verder nazicht zien we dat maar voor een kleiner deel van deze observaties de bepaalbaarheidsgrens beschikbaar is.
 
-- zij op de log-schaal extreem afwijken (oneindig), terwijl die nulwaarden niet reëel zijn: het gaat in werkelijkheid om niet-nul-waarden beneden de bepaalbaarheidsgrens;
-- we dit met de eenvoudige modellen die hier worden gebruikt, niet gepast kunnen fitten.
+```{r}
+loqdata_3260 <- 
+  read_vc("loqdata_3260", root = file.path(datapath, "intermediate")) %>% 
+  as_tibble() %>% 
+  select(-unit) %>% 
+  filter(variable %in% c("nh4", "no3", "po4")) %>% 
+  mutate(variable = fct_drop(variable))
+chem_lotic_long %>% 
+  left_join(
+    loqdata_3260,
+    join_by(loc_code, date_sampling, variable),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  summarize(
+    n_obs = n(),
+    n_zero = sum(value == 0),
+    n_zero_with_loq = sum(!is.na(loq) & value == 0),
+    proportion_without_loq_if_zero = round(n_zero_with_loq / n_zero, 2),
+    .by = variable
+    ) %>% 
+  kable()
+```
 
-In wezen zijn dit ontbrekende waarden waarvan we mogelijks het bereik wel kunnen achterhalen (o.b.v. bepaalbaarheidsgrens), en dan zou de ideale benadering een (multipele) imputatie zijn.
-We kiezen in dit stadium echter voor een eerste, meer ruwe benadering.
+We kunnen tevens vaststellen dat er heel wat variatie bestaat in gehanteerde bepaalbaarheidsgrenzen.
 
-Merk wel op dat we hierdoor de variantie kunnen onderschatten in ruimte en tijd.
+```{r}
+loqdata_3260 %>% 
+  ggplot(aes(x = date_sampling, y = loq)) +
+  geom_point() +
+  facet_wrap(~variable, scales = "free")
+```
+
+We berekenen de jaarlijkse mediane bepaalbaarheidsgrens en fitten een smoother om pieken te dempen.
+
+```{r message=FALSE}
+# loqdata_3260_yearlevel <- 
+#   loqdata_3260 %>% 
+#   mutate(year_sampling = year(date_sampling)) %>% 
+#   count(variable, year_sampling, loq) %>% 
+#   filter(n == max(n), .by = c(variable, year_sampling)) %>% 
+#   select(-n) %>% 
+#   complete(variable, year_sampling = full_seq(year_sampling, 1)) %>% 
+#   fill(loq)
+loqdata_3260_yearlevel <- 
+  loqdata_3260 %>% 
+  mutate(year_sampling = year(date_sampling)) %>% 
+  summarize(
+    loq = median(loq),
+    .by = c(variable, year_sampling)
+  ) %>% 
+  complete(variable, year_sampling = full_seq(year_sampling, 1)) %>% 
+  fill(loq)
+p <- 
+  loqdata_3260_yearlevel %>%
+  ggplot(aes(x = year_sampling, y = loq)) +
+  geom_smooth() +
+  facet_wrap(~variable, scales = "free")
+p
+```
+
+
+```{r message=FALSE}
+loqdata_3260_yearlevel <- 
+  ggplot_build(p)$data[[1]] %>% 
+  as_tibble() %>% 
+  mutate(
+    year_sampling = floor(x)
+  ) %>% 
+  rename(variable = PANEL) %>% 
+  summarise(
+    loq = mean(y) %>% round(3),
+    .by = c(year_sampling, variable)
+  ) %>% 
+  mutate(
+    variable = fct_recode(
+      variable,
+      nh4 = "1",
+      no3 = "2", 
+      po4 = "3"
+    )
+  )
+```
+
+Waar de meting onder de bepaalbaarheidsgrens was (nulwaarden), nemen we de bepaalbaarheidsgrens op in de lange dataset.
+Ook voegen we de hierboven geschatte bepaalbaarheidsgrenzen toe.
+We vervangen in deze dataset de nulwaarden door een ontbrekende waarde.
 
 ```{r}
 chem_lotic_long <- 
   chem_lotic_long %>% 
-  filter(value > 0)
+  mutate(below_loq = value == 0) %>% 
+  left_join(
+    loqdata_3260,
+    join_by(loc_code, date_sampling, variable),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  left_join(
+    loqdata_3260_yearlevel %>% rename(loq_inferred = loq),
+    join_by(year_sampling, variable),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  mutate(
+    value = ifelse(below_loq, NA_real_, value),
+    value_log = log10(value)
+  )
 ```
 
-We behouden op deze manier nog `r nrow(chem_lotic_long)` rijen over in de lange vorm van de dataset, waarbij elke rij de meting van één doelvariabele betreft op één locatie.
 
 ### Beknopte dataverkenning
 
@@ -383,6 +479,7 @@ chem_lotic %>%
 ```
 
 In de verkenning beschouwen we een locatie als 'bemeten' indien minstens één doelvariabele is bemeten.
+Of de meetwaarde onder of boven de bepaalbaarheidsgrens is, maakt daarbij niet uit.
 
 Aantal bemeten locaties per type.
 
@@ -473,7 +570,7 @@ chem_lotic_long %>%
 Histogrammen van de doelvariabelen per type, waarbij de Y-as achtereenvolgens niet-getransformeerd en log~10~-getransformeerd is (de waarden zijn steeds de niet-getransformeerde).
 Waarden beneden de bepaalbaarheidsgrens zijn ontbrekend.
 
-```{r}
+```{r warning=FALSE}
 chem_lotic_long %>% 
   ggplot(aes(x = value)) +
   geom_histogram(bins = 50, fill = "white", colour = "grey70") +
@@ -494,7 +591,7 @@ chem_lotic_long %>%
 Violinplots met jitter van de doelvariabelen per type, waarbij de Y-as achtereenvolgens niet-getransformeerd en log~10~-getransformeerd is (de waarden zijn steeds de niet-getransformeerde).
 Waarden beneden de bepaalbaarheidsgrens zijn ontbrekend.
 
-```{r fig.width=8, fig.height = 8}
+```{r warning=FALSE, fig.width=8, fig.height = 8}
 chem_lotic_long %>% 
   ggplot(aes(x = variable, y = value)) +
   geom_jitter(alpha = 0.1) +
@@ -502,7 +599,7 @@ chem_lotic_long %>%
   facet_wrap(~type, ncol = 1, scales = "free")
 ```
 
-```{r fig.width=8, fig.height = 8}
+```{r warning=FALSE, fig.width=8, fig.height = 8}
 chem_lotic_long %>% 
   ggplot(aes(x = variable, y = value)) +
   geom_jitter(alpha = 0.1) +
