@@ -286,9 +286,6 @@ glimpse(chem_data)
 
 ```
 
-TODO CONTINUE
-
-
 
 ```{r log-data-distributions}
 #| label: fig-log-data-distributions
@@ -534,8 +531,11 @@ query_columns <- c(
   "pp_idx", "date",
   paste(value_columns, "log", sep = "_"),
   paste(value_columns, "raw", sep = "_"),
+  paste("loq", c("nh4", "no3", "po4"), sep = "_"),
   "PC1", "PC2", "PC3"
 )
+
+loq_check <- \(loq) ifelse(is.na(loq), FALSE, loq)
 
 query_measurement <- function (pp1, pp2){
 
@@ -573,6 +573,9 @@ query_measurement <- function (pp1, pp2){
       dPC1  = PC12  - PC11,
       dPC2  = PC22  - PC21,
       dPC3  = PC32  - PC31,
+      dlim_nh4 = loq_check(loq_nh41) | loq_check(loq_nh42),
+      dlim_no3 = loq_check(loq_no31) | loq_check(loq_no32),
+      dlim_po4 = loq_check(loq_po41) | loq_check(loq_po42),
       is_same_location = pp_idx1 == pp_idx2
     ) %>%
     select(
@@ -584,6 +587,7 @@ query_measurement <- function (pp1, pp2){
       dnh4,  dno3,  dpo4,
       dnh4r, dno3r, dpo4r,
       dPC1, dPC2, dPC3,
+      dlim_nh4, dlim_no3, dlim_po4,
       is_same_location
     )
 
