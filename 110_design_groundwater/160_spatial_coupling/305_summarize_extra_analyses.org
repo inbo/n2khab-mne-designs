@@ -1,0 +1,88 @@
+#+title: Summarize Extra Analyses
+#+date: 20260119
+#+author: Falk Mielke
+
+
+* Rationale
+
+This analysis has been growing and growing.
+Here, I briefly summarize the latest iteration of results, and link to the files.
+
+
+* History in a Nutshell
+
++ Our primary target variables are chemical measurements. I started with them, found way insufficient sample size (but, see below), turned to waterlevels instead, and left the immature waterchemistry query for later.
++ [05/2025] In waterlevels, much more data is available. After some back-and-forth, it was possible to compute *waterlevel variograms*.
+  + On the way, we discarded the idea of using spatial models via [[https://sdmtmb.github.io/sdmTMB/][sdmTMB]], though remainders of these attempts are still archived.
+  + A breakthrough for data wrangling was the local clustering of data, together with de-serialization of the data processing steps (=100_download_and_plot_waterlevel_for_vgram.qmd=, =120_waterchemistry_reload.qmd=).
+  + Another crucial ingredient is the use of *mean absolute difference* as the difference variable.
+  + Finally, *dynamic bin width* improved sample size homogeneity and reliability of variogram regressions.
+    + All these tricks were summarized in [[https://tutorials.inbo.be/tutorials/spatial_variograms/][an INBO tutorial about variograms]].
+  + first talking points:
+    + The *relevance of soilclass* was identified and repeatedly confirmed.
+    + *Elevation was filtered* to be \(\le 1\%\).
+    + Two reference systems remain for choice: =mTAW= /vs./ =mMaaiveld=.
+    + Distance from water body turned out too disruptive for further analysis
+    + Values within seasonal quantiles (~xG3's) were analyzed and results consistent with the full data set.
+  + Bootstrapping was implemented to estimate uncertainty of regression results.
+  + Actual replacement rate of the then-current MNM sample was calculated.
+  + A presentation was prepared and discussed with the main stakeholders (=210_presentation_20250520.qmd=).
++ *[01/2026] Water chemistry revisited:*
+  + Upon request about the findings of the waterlevel analysis, water chemistry data resurfaced.
+  + A logical bug was identified by its author which had led to filtering of many database entries for chemical measurements.
+  + The extended data set was used to calculate *water chemistry variograms*.
+  + In addition, we analyzed:
+    + "ridgeplots" to see bin-wise data distributions
+    + ecoregion
+    + influence of detection limit handling
+  + Analysis which turned out concentrations below or at the detection limits were handled in the database by assigning half the detection limits to the measurement.
+    + As an extra complication, detection limits changed over time with lab equipment updates.
+    + Those periods and values were reverse-engineered and optionally filtered (=121_inspect_chemvars.html=)
+
+
+* Results
+
+** Water Levels
+
+Because water levels are herein used only a proxy for water chemistry, we chose a rather strict *constraining assumption*:
+we seek the distance at which the difference in water levels is less than or equal to \(0.01 m\), i.e. /1 cm/.
+
++ Sample size per soilclass seems sufficient, even after excluding site pairs with more than one percent elevation difference (relative to pair distance).
+  + We handled a target value of *100 pairs per distance bin*, which was reached by variable bin widths.
+  + The elevation filter was confirmed to be relevant for stable variograms (=116_review_slopefilter.qmd=).
++ Difference threshold is hit *at a distance of \(\approx 10 m\)*.
+  + =mTAW= and =mMaaiveld=, in comparison, allow for nuances in data interpretation.
+  + *Coupling is highly soilclass dependent.* On heavy soils, the range of measurable cross-variation is much shorter, i.e. locations are expected to differ at closer distances than on light soil and peat.
++ There is a *non-negligible nugget*, i.e. considerable variation even at "zero distance".
+
+We conclude and confirmed that co-variation of water level measurements is reasonably tolerable at *a 10 m distance*.
+Particular soilclasses at and a too high elevation difference between candidate locations can justify an even more conservative maximum re-use distance.
+
+** Water Chemistry
+
+Database coding of water chemistry changed some time around 2014, which had initially slipped the attention of this author.
+After correction, sufficient paired opservations of water chemistry could be obtained.
+
++ Sample size is just above acceptable minimum with the given variance.
+  + Variance is high; a bin count of *128 pairs per distance bin* seemed reasonably stable for our most well-observed categories.
+  + Only measurements on the same calendar day were included. For repetitions of the same sites, only the first paired observation was selected.
+  + Units of milli-equivalents (*MEQ*) were *log-transformed* to produce sufficiently-close-to-normal distributed concentration data. Difference among two locations in a pair is thus the difference in their log10-concentrations.
+  + We inspected three chemicals: \(NH_4\), \(NO_3\), and \(PO_4\).
+  + This includes measurements which were stored at or below the detection limit.
+
++ "Sigma-ranges" (i.e. distances at which the expected difference between two locations exceed half the maximum variation) are *generally higher than with water levels* (=130_chemistry_variograms.qmd=).
+  + However, we *did not work with a concentration threshold*, which would be quickly met on the "=difference(log10)=" scale.
+  + Nuggets are considerable; i.e. baseline variation is high.
+  + Only some soilclass/chemical combinations yield meaningful, stable variograms. This was confirmed by looking at data distributions ("ridgeplots"; =132_chemistry_ridgeplots.qmd=).
+  + Filtering out pairs in which one concentration was below detection limit resulted in unreliable variograms (higher =rmse=, more variance; =304b_chemistry_variograms_detectionlimit.qmd=). There are counteracting effects:
+    + Filtering pairs which both display low concentrations removes "low-difference" observations and moves the difference-distance curve up.
+    + However, filtering a pair because of only one critically low concentration measurement removes high-difference pairs, moving the curve down.
+    + Which effect pulls the picture is bin-specific, and in consequence removing detection limit observations only leads to higher variability / variogram instability.
+
+
+To summarize, measurement process characteristics, the scale, and the units of water chemistry measurements prohibit conclusive interpretation.
+
+** General
+
++ *Ecoregion:* Filtering for ecoregion indicates what one would expect: the better-sampled ecoregions confirm the "global" result, whereas others struggle form limited sample size (=117_review_ecoregion.qmd=, =302_chemistry_variograms_ecoregion.qmd=)
++ Value tables for other difference thresholds are available in notebook =300_spatialcoupling_waterlevels_extract_regressions.qmd=. Alternatively, regression parameters can be accessed directly to calculate more exact values.
