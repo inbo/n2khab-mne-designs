@@ -241,34 +241,6 @@ chem_lentic_long %>%
 
 Er zijn in de jitterplots duidelijke patronen te zien van discrete waarden; dit moet een gevolg zijn van de meetmethode en/of afrondingen.
 
-### Verdere aanpassingen vóór analyse
-
-Om alle data te kunnen fitten met een mixed model, verdelen we de waarden beneden de bepaalbaarheidsgrens `loq` random volgens een uniforme distributie tussen  `0.01 * loq` en `loq`.
-We schatten deze benadering in als conservatief (we verwachten in werkelijkheid geen grotere varianties).
-Deze single imputatie is ook vergeleken met een tweede imputatie volgens dezelfde uniforme distributie (andere seed), en de resultaten lagen zeer dicht in elkaars buurt.
-
-Een meer elegante manier is om de waarden expliciet als links-gecensureerd te modelleren, desgevallend gepaard met een volwaardige multipele imputatie.
-Ook dan moet er echter nog steeds een aanname worden gemaakt over de distributie van de responsvariabele (bv.: lognormaal?); de werkelijke distributie in het bereik onder de bepaalbaarheidsgrens blijft sowieso onbekend.
-Een aanpak met expliciet links-gecensureerde data plannen we in de toekomst, als onderdeel van een benadering met steekproefsimulaties.
-Een eerste verkenning om de data met package `brms` te fitten met een links-gecensureerde lognormale likelihood distributie gaf gelijkaardige resultaten als de huidige benadering, met een beperkt hogere ruimtelijke en beperkt lagere temporele variantie.
-De rekentijd ligt echter relatief hoog (238 s, versus 1 s met `nlme::lme()`); R-INLA gebruikt een snellere methode en is daarom te overwegen voor die aanpak.
-
-```{r}
-set.seed(20260116)
-chem_lentic_long <- 
-  chem_lentic_long %>% 
-  mutate(was_na = is.na(value)) %>% 
-  mutate(
-    value = ifelse(
-      is.na(value),
-      runif(n = n(), min = 0.01, max = 1) * loq,
-      value
-    ),
-    value_log = log10(value),
-    .by = was_na
-  )
-```
-
 
 ## Dataset SURF_03.4_lotic
 
@@ -628,33 +600,3 @@ chem_lotic_long %>%
   ) +
   facet_wrap(~type, ncol = 1, scales = "free")
 ```
-
-### Verdere aanpassingen vóór analyse
-
-Om alle data te kunnen fitten met een mixed model, verdelen we de waarden beneden de bepaalbaarheidsgrens `loq` random volgens een uniforme distributie tussen  `0.01 * loq` en `loq` (waarbij we dit ook doen met geschatte waarden voor de bepaalbaarheidsgrens, waar deze ongekend is).
-We schatten deze benadering in als conservatief (we verwachten in werkelijkheid geen grotere varianties).
-Deze single imputatie is ook vergeleken met een tweede imputatie volgens dezelfde uniforme distributie (andere seed), en de resultaten lagen zeer dicht in elkaars buurt.
-
-Een meer elegante manier is om de waarden expliciet als links-gecensureerd te modelleren, desgevallend gepaard met een volwaardige multipele imputatie.
-Ook dan moet er echter nog steeds een aanname worden gemaakt over de distributie van de responsvariabele (bv.: lognormaal?); de werkelijke distributie in het bereik onder de bepaalbaarheidsgrens blijft sowieso onbekend.
-Een aanpak met expliciet links-gecensureerde data plannen we in de toekomst, als onderdeel van een benadering met steekproefsimulaties.
-Een eerste verkenning om de data met package `brms` te fitten met een links-gecensureerde lognormale likelihood distributie gaf gelijkaardige resultaten als de huidige benadering, met een beperkt hogere ruimtelijke en beperkt lagere temporele variantie.
-De rekentijd ligt echter extreem hoog (3540 s, versus 10 s met `nlme::lme()`); R-INLA gebruikt een snellere methode en is daarom te overwegen voor die aanpak.
-
-```{r}
-set.seed(20260116)
-chem_lotic_long <- 
-  chem_lotic_long %>% 
-  mutate(was_na = is.na(value)) %>% 
-  mutate(
-    value = case_when(
-      !is.na(value) ~ value,
-      !is.na(loq) ~ runif(n = n(), min = 0.01, max = 1) * loq,
-      .default = runif(n = n(), min = 0.01, max = 1) * loq_inferred
-    ),
-    value_log = log10(value),
-    .by = was_na
-  )
-```
-
-
