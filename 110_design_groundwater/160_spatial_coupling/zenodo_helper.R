@@ -258,6 +258,7 @@ load_zenodo_data <- function(
 #' @examples
 #' \dontrun{
 #'   n2khab_data_path <- "C:\\R\\n2khab_data"
+#'   # n2khab_data_path <- n2khab::locate_n2khab_data()
 #'   fetch_all_zenodo_data(n2khab_data_path)
 #' }
 #'
