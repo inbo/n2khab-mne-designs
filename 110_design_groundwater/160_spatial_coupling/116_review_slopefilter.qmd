@@ -693,7 +693,7 @@ regression_by_soilclass(
 
 - `mslope < 0.01 m/m`
 - `dz <= 1m` 
-- `flength1 < 1m, flength2 < 1m`
+- `flength1 <= 1m, flength2 <= 1m`
 
 
 ## Filter
@@ -708,10 +708,11 @@ filter_length_limit <- 1 # m
 diff_meta %>%
   mutate(
     slope_filtered = mslope < slope_threshold,
-    short_filters = (flength1 < 1.0) & (flength2 < 1.0),
-    depthdiff_filtered = dz <= depth_difference_limit
+    short_filters = (flength1 <= filter_length_limit) & (flength2 <= filter_length_limit),
+    depthdiff_filtered = abs(dz) <= depth_difference_limit
   ) %>% 
-  count(slope_filtered, short_filters, depthdiff_filtered)
+  count(slope_filtered, short_filters, depthdiff_filtered) %>%
+  knitr::kable()
     
 ```
 
@@ -720,8 +721,9 @@ diff_meta %>%
 somediff_meta <- diff_meta %>%
   filter(
     mslope < slope_threshold,
-    (flength1 < 1.0) & (flength2 < 1.0),
-    dz <= depth_difference_limit
+    flength1 <= filter_length_limit,
+    flength2 <= filter_length_limit,
+    abs(dz) <= depth_difference_limit
   )
 
 paste0(
@@ -815,7 +817,7 @@ regression_by_soilclass(
   sc = "heavy",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "filterdepthfilter",
+  label = "waterlevels",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -835,7 +837,7 @@ regression_by_soilclass(
   sc = "light",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "filterdepthfilter",
+  label = "waterlevels",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -857,7 +859,7 @@ regression_by_soilclass(
   sc = "peat",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "filterdepthfilter",
+  label = "waterlevels",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -880,8 +882,9 @@ column <- "dm"
 somediff_meta <- diff_meta %>%
   filter(
     mslope < slope_threshold,
-    (flength1 < 1.0) & (flength2 < 1.0),
-    dz <= depth_difference_limit
+    flength1 <= filter_length_limit,
+    flength2 <= filter_length_limit,
+    abs(dz) <= depth_difference_limit
   )
 
 paste0(
@@ -978,7 +981,7 @@ regression_by_soilclass(
   sc = "heavy",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "maaiveld",
+  label = "waterlevels",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -998,7 +1001,7 @@ regression_by_soilclass(
   sc = "light",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "maaiveld",
+  label = "waterlevels",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),
@@ -1018,7 +1021,7 @@ regression_by_soilclass(
   sc = "peat",
   reg_var = column,
   maxx = maxx, maxy = Inf,
-  label = "maaiveld",
+  label = "waterlevels",
   distweighted = TRUE,
   par = c(1., 10, 0., 1.),
   lower = c(0.0, 0.0, 0., 0.99),

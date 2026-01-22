@@ -25,7 +25,7 @@ this notebook will attempt to further filter the resulting variograms by ecoregi
 Main observations:
 
 - results are largely **consistent with previous data, confirming the 10m rule**.
-  - slope > 1% was filtered
+  - slope > 1% was filtered; filter characteristics were filtered
   - soilclasses were lumped
 - `mMaaiveld` vs `mTAW`: 
   - some water-independent habitats (beide huivelzones, Kempen, MV overgang) **show slope-dependence** (ramp in mTAW, but not in mMaaiveld)
@@ -99,7 +99,7 @@ meta_data <- join_auxiliary_cache(label = "metadata") %>%
   # %>% join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
 meta_join <- meta_data %>%
-  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+  select(pp_idx, flength, fdepth, pp_code, mp_idx, cluster,
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
          wata_min_dist, wata_dist_class,
          # emd_n, emd_amp1, emd_amp2, emd_ampsum,
@@ -198,6 +198,7 @@ diff_meta %>%
 ```{r count-all}
 diff_joined <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
+      flength1, flength2,
       x1, y1, x2, y2, 
       ecoregion,
       soilclass1, wata_dist_class1, wata_dist_class2,
@@ -311,20 +312,37 @@ regression_by_ecoregion <- function(
 
 <hr>
 
-# Slope-Filtered Data
+# Slope and Filter-Filtered Data
 
 ## Filter
 
 ```{r slope-distribution}
 # slope_threshold <- Inf #0.05
 slope_threshold <- 0.01/1 # 1 cm per meter
+depth_difference_limit <- 1 # m
+filter_length_limit <- 1 # m
 
 diff_meta %>%
-  select(mslope) %>%
-  mutate(filltered = mslope < slope_threshold) %>% 
-  ggplot(aes(log10(mslope), fill = filltered, color = filltered)) +
+  mutate(
+    filtered =
+      (mslope < slope_threshold) &
+      (flength1 <= filter_length_limit) &
+      (flength2 <= filter_length_limit) &
+      (abs(dz) <= depth_difference_limit)
+  ) %>% 
+  select(filtered, mslope) %>%
+  ggplot(aes(log10(mslope), fill = filtered, color = filtered)) +
   geom_histogram(bins = 256) +
   theme_bw()
+
+diff_meta %>%
+  mutate(
+    slope_filtered = mslope < slope_threshold,
+    short_filters = (flength1 <= filter_length_limit) & (flength2 <= filter_length_limit),
+    depthdiff_filtered = abs(dz) <= depth_difference_limit
+  ) %>% 
+  count(slope_filtered, short_filters, depthdiff_filtered) %>%
+  knitr::kable()
     
 ```
 
@@ -333,7 +351,10 @@ diff_meta %>%
 # somediff_meta <- diff_meta 
 somediff_meta <- diff_meta %>%
   filter(
-    mslope < slope_threshold
+      mslope < slope_threshold,
+      flength1 <= filter_length_limit,
+      flength2 <= filter_length_limit,
+      abs(dz) <= depth_difference_limit
   )
 
 paste0(
@@ -594,7 +615,10 @@ column <- "dm"
 
 somediff_meta <- diff_meta %>%
   filter(
-    mslope < slope_threshold
+    mslope < slope_threshold,
+    flength1 <= filter_length_limit,
+    flength2 <= filter_length_limit,
+    abs(dz) <= depth_difference_limit
   )
 
 paste0(

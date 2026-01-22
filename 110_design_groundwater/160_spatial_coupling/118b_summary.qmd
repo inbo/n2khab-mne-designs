@@ -45,6 +45,10 @@ Please ensure that the data is up to date.
 #| eval: true
 
 soilclasses <- c("heavy", "light", "peat")
+# label of the regression files:
+#   - "slopefilter": filtered for "slope < 1%"
+#   - "waterlevels": filtered for "slope < 1%" and filter criteria
+subset_selection <- "waterlevels"
 
 combine_path <- function(filepath) here::here(local_cache_folder, "regression", filepath)
 stitch_filepath <- function(label, sc, reg_var, extension = "parquet") {
@@ -61,7 +65,7 @@ stitch_filepath <- function(label, sc, reg_var, extension = "parquet") {
 }
 
 load_plotdata <- function(
-    label = c("slopefilter", "allin", "maaiveld"),
+    label = c(subset_selection), #, "allin", "maaiveld"),
     soilclass = c("heavy", "light", "peat"),
     regression_variable = c("dw", "dm")
   ) {
@@ -74,7 +78,7 @@ load_plotdata <- function(
 }
 
 load_fitdata <- function(
-    label = c("slopefilter", "allin", "maaiveld"),
+    label = c(subset_selection), #, "allin", "maaiveld"),
     soilclass = c("heavy", "light", "peat"),
     regression_variable = c("dw", "dm")
   ) {
@@ -213,9 +217,12 @@ knitr::kable(t(sample_n(meta_data, 5)), decimals = 2)
 -->
 
 
-The parameters which turn out to have a relevant influence are **soilclass** and **slope**. 
+The parameters which turn out to have a relevant influence are **soilclass** and **slope**; we also homogenized **filter characteristics**. 
 We filtered location pairs to share the same soil classification in the rough categories of "heavy soil", "light soil", and "peat". 
+The 'filter' in filter characteristics refers to the perforated end of a well tube installation; selection here: `filter length <= 1m`, `difference(filter depth) <= 1m`.
+Slope and filter filters excluded approximately a third of the full data set, while homogenizing the remainder for more stable variograms.
 The analyses below were applied separately for each soilclass.
+
 
 The influence of slope is mechanistically obvious, yet rule implementation demands some explanation.
 First, any two measurement points which are not on the exact same spot will have a difference in elevation ("elevation difference"), on which we actually base a rule to prohibit site re-use (see below).
@@ -272,7 +279,8 @@ Given:
 - or, for comparison, the same measurement relative to surface (`mMaaiveld`), which is also on the scale of meters but with *a non-fixed, i.e. local coordinate origin*
 - averaging repeated measures per location pair
 - grouping for soilclass, filtering for slope below $1 \%$
-- variable-width binning to approximately 100 location pairs per bin
+- ensuring that installations are sufficiently similar in terms of filter characteristics (filter depth difference, filter length)
+- variable-width binning to approximately 128 location pairs per bin
 
 ...we can compute the following variograms.
 
@@ -281,9 +289,9 @@ Given:
 
 ```{r load-regressions-dw}
 data <- list(
-  "heavy" = load_fitdata("slopefilter", "heavy", "dw"),
-  "light" = load_fitdata("slopefilter", "light", "dw"),
-  "peat" = load_fitdata("slopefilter", "peat", "dw")
+  "heavy" = load_fitdata(subset_selection, "heavy", "dw"),
+  "light" = load_fitdata(subset_selection, "light", "dw"),
+  "peat" = load_fitdata(subset_selection, "peat", "dw")
 )
 
 
@@ -645,22 +653,25 @@ Discussion points encountered on the way, but not necessarily elaborated in deta
 # List of Analysis Files {#sec-notebooks}
 
 \footnotesize
-| file                                         | purpose                                                                                                                      |
-|:---------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------|
-| `100_download_and_plot_waterlevel_for_vgram` | Data download and storage to `cache` folder (for overnight execution).                                                       |
+| file                                         | purpose                                                                                                                                                     |
+|:---------------------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `100_download_and_plot_waterlevel_for_vgram` | Data download and storage to `cache` folder (for overnight execution).                                                                                      |
 | `110_variograms_daily_waterlevel`            | Initial exploration of water level variograms; includes general procedural definitions and choices (e.g. Matérn regression, Mean Absolute Difference, ...). |
-| `111a_waterlevel_subsets`                    | (Filtered) subset variograms with respect to slope, water distance and filter depth difference.                              |
-| `111b_waterlevel_complements`                | The complementary subset variograms.                                                                                         |
-| `111c_quantile_seasons`                      | Filtered waterlevel by quantiles (high and  low water level subsets).                                                        |
-| `112a_resample_bootstrap_dw`                 | Bootstrapping by resampling (`mTAW` variograms).                                                                             |
-| `112b_resample_bootstrap_dm`                 | Bootstrapping by resampling (`mMaaiveld` variograms).                                                                        |
-| `113a_cluster_distance_bias`                 | Cluster bias figure: how do clusters contribute to certain distance bins?                                                    |
-| `113b_cluster_loo`                           | "Leave-One-Out" analysis, filtering the larger of clusters.                                                                  |
-| `114_waterlevel_differentials`               | Variogram on temporal derivatives of water levels (obsolete/unmaintained: technical challenges of differentials).            |
-| `115_steekproefkader`                        | Analysis of the preliminary sample locations.                                                                                |
-| `116_review_slopefilter`                     | Technical file to refine filters and binning choices.                                                                        |
-| `118_summary`                                | This overview.                                                                                                               |
+| `111a_waterlevel_subsets`                    | (Filtered) subset variograms with respect to slope, water distance and filter depth difference.                                                             |
+| `111b_waterlevel_complements`                | The complementary subset variograms.                                                                                                                        |
+| `111c_quantile_seasons`                      | Filtered waterlevel by quantiles (high and  low water level subsets).                                                                                       |
+| `112a_resample_bootstrap_dw`                 | Bootstrapping by resampling (`mTAW` variograms).                                                                                                            |
+| `112b_resample_bootstrap_dm`                 | Bootstrapping by resampling (`mMaaiveld` variograms).                                                                                                       |
+| `113a_cluster_distance_bias`                 | Cluster bias figure: how do clusters contribute to certain distance bins?                                                                                   |
+| `113b_cluster_loo`                           | "Leave-One-Out" analysis, filtering the larger of clusters.                                                                                                 |
+| `114_waterlevel_differentials`               | Variogram on temporal derivatives of water levels (obsolete/unmaintained: technical challenges of differentials).                                           |
+| `115_steekproefkader`                        | Analysis of the preliminary sample locations.                                                                                                               |
+| `116_review_slopefilter`                     | Technical file to refine filters and binning choices.                                                                                                       |
+| `117_review_ecoregion`                       | Segmenting the data by ecoregion instead of soilclass.                                                                                                      |
+| `118_summary`                                | This overview.                                                                                                                                              |
 
+- Notebooks starting from `120_` cover water chemistry.
+- Notebooks starting from `300_` contain extra analyses and printouts (01/2026).
 
 
 \pagebreak
