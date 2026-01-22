@@ -1,0 +1,1091 @@
+---
+title: "Water Chemistry Variograms: Long Range Data"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+    embed-resources: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+# summary (tl;dr)
+
+This notebook extends the range of regression. 
+Just to have a quick look.
+
+
+# preparation
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("gridExtra") |> void() # panels with ggplot
+library("ggcorrplot")|> void() # correlation, grid visualization
+library("mapview")   |> void() # map visualization
+library("ggridges")  |> void() # density ridges
+
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# user-set parameters
+cluster_dist <- 3400 # m # parameter for clustering
+data_export_file <- glue::glue("data/waterlevel_data_cl{cluster_dist}.parquet")
+chem_export_file <- glue::glue("data/waterchemistry_data_cl{cluster_dist}_alltimesd.parquet")
+diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist}_alltimesd.parquet")
+
+# parameters
+extent <- 1024 # m
+# n_bins <- 50
+min_pair_distance <- 1 # m
+bin_target <- 128
+
+
+analysis_label <- "waterchemistry_longrange"
+regression_storage_path <- here::here("cache", "regression")
+```
+
+
+The script `120_waterchemistry_reload.qmd` should be used to assemble the data set loaded here.
+
+
+
+```{r load-data}
+
+pp_data <- read_parquet(data_export_file)
+
+std_chem <- read_parquet(file = chem_export_file) %>%
+  mutate(date = as.Date(as.character(date), format = "%Y%m%d"))
+pp_chem_nh4 <- std_chem %>%
+  select(pp_idx, sample_idx, date, meq_nh4_log, meq_nh4_raw) %>% 
+  summarize(
+    across(everything(), ~mean(., na.rm = TRUE)),
+    .by = pp_idx
+  )
+
+# std_chem %>%
+#   filter(pp_idx %in% c(4178, 2586)) %>%
+#   arrange(desc(date))
+
+```
+
+
+There are maps available (here: example for $NH_4$), yet measurement pairs are relatively scattered.
+
+```{r map-data}
+
+st_data <- pp_data %>%
+  left_join(
+    pp_chem_nh4,
+    by = join_by(pp_idx),
+    relationship = "one-to-one"
+  ) %>% 
+  filter(!is.na(meq_nh4_log)) %>% 
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370)
+
+# # mapview output de-activated because it slows quarto rendering noticably
+# mapview(st_data,
+#   map.types = c("CartoDB.Positron", "CartoDB.DarkMatter", "OpenStreetMap", "OpenTopoMap"),
+#   zcol = "meq_nh4_raw",
+#   cex = 3,
+#   legend = TRUE
+# )
+
+```
+
+
+loading the differentials and inspecting time intervals:
+
+```{r load-diffdata}
+
+diff_data_raw <- read_parquet(diffdata_export_file) %>%
+  filter(!is_same_location) # only different locations
+
+dt <- diff_data_raw %>%
+  filter(is_first_dnh4 | is_first_dno3 | is_first_dpo4) %>% 
+  # mutate(dt = as.numeric(date2 - date1, "days")) %>% already stored
+  pull(dt)
+
+breaks <- c(0., 0.4, 1.1, 6., 8., 13., 15., 20., 22., 25., 35., 50., 60., 80., 120., 400.)
+hist(dt[dt <= max(breaks)], breaks)
+
+message(sum(dt == 0) / length(dt))
+
+```
+
+The vast majority (>80%) of measurements happened on the same date.
+There are relevant weekly/bi-weekly/monthly repeats, but those are filtered herein to reduce 
+uncertainty from temporal difference.
+
+:::{.callout-warning}
+We will proceed with measurements which were recorded **on the same day**.
+
+:::
+
+
+```{r timefilter-diff-data}
+
+join_a_chemical <- function(.data, chem) {
+  # .data <- diff_backbone
+  # chem <- "nh4"
+
+  cols <- c(
+    "pp_idx1", "date1", "pp_idx2", "date2", "dt",
+    glue::glue("meq_{chem}_log1"),
+    glue::glue("meq_{chem}_log2"),
+    glue::glue("d{chem}"),
+    glue::glue("d{chem}r"),
+    glue::glue("is_first_d{chem}")
+  )
+  
+  .data %>% 
+    left_join(
+      diff_data_raw %>% 
+        select(!!!rlang::syms(cols)) %>%
+        filter(!!as.symbol(glue::glue("is_first_d{chem}"))) %>% 
+        filter(dt < 1)
+      ,
+      by = join_by(pp_idx1, date1, pp_idx2),
+      suffix = c("", glue::glue("_{chem}")),
+      relationship = "many-to-many"
+    ) %>%
+    return()
+}
+
+diff_backbone <- diff_data_raw %>%
+  distinct(pp_idx1, date1, pp_idx2) %>%
+  mutate(date2 = NA, dt = NA)
+
+diff_data_mixed <- diff_backbone %>%
+  join_a_chemical("nh4") %>%
+  join_a_chemical("no3") %>%
+  join_a_chemical("po4") %>%
+  select(-date2, -dt)
+
+diff_data <- diff_data_mixed  %>%
+  filter(!(is.na(dnh4)&is.na(dno3)&is.na(dpo4)))
+
+diff_data %>%
+  mutate(
+    nan_nh4 = is.na(dnh4),
+    nan_no3 = is.na(dno3),
+    nan_po4 = is.na(dpo4)
+  ) %>% 
+  count(nan_nh4, nan_no3, nan_po4) %>%
+  knitr::kable()
+
+```
+
+
+```{r join-diffdata}
+
+pp_join <- pp_data %>%
+  filter(fdepth <= 5) %>% 
+  select(pp_idx, fdepth, flength, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff
+         )
+# pp_join %>% nrow()
+# pp_join %>% distinct() %>% nrow()
+# yes, they are unique
+
+diff_meta <- diff_data %>%
+  distinct(pp_idx1, pp_idx2) %>%
+  inner_join(
+    pp_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  inner_join(
+    pp_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+      dh = elevation_dhmv2-elevation_dhmv1,
+      dz = fdepth2-fdepth1,
+      # damp = emd_ampsum2-emd_ampsum1,
+      # dqdiff = emd_qdiff2-emd_qdiff1,
+      dwadi = wata_min_dist2-wata_min_dist1,
+      dslope = slope_r2.5m2-slope_r2.5m1,
+      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+      mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
+  )
+
+
+```
+
+`diff_meta` are the observed, distinct pairs. There are <19k.
+
+
+
+Ecoregions (not used herein):
+
+```{r prepare-ecoregion}
+ecoregions <- n2khab::read_ecoregions() %>% 
+  select(region_name) %>% 
+  rename(ecoregion = region_name) %>% 
+  mutate(ecoregion = stringr::str_replace(ecoregion, "Ecoregio van de ", ""))
+
+# n2khab::read_ecoregions() %>% sf::st_drop_geometry() %>% distinct(region_name)
+ecoregion_lookup <- bind_rows(
+  diff_meta %>% select(pp_idx1, x1, y1) %>% rename(pp_idx = pp_idx1, x = x1, y = y1),
+  diff_meta %>% select(pp_idx2, x2, y2) %>% rename(pp_idx = pp_idx2, x = x2, y = y2)
+  ) %>%
+  distinct() %>% 
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370) %>% 
+  sf::st_join(ecoregions)
+
+# ecoregion_lookup %>% 
+#   count(ecoregion) %>% arrange(desc(n)) %>% knitr::kable()
+
+missing_points <- ecoregion_lookup %>% filter(is.na(ecoregion))
+# mapview::mapview(ecoregions) +
+#   mapview::mapview(missing_points)
+
+```
+
+```{r join-ecoregion}
+
+diff_meta <- diff_meta %>%
+  left_join(
+    ecoregion_lookup,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one"
+  )
+
+diff_meta <- diff_meta %>%
+  filter(ecoregion != "NA")
+  
+# diff_meta %>% 
+#   count(ecoregion) %>% arrange(desc(n)) %>% knitr::kable()
+
+```
+
+
+```{r glimpse-data}
+
+# diff_meta %>% glimpse
+
+diff_all <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      flength1, flength2,
+      x1, y1, x2, y2, 
+      soilclass1, ecoregion,
+      wata_dist_class1, wata_dist_class2,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(glue::glue("{pp_idx1}_{pp_idx2}"))
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>%
+  filter(ds >= min_pair_distance) %>% 
+  # filter(
+  #   # ds >= extent/n_bins
+  #   date2 - date1 == 0 # already filtered
+  # ) %>%
+  mutate(date = date1) %>% select(-date1)
+  # mutate(dt = abs(difftime(date1, date2, units = "days")))
+
+
+diff_all %>% ggplot(aes(x = ds)) +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  theme_bw()
+
+# diff_all %>% glimpse()
+# diff_all %>% filter(is_first_dnh4) %>% glimpse()
+# diff_all %>% filter(pair == "4178_2586") %>% glimpse()
+# diff_all %>% filter(pair == "4178_2586") %>% select(ds, date, dnh4)
+
+```
+
+`diff_all` contains all the observations of water chemistry at the pairs (~53k), but only those which are "firsts" for differences of either chemical.
+
+# pruning
+
+Here, the filter criteria are applied.
+
+```{r}
+diff_all_raw <- diff_all
+diff_all <- diff_all %>%
+  mutate(
+    short_filters = (flength1 <= 1.0) & (flength2 <= 1.0),
+    equiprofund = abs(dz) <= 1.0
+  )
+
+```
+
+```{r}
+
+diff_all %>% ggplot(aes(
+    x = ds,
+    group = as.factor(short_filters),
+    fill = as.factor(short_filters)
+    )) +
+  geom_histogram(bins = 64, color = "black") +
+  theme_bw() +
+  theme(legend.position = c(.9,.9))
+
+```
+
+```{r}
+
+diff_all %>% ggplot(aes(
+    x = ds,
+    group = as.factor(equiprofund),
+    fill = as.factor(equiprofund)
+    )) +
+  geom_histogram(bins = 64, color = "black") +
+  theme_bw() +
+  theme(legend.position = c(.9,.9))
+
+```
+
+```{r}
+diff_all %>%
+  count(short_filters, equiprofund)
+```
+
+```{r}
+diff_all <- diff_all %>%
+  filter(short_filters, equiprofund)
+```
+
+# binning
+
+
+After some good prior experience, I will once more apply binning with variable bin width, to achieve **equal sample size per bin**.
+Many location pairs are repeatedly measured, i.e. both of the pair are simultaneously measured on different days.
+
+
+
+```{r equibin-preparation}
+#| code-fold: false
+
+# this is the full length data, just with a group column.
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!(
+      is.na(dnh4[is_first_dnh4]) |
+      is.na(dno3[is_first_dno3]) |
+      is.na(dpo4[is_first_dpo4])
+    ))),
+    n_nh4 = sum(as.integer(!is.na(dnh4[is_first_dnh4]))),
+    n_no3 = sum(as.integer(!is.na(dno3[is_first_dno3]))),
+    n_po4 = sum(as.integer(!is.na(dpo4[is_first_dpo4]))),
+    soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    # dt = mean(abs(date2-date1), na.rm = TRUE),
+    # semivar = 1/(2*n_obs)*sum(dPC1^2, na.rm = TRUE),
+    dnh4 = 1/(n_nh4)*sum(abs(dnh4[is_first_dnh4]), na.rm = TRUE),
+    dno3 = 1/(n_no3)*sum(abs(dno3[is_first_dno3]), na.rm = TRUE),
+    dpo4 = 1/(n_po4)*sum(abs(dpo4[is_first_dpo4]), na.rm = TRUE),
+    dnh4r = 1/(n_nh4)*sum(abs(dnh4r[is_first_dnh4]), na.rm = TRUE),
+    dno3r = 1/(n_no3)*sum(abs(dno3r[is_first_dno3]), na.rm = TRUE),
+    dpo4r = 1/(n_po4)*sum(abs(dpo4r[is_first_dpo4]), na.rm = TRUE),
+    # dPC1 = 1/(n_obs)*sum(abs(dPC1), na.rm = TRUE),
+    # dPC2 = 1/(n_obs)*sum(abs(dPC2), na.rm = TRUE),
+    # dPC3 = 1/(n_obs)*sum(abs(dPC3), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ) # cut to equal sized bins
+  ) %>%
+  relocate(distance_equibin) %>% 
+  ungroup
+
+# diff_equigrouped %>% glimpse()
+# diff_equigrouped %>% head(9) %>% tail(1) %>% knitr::kable()
+# 4178_2586
+    
+combine_grouped <- function (val, cnt) sum(val*cnt, na.rm = TRUE)/sum(cnt, na.rm = TRUE)
+mean_finite <- function (val) mean(val[is.finite(val)], na.rm = TRUE)
+
+# Here, grouped observations get thrown into bins.
+diff_binned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    # dt = mean(dt), 
+    n_obs = sum(n_obs),
+    n_nh4 = sum(n_nh4),
+    n_no3 = sum(n_no3),
+    n_po4 = sum(n_po4),
+    # semivariance_groupmean = mean(semivar, na.rm = TRUE),
+    # semivariance_all = combine_grouped(semivar, cnt),
+    # dPC1_all = combine_grouped(dPC1, n_obs),
+    dnh4  = mean_finite(dnh4),
+    dno3  = mean_finite(dno3),
+    dpo4  = mean_finite(dpo4),
+    dnh4r = mean_finite(dnh4r),
+    dno3r = mean_finite(dno3r),
+    dpo4r = mean_finite(dpo4r),
+    # dPC1 = mean(dPC1, na.rm = TRUE), 
+    # dPC2 = mean(dPC2, na.rm = TRUE), 
+    # dPC3 = mean(dPC3, na.rm = TRUE), 
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>%
+  arrange(ds) %>%
+  filter(ds <= extent)
+
+print(diff_binned %>% pull(cnt) %>% sum())
+print(diff_binned %>% filter(ds < 100) %>% pull(cnt) %>% sum())
+print(sum(diff_binned$n_obs))
+print(sum(diff_binned$n_nh4))
+print(sum(diff_binned$n_no3))
+print(sum(diff_binned$n_po4))
+```
+
+There are 18345 pairs, which are assigned to a distance bin. 
+Repeated observations (simultaneous measurement on different occasions) are averaged.
+
+
+
+```{r equibin-samplesize}
+#| label: fig-equibin-sample-size
+diff_binned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step() +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  theme_bw()
+```
+
+
+
+
+# ridges
+
+```{r diff-ridges-ppo4}
+#| label: fig-ridges-ppo4
+#| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (x-axis), the distribution of water level differences (y-axis, grey density distributions) increases (indicated by quantile lines)."
+
+diff_equigrouped %>%
+  filter(
+    ds < 100,
+    soilclass == "heavy"
+  ) %>%
+  ggplot(aes(x = dnh4, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = 4.0, bandwidth = 0.05) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "log10 meq concentration difference", y = "pair distance") +
+  xlim(0, 2) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+```
+
+
+# Regression
+
+## Regression Procedure Wrapper
+
+```{r regression-wrapper}
+
+source("regression_tools.R") 
+
+
+fit_matern <- function(x, y, distweighted = FALSE, ...) {
+  target_fcn <- wrap_target_function
+  if (distweighted) {
+    target_fcn <- distweighted_target_function
+  }
+  optimizer_results <- optim(
+    fn = function(params) {
+      target_fcn(x, y, matern_function, params)
+    },
+    ...
+  )
+  
+  # store everything in one list;
+  # do I sense a smidgen of OOP here? No, not really.
+  optimizer_results$fcn <- matern_function
+  optimizer_results$regx <- x
+  optimizer_results$regy <- y
+
+  # wrap the function with the optimized parameters
+  optimizer_results$predict <- create_prediction_function(
+    matern_function,
+    optimizer_results
+  )
+
+
+  return(optimizer_results)
+}
+
+
+plot_matern <- function(optimizer_results, y_label = "semivariance (m²)") {
+
+  # retrieve everything 
+  fcn <- optimizer_results$fcn
+  regx <- optimizer_results$regx
+  regy <- optimizer_results$regy
+  predict <- optimizer_results$predict
+
+  # extract parameters
+  scale <- optimizer_results$par[1]
+  range <- optimizer_results$par[2]
+  nugget <- optimizer_results$par[3]
+  sill <- scale + nugget
+
+
+  # plotting
+  plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
+  plotx <- plotx[plotx>0]
+  
+  g <- ggplot(NULL, aes(x = regx, y = regy)) +
+    geom_vline(xintercept = range, color = "darkgrey") +
+    geom_hline(yintercept = nugget, color = "darkgrey") +
+    geom_hline(yintercept = sill, color = "darkgrey") +
+    geom_point(size = 2.5, colour = "black", fill = "white", alpha = 0.2) +
+    geom_line(aes(x = plotx, y = predict(plotx))) +
+    labs(title = paste0("Matérn regression: ",
+      paste(round(optimizer_results$par, 4), collapse = ", "))) +
+    xlab("distance (m)") + ylab(y_label) +
+    theme_minimal()
+
+  return(g)
+}
+
+```
+
+
+```{r regression-matérn-general}
+# trafo <- function(x) log(1.+x) # feel free to try other transformations.
+trafo <- function(x) x
+
+
+list_of_variables <- c(
+    "dnh4" , "dno3" , "dpo4",
+    "dnh4r" , "dno3r" , "dpo4r"
+    #, "dPC1" , "dPC2" , "dPC3"
+)
+list_of_soilclasses <- c("heavy", "light", "peat")
+regression_storage <- matrix(rep(NA,
+  length(list_of_variables) * length(list_of_soilclasses)
+  ), length(list_of_variables), byrow = TRUE)
+regression_storage <- as.data.frame(regression_storage)
+
+colnames(regression_storage) <- list_of_soilclasses
+rownames(regression_storage) <- list_of_variables
+
+
+regression_by_soilclass <- function(
+    regression_data, 
+    sc, reg_var,
+    maxx = extent, maxy = NULL, 
+    ...) {
+  diff_sc <- regression_data %>% filter(soilclass == sc)
+  
+  x <- diff_sc$ds
+  y <- trafo(diff_sc %>% pull(!!reg_var))
+
+  # DO NOT exclude the first two bins
+  minx <- 0 # 1.0*extent/n_bins
+  lowy <- y[x <= minx]
+  lowx <- x[x <= minx]
+  y <- y[x > minx]
+  x <- x[x > minx]
+  y <- y[x <= maxx]
+  x <- x[x <= maxx]
+
+
+
+  if (is.null(maxy)) maxy <- max(y)
+  x <- x[y <= maxy]
+  y <- y[y <= maxy]
+  
+  x <- x[!is.na(y)]
+  y <- y[!is.na(y)]
+
+  # standardization helps function comprehension
+  # x <- x/max(x)
+  # y <- y / mean(y)
+  
+  
+  matern_fit <- fit_matern(x, y,
+    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
+    ...
+  )
+
+  sink_file <- glue::glue("{analysis_label}_{reg_var}_{sc}_regression.rds")
+  saveRDS(matern_fit, file = here::here(regression_storage_path, sink_file))
+  
+  sink_file <- glue::glue("{analysis_label}_{reg_var}_{sc}_binned_observations.csv")
+  regdat <- extract_input_data_table(matern_fit, units = "log10(c)")
+  write.csv2(regdat, file = here::here(regression_storage_path, sink_file))
+
+  sink_file <- glue::glue("{analysis_label}_{reg_var}_{sc}_regression_values.csv")
+  regresult <- extract_data_table_matern_regression(matern_fit, units = "log10(c)")
+  write.csv2(regresult, file = here::here(regression_storage_path, sink_file))
+
+  # https://stackoverflow.com/a/71621059 
+  regression_storage[reg_var, sc] <<- matern_fit$par[2]
+  
+  print_regression_results(
+    matern_fit,
+    label = "regression",
+    indicate_threshold = FALSE
+    )
+  ylabel <- "mean difference (pair-averaged, then binned)"
+  # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
+  g <- plot_matern(matern_fit, y_label = ylabel)
+
+  x_excl <- diff_sc$ds
+  y_excl <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y_excl <- y_excl[x_excl <= maxx]
+  x_excl <- x_excl[x_excl <= maxx]
+  x_excl <- x_excl[y_excl > maxy]
+  y_excl <- y_excl[y_excl > maxy]
+  g <- g + geom_point(aes(x = x_excl, y = y_excl),
+      size = 2.5, colour = "red", alpha = 0.2) 
+  g <- g + geom_point(aes(x = lowx, y = lowy),
+      size = 2.5, colour = "red", alpha = 0.2) 
+  return(g)
+}
+
+
+```
+
+
+There are several options,
+using mean-absolute difference 
+in (standardized) chemical concentration 
+or principal components.
+
+
+I will cycle through those.
+
+```{r dchem-column-overview}
+#| code-fold: false
+
+column <- "dnh4"
+column <- "dno3"
+column <- "dpo4"
+# column <- "dPC1"
+# column <- "dPC2"
+# column <- "dPC3"
+# 
+# column <- "dPC1"
+
+
+common_ylim <- 1.0
+common_maxx <- 256
+```
+
+
+# variograms {#sec-variograms}
+
+
+## $NH_4$
+
+```{r dchem-column-nh4}
+#| code-fold: false
+column <- "dnh4"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-nh4}
+#| label: fig-dchem-regression-heavy-nh4
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-nh4}
+#| label: fig-dchem-regression-light-nh4
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-nh4}
+#| label: fig-dchem-regression-peat-nh4
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+## $NO_3$
+
+```{r dchem-column-no3}
+#| code-fold: false
+column <- "dno3"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-no3}
+#| label: fig-dchem-regression-heavy-no3
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-no3}
+#| label: fig-dchem-regression-light-no3
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-no3}
+#| label: fig-dchem-regression-peat-no3
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+## $PO_4$
+
+```{r dchem-column-po4}
+#| code-fold: false
+column <- "dpo4"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-po4}
+#| label: fig-dchem-regression-heavy-po4
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-po4}
+#| label: fig-dchem-regression-light-po4
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-po4}
+#| label: fig-dchem-regression-peat-po4
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) + ylim(0, common_ylim)
+```
+
+
+:::
+
+
+
+## $NH_4$ Raw
+
+```{r dchem-column-nh4r}
+#| code-fold: false
+column <- "dnh4r"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-nh4r}
+#| label: fig-dchem-regression-heavy-nh4r
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-nh4r}
+#| label: fig-dchem-regression-light-nh4r
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-nh4r}
+#| label: fig-dchem-regression-peat-nh4r
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+:::
+
+## $NO_3$ Raw
+
+```{r dchem-column-no3r}
+#| code-fold: false
+column <- "dno3r"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-no3r}
+#| label: fig-dchem-regression-heavy-no3r
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-no3r}
+#| label: fig-dchem-regression-light-no3r
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-no3r}
+#| label: fig-dchem-regression-peat-no3r
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+:::
+
+## $PO_4$ Raw
+
+```{r dchem-column-po4r}
+#| code-fold: false
+column <- "dpo4r"
+```
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r dchem-regression-heavy-po4r}
+#| label: fig-dchem-regression-heavy-po4r
+regression_by_soilclass(
+  diff_binned,
+  "heavy",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+
+```
+
+
+### light
+
+```{r dchem-regression-light-po4r}
+#| label: fig-dchem-regression-light-po4r
+regression_by_soilclass(
+  diff_binned,
+  sc = "light",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+### peat
+
+```{r dchem-regression-peat-po4r}
+#| label: fig-dchem-regression-peat-po4r
+regression_by_soilclass(
+  diff_binned,
+  sc = "peat",
+  reg_var = column,
+  maxx = common_maxx, maxy = Inf,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 200, 0.48, 1.01)
+) # + ylim(0, common_ylim)
+```
+
+
+:::
+
+
+# overview {#sec-overview}
+
+```{r}
+knitr::kable(regression_storage, digits = 2)
+```
