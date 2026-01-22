@@ -277,9 +277,9 @@ regression_by_soilclass <- function(
     select(ds, !!reg_var)
 
 
-  sink_path <- here::here("cache", "regression")
+  regression_storage_path <- here::here("cache", "regression")
   sink_file <- glue::glue("{label}_{reg_var}_{sc}.parquet")
-  write_parquet(diff_sc, sink = here::here(sink_path, sink_file))
+  write_parquet(diff_sc, sink = here::here(regression_storage_path, sink_file))
 
   x <- diff_sc$ds
   y <- trafo(diff_sc %>% pull(!!reg_var))
@@ -309,7 +309,16 @@ regression_by_soilclass <- function(
   if (return_fit) return(matern_fit)
 
   sink_file <- glue::glue("{label}_{reg_var}_{sc}.rds")
-  saveRDS(matern_fit, file = here::here(sink_path, sink_file))
+  saveRDS(matern_fit, file = here::here(regression_storage_path, sink_file))
+
+  sink_file <- glue::glue("{label}_{reg_var}_{sc}_binned_observations.csv")
+  regdat <- extract_input_data_table(matern_fit)
+  write.csv2(regdat, file = here::here(regression_storage_path, sink_file))
+
+  sink_file <- glue::glue("{label}_{reg_var}_{sc}_regression_values.csv")
+  regresult <- extract_data_table_matern_regression(matern_fit)
+  write.csv2(regresult, file = here::here(regression_storage_path, sink_file))
+
 
   print_regression_results(matern_fit, label = "regression:")
 
@@ -373,4 +382,48 @@ add_regression_to_plot <- function(h, optimizer_results, color = "black") {
 
   return(h)
 
+}
+
+
+
+extract_input_data_table <- function(regression, units = "m") {
+  data.frame(
+    regression$regx,
+    regression$regy
+  ) %>%
+  magrittr::set_colnames(c(
+    glue::glue("mean bin distance (m)"),
+    glue::glue("mean abs difference ({units})")
+  )) %>%
+  return()
+}
+
+extract_data_table_matern_regression <- function(regression, units = "m") {
+  matern_parameters <- regression$par
+
+  scale  <- matern_parameters[1] # related to semivariance
+  sigma  <- matern_parameters[2] # related to actual range; turning point
+  nugget <- matern_parameters[3] # variance at zero distance
+  nu     <- matern_parameters[4] # shape parameter; here: soft-fixed to ~1
+  sill   <- scale + nugget
+
+  distance_m <- seq(0., 100., length.out = 101)
+  distance_m <- distance_m[distance_m > 0]
+  mean_abs_difference_m <- matern_function(distance_m, matern_parameters)
+  difference_nuggetless_m <- mean_abs_difference_m - nugget
+  difference_percentage <- 100 * difference_nuggetless_m / scale
+
+  data.frame(
+    distance_m,
+    mean_abs_difference_m,
+    difference_nuggetless_m,
+    difference_percentage
+  ) %>%
+  magrittr::set_colnames(c(
+    glue::glue("distance (m)"),
+    glue::glue("mean abs difference ({units})"),
+    glue::glue("mean abs difference *ex nugget* ({units})"),
+    glue::glue("difference percentage")
+  )) %>%
+  return()
 }

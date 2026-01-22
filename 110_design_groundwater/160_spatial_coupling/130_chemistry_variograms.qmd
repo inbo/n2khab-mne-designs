@@ -63,6 +63,9 @@ extent <- 512 # m
 # n_bins <- 50
 min_pair_distance <- 1 # m
 bin_target <- 128
+
+analysis_label <- "waterchemistry"
+regression_storage_path <- here::here("cache", "regression")
 ```
 
 
@@ -595,6 +598,18 @@ regression_by_soilclass <- function(
     ...
   )
 
+
+  sink_file <- glue::glue("{analysis_label}_{reg_var}_{sc}_regression.rds")
+  saveRDS(matern_fit, file = here::here(regression_storage_path, sink_file))
+  
+  sink_file <- glue::glue("{analysis_label}_{reg_var}_{sc}_binned_observations.csv")
+  regdat <- extract_input_data_table(matern_fit, units = "log10(c)")
+  write.csv2(regdat, file = here::here(regression_storage_path, sink_file))
+
+  sink_file <- glue::glue("{analysis_label}_{reg_var}_{sc}_regression_values.csv")
+  regresult <- extract_data_table_matern_regression(matern_fit, units = "log10(c)")
+  write.csv2(regresult, file = here::here(regression_storage_path, sink_file))
+  
   # https://stackoverflow.com/a/71621059 
   regression_storage[reg_var, sc] <<- matern_fit$par[2]
   
