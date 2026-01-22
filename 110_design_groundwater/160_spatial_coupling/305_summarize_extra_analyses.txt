@@ -6,7 +6,7 @@
                        __________________________
 
 
-                                20260119
+                                20260122
 
 
 Table of Contents
@@ -34,7 +34,7 @@ _________________
     with them, found way insufficient sample size (but, see below),
     turned to waterlevels instead, and left the immature waterchemistry
     query for later.
-  + [05/2025] In waterlevels, much more data is available. After some
+  + (05/2025] In waterlevels, much more data is available. After some
     back-and-forth, it was possible to compute *waterlevel variograms*.
     + On the way, we discarded the idea of using spatial models via
       [sdmTMB], though remainders of these attempts are still archived.
@@ -64,7 +64,7 @@ _________________
       calculated.
     + A presentation was prepared and discussed with the main
       stakeholders (`210_presentation_20250520.qmd').
-  + *[01/2026] Water chemistry revisited:*
+  + (01/2026] Water chemistry revisited:*
     + Upon request about the findings of the waterlevel analysis, water
       chemistry data resurfaced.
     + A logical bug was identified by its author which had led to
@@ -84,11 +84,18 @@ _________________
         filtered (`121_inspect_chemvars.html')
     + Data tables are requested and get exported now for most
       regressions.
-    + Reviewed filter depth restrictions:
+  + (01/2026] Reviewed filter depth restrictions for chemistry and water
+    levels:
+    + settings:
       + Filter depth (abs.) restricted to 5m or shallower (should have
         been the case already).
       + Filter length restricted to 1m or less.
       + Filter depth difference restricted to 1m or less.
+    + observations:
+      + about 2/3 of the data retained
+      + variograms are much more stable (plots)
+      + bootstraps are not bimodal anymore
+      + mTAW now seems to have the longer range
 
 
 [sdmTMB] <https://sdmtmb.github.io/sdmTMB/>
@@ -115,6 +122,8 @@ _________________
       was reached by variable bin widths.
     + The elevation filter was confirmed to be relevant for stable
       variograms (`116_review_slopefilter.qmd').
+    + installation characteristics (filter depth and filter depth
+      difference, filter length) were restricted for homogenization
   + Difference threshold is hit *at a distance of \(\approx 10 m\)*.
     + `mTAW' and `mMaaiveld', in comparison, allow for nuances in data
       interpretation.
@@ -126,10 +135,13 @@ _________________
     at "zero distance".
 
   We conclude and confirmed that co-variation of water level
-  measurements is reasonably tolerable at *a 10 m distance*. Particular
-  soilclasses at and a too high elevation difference between candidate
-  locations can justify an even more conservative maximum re-use
-  distance.
+  measurements is reasonably tolerable at *a 10 m distance*. A
+  soilclass-dependent distance threshold is justified. Because we chose
+  relatively restrictive pair selection (elevation, filter
+  characteristics), the variograms are robust and stable. However, this
+  choice also implies that deviation on existing installations (e.g.
+  elevation difference, unsuitable filter depth or length) must be
+  handled as *additional exclusion criteria for existing wells*.
 
 
 3.2 Water Chemistry
@@ -154,6 +166,13 @@ _________________
     + We inspected three chemicals: \(NH_4\), \(NO_3\), and \(PO_4\).
     + This includes measurements which were stored at or below the
       detection limit.
+    + In contrast to water levels, elevation differences were ignored
+      for water chemistry, since there is no a priori hypothesis about
+      their influence.
+    + Installation characteristics were homogenized as above (filter
+      lengths ≤ 1m, difference in filter depth ≤ 1m).
+    + The range used for regression (~500m) is sufficient; for longer
+      distances, sample size diminishes.
 
   + "Sigma-ranges" (i.e. distances at which the expected difference
     between two locations exceed half the maximum variation) are
@@ -161,10 +180,15 @@ _________________
     (`130_chemistry_variograms.qmd').
     + However, we *did not work with a concentration threshold*, which
       would be quickly met on the "`difference(log10)'" scale.
+    + Units and scale of the difference-axes must be kept in mind: we
+      computed the difference of two logaritmized concentrations;
+      differences are factors.
     + Nuggets are considerable; i.e. baseline variation is high.
     + Only some soilclass/chemical combinations yield meaningful, stable
-      variograms. This was confirmed by looking at data distributions
-      ("ridgeplots"; `132_chemistry_ridgeplots.qmd').
+      variograms (e.g. all "heavy soil" variograms have plausible
+      shapes, whereas "light soil PO₄" is flat and inconclusive). This
+      was confirmed by looking at data distributions ("ridgeplots";
+      `132_chemistry_ridgeplots.qmd').
     + Filtering out pairs in which one concentration was below detection
       limit resulted in unreliable variograms (higher `rmse', more
       variance; `304b_chemistry_variograms_detectionlimit.qmd'). There
@@ -178,11 +202,16 @@ _________________
       + Which effect pulls the picture is bin-specific, and in
         consequence removing detection limit observations only leads to
         higher variability / variogram instability.
+    + On *heavy soil*, chemical measurements are expected to differ at
+      very short distances. On *light soil*, correlation extends to more
+      distant locations.
 
 
   To summarize, measurement process characteristics, the scale, and the
   units of water chemistry measurements prohibit conclusive
-  interpretation.
+  interpretation. Some chemical/soilclass combinations provide visually
+  plausible variograms, which mostly confirm the findings from the
+  analyses of water levels.
 
 
 3.3 General
@@ -195,5 +224,7 @@ _________________
      `302_chemistry_variograms_ecoregion.qmd')
   + Value tables for other difference thresholds are available in
     notebook `300_spatialcoupling_waterlevels_extract_regressions.qmd'.
-    Alternatively, regression parameters can be accessed directly to
-    calculate more exact values.
+    Value tables for all other relevant regressions are stored in `csv'
+    format in the subfolder `regression_tables'. Alternatively,
+    regression parameters can be accessed directly to calculate more
+    exact values.
