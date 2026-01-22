@@ -24,6 +24,7 @@ get_zenodo_library <- function() {
             )
 
   flanders <- c(FALSE, "10.5281/zenodo.3386224")
+  ecoregions <- c(FALSE, "10.5281/zenodo.3386208")
   provinces <- c(FALSE, "10.5281/zenodo.3386237")
   habitatmap <- c(FALSE, "10.5281/zenodo.3354381")
   habitatmap_stdized <- c(TRUE, "10.5281/zenodo.3355192")
@@ -46,6 +47,7 @@ get_zenodo_library <- function() {
 
   zl <- t(data.frame(
     flanders,
+    ecoregions,
     provinces,
     habitatmap,
     habitatmap_stdized,
@@ -256,6 +258,7 @@ load_zenodo_data <- function(
 #' @examples
 #' \dontrun{
 #'   n2khab_data_path <- "C:\\R\\n2khab_data"
+#'   # n2khab_data_path <- n2khab::locate_n2khab_data()
 #'   fetch_all_zenodo_data(n2khab_data_path)
 #' }
 #'

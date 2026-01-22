@@ -5,8 +5,9 @@ format:
   html:
     toc: true
     html-math-method: katex
-    code-fold: true
+    variant: -tex_math_dollars+tex_math_single_backslash
     embed-resources: true
+    code-fold: true
 knitr:
   opts_chunk:
     echo: true
@@ -112,6 +113,21 @@ soilclass_colors <- c(
   "peat" = "darkseagreen",
   "unknown" = "slategray"
 )
+
+ecoregion_colors <- c(
+  "zuidoostelijke heuvelzone" = "darkorchid",
+  "Kempen" = "sienna",
+  "polders en de getijdenschelde" = "slategray",
+  "kustduinen" = "burlywood",
+  "Pleistocene riviervalleien" = "deepskyblue",
+  "zuidwestelijke heuvelzone" = "coral",
+  "Midden-Vlaamse overgangsgebieden" = "gold",
+  "krijt-leemgebieden" = "honeydew",
+  "cuesta's" = "palevioletred",
+  "grindrivieren" = "darkseagreen",
+  "westelijke interfluvia" = "hotpink"
+)
+
 ```
 
 
@@ -123,8 +139,8 @@ The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to as
 
 meta_data <- join_auxiliary_cache(label = "metadata") %>%
   join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
-  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
-  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx") # %>%
+  # join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
 diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
   filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
@@ -132,9 +148,9 @@ diff_data <- join_auxiliary_cache(label = "diffdata") %>%
 meta_join <- meta_data %>%
   select(pp_idx, fdepth, pp_code, mp_idx, cluster,
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
-         wata_min_dist, wata_dist_class,
-         emd_n, emd_amp1, emd_amp2, emd_ampsum,
-         emd_qdiff, emd_residual_qdiff
+         wata_min_dist, wata_dist_class
+         # emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         # emd_qdiff, emd_residual_qdiff
          )
 
 diff_meta <- diff_data %>%
@@ -156,8 +172,8 @@ diff_meta <- diff_data %>%
       ds = sqrt((x2-x1)^2 + (y2-y1)^2),
       dh = elevation_dhmv2-elevation_dhmv1,
       dz = fdepth2-fdepth1,
-      damp = emd_ampsum2-emd_ampsum1,
-      dqdiff = emd_qdiff2-emd_qdiff1,
+      # damp = emd_ampsum2-emd_ampsum1,
+      # dqdiff = emd_qdiff2-emd_qdiff1,
       dwadi = wata_min_dist2-wata_min_dist1,
       dslope = slope_r2.5m2-slope_r2.5m1,
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
@@ -196,6 +212,24 @@ Binning is flexible, and we compare the differences below, with `n_bins =` `{r} 
 More on that below.
 
 
+*Edit 2025/12/16: for an extra analysis, ecoregion of the reference point is added to the data set.*
+
+```{r prepare-ecoregion}
+
+# n2khab::read_ecoregions() %>% sf::st_drop_geometry() %>% distinct(region_name)
+ecoregio_lookup <- diff_meta %>% 
+  sf::st_as_sf(coords = c("x1", "y1"), crs = 31370) %>% 
+  select(pp_idx1) %>% 
+  sf::st_join(
+    n2khab::read_ecoregions() %>% 
+      select(region_name) %>% 
+      rename(ecoregion = region_name)
+  ) %>% 
+  sf::st_drop_geometry() %>% 
+  mutate(ecoregion = stringr::str_replace(ecoregion, "Ecoregio van de ", "")) %>% 
+  distinct()
+
+```
 
 ```{r glimpse-data}
 
@@ -207,10 +241,15 @@ diff_meta <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
-      ds, dh, dz, damp,
-      dqdiff, dwadi, dslope,
+      ds, dh, dz, # damp, dqdiff,
+      dwadi, dslope,
       melevation, mslope
   ) %>%
+  left_join(
+    ecoregio_lookup,
+    by = join_by(pp_idx1),
+    relationship = "many-to-one"
+  ) %>% 
   mutate(
     pair = factor(paste0(
       as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
@@ -256,6 +295,7 @@ diff_widegroup <- diff_joined %>%
     cnt = n(),
     #cnt = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     semivar = 1/(2*cnt)*sum(dw^2, na.rm = TRUE),
@@ -277,6 +317,20 @@ diff_widegroup %>%
   geom_point(aes(cex = sqrt(cnt)), alpha = 0.16) +
   scale_fill_manual(values = soilclass_colors) +
   scale_color_manual(values = soilclass_colors) +
+  theme_bw()
+```
+
+
+```{r glimpse-ecoregion}
+#| label: fig-bubbletea-ecoregion
+#| fig-cap: "Another irrelevant ''bubble tea plot''™. This time with ecoregion. The size of the bubbles scales with the number of observations. Yes, this was only a humble first glimpse at the data; yes, I used `sqrt` as a 'cheat' to limit bubble size differences; yes, we will do better below. But the colors are nice."
+diff_widegroup %>%
+  ggplot(aes(x = ds, y = log(1.0+dw),
+         color = ecoregion)) +
+  geom_point(aes(cex = sqrt(cnt)), alpha = 0.16) +
+  scale_fill_manual(values = ecoregion_colors) +
+  scale_color_manual(values = ecoregion_colors) +
+  xlim(0., 128.) +
   theme_bw()
 ```
 
@@ -321,6 +375,7 @@ This is a promising pattern: differences are lowest on short distances, and incr
 We better expect to re-capture it in the analysis below.
 
 
+
 # grouping and binning
 
 ## pooled data: what to pool? {#sec-pooling}
@@ -333,6 +388,7 @@ diff_grouped <- diff_joined %>%
   summarize(
     n_obs = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
@@ -469,6 +525,7 @@ diff_equigrouped <- diff_joined %>%
   summarize(
     n_obs = sum(as.integer(!is.na(dw))),
     soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
     semivar = 1/(2*n_obs)*sum(dw^2, na.rm = TRUE),
@@ -503,7 +560,7 @@ diff_equibinned <- diff_equigrouped %>%
     
 
 ```{r equibin-export}
-#| eval: true
+#| eval: false
 #| echo: false
 #| code-fold: true
 
@@ -540,9 +597,84 @@ diff_equibinned %>%
   scale_fill_manual(values = soilclass_colors) +
   scale_color_manual(values = soilclass_colors) +
   theme_bw()
+
 ```
 
 Seems more balanced, let's see what to do with these bins.
+
+
+# equibin ridges
+
+```{r diff-ridges-equibin-dw-heavy}
+#| label: fig-ridges-equibin-dw-heavy
+#| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (x-axis), the distribution of water level differences (y-axis, grey density distributions) increases (indicated by quantile lines)."
+diff_equigrouped %>%
+  filter(soilclass == "heavy", ds < 100) %>% 
+  ggplot(aes(x = dw, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = 4.0, bandwidth = 0.05) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean abs mTAW difference", y = "well pair distance") +
+  xlim(0, 1.0) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+```{r diff-ridges-equibin-dw-light}
+#| label: fig-ridges-equibin-dw-light
+#| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (x-axis), the distribution of water level differences (y-axis, grey density distributions) increases (indicated by quantile lines)."
+diff_equigrouped %>%
+  filter(soilclass == "light", ds < 100) %>% 
+  ggplot(aes(x = dw, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = 4.0, bandwidth = 0.05) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean abs mTAW difference", y = "well pair distance") +
+  xlim(0, 1.0) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+```{r diff-ridges-equibin-dw-peat}
+#| label: fig-ridges-equibin-dw-peat
+#| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (x-axis), the distribution of water level differences (y-axis, grey density distributions) increases (indicated by quantile lines)."
+diff_equigrouped %>%
+  filter(soilclass == "peat", ds < 100) %>% 
+  ggplot(aes(x = dw, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = 4.0, bandwidth = 0.05) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean abs mTAW difference", y = "well pair distance") +
+  xlim(0, 1.0) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+```
+
+```{r}
+glimpse(diff_equigrouped)
+```
+
+
+```{r diff-ridges-equibin-dm}
+#| eval: false
+#| label: fig-ridges-equibin-dm
+#| fig-cap: "Visualization of distance-dependent difference with ridgelines. With increasing distance (x-axis), the distribution of water level differences (y-axis, grey density distributions) increases (indicated by quantile lines)."
+diff_equigrouped %>%
+  filter(ds < 100, soilclass == "heavy") %>%
+  ggplot(aes(x = dm, y = distance_equibin)) +
+  geom_density_ridges(rel_min_height = 0.05,
+    quantile_lines = TRUE, quantiles = 4,
+    scale = 4.0, bandwidth = 0.05) +
+  # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+  labs(x = "mean mMaaiveld difference", y = "well pair distance") +
+  xlim(0, pi) +
+  theme_bw() + coord_flip() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+```
 
 
 # regression {#sec-regression}
@@ -1038,9 +1170,9 @@ p.mat <- meta_data %>%
   select(
        elevation_dhmv, slope_r2.5m,
        fdepth, ref_taw, 
-       wata_min_dist,
-       emd_n, emd_amp1, emd_amp2, emd_ampsum,
-       emd_qdiff, emd_residual_qdiff
+       wata_min_dist
+       # emd_n, emd_amp1, emd_amp2, emd_ampsum,
+       # emd_qdiff, emd_residual_qdiff
   ) %>% 
   cor_pmat()
 ggcorrplot(p.mat, hc.order = TRUE, type = "lower",
@@ -1055,6 +1187,7 @@ More detail about the pronounced `slope`/`amp` correlation:
 ```{r contour-two}
 #| label: fig-contour-slopeamp
 #| fig-cap: "Some parameters in the data set are correlated (here: slope and 2nd emd amplitude). However, the observations seem rather diffuse, even when separating soilclasses (rows) and water distances (columns)."
+#| eval: false
 meta_data %>% 
   ggplot(aes(x = slope_r2.5m, y = emd_amp1)) +
   stat_density_2d(aes(fill = after_stat(level)), geom = "polygon") +

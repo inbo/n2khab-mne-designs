@@ -1,0 +1,397 @@
+---
+title: "Water Level Variograms: Daily Data"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+    embed-resources: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("gridExtra") |> void() # panels with ggplot
+library("ggcorrplot")|> void() # correlation, grid visualization
+library("mapview")   |> void() # map visualization
+library("ggridges")  |> void() # density ridges
+
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# user-set parameters
+cluster_dist <- 3400 # m # parameter for clustering
+data_export_file <- glue::glue("data/waterlevel_data_cl{cluster_dist}.parquet")
+chem_export_file <- glue::glue("data/waterchemistry_data_cl{cluster_dist}_alltimesd.parquet")
+diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist}_alltimesd.parquet")
+
+# parameters
+extent <- 512 # m
+# n_bins <- 50
+bin_target <- 128 # pairs per bin
+min_pair_distance <- 1.0 # m
+
+
+soilclass_colors <- c(
+  "heavy" = "sienna",
+  "light" = "burlywood",
+  "peat" = "darkseagreen",
+  "unknown" = "slategray"
+)
+```
+
+
+The script `120_waterchemistry_reload.qmd` should be used to assemble the data set loaded here.
+
+
+
+```{r load-data}
+
+pp_data <- read_parquet(data_export_file)
+
+std_chem <- read_parquet(file = chem_export_file) %>%
+  mutate(date = as.Date(as.character(date), format = "%Y%m%d"))
+pp_chem_nh4 <- std_chem %>%
+  select(pp_idx, sample_idx, date, meq_nh4_log, meq_nh4_raw) %>% 
+  summarize(
+    across(everything(), ~mean(., na.rm = TRUE)),
+    .by = pp_idx
+  )
+
+```
+
+
+
+```{r load-diffdata}
+
+diff_data_raw <- read_parquet(diffdata_export_file) %>%
+  filter(!is_same_location) # only different locations
+
+
+join_a_chemical <- function(.data, chem) {
+  # .data <- diff_backbone
+  # chem <- "nh4"
+
+  cols <- c(
+    "pp_idx1", "date1", "pp_idx2", "date2", "dt",
+    glue::glue("meq_{chem}_log1"),
+    glue::glue("meq_{chem}_log2"),
+    glue::glue("d{chem}"),
+    glue::glue("d{chem}r"),
+    glue::glue("is_first_d{chem}")
+  )
+  
+  .data %>% 
+    left_join(
+      diff_data_raw %>% 
+        select(!!!rlang::syms(cols)) %>%
+        filter(!!as.symbol(glue::glue("is_first_d{chem}"))) %>% 
+        filter(dt < 1)
+      ,
+      by = join_by(pp_idx1, date1, pp_idx2),
+      suffix = c("", glue::glue("_{chem}")),
+      relationship = "many-to-many"
+    ) %>%
+    return()
+}
+
+diff_backbone <- diff_data_raw %>%
+  distinct(pp_idx1, date1, pp_idx2) %>%
+  mutate(date2 = NA, dt = NA)
+
+diff_data_mixed <- diff_backbone %>%
+  join_a_chemical("nh4") %>%
+  join_a_chemical("no3") %>%
+  join_a_chemical("po4") %>%
+  select(-date2, -dt)
+
+diff_data <- diff_data_mixed  %>%
+  filter(!(is.na(dnh4)&is.na(dno3)&is.na(dpo4)))
+
+diff_data %>%
+  mutate(
+    nan_nh4 = is.na(dnh4),
+    nan_no3 = is.na(dno3),
+    nan_po4 = is.na(dpo4)
+  ) %>% 
+  count(nan_nh4, nan_no3, nan_po4) %>%
+  knitr::kable()
+
+
+```
+
+
+```{r join-location-data}
+
+
+pp_join <- pp_data %>%
+  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff
+         )
+
+diff_meta <- diff_data %>%
+  distinct(pp_idx1, pp_idx2) %>%
+  left_join(
+    pp_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    pp_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+      ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+      dh = elevation_dhmv2-elevation_dhmv1,
+      dz = fdepth2-fdepth1,
+      # damp = emd_ampsum2-emd_ampsum1,
+      # dqdiff = emd_qdiff2-emd_qdiff1,
+      dwadi = wata_min_dist2-wata_min_dist1,
+      dslope = slope_r2.5m2-slope_r2.5m1,
+      melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+      mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
+  )
+
+
+```
+
+
+```{r glimpse-data}
+
+diff_all <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, # ecoregion,
+      wata_dist_class1, wata_dist_class2,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(glue::glue("{pp_idx1}_{pp_idx2}"))
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>%
+  filter(ds >= min_pair_distance) %>% 
+  mutate(date = date1) %>% select(-date1)
+    
+
+diff_all %>% ggplot(aes(x = ds)) +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  theme_bw()
+
+```
+
+
+# binning
+
+
+After some good prior experience, I will once more apply binning with variable bin width, to achieve **equal sample size per bin**.
+
+
+```{r equibin-preparation}
+#| code-fold: false
+
+diff_equigrouped <- diff_all %>%
+  summarize(
+    n_obs = sum(as.integer(!(
+      is.na(dnh4[is_first_dnh4]) |
+      is.na(dno3[is_first_dno3]) |
+      is.na(dpo4[is_first_dpo4])
+    ))),
+    n_nh4 = sum(as.integer(!is.na(dnh4[is_first_dnh4]))),
+    n_no3 = sum(as.integer(!is.na(dno3[is_first_dno3]))),
+    n_po4 = sum(as.integer(!is.na(dpo4[is_first_dpo4]))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    dnh4 = 1/(n_nh4)*sum(abs(dnh4[is_first_dnh4]), na.rm = TRUE),
+    dno3 = 1/(n_no3)*sum(abs(dno3[is_first_dno3]), na.rm = TRUE),
+    dpo4 = 1/(n_po4)*sum(abs(dpo4[is_first_dpo4]), na.rm = TRUE),
+    dnh4r = 1/(n_nh4)*sum(abs(dnh4r[is_first_dnh4]), na.rm = TRUE),
+    dno3r = 1/(n_no3)*sum(abs(dno3r[is_first_dno3]), na.rm = TRUE),
+    dpo4r = 1/(n_po4)*sum(abs(dpo4r[is_first_dpo4]), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ) # cut to equal sized bins
+  ) %>%
+  relocate(distance_equibin) %>% 
+  ungroup
+
+
+    
+combine_grouped <- function (val, cnt) sum(val*cnt, na.rm = TRUE)/sum(cnt, na.rm = TRUE)
+mean_finite <- function (val) mean(val[is.finite(val)], na.rm = TRUE)
+
+diff_binned <- diff_equigrouped %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    n_obs = sum(n_obs),
+    n_nh4 = sum(n_nh4),
+    n_no3 = sum(n_no3),
+    n_po4 = sum(n_po4),
+    dnh4  = mean_finite(dnh4),
+    dno3  = mean_finite(dno3),
+    dpo4  = mean_finite(dpo4),
+    dnh4r = mean_finite(dnh4r),
+    dno3r = mean_finite(dno3r),
+    dpo4r = mean_finite(dpo4r),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>%
+  arrange(ds) %>%
+  filter(ds <= extent)
+
+```
+
+
+
+```{r equibin-samplesize}
+#| label: fig-equibin-sample-size
+diff_binned %>%
+  ggplot(aes(x = ds, y = cnt, color = soilclass)) +
+  geom_step() +
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  theme_bw()
+```
+
+
+```{r}
+plot_ridge <- function(sc, chemvar) {
+  # sc = "heavy"
+  # chemvar = "dpo4"
+
+  diff_equigrouped %>%
+    filter(soilclass == sc, ds < 100, ds > 0) %>% 
+    filter(is.finite(!!rlang::sym(chemvar))) %>% 
+    ggplot(aes(x = !!rlang::sym(chemvar), y = distance_equibin)) +
+    geom_density_ridges(rel_min_height = 0.08,
+      quantile_lines = TRUE, quantiles = 4,
+      scale = pi, bandwidth = 0.05,
+      fill = soilclass_colors[[sc]],
+      alpha = 0.8
+    ) +
+    # scale_fill_viridis_c(option = "plasma", name = "") +  xlim(0, 4) +
+    labs(
+      x = glue::glue("mean log(concentration) difference {chemvar}"),
+      y = "well pair distance"
+    ) +
+    xlim(0, 1.0) +
+    theme_bw() + coord_flip() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+}
+
+```
+
+# equibin ridges
+
+## $NH_4$
+
+::: {.panel-tabset group="soilclass"}
+### heavy
+
+```{r}
+#| fig-cap: "NH₄, heavy"
+plot_ridge("heavy", "dnh4")
+```
+
+### light
+
+```{r}
+#| fig-cap: "NH₄, light"
+plot_ridge("light", "dnh4")
+```
+
+### peat
+
+```{r}
+#| fig-cap: "NH₄, peat"
+plot_ridge("peat", "dnh4")
+```
+
+
+:::
+
+## $NO_3$
+
+::: {.panel-tabset group="soilclass"}
+### heavy
+
+```{r}
+#| fig-cap: "NO₃, heavy"
+plot_ridge("heavy", "dno3")
+```
+
+### light
+
+```{r}
+#| fig-cap: "NO₃, light"
+plot_ridge("light", "dno3")
+```
+
+### peat
+
+```{r}
+#| fig-cap: "NO₃, peat"
+plot_ridge("peat", "dno3")
+```
+
+
+:::
+
+
+
+## $PO_4$
+
+::: {.panel-tabset group="soilclass"}
+### heavy
+
+```{r}
+#| fig-cap: "PO₄, heavy"
+plot_ridge("heavy", "dpo4")
+```
+
+### light
+
+```{r}
+#| fig-cap: "PO₄, light"
+plot_ridge("light", "dpo4")
+```
+
+### peat
+
+```{r}
+#| fig-cap: "PO₄, peat"
+plot_ridge("peat", "dpo4")
+```
+
+
+:::
+
+
+

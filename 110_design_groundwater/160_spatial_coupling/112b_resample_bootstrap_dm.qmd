@@ -60,12 +60,13 @@ soilclass_colors <- c(
 extent <- 500 # m
 maxx <- 1000 # for regression
 
-bin_target <- 100 # alternative: observations per bin
+bin_target <- 128 # alternative: observations per bin
 cap_dw <- 4 # m # maximum accepted water level difference
 
 slope_threshold    <- 0.01/1 # 1 cm per meter
 wadi_threshold     <- units::set_units(Inf, "m")
-dfdepth_threshold  <- Inf # m # Inf
+dfdepth_threshold  <- 1 # m # Inf
+filter_length_limit <- 1 # m
 
 n_bootstraps <- 2**16 # number of bootstrapping iterations
 ```
@@ -76,18 +77,18 @@ n_bootstraps <- 2**16 # number of bootstrapping iterations
 
 meta_data <- join_auxiliary_cache(label = "metadata") %>%
   join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
-  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
-  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx")
+  # %>% join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
 diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
   filter(if_all(c(w1, w2, dw, m1, m2, dm), ~ !is.na(.x)))
 
 meta_join <- meta_data %>%
-  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+  select(pp_idx, flength, fdepth, pp_code, mp_idx, cluster,
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
          wata_min_dist, wata_dist_class,
-         emd_n, emd_amp1, emd_amp2, emd_ampsum,
-         emd_qdiff, emd_residual_qdiff
+         # emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         # emd_qdiff, emd_residual_qdiff
          )
 
 diff_meta <- diff_data %>%
@@ -109,8 +110,8 @@ diff_meta <- diff_data %>%
       ds = sqrt((x2-x1)^2 + (y2-y1)^2),
       dh = elevation_dhmv2-elevation_dhmv1,
       dz = fdepth2-fdepth1,
-      damp = emd_ampsum2-emd_ampsum1,
-      dqdiff = emd_qdiff2-emd_qdiff1,
+      # damp = emd_ampsum2-emd_ampsum1,
+      # dqdiff = emd_qdiff2-emd_qdiff1,
       dwadi = wata_min_dist2-wata_min_dist1,
       dslope = slope_r2.5m2-slope_r2.5m1,
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
@@ -122,6 +123,8 @@ diff_meta <- diff_data %>%
     wata_min_dist1 < wadi_threshold,
     wata_min_dist2 < wadi_threshold,
     mslope < slope_threshold,
+    flength1 <= filter_length_limit,
+    flength2 <= filter_length_limit,
     abs(dz) < dfdepth_threshold
   )
 
@@ -152,8 +155,8 @@ diff_meta <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
-      ds, dh, dz, # damp,
-      # dqdiff,
+      ds, dh, dz,
+      # damp, dqdiff,
       dwadi, dslope,
       melevation, mslope
   ) %>%

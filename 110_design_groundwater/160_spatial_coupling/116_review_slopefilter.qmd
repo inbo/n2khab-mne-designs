@@ -13,6 +13,16 @@ knitr:
 ---
 
 
+# UPDATE 20260122: Filter Depth Difference
+
+Review of filter depth difference filter:
+
+- Filter depth (abs.) restricted to 5m or shallower.
+- Filter length restricted to 1m or less.
+- Filter depth difference restricted to 1m or less.
+
+
+
 # Summary
 
 :::{.callout-warning}
@@ -29,7 +39,7 @@ Settings refined:
 
 - fixed `extent` (data limit) to $500 m$
 - fixed `maxx` (regression upper limit for $\sigma$) to $1000 m$
-- fixed `bin_target` to $100$ observations per bin (can be less in case of the data-draining filters)
+- fixed `bin_target` to $128$ observations per bin (can be less in case of the data-draining filters)
 :::
 
 
@@ -84,7 +94,7 @@ source("regression_tools.R")
 extent <- 500 # m # data included
 maxx <- 1000 # 768 # upper limit for regression
 
-bin_target <- 100 # ... and the preferred alternative: observations per bin
+bin_target <- 128 # ... and the preferred alternative: observations per bin
 
 column <- "dw"
 cap_dw <- 4 # m # maximum accepted water level difference within a pair
@@ -100,15 +110,16 @@ The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to as
 
 meta_data <- join_auxiliary_cache(label = "metadata") %>%
   join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
-  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
-  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx")
+  # %>% join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
 meta_join <- meta_data %>%
-  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+  filter(fdepth <= 5) %>% 
+  select(pp_idx, flength, fdepth, pp_code, mp_idx, cluster,
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
          wata_min_dist, wata_dist_class,
-         emd_n, emd_amp1, emd_amp2, emd_ampsum,
-         emd_qdiff, emd_residual_qdiff,
+         # emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         # emd_qdiff, emd_residual_qdiff,
          pp_vld, mp_vld
          )
 
@@ -119,13 +130,13 @@ diff_data <- join_auxiliary_cache(label = "diffdata") %>%
 diff_meta <- diff_data %>%
   select(pp_idx1, pp_idx2) %>%
   distinct() %>%
-  left_join(
+  inner_join(
     meta_join,
     by = join_by(pp_idx1 == pp_idx),
     relationship = "many-to-one",
     suffix = c("", "1")
   ) %>%
-  left_join(
+  inner_join(
     meta_join,
     by = join_by(pp_idx2 == pp_idx),
     relationship = "many-to-one",
@@ -137,9 +148,9 @@ diff_meta <- diff_data %>%
     validated = as.logical(validated1 * validated2),
     ds = sqrt((x2-x1)^2 + (y2-y1)^2),
     dh = elevation_dhmv2-elevation_dhmv1,
-    dz = fdepth2-fdepth1,
-    damp = emd_ampsum2-emd_ampsum1,
-    dqdiff = emd_qdiff2-emd_qdiff1,
+    dz = fdepth2 - fdepth1,
+    # damp = emd_ampsum2-emd_ampsum1,
+    # dqdiff = emd_qdiff2-emd_qdiff1,
     dwadi = wata_min_dist2-wata_min_dist1,
     dslope = slope_r2.5m2-slope_r2.5m1,
     melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
@@ -155,10 +166,12 @@ diff_meta <- diff_data %>%
 ```{r count-all}
 diff_joined <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
+      flength1, flength2,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
-      ds, dh, dz, damp,
-      dqdiff, dwadi, dslope,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
       melevation, mslope
   ) %>%
   mutate(
@@ -202,8 +215,9 @@ diff_joined <- somediff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
-      ds, dh, dz, damp,
-      dqdiff, dwadi, dslope,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
       melevation, mslope
   ) %>%
   mutate(
@@ -349,8 +363,8 @@ slope_threshold <- 0.01/1 # 1 cm per meter
 
 diff_meta %>%
   select(mslope) %>%
-  mutate(filltered = mslope < slope_threshold) %>% 
-  ggplot(aes(log10(mslope), fill = filltered, color = filltered)) +
+  mutate(filtered = mslope < slope_threshold) %>% 
+  ggplot(aes(log10(mslope), fill = filtered, color = filtered)) +
   geom_histogram(bins = 256) +
   theme_bw()
     
@@ -379,8 +393,9 @@ diff_joined <- somediff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
-      ds, dh, dz, damp,
-      dqdiff, dwadi, dslope,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
       melevation, mslope
   ) %>%
   mutate(
@@ -546,8 +561,9 @@ diff_joined <- somediff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
-      ds, dh, dz, damp,
-      dqdiff, dwadi, dslope,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
       melevation, mslope
   ) %>%
   mutate(
@@ -672,3 +688,345 @@ regression_by_soilclass(
 
 :::
 
+
+# Filter Depth Difference Filtered
+
+- `mslope < 0.01 m/m`
+- `dz <= 1m` 
+- `flength1 <= 1m, flength2 <= 1m`
+
+
+## Filter
+
+```{r fdd-distribution}
+# slope_threshold <- Inf #0.05
+column <- "dw"
+slope_threshold <- 0.01/1 # 1 cm per meter
+depth_difference_limit <- 1 # m
+filter_length_limit <- 1 # m
+
+diff_meta %>%
+  mutate(
+    slope_filtered = mslope < slope_threshold,
+    short_filters = (flength1 <= filter_length_limit) & (flength2 <= filter_length_limit),
+    depthdiff_filtered = abs(dz) <= depth_difference_limit
+  ) %>% 
+  count(slope_filtered, short_filters, depthdiff_filtered) %>%
+  knitr::kable()
+    
+```
+
+
+```{r fdd-filter}
+somediff_meta <- diff_meta %>%
+  filter(
+    mslope < slope_threshold,
+    flength1 <= filter_length_limit,
+    flength2 <= filter_length_limit,
+    abs(dz) <= depth_difference_limit
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+## Binning
+
+
+```{r fdd-join-diffdata}
+diff_joined <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_joined, 3)), decimals = 2)
+
+paste0(
+  "selected ", nrow(diff_joined), " / ",
+  count_all, " observations (",
+  round(100*nrow(diff_joined)/(count_all)), "%)."
+)
+```
+
+
+
+```{r fdd-groupwise-binning}
+
+diff_equibinned <- diff_joined %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw = mean(dw, na.rm = TRUE), 
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+## variograms {#sec-slope-filtered}
+
+using water level difference (MAD); slope and filter characteristics are filtered
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r fdd-regression-heavy}
+#| label: fig-fdd-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "heavy",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = "waterlevels",
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### light
+
+```{r fdd-regression-light}
+#| label: fig-fdd-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = "waterlevels",
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+```
+
+
+
+
+
+### peat
+
+```{r fdd-regression-peat}
+#| label: fig-fdd-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dw\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = "waterlevels",
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+```
+
+
+:::
+
+
+## ... again, with `mMaaiveld`
+
+This information is stored in the column `dm`.
+Slope will be filtered as above, or not; both is kind of interesting.
+
+```{r fdd-filter-maaiveld-data}
+column <- "dm"
+
+somediff_meta <- diff_meta %>%
+  filter(
+    mslope < slope_threshold,
+    flength1 <= filter_length_limit,
+    flength2 <= filter_length_limit,
+    abs(dz) <= depth_difference_limit
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+
+## Binning
+
+
+```{r fddmM-join-diffdate}
+diff_joined <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(if_all(c(m1, m2, dm), ~ !is.na(.x))) %>% 
+  filter(abs(dm) <= ds, abs(dm) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_joined, 3)), decimals = 2)
+
+paste0(
+  "selected ", nrow(diff_joined), " / ",
+  count_all, " observations (",
+  round(100*nrow(diff_joined)/(count_all)), "%)."
+)
+```
+
+
+
+```{r fddmM-groupwise-binning}
+
+diff_equibinned <- diff_joined %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dm))),
+    soilclass = first(soilclass1),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(soilclass) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dm = mean(dm, na.rm = TRUE), 
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, soilclass)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+
+## variograms {#sec-maaiveld-filtered}
+
+using water level difference (MAD) of `mMaaiveld`; slope- and filter-characteristics are filtered
+
+
+::: {.panel-tabset group="soilclass"}
+
+### heavy
+
+```{r fddmM-regression-heavy}
+#| label: fig-fddmM-regression-heavy
+#| fig-cap: "Matérn regression of water level distance $\\langle dm\\rangle$ (m) on 'heavy' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "heavy",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = "waterlevels",
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### light
+
+```{r fddmM-regression-light}
+#| label: fig-fddmM-regression-light
+#| fig-cap: "Matérn regression of water level distance $\\langle dm\\rangle$ (m) on 'light' soil."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "light",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = "waterlevels",
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+```
+
+
+
+### peat
+
+```{r fddmM-regression-peat}
+#| label: fig-fddmM-regression-peat
+#| fig-cap: "Matérn regression of water level distance $\\langle dm\\rangle$ (m) on 'peat'. Red points indicate measurements which were excluded from the regression."
+regression_by_soilclass(
+  diff_equibinned,
+  sc = "peat",
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = "waterlevels",
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+```
+
+:::

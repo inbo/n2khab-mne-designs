@@ -23,9 +23,14 @@ ChemVarWID -> holds the ID of compounds;
 - `9` = $NH_4$
 
 
-You have only one choice:
-```{r mmi}
-max_measurement_interval <- 64
+Concentrations will be transformed.
+
+```{r logtrafo}
+# log_trafo <- \(x) log10(1e-6 + x)
+# # 20260106: only five values are at lower limit: one for NO3, four for PO4
+
+log_trafo <- \(x) log10(x)
+
 ```
 
 
@@ -33,6 +38,11 @@ max_measurement_interval <- 64
 
 ```{r setup}
 #| include: false
+
+# .libPaths("/opt/R/library")
+# renv::deactivate()
+# renv::restore()
+
 void <- suppressPackageStartupMessages
 library("dplyr")     |> void() # our favorite data wrangling toolbox
 library("dbplyr")    |> void() # dplyr + databases
@@ -61,14 +71,19 @@ if (getOption("browser") == "") options(browser = "librewolf")
 
 # user-set parameters
 cluster_dist <- 3400 # m # parameter for clustering
+t_interval <- "alltimes"
 min_cluster_size <- 2 # minimal cluster member count; fewer memeber clusters are removed
-data_export_file <- paste0("data/waterlevel_data_cl", cluster_dist, ".parquet")
-chem_export_file <- paste0("data/waterchemistry_data_cl", cluster_dist, ".parquet")
-diffdata_export_file <- paste0("data/waterchemistry_diffdata_cl", cluster_dist, ".parquet")
+data_export_file <- glue::glue("data/waterlevel_data_cl{cluster_dist}.parquet")
+allchem_export_file <- glue::glue("data/waterchemistry_alldata.parquet")
+chem_export_file <- glue::glue("data/waterchemistry_data_cl{cluster_dist}_{t_interval}d.parquet")
+diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist}_{t_interval}d.parquet")
 
 # # the user may choose to reload raw data
 # force_data_reassembly <- FALSE
 # reload <- force_data_reassembly || !file.exists(data_export_file)
+#
+
+extent <- 1024 # m # max distance of a pair of wells
 ```
 
 
@@ -82,7 +97,7 @@ pp_data <- read_parquet(data_export_file)
 ```
 
 
-# WAIT!
+# Chemical Variables: Concentrations
 
 Actually, we will not replace any site based on a single chemical alone.
 **We want to measure coupling of water chemistry in general!**
@@ -101,7 +116,19 @@ chemvars <- tbl(watina_dwh, "dimChemVar") %>%
 knitr::kable(chemvars %>% collect)
 ```
 
-Without further ado, let us try good old **PCA** (Principal Component Analysis).
+
+```{r data-colors}
+
+legend_colors <- c(
+  "nh4" = "darkblue",
+  "no3" = "darkred",
+  "po4" = "darkorange"
+  )
+
+color_of <- \(chem) legend_colors[[chem]]
+
+```
+
 
 
 ```{r glimpse-chemicals}
@@ -110,11 +137,26 @@ peek <- tbl(watina_dwh, "FactChemischeMeting")
 glimpse(peek)
 ```
 
+ StaalWID <int>, [...]
+ Meetwaarde <dbl>,
+ MeetwaardeMEQ <dbl>,
+ MeetWaardeMMOL_L <dbl>,
+ MetingStatusCode <chr>,
+ MetingStatus <chr>,
+ IsBelowLOQ <lgl>,
+ IsInferred <lgl>,
+ IsDeleted <lgl>,
+ ChangeReason <chr>,
+ InsertAuditKey <int>,
+ UpdateAuditKey <int>
+
+
 
 ```{r pca-data}
 all_chem <- tbl(watina_dwh, "FactChemischeMeting") %>%
   filter(
-    MetingStatusCode == "VLD",
+    # MetingStatusCode == "VLD",
+    !IsDeleted,
     ChemVarWID %in% c(6, 7, 9)
   ) %>%
   left_join(
@@ -123,64 +165,193 @@ all_chem <- tbl(watina_dwh, "FactChemischeMeting") %>%
     relationship = "many-to-many",
     unmatched = "drop"
   ) %>% 
-  select(PeilpuntWID, ChemVarCode, DatumWID, Meetwaarde) %>%
+  select(
+    PeilpuntWID,
+    StaalWID,
+    ChemVarCode,
+    DatumWID,
+    MeetwaardeMEQ,
+    MeetWaardeMMOL_L,
+    MetingStatusCode,
+    IsBelowLOQ,
+    IsInferred
+  ) %>%
   rename(
     pp_idx = PeilpuntWID,
+    sample_idx = StaalWID,
     chem = ChemVarCode,
     date = DatumWID,
-    m = Meetwaarde
+    m = MeetwaardeMEQ,
+    mmol = MeetWaardeMMOL_L,
+    vld = MetingStatusCode,
+    loq = IsBelowLOQ,
+    infer = IsInferred
   ) %>%
+  collect
+
+all_chem %>% 
+  write_parquet(sink = allchem_export_file)
+
+```
+
+```{r}
+nrow(all_chem)
+max(all_chem$date)
+
+```
+
+with MetingStatusCode == "VLD",
+
+ -  N = 8361
+ -  max(date) = 20121203
+
+taking ALL:
+
+ -  N = 16630
+ -  max(date) = 20251027
+ 
+... numbers now differ because widening was postponed.
+
+*a propos:*
+ 
+# "Widening"! Are we still on track?
+
+ 
+This is how data was previously "widened":
+
+```{r}
+#| eval: false
+null_chem <- all_chem %>% 
   tidyr::pivot_wider(
     names_from = chem,
     values_from = m
   ) %>%
-  rename_with(~stringr::str_remove(., '-') ) %>% 
-  collect
+  rename_with(~stringr::str_remove(., '-') ) 
+```
+
+Rationale: chemical measurements are in theory captured on the same samples, at the same lab cycles.
+The database has the exact info about which of those co-incide, by "StaalID" = `sample_idx`.
+
+
+First of all, turns out there are duplicate measurements, differing in validation status and/or LOQ.
+I will just discard these.
+
+```{r}
+
+double_chemss <- all_chem %>%
+  count(pp_idx, sample_idx, date, chem) %>%
+  filter(n > 1) %>%
+  arrange(desc(n))
+
+all_chem %>%
+  semi_join(
+    double_chemss,
+    by = join_by(pp_idx, sample_idx, date, chem)
+  ) %>%
+  arrange(sample_idx, date, chem) %>% 
+  knitr::kable()
+
+uq_chem <- all_chem %>%
+  anti_join(
+    double_chemss,
+    by = join_by(pp_idx, sample_idx, date, chem)
+  ) 
 
 ```
 
 
-```{r pca-data-colors}
-sel <- colnames(all_chem)[3:5]
 
-legend_colors <- c(
-  "nnh4" = "darkblue",
-  "nno3" = "darkred",
-  "ppo4" = "darkorange"
+```{r}
+
+backbone <- uq_chem %>%
+  distinct(pp_idx, sample_idx, date) %>%
+  arrange(date, sample_idx)
+
+chem_data <- backbone %>%
+  left_join(
+    uq_chem %>%
+      filter(chem == "n-nh4") %>%
+      select(-chem, -vld, -infer) %>% 
+      rename(meq_nh4 = m, mmol_nh4 = mmol, loq_nh4 = loq),
+    by = join_by(pp_idx, sample_idx, date)
+  ) %>%
+  left_join(
+    uq_chem %>%
+      filter(chem == "n-no3") %>%
+      select(-chem, -vld, -infer) %>% 
+      rename(meq_no3 = m, mmol_no3 = mmol, loq_no3 = loq),
+    by = join_by(pp_idx, sample_idx, date)
+  ) %>%
+  left_join(
+    uq_chem %>%
+      filter(chem == "p-po4") %>%
+      select(-chem, -vld, -infer) %>% 
+      rename(meq_po4 = m, mmol_po4 = mmol, loq_po4 = loq),
+    by = join_by(pp_idx, sample_idx, date)
   )
+
+glimpse(chem_data)
+
 ```
 
 
-```{r pca-data-distributions}
-#| label: fig-pca-data-distributions
+```{r log-data-distributions}
+#| label: fig-log-data-distributions
 #| fig-cap: "Distributions of log concentrations of groundwater chemicals."
+measure <- "meq" # "meq" # "mmol"
 ggplot(NULL) +
   geom_density(
-    aes(x = log10(all_chem %>% pull(!!sel[1])),
-    color = sel[1])
+    aes(x = log_trafo(chem_data %>% pull(!!glue::glue("{measure}_nh4"))),
+    color = "nh4")
   ) +
   geom_density(
-    aes(x = log10(all_chem %>% pull(!!sel[2])),
-    color = sel[2])
+    aes(x = log_trafo(chem_data %>% pull(!!glue::glue("{measure}_no3"))),
+    color = "no3")
   ) +
   geom_density(
-    aes(x = log10(all_chem %>% pull(!!sel[3])),
-    color = sel[3])
+    aes(x = log_trafo(chem_data %>% pull(!!glue::glue("{measure}_po4"))),
+    color = "po4")
   ) +
-  labs(x = "log10 concentration") +
+  labs(x = glue::glue("log trafo(concentration|{measure})")) +
   scale_color_manual(values = legend_colors) + 
   theme_bw() + theme(legend.position = "right")
 ```
 
+ ... Without further ado, let us try good old **PCA** (Principal Component Analysis).
 
 ```{r pca-data-3d}
 #| label: fig-pca-data-scatter
 #| fig-cap: "Log concentrations of groundwater chemicals, data space visualization."
-scatterplot3d(log10(all_chem[, sel]),
-  main = "log10 concentrations",
-  xlab = paste0("log(c(", sel[1], "))", collapse = ""),
-  ylab = paste0("log(c(", sel[2], "))", collapse = ""),
-  zlab = paste0("log(c(", sel[3], "))", collapse = ""),
+
+# log, filter na/inf
+value_columns <- c(
+  paste("meq", names(legend_colors), sep = "_"),
+  paste("mmol", names(legend_colors), sep = "_")
+)
+
+std_chem <- bind_cols(
+  chem_data %>%
+    mutate(across(any_of(value_columns), log_trafo)) %>% 
+    rename_with(~stringr::str_c(., "_log"), !!value_columns),
+  chem_data %>%
+    select(!!value_columns) %>% 
+    rename_with(~stringr::str_c(., "_raw"), everything())
+  )
+
+log_columns <- paste(value_columns, "log", sep = "_")
+pca_chem <- std_chem %>%
+  filter(if_all(log_columns, ~!is.na(.))) %>% 
+  filter(if_all(log_columns, ~is.finite(.)))
+
+sel <- paste(measure, names(legend_colors), "log", sep = "_")
+
+scatterplot3d(
+  pca_chem %>%
+    select(!!sel),
+  main = glue::glue("log trafo(concentrations|{measure})"),
+  xlab = glue::glue("log trafo(c(NH₄)|meq)"),
+  ylab = glue::glue("log trafo(c(NO₃)|meq)"),
+  zlab = glue::glue("log trafo(c(PO₄)|meq)"),
   pch = 16, color = "steelblue", angle = 30
   )
 
@@ -189,24 +360,23 @@ scatterplot3d(log10(all_chem[, sel]),
 correlation
 
 ```{r pca-data-correlation}
-
-# log, filter na/inf
-std_chem <- all_chem %>%
-  mutate(across(any_of(sel), function(vec) log10(vec))) %>%
-  filter(if_all(everything(), ~!is.na(.))) %>% 
-  filter(if_all(everything(), ~is.finite(.)))
+do_standardize <- FALSE
 
 # center
 means <- colMeans(std_chem[, sel], na.rm = TRUE)
-std_chem <- std_chem %>%
-  mutate(across(any_of(sel), function (vec) vec - mean(vec, na.rm = TRUE)))
+if(do_standardize){
+  std_chem <- std_chem %>%
+    mutate(across(any_of(sel), function (vec) vec - mean(vec, na.rm = TRUE)))
+}
 
 # scale
 vars <- colMeans(abs(std_chem[, sel]), na.rm = TRUE)
-std_chem <- std_chem %>%
-  mutate(across(any_of(sel), function (vec) vec / mean(abs(vec), na.rm = TRUE)))
+if(do_standardize){
+  std_chem <- std_chem %>%
+    mutate(across(any_of(sel), function (vec) vec / var(abs(vec), na.rm = TRUE)))
+}
 
-chemcov <- cov(std_chem[, sel], use = "complete.obs")
+chemcov <- cov(pca_chem[, sel], use = "complete.obs")
 knitr::kable(chemcov, digits = 2)
 ```
 
@@ -214,14 +384,46 @@ knitr::kable(chemcov, digits = 2)
 #| label: fig-pca-data-std
 #| fig-cap: "Standardized log concentrations of groundwater chemicals. These are data input to a PCA."
 scatterplot3d(std_chem[, sel],
-  main = "log10 concentrations",
-  xlab = paste0("standardized log(c(", sel[1], "))", collapse = ""),
-  ylab = paste0("standardized log(c(", sel[2], "))", collapse = ""),
-  zlab = paste0("standardized log(c(", sel[3], "))", collapse = ""),
+  main = "log trafo(concentration)",
+  xlab = paste0("log(c(", sel[1], "))", collapse = ""),
+  ylab = paste0("log(c(", sel[2], "))", collapse = ""),
+  zlab = paste0("log(c(", sel[3], "))", collapse = ""),
   pch = 16, color = "steelblue", angle = 30
   )
 
+# count concentrations ≤ 0.0001
+std_chem[, sel] %>% filter(meq_nh4_log <= -5)
+std_chem[, sel] %>% filter(meq_no3_log <= -5)
+std_chem[, sel] %>% filter(meq_po4_log <= -5)
 ```
+
+
+```{r standardized-data-distributions}
+#| label: fig-standardized-data-distributions
+#| fig-cap: "Distributions of log concentrations of groundwater chemicals. Should be the same as above."
+
+lograw <- "log"
+
+ggplot(NULL) +
+  geom_density(
+    aes(x = std_chem %>% pull(!!glue::glue("{measure}_nh4_{lograw}")),
+    color = "nh4")
+  ) +
+  geom_density(
+    aes(x = std_chem %>% pull(!!glue::glue("{measure}_no3_{lograw}")),
+    color = "no3")
+  ) +
+  geom_density(
+    aes(x = std_chem %>% pull(!!glue::glue("{measure}_po4_{lograw}")),
+    color = "po4")
+  ) +
+  labs(x = glue::glue("log trafo(concentration|{measure})")) +
+  scale_color_manual(values = legend_colors) + 
+  # xlim(0, 0.05) +  # raw
+  theme_bw() + theme(legend.position = "right")
+
+```
+
 
 
 eigenanalysis:
@@ -243,7 +445,7 @@ std_chem[, pcs] <- datamat %*% t(pca.mat)
 #| label: fig-pca-data-pca
 #| fig-cap: "PCA space of groundwater chemicals. The first axis will be used for differential data analysis (variograms)."
 scatterplot3d(std_chem[, pcs],
-  main = "log10 concentrations",
+  main = "PCA of log trafo(concentrations)",
   xlab = paste0(pcs[1], " (", pca.weight_[1], ")"),
   ylab = paste0(pcs[2], " (", pca.weight_[2], ")"),
   zlab = paste0(pcs[3], " (", pca.weight_[3], ")"),
@@ -259,13 +461,6 @@ But, nevertheless, it is the most general "chemistry" measure we have.
 
 
 ```{r re-store-data}
-std_chem <- std_chem %>% 
-  left_join(all_chem,
-    by = join_by(pp_idx, date),
-    suffix = c("", "_raw"),
-    relationship = "one-to-one"
-    )
-
 std_chem %>% 
   write_parquet(sink = chem_export_file)
 
@@ -281,7 +476,6 @@ Retrieving all pairs of observation wells
 which are below a certain distance,
 
 ```{r pairing}
-extent <- 512 # m
 
 # pp_data %>% count(cluster)
 
@@ -293,7 +487,7 @@ pair_sites <- function(cluster_idx) {
   pair_data <- sub_data %>% 
     left_join(sub_data,
       by = join_by(
-        mp_idx < mp_idx, # only different locations
+        mp_idx <= mp_idx, # only different locations
         soilclass == soilclass, # from the same soilclass
       ),
       suffix = c("1", "2"),
@@ -340,6 +534,16 @@ query: pp1, pp2, date1, date2, Meetwaarde1, Meetwaarde2
 ```{r chemistry-query}
 # std_chem %>% count(pp_idx) %>% arrange(desc(n))
 
+query_columns <- c(
+  "pp_idx", "date",
+  paste(value_columns, "log", sep = "_"),
+  paste(value_columns, "raw", sep = "_"),
+  paste("loq", c("nh4", "no3", "po4"), sep = "_"),
+  "PC1", "PC2", "PC3"
+)
+
+loq_check <- \(loq) ifelse(is.na(loq), FALSE, loq)
+
 query_measurement <- function (pp1, pp2){
 
   # pp1 <- 8064
@@ -347,21 +551,12 @@ query_measurement <- function (pp1, pp2){
 
   w1 <- std_chem %>%
     filter(pp_idx == pp1) %>%
-    select(
-      pp_idx, date,
-      nnh4, nno3, ppo4,
-      nnh4_raw, nno3_raw, ppo4_raw,
-      PC1, PC2, PC3
-     ) # %>% arrange(date) %>% head(4)
+    select(!!!rlang::syms(query_columns))
+    # %>% arrange(date) %>% head(4)
 
   w2 <- std_chem %>%
     filter(pp_idx == pp2) %>%
-    select(
-      pp_idx, date,
-      nnh4, nno3, ppo4,
-      nnh4_raw, nno3_raw, ppo4_raw,
-      PC1, PC2, PC3
-     ) # %>% arrange(date) %>% head(4)
+    select(!!!rlang::syms(query_columns))
     
   pair_diff <- w1 %>%
     cross_join(
@@ -369,39 +564,92 @@ query_measurement <- function (pp1, pp2){
       suffix = c("1", "2")
     ) %>%
     mutate(
-      across(c(date1, date2), function(x) as.Date(as.character(x), format = "%Y%m%d")),
-      dt = date2 - date1) %>% 
-    filter(dt >= 0, dt < max_measurement_interval) %>%
+      across(
+        c(date1, date2),
+        function(x) as.Date(as.character(x), format = "%Y%m%d")
+      ),
+      dt = as.numeric(date2 - date1, "days")) %>% 
+    filter(dt >= 0) %>% #, dt < max_measurement_interval) %>%
     mutate(
-      dnnh4 = nnh42 - nnh41,
-      dnno3 = nno32 - nno31,
-      dppo4 = ppo42 - ppo41,
-      dnnh4r = nnh4_raw2 - nnh4_raw1,
-      dnno3r = nno3_raw2 - nno3_raw1,
-      dppo4r = ppo4_raw2 - ppo4_raw1,
+      dnh4 = meq_nh4_log2 - meq_nh4_log1,
+      dno3 = meq_no3_log2 - meq_no3_log1,
+      dpo4 = meq_po4_log2 - meq_po4_log1,
+      dnh4r = meq_nh4_raw2 - meq_nh4_raw1,
+      dno3r = meq_no3_raw2 - meq_no3_raw1,
+      dpo4r = meq_po4_raw2 - meq_po4_raw1,
       dPC1  = PC12  - PC11,
       dPC2  = PC22  - PC21,
-      dPC3  = PC32  - PC31
+      dPC3  = PC32  - PC31,
+      dlim_nh4 = loq_check(loq_nh41) | loq_check(loq_nh42),
+      dlim_no3 = loq_check(loq_no31) | loq_check(loq_no32),
+      dlim_po4 = loq_check(loq_po41) | loq_check(loq_po42),
+      is_same_location = pp_idx1 == pp_idx2
     ) %>%
     select(
       pp_idx1, date1, pp_idx2, date2, dt,
-      dnnh4, dnno3, dppo4,
-      dnnh4r, dnno3r, dppo4r,
-      dPC1, dPC2, dPC3
+      date1, date2,
+      meq_nh4_log1, meq_nh4_log2,
+      meq_no3_log1, meq_no3_log2,
+      meq_po4_log1, meq_po4_log2,
+      dnh4,  dno3,  dpo4,
+      dnh4r, dno3r, dpo4r,
+      dPC1, dPC2, dPC3,
+      dlim_nh4, dlim_no3, dlim_po4,
+      is_same_location
     )
 
-  # only keep closest interval
-  pair_diff <- pair_diff %>% 
-    filter(dt >= 0) %>%
-    arrange(dt) %>% 
-    group_by(date1) %>% 
-    reframe(head(pick(everything()), 1)) %>% 
-    arrange(dt) %>% 
-    group_by(date2) %>% 
-    reframe(head(pick(everything()), 1)) %>% 
-    select(-dt)
+  # pair_diff %>% distinct(date1, date2)
+
+  # find the one with least dt...
+  get_first_diff_per_chem <- function(dchem) {
+    pair_diff %>% 
+      filter(!is.na(!!!rlang::syms(dchem))) %>% 
+      # select(!!dchem)
+      arrange(dt) %>% 
+      group_by(date1) %>% 
+      reframe(head(pick(everything()), 1)) %>% 
+      arrange(dt) %>% 
+      group_by(date2) %>% 
+      reframe(head(pick(everything()), 1)) %>% 
+      select(pp_idx1, date1, pp_idx2, date2) %>%
+      mutate(is_first = TRUE) %>%
+      return()
+  }
+  # get_first_diff_per_chem("dnh4")
+  # get_first_diff_per_chem(dchem = "dno3")
   # knitr::kable(pair_diff %>% select(pp_idx1, date1, dt, date2, pp_idx2))
 
+  # ... and flag the first difference
+  pair_diff <- pair_diff %>%
+    mutate(is_first = FALSE) %>% 
+    left_join(
+      get_first_diff_per_chem("dnh4"),
+      by = join_by(pp_idx1, date1, pp_idx2, date2),
+      suffix = c("", "_dnh4")
+    ) %>%
+    mutate(is_first = FALSE) %>% 
+    left_join(
+      get_first_diff_per_chem("dno3"),
+      by = join_by(pp_idx1, date1, pp_idx2, date2),
+      suffix = c("", "_dno3")
+    ) %>%
+    mutate(is_first = FALSE) %>% 
+    left_join(
+      get_first_diff_per_chem("dpo4"),
+      by = join_by(pp_idx1, date1, pp_idx2, date2),
+      suffix = c("", "_dpo4")
+    ) %>%
+    select(-is_first) %>% 
+    mutate_at(
+      vars(is_first_dnh4, is_first_dno3, is_first_dpo4),
+      ~tidyr::replace_na(., FALSE)
+    )
+  # pair_diff %>%
+  #   distinct(is_first_dnh4, is_first_dno3, is_first_dpo4)
+  
+  # pair_diff %>%
+  #   filter(is_first_dno3) %>%
+  #   knitr::kable()
 
   return(pair_diff)
 }
@@ -438,3 +686,21 @@ close(pb)
 write_parquet(diff_data, sink = diffdata_export_file)
 
 ```
+
+# distribution of time differences
+
+```{r time-differences}
+diff_data %>%
+  ggplot2::ggplot(aes(x = log2(1+as.integer(dt)))) +
+  geom_histogram(bins = 257)
+```
+
+# Important Changes! (20260112)
+
+- units: `c("meq_", "mmol_")` (practically identical)
+- pca of MEQ values
+- did not remove `NA` values -> also measurements with not all chemicals measured
+- not only "first differences" are stored, also intervals
+  -> use `is_first_d{chem}`
+- also comparison of a site to itself (for temporal analysis)
+  -> use `!is_same_location` to remove those

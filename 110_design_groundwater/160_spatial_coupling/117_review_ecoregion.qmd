@@ -1,0 +1,871 @@
+---
+title: "Daily Water Level Variograms: Ecoregion"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+    embed-resources: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+# Summary
+
+With slope filter set, all measurements in place...
+
+:::{.callout-warning}
+this notebook will attempt to further filter the resulting variograms by ecoregion.
+:::
+
+
+Main observations:
+
+- results are largely **consistent with previous data, confirming the 10m rule**.
+  - slope > 1% was filtered; filter characteristics were filtered
+  - soilclasses were lumped
+- `mMaaiveld` vs `mTAW`: 
+  - some water-independent habitats (beide huivelzones, Kempen, MV overgang) **show slope-dependence** (ramp in mTAW, but not in mMaaiveld)
+  - others have opposite indication, i.e. slightly better variograms with mTAW (kustduinen, riviervalleien), putatively due to **waterbody-dependence**
+
+
+# Preparation
+
+## libraries
+... the usual.
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("dbplyr")    |> void() # dplyr + databases
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("units")     |> void() # someone decided to store water distance in meters...
+
+
+# if (getOption("browser") == "") options(browser = "librewolf") 
+
+# data is loaded from cache
+source("./auxiliary_data_queries.R")
+source("regression_tools.R") 
+# metadata_export_file <- here::here(local_cache_folder, "_metadata.parquet")
+#
+
+# https://r-charts.com/colors/
+ecoregion_colors <- c(
+  "zuidoostelijke heuvelzone" = "darkorchid",
+  "Kempen" = "sienna",
+  "polders en de getijdenschelde" = "slategray",
+  "kustduinen" = "burlywood",
+  "Pleistocene riviervalleien" = "deepskyblue",
+  "zuidwestelijke heuvelzone" = "coral",
+  "Midden-Vlaamse overgangsgebieden" = "gold",
+  "krijt-leemgebieden" = "honeydew",
+  "cuesta's" = "palevioletred",
+  "grindrivieren" = "darkseagreen",
+  "westelijke interfluvia" = "hotpink"
+)
+```
+
+
+## parameters
+
+```{r parameters}
+#| code-fold: false
+extent <- 500 # m # data included
+maxx <- 1000 # 768 # upper limit for regression
+
+bin_target <- 100 # ... and the preferred alternative: observations per bin
+
+column <- "dw"
+cap_dw <- 4 # m # maximum accepted water level difference within a pair
+```
+
+
+## data
+
+The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to assemble the data set loaded here.
+
+
+```{r load-data}
+
+meta_data <- join_auxiliary_cache(label = "metadata") %>%
+  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx")
+  # %>% join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+
+meta_join <- meta_data %>%
+  select(pp_idx, flength, fdepth, pp_code, mp_idx, cluster,
+         x, y, soilclass, elevation_dhmv, slope_r2.5m,
+         wata_min_dist, wata_dist_class,
+         # emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         # emd_qdiff, emd_residual_qdiff,
+         pp_vld, mp_vld
+         )
+
+
+diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
+  filter(if_all(c(w1, w2, dw), ~ !is.na(.x)))
+
+diff_meta <- diff_data %>%
+  select(pp_idx1, pp_idx2) %>%
+  distinct() %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    meta_join,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+    validated1 = as.integer(pp_vld1 == "VLD") * as.integer(mp_vld1 == "VLD"),
+    validated2 = as.integer(pp_vld2 == "VLD") * as.integer(mp_vld2 == "VLD"),
+    validated = as.logical(validated1 * validated2),
+    ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+    dh = elevation_dhmv2-elevation_dhmv1,
+    dz = fdepth2-fdepth1,
+    # damp = emd_ampsum2-emd_ampsum1,
+    # dqdiff = emd_qdiff2-emd_qdiff1,
+    dwadi = wata_min_dist2-wata_min_dist1,
+    dslope = slope_r2.5m2-slope_r2.5m1,
+    melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
+    mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
+    mslope = abs(dh) / ds
+  ) %>%
+  filter(ds <= extent)
+
+```
+
+
+## Ecoregions
+
+```{r prepare-ecoregion}
+ecoregions <- n2khab::read_ecoregions() %>% 
+  select(region_name) %>% 
+  rename(ecoregion = region_name) %>% 
+  mutate(ecoregion = stringr::str_replace(ecoregion, "Ecoregio van de ", ""))
+
+# n2khab::read_ecoregions() %>% sf::st_drop_geometry() %>% distinct(region_name)
+ecoregion_lookup <- bind_rows(
+  diff_meta %>% select(pp_idx1, x1, y1) %>% rename(pp_idx = pp_idx1, x = x1, y = y1),
+  diff_meta %>% select(pp_idx2, x2, y2) %>% rename(pp_idx = pp_idx2, x = x2, y = y2)
+  ) %>%
+  distinct() %>% 
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370) %>% 
+  sf::st_join(ecoregions)
+
+ecoregion_lookup %>% 
+  count(ecoregion) %>% arrange(desc(n)) %>% knitr::kable()
+
+missing_points <- ecoregion_lookup %>% filter(is.na(ecoregion))
+# mapview::mapview(ecoregions) +
+#   mapview::mapview(missing_points)
+
+```
+
+... guess we can drop these two.
+
+
+```{r join-ecoregion}
+
+diff_meta <- diff_meta %>%
+  left_join(
+    ecoregion_lookup,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one"
+  )
+
+diff_meta <- diff_meta %>%
+  filter(ecoregion != "NA")
+  
+diff_meta %>% 
+  count(ecoregion) %>% arrange(desc(n)) %>% knitr::kable()
+
+```
+
+
+## diff data
+
+```{r count-all}
+diff_joined <- diff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      flength1, flength2,
+      x1, y1, x2, y2, 
+      ecoregion,
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+count_all <- nrow(diff_joined)
+print(count_all)
+```
+
+
+## regression by ecoregion
+
+a useful function for the tasks below.
+
+```{r}
+
+# regression_data <- diff_equibinned
+# ecoreg <- "Kempen"
+regression_by_ecoregion <- function(
+    regression_data,
+    ecoreg, reg_var,
+    maxx = extent, maxy = NULL,
+    label = "",
+    return_fit = FALSE,
+    ...) {
+
+
+  stopifnot("arrow" = require("arrow"),
+            "dplyr" = require("dplyr"))
+
+  diff_sc <- regression_data %>% filter(ecoregion == ecoreg)
+
+  diff_sc <- diff_sc %>%
+    filter(ds > 0, ds < maxx) %>%
+    select(ds, cnt, !!reg_var)
+
+  n_sc <- sum(diff_sc %>% pull(cnt))
+
+  sink_path <- here::here("cache", "regression")
+  sink_file <- glue::glue("{label}_{reg_var}_{ecoreg}.parquet")
+  write_parquet(diff_sc, sink = here::here(sink_path, sink_file))
+
+  x <- diff_sc$ds
+  y <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y <- y[x > 0]
+  x <- x[x > 0]
+  y <- y[x <= maxx]
+  x <- x[x <= maxx]
+
+  if (is.null(maxy)) maxy <- max(y)
+  x <- x[y <= maxy]
+  y <- y[y <= maxy]
+
+  x <- x[!is.na(y)]
+  y <- y[!is.na(y)]
+
+  # standardization helps function comprehension
+  # x <- x/max(x)
+  # y <- y / mean(y)
+
+
+  matern_fit <- fit_matern(x, y,
+    method = "L-BFGS-B", # "Nelder-Mead" # "L-BFGS-B"
+    ...
+  )
+
+  if (return_fit) return(matern_fit)
+
+  sink_file <- glue::glue("{label}_{reg_var}_{ecoreg}.rds")
+  saveRDS(matern_fit, file = here::here(sink_path, sink_file))
+
+  print_regression_results(
+    matern_fit,
+    label = glue::glue("regression {ecoreg}, N={n_sc}:")
+  )
+
+  ylabel <- glue::glue("mean water level difference ({ecoreg}, N={n_sc})")
+  sc_color <- ecoregion_colors[ecoreg]
+  # if ("semivar" reg_var) ylabel <- "semivariance (non-pair-averaged)"
+
+  g <- plot_matern(matern_fit, y_label = ylabel, color = sc_color)
+
+  x_excl <- diff_sc$ds
+  y_excl <- trafo(diff_sc %>% pull(!!reg_var))
+
+  y_excl <- y_excl[x_excl <= maxx]
+  x_excl <- x_excl[x_excl <= maxx]
+  x_excl <- x_excl[y_excl > maxy]
+  y_excl <- y_excl[y_excl > maxy]
+  g <- g + geom_point(aes(x = x_excl, y = y_excl),
+      size = 2.5, colour = "red", alpha = 0.2)
+  return(g)
+}
+
+```
+
+<hr>
+
+# Slope and Filter-Filtered Data
+
+## Filter
+
+```{r slope-distribution}
+# slope_threshold <- Inf #0.05
+slope_threshold <- 0.01/1 # 1 cm per meter
+depth_difference_limit <- 1 # m
+filter_length_limit <- 1 # m
+
+diff_meta %>%
+  mutate(
+    filtered =
+      (mslope < slope_threshold) &
+      (flength1 <= filter_length_limit) &
+      (flength2 <= filter_length_limit) &
+      (abs(dz) <= depth_difference_limit)
+  ) %>% 
+  select(filtered, mslope) %>%
+  ggplot(aes(log10(mslope), fill = filtered, color = filtered)) +
+  geom_histogram(bins = 256) +
+  theme_bw()
+
+diff_meta %>%
+  mutate(
+    slope_filtered = mslope < slope_threshold,
+    short_filters = (flength1 <= filter_length_limit) & (flength2 <= filter_length_limit),
+    depthdiff_filtered = abs(dz) <= depth_difference_limit
+  ) %>% 
+  count(slope_filtered, short_filters, depthdiff_filtered) %>%
+  knitr::kable()
+    
+```
+
+
+```{r all-no-filter}
+# somediff_meta <- diff_meta 
+somediff_meta <- diff_meta %>%
+  filter(
+      mslope < slope_threshold,
+      flength1 <= filter_length_limit,
+      flength2 <= filter_length_limit,
+      abs(dz) <= depth_difference_limit
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+## Binning
+
+
+```{r all-join-diffdate}
+diff_joined <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      ecoregion,
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(abs(dw) <= ds, abs(dw) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_joined, 3)), decimals = 2)
+
+paste0(
+  "selected ", nrow(diff_joined), " / ",
+  count_all, " observations (",
+  round(100*nrow(diff_joined)/(count_all)), "%)."
+)
+```
+
+
+
+```{r all-groupwise-binning}
+
+diff_equibinned <- diff_joined %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dw))),
+    soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(ecoregion) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dw = mean(dw, na.rm = TRUE), 
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, ecoregion)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+```
+
+
+## variograms `mTAW` {#sec-vgrams}
+
+using water level difference (MAD)
+
+
+::: {.panel-tabset group="ecoregion"}
+
+### zuidoostelijke heuvelzone
+
+```{r}
+select_ecoregion <- "zuidoostelijke heuvelzone"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Kempen
+
+```{r}
+select_ecoregion <- "Kempen"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Polders en de Getijdenschelde
+
+```{r}
+select_ecoregion <- "polders en de getijdenschelde"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Kustduinen
+
+```{r}
+select_ecoregion <- "kustduinen"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Pleistocene riviervalleien
+
+```{r}
+select_ecoregion <- "Pleistocene riviervalleien"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### zuidwestelijke heuvelzone
+
+```{r}
+select_ecoregion <- "zuidwestelijke heuvelzone"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Midden-Vlaamse overgangsgebieden
+
+```{r}
+select_ecoregion <- "Midden-Vlaamse overgangsgebieden"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+:::
+
+
+
+# Relative Ground Level with `mMaaiveld`
+
+
+In all previous analyses, we used `mTAW` ("Tweede Algemene Waterpassing", 1947-1968).
+For comparison, the relative water level (below field) can be used by querying `mMaaiveld`.
+
+
+## Filter
+
+This information is stored in the column `dm`.
+Slope will be filtered as above, or not; both is kind of interesting.
+
+```{r filter-maaiveld-data}
+column <- "dm"
+
+somediff_meta <- diff_meta %>%
+  filter(
+    mslope < slope_threshold,
+    flength1 <= filter_length_limit,
+    flength2 <= filter_length_limit,
+    abs(dz) <= depth_difference_limit
+  )
+
+paste0(
+  "selected ", nrow(somediff_meta), " / ",
+  nrow(diff_meta), " location pairs (",
+  round(100*nrow(somediff_meta)/nrow(diff_meta)), "%)."
+)
+```
+
+
+
+## Binning
+
+```{r mM-join-diffdate}
+diff_joined <- somediff_meta %>%
+  select(pp_idx1, pp_idx2, cluster1,
+      x1, y1, x2, y2, 
+      ecoregion,
+      soilclass1, wata_dist_class1, wata_dist_class2,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
+      melevation, mslope
+  ) %>%
+  mutate(
+    pair = factor(paste0(
+      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
+    )
+  ) %>%
+  left_join(diff_data,
+    by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+    relationship = "one-to-many"
+  ) %>% 
+  filter(if_all(c(m1, m2, dm), ~ !is.na(.x))) %>% 
+  filter(abs(dm) <= ds, abs(dm) <= cap_dw) # remove outliers
+
+# knitr::kable(t(head(diff_joined, 3)), decimals = 2)
+
+paste0(
+  "selected ", nrow(diff_joined), " / ",
+  count_all, " observations (",
+  round(100*nrow(diff_joined)/(count_all)), "%)."
+)
+```
+
+
+
+```{r mM-groupwise-binning}
+
+diff_equibinned <- diff_joined %>%
+  summarize(
+    n_obs = sum(as.integer(!is.na(dm))),
+    soilclass = first(soilclass1),
+    ecoregion = first(ecoregion),
+    cluster = first(cluster1),
+    ds = mean(ds, na.rm = TRUE),
+    dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
+    .by = pair 
+  ) %>% ungroup %>% arrange(ds) %>%
+  group_by(ecoregion) %>% 
+  mutate(
+    distance_equibin = cut_number(
+      ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
+    ) # cut to equal sized bins
+  ) %>%
+  ungroup %>%
+  summarize(
+    cnt = n(),
+    ds = mean(ds), 
+    dm = mean(dm, na.rm = TRUE), 
+    n_obs = sum(n_obs),
+    .by = c(distance_equibin, ecoregion)
+  ) %>%
+  ungroup %>% arrange(ds)
+
+# glimpse(diff_equibinned)
+
+```
+
+
+
+## variograms `mMaaiveld` {#sec-maaiveld}
+
+
+::: {.panel-tabset group="ecoregion"}
+
+### zuidoostelijke heuvelzone
+
+```{r}
+select_ecoregion <- "zuidoostelijke heuvelzone"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Kempen
+
+```{r}
+select_ecoregion <- "Kempen"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Polders en de Getijdenschelde
+
+```{r}
+select_ecoregion <- "polders en de getijdenschelde"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Kustduinen
+
+```{r}
+select_ecoregion <- "kustduinen"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Pleistocene riviervalleien
+
+```{r}
+select_ecoregion <- "Pleistocene riviervalleien"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### zuidwestelijke heuvelzone
+
+```{r}
+select_ecoregion <- "zuidwestelijke heuvelzone"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+### Midden-Vlaamse overgangsgebieden
+
+```{r}
+select_ecoregion <- "Midden-Vlaamse overgangsgebieden"
+```
+
+```{r}
+regression_by_ecoregion(
+  diff_equibinned,
+  ecoreg = select_ecoregion,
+  reg_var = column,
+  maxx = maxx, maxy = Inf,
+  label = select_ecoregion,
+  distweighted = TRUE,
+  par = c(1., 10, 0., 1.),
+  lower = c(0.0, 0.0, 0., 0.99),
+  upper = c(4., 480, 0.48, 1.01)
+) + ylim(0, 1.6)
+
+```
+
+
+
+:::
+
+
+ecoregions which are not shown had too few observations for valid variograms:
+
+- krijt-leemgebieden
+- cuesta’s
+- grindrivieren
+- westelijke interfluvia

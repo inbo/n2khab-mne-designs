@@ -1,0 +1,411 @@
+---
+title: "Water Level Variograms: Detection Limit"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+    embed-resources: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+# summary (tl;dr)
+
+In this notebook, I briefly inspect the chemical data which is available in `WATINA`.
+
+Some observations:
+
+- Detection Limit is the lowest concentration which our facilities can measure. That changed over time. Rumors have it that, in some periods, chemical analysis outcomes below limit were fixed to *half the detection limit.*
+- Since 2015, a database flag becomes active to filter these (`IsBelowLOQ`). However, the fact that they are below limit is a valid observation, which should not be discarded thoughtlessly.
+- Validation status was ignored below.
+- Units of ["Milli-Equivalents"](https://en.wikipedia.org/wiki/Equivalent_concentration) were arbitrarily chosen; database values seem to be consistent.
+- Empirically, 1997, 2008, and 2015 seem to be the years in which our lab inventory changed, thought there is some indication for more frequent discontinuities.
+- For **NO₃**, there are rather few measurements at the lower limit since 2008.
+- In contrast, for **PO₄**, more than 50% of all measurements since 2008 scratch the lower detection limit (seemed less, before).
+- For **NH₄**, critical measurements seem to have been ramping up since the nineties.
+- Detection limits before 1997 were not investigated, because there were much fewer measurements in that period.
+
+
+
+# preparation
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("tidyr")     |> void() # some pivoting of tables
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+
+
+if (getOption("browser") == "") options(browser = "librewolf") 
+
+# user-set parameters
+cluster_dist <- 3400 # m # parameter for clustering
+allchem_export_file <- glue::glue("data/waterchemistry_alldata.parquet")
+
+```
+
+
+The script `120_waterchemistry_reload.qmd` must be run to assemble the data set loaded here.
+
+
+```{r reload-data}
+
+chem_data <- read_parquet(allchem_export_file) %>%
+  rename(meq = m) %>%
+  mutate(
+    year = floor(date/10000),
+    yearmonth = floor(date/100)
+  ) %>%
+  arrange(date)
+
+```
+
+# Data Exploration
+
+    ... better late than never
+
+
+## Inference Tag
+
+
+None are IsInferred <lgl>
+
+```{r}
+chem_data %>% count(infer)
+```
+
+## Below LOQ
+
+Some observations are flagged IsBelowLOQ <lgl>
+
+```{r}
+chem_data %>% count(loq)
+
+chem_data %>%
+  count(year, loq) %>%
+  pivot_wider(
+    names_from = loq,
+    values_from = n
+  ) %>%
+  knitr::kable()
+```
+
+
+something changed in 2014.
+
+
+## Validation, *quo vadis*?
+
+```{r}
+chem_data %>%
+  count(year, vld) %>%
+  pivot_wider(
+    names_from = vld,
+    values_from = n
+  ) %>%
+  knitr::kable()
+  
+```
+
+The codes changed in 2013.
+
+## Units
+
+MEQ and millimol are practically identical.
+
+```{r}
+chem_data %>%
+  mutate(check_units = meq == mmol) %>%
+  count(year, check_units) %>%
+  pivot_wider(
+    names_from = check_units,
+    values_from = n
+  ) %>%
+  knitr::kable()
+
+```
+
+## Negatives
+
+There are even six negative MEQs.
+
+
+```{r}
+
+chem_data %>%
+  count(meq < 0) %>% 
+  knitr::kable()
+
+```
+
+
+# counting
+
+```{r}
+
+t <- chem_data$date
+years <- chem_data %>%
+  distinct(year) %>% arrange()
+
+year_breaks <- seq(min(years) - 0.5, max(years) + 0.5, length.out = max(years)-min(years)+1)
+years_with_chemical_measurements <- chem_data %>% pull(year)
+hist(years_with_chemical_measurements, breaks = year_breaks)
+
+```
+
+
+# peak finding
+
+```{r find-peak-function}
+
+c_trafo <- \(x) log10(x)
+c_retrafo <- \(x) 10^x
+
+
+find_concentration_peaks <- function(log_concentration, n_peaks = 10, label = "") {
+  step <- 0.0001
+  breaks <- seq(
+    floor(min(log_concentration)) - step/2,
+    ceiling(max(log_concentration)) + step/2,
+    step
+  )# 
+  
+  h <- hist(log_concentration, breaks = breaks, plot = FALSE)
+  # names(h)
+  mids <- h$mids
+  counts <- h$counts
+  stepped_counts <- c(h$counts, h$counts[length(h$counts)])
+  
+  
+  # find the peaks
+  peaks <- order(counts, decreasing = TRUE)[1:n_peaks]
+  x_peak <- mids[peaks]
+  y_peak <- counts[peaks]
+  
+  g <- ggplot2::ggplot(NULL) +
+    ggplot2::geom_step(aes(x = c_retrafo(breaks), y = stepped_counts)) +
+    ggplot2::geom_point(aes(x = c_retrafo(x_peak), y = y_peak), color = "red") +
+    ggplot2::xlim(0, 0.02) +
+    ggplot2::geom_text(
+      aes(x = c_retrafo(x_peak), y = y_peak, label = round(c_retrafo(x_peak), 4)),
+      hjust = 1, vjust = 0
+    ) +
+    ggplot2::labs(x = glue::glue("observed {label} concentrations"), y = "observation count")
+
+  ggsave(glue::glue("figures/peaks_{label}.png"), g, width = 16, height = 9, dpi = 300)
+  print(g)
+  
+  return(c_retrafo(x_peak))
+}
+
+```
+
+
+```{r}
+
+one_var <- \(var) chem_data %>%
+  # filter(is.na(loq) | !loq) %>% # optionally filter those under detection limit
+  filter(chem == var) %>%
+  select(pp_idx, year, yearmonth, date, loq, meq, mmol) %>%
+  filter(is.finite(meq), is.finite(mmol))
+
+nonna <- \(x) x[!is.na(x)]
+get_finite <- \(x) x[is.finite(x)]
+
+pull_var <- \(var) one_var(var) %>%
+  filter(is.na(loq) | !loq) %>% # optionally filter those under detection limit
+  pull(meq) 
+
+log_c_nh4 <- get_finite(nonna(c_trafo(pull_var("n-nh4"))))
+log_c_no3 <- get_finite(nonna(c_trafo(pull_var("n-no3"))))
+log_c_po4 <- get_finite(nonna(c_trafo(pull_var("p-po4"))))
+
+nh4_peaks <- find_concentration_peaks(log_c_nh4, label = "NH₄")
+no3_peaks <- find_concentration_peaks(log_c_no3, label = "NO₃")
+po4_peaks <- find_concentration_peaks(log_c_po4, label = "PO₄")
+
+nh4_peaks
+no3_peaks
+po4_peaks
+```
+
+NH4
+including `loq`s:  [1] 0.0014276 0.0071384 0.0028550 0.0027836 0.0003569 0.0035686 0.0142758 ...
+excluding `loq`s:  [1] 0.0071384 0.0028550 0.0027836 0.0003569 0.0035686 0.0142758 ...
+-> 0.0014276 is the latest detection limit
+
+NO3
+including `loq`s:  [1] 0.00356862 0.00071384 0.00178443 0.00007138 0.00035686 0.00142758 ...
+excluding `loq`s:  [1] 0.00356862 0.00178443 0.00007138 0.00035686 0.00142758 ...
+-> 0.00071384 is the latest detection limit
+
+PO4
+including `loq`s:  [1] 0.0009687 0.0006458 0.0010332 0.0003229 0.0012915 0.0032292 0.001937  
+excluding `loq`s:  [1] 0.0006458 0.0003229 0.0010332 0.0009687 0.0012915 0.0032292 0.0019373
+-> 0.0009687 is the latest detection limit
+
+
+# yearly changes
+
+follow peaks over the years
+
+```{r}
+
+rate_between <- \(vals, lo, hi) sum((vals >= lo) & (vals <= hi)) / length(vals)
+# vals <- c_retrafo(log_c_nh4)
+# lo <- 0.00140
+# hi <- 0.00145
+# rate_between(c_retrafo(log_c_nh4), 0.00135, 0.00145)
+
+data_nh4 <- one_var("n-nh4") %>%
+  filter(meq > 0)
+data_no3 <- one_var("n-no3") %>%
+  filter(meq > 0)
+data_po4 <- one_var("p-po4") %>%
+  filter(meq > 0)
+
+```
+
+
+# NH₄
+
+checking NH4 rates of (0.0014276), 0.0071384, (0.0028550 0.0027836)
+
+```{r}
+nh4_peaks
+
+result_rates <- data_nh4 %>%
+  mutate_at(vars(year, yearmonth), as.character) %>% 
+  # filter(is.na(loq) | !loq) %>% 
+  group_by(year) %>% 
+  group_modify(~ {
+    .x %>%
+      summarize(
+        r_latest = rate_between(meq, 0.00140, 0.00145),
+        r_peak1 = rate_between(meq, 0.00690, 0.0074),
+        r_peak2 = rate_between(meq, 0.00275, 0.0029)
+      )
+    }
+  ) %>%
+  arrange(year)
+
+result_rates <- bind_rows(
+  result_rates,
+  result_rates[nrow(result_rates),]
+)
+
+g <- result_rates %>% 
+  ggplot2::ggplot(aes(x = as.integer(year))) +
+  ggplot2::geom_step(aes(y = r_latest), color = "darkred") +
+  ggplot2::annotate("text", x = 2020, y = 0.5, label = "N[c == 0.0014]/N", color = "darkred") +
+  ggplot2::geom_step(aes(y = r_peak1), color = "skyblue") +
+  ggplot2::annotate("text", x = 2004, y = 0.32, label = "N[c == 0.007]/N", color = "skyblue") +
+  ggplot2::geom_step(aes(y = r_peak2), color = "orange") +
+  ggplot2::annotate("text", x = 2012, y = 0.45, label = "N[c == 0.0028]/N", color = "orange") +
+  ggplot2::geom_vline(aes(xintercept = 1997.5)) +
+  ggplot2::geom_vline(aes(xintercept = 2008.5)) +
+  ggplot2::geom_vline(aes(xintercept = 2015.5)) +
+  ggplot2::labs(x = "year/month", y = "observation probability of a given NH₄ concentration")
+
+ggsave("figures/rates_nh4.png", g, width = 16, height = 9, dpi = 300)
+print(g)
+```
+
+
+# NO₃
+
+checking NO3 rates of 0.00356862 (0.00071384) 0.00178443 
+
+```{r}
+no3_peaks
+
+result_rates <- data_no3 %>%
+  mutate_at(vars(year, yearmonth), as.character) %>% 
+  # filter(is.na(loq) | !loq) %>% 
+  group_by(year) %>% 
+  group_modify(~ {
+    .x %>%
+      summarize(
+        r_latest = rate_between(meq, 0.00070, 0.00073),
+        r_peak1 = rate_between(meq, 0.0035, 0.0036),
+        r_peak2 = rate_between(meq, 0.00177, 0.00179)
+      )
+    }
+  ) %>%
+  arrange(year)
+
+result_rates <- bind_rows(
+  result_rates,
+  result_rates[nrow(result_rates),]
+)
+
+g <- result_rates %>% 
+  ggplot2::ggplot(aes(x = as.integer(year))) +
+  ggplot2::geom_step(aes(y = r_latest), color = "darkred") +
+  ggplot2::annotate("text", x = 2020, y = 0.2, label = "N[c == 0.00071]/N", color = "darkred") +
+  ggplot2::geom_step(aes(y = r_peak1), color = "skyblue") +
+  ggplot2::annotate("text", x = 2004, y = 0.2, label = "N[c == 0.0035]/N", color = "skyblue") +
+  ggplot2::geom_step(aes(y = r_peak2), color = "orange") +
+  ggplot2::annotate("text", x = 1994, y = 0.4, label = "N[c == 0.00178]/N", color = "orange") +
+  ggplot2::geom_vline(aes(xintercept = 1997.5)) +
+  ggplot2::geom_vline(aes(xintercept = 2008.5)) +
+  ggplot2::geom_vline(aes(xintercept = 2015.5)) +
+  ggplot2::labs(x = "year/month", y = "observation probability of a given NO₃ concentration")
+
+ggsave("figures/rates_no3.png", g, width = 16, height = 9, dpi = 300)
+print(g)
+```
+
+
+# PO₄
+
+checking PO4 rates of (0.0009687) 0.0006458 0.0010332 
+
+```{r}
+po4_peaks
+
+result_rates <- data_po4 %>%
+  mutate_at(vars(year, yearmonth), as.character) %>% 
+  filter(year > 1982) %>% 
+  # filter(is.na(loq) | !loq) %>% 
+  group_by(year) %>% 
+  group_modify(~ {
+    .x %>%
+      summarize(
+        r_latest = rate_between(meq, 0.0009, 0.0010),
+        r_peak1 = rate_between(meq, 0.0010, 0.00110),
+        r_peak2 = rate_between(meq, 0.00060, 0.00069)
+      )
+    }
+  ) %>%
+  arrange(year)
+
+result_rates <- bind_rows(
+  result_rates,
+  result_rates[nrow(result_rates),]
+)
+
+g <- result_rates %>% 
+  ggplot2::ggplot(aes(x = as.integer(year))) +
+  ggplot2::geom_step(aes(y = r_latest), color = "darkred") +
+  ggplot2::annotate("text", x = 2020, y = 0.9, label = "N[c == 0.0014]/N", color = "darkred") +
+  ggplot2::geom_step(aes(y = r_peak1), color = "skyblue") +
+  ggplot2::annotate("text", x = 2012, y = 0.78, label = "N[c == 0.0010]/N", color = "skyblue") +
+  ggplot2::geom_step(aes(y = r_peak2), color = "orange") +
+  ggplot2::annotate("text", x = 1998, y = 0.45, label = "N[c == 0.00065]/N", color = "orange") +
+  ggplot2::geom_vline(aes(xintercept = 1990.5)) +
+  ggplot2::geom_vline(aes(xintercept = 2008.5)) +
+  ggplot2::geom_vline(aes(xintercept = 2015.5)) +
+  ggplot2::labs(x = "year/month", y = "observation probability of a given PO₄ concentration")
+
+ggsave("figures/rates_po4.png", g, width = 16, height = 9, dpi = 300)
+print(g)
+```
+
+
+

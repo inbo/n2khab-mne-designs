@@ -24,10 +24,10 @@ I also apply the slope filter which was earlier determined to have a major effec
 | soilclass  |   lowest | low water |  all in | high water |  highest |
 |:-----------|---------:|----------:|--------:|-----------:|---------:|
 | `(filter)` | `<= q20` |  `<= q30` | `(all)` |   `>= q70` | `>= q80` |
-| (N/1000)   |      955 |      1458 |    6059 |       1439 |      927 |
-| heavy      |    8.8 m |     8.9 m |   9.9 m |     10.6 m |   10.6 m |
-| light      |   15.1 m |    13.5 m |  12.5 m |     15.5 m |   14.0 m |
-| peat       |   14.2 m |    14.4 m |  16.5 m |     14.6 m |   14.6 m |
+| (N/1000)   |      735 |      1120 |    4914 |       1109 |      718 |
+| heavy      |    9.9 m |     9.8 m |  11.5 m |     13.0 m |   13.3 m |
+| light      |   20.0 m |    19.8 m |  22.0 m |     18.8 m |   18.4 m |
+| peat       |   13.8 m |    14.0 m |  17.1 m |     14.8 m |   14.8 m |
 
 *(These values were noted by setting quantiles below; at most one, maybe none of them is displayed at a time.)*
 
@@ -62,18 +62,22 @@ source("./auxiliary_data_queries.R")
 extent <- 500 # m # data included
 maxx <- 1000 # 768 # upper limit for regression
 
-bin_target <- 100 # ... and the preferred alternative: observations per bin
+bin_target <- 128 # ... and the preferred alternative: observations per bin
 
-cap_dw <- 8 # m # maximum accepted water level difference
-slope_threshold <- 0.01/1 # 1 cm per meter
+cap_dw <- 4 # m # maximum accepted water level difference
+slope_threshold    <- 0.01/1 # 1 cm per meter
+dfdepth_threshold  <- 1 # m # Inf
+filter_length_limit <- 1 # m
 
 
 # quantile selection; choose anything in steps of 5%
 lower_quantile <- "q025"
 upper_quantile <- "q075"
 
-lower_quantile <- "q030"
-upper_quantile <- "q080"
+# lower_quantile <- "q020"
+# upper_quantile <- "q080"
+# lower_quantile <- "q030"
+# upper_quantile <- "q070"
 
 ```
 
@@ -85,8 +89,8 @@ The script `100_download_and_plot_waterlevel_for_vgram.qmd` should be used to as
 ```{r load-data}
 meta_data <- join_auxiliary_cache(label = "metadata") %>%
   join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
-  join_auxiliary_cache("waterdistance", index_column = "pp_idx") %>%
-  join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+  join_auxiliary_cache("waterdistance", index_column = "pp_idx")
+  # %>% join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
 
 diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
   filter(if_all(c(w1, w2, dw, m1, m2, dm), ~ !is.na(.x)))
@@ -96,11 +100,11 @@ quantile_data <- join_auxiliary_cache(label = "quantiles") %>%
   rename(lq = !!enquo(lower_quantile), hq = !!enquo(upper_quantile))
 
 meta_join <- meta_data %>%
-  select(pp_idx, fdepth, pp_code, mp_idx, cluster,
+  select(pp_idx, flength, fdepth, pp_code, mp_idx, cluster,
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
          wata_min_dist, wata_dist_class,
-         emd_n, emd_amp1, emd_amp2, emd_ampsum,
-         emd_qdiff, emd_residual_qdiff
+         # emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         # emd_qdiff, emd_residual_qdiff
          )
 
 diff_meta <- diff_data %>%
@@ -122,8 +126,8 @@ diff_meta <- diff_data %>%
       ds = sqrt((x2-x1)^2 + (y2-y1)^2),
       dh = elevation_dhmv2-elevation_dhmv1,
       dz = fdepth2-fdepth1,
-      damp = emd_ampsum2-emd_ampsum1,
-      dqdiff = emd_qdiff2-emd_qdiff1,
+      # damp = emd_ampsum2-emd_ampsum1,
+      # dqdiff = emd_qdiff2-emd_qdiff1,
       dwadi = wata_min_dist2-wata_min_dist1,
       dslope = slope_r2.5m2-slope_r2.5m1,
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
@@ -132,7 +136,10 @@ diff_meta <- diff_data %>%
   ) %>%
   filter(
     ds <= extent,
-    mslope < slope_threshold # slope filter
+    mslope < slope_threshold,
+    flength1 <= filter_length_limit,
+    flength2 <= filter_length_limit,
+    abs(dz) < dfdepth_threshold
   )
 
 ```
@@ -163,8 +170,9 @@ diff_all <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
-      ds, dh, dz, damp,
-      dqdiff, dwadi, dslope,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
       melevation, mslope
   ) %>%
   mutate(
@@ -221,8 +229,9 @@ diff_all <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
-      ds, dh, dz, damp,
-      dqdiff, dwadi, dslope,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
       melevation, mslope
   ) %>%
   mutate(
@@ -410,8 +419,9 @@ diff_all <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
       x1, y1, x2, y2, 
       soilclass1, wata_dist_class1, wata_dist_class2,
-      ds, dh, dz, damp,
-      dqdiff, dwadi, dslope,
+      ds, dh, dz,
+      # damp, dqdiff,
+      dwadi, dslope,
       melevation, mslope
   ) %>%
   mutate(
