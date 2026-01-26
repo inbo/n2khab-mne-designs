@@ -17,7 +17,7 @@ aquachem <- connect_aquachem()
 # locs_lentic <- get_locs_aquachem(aquachem)
 
 locs_lentic <-
-  read_vc("lentic_chem", root = datapath) %>%
+  read_vc("lentic_chem", root = file.path(datapath, "raw")) %>%
   as_tibble() %>%
   distinct(loc_code)
 
