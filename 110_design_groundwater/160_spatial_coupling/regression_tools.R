@@ -365,7 +365,7 @@ add_regression_to_plot <- function(h, optimizer_results, color = "black") {
   )
 
   # plotting
-  maxx = max(regx)
+  maxx <- max(regx)
   plotx <- seq(0, maxx, length.out = maxx + 1)[]
   # plotx <- regx # seq(0, extent, length.out = 2*extent + 1)
   plotx <- plotx[plotx>0]
@@ -400,6 +400,7 @@ extract_input_data_table <- function(regression, units = "m") {
 
 extract_data_table_matern_regression <- function(regression, units = "m") {
   matern_parameters <- regression$par
+  # message(max(regression$regx))
 
   scale  <- matern_parameters[1] # related to semivariance
   sigma  <- matern_parameters[2] # related to actual range; turning point
@@ -407,7 +408,7 @@ extract_data_table_matern_regression <- function(regression, units = "m") {
   nu     <- matern_parameters[4] # shape parameter; here: soft-fixed to ~1
   sill   <- scale + nugget
 
-  distance_m <- seq(0., 100., length.out = 101)
+  distance_m <- seq(0., 256., length.out = 257)
   distance_m <- distance_m[distance_m > 0]
   mean_abs_difference_m <- matern_function(distance_m, matern_parameters)
   difference_nuggetless_m <- mean_abs_difference_m - nugget
