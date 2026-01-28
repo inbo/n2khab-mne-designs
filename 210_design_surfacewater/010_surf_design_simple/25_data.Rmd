@@ -3,17 +3,13 @@
 De hieronder gehanteerde datasets werden in 2022 samengesteld door Tom De Dobbelaer [@de_dobbelaer_data_2022].
 We hebben deze bijkomend geüpdatet met behulp van gegevens over de bepaalbaarheidsgrens, die bij (een deel van) de observaties beschikbaar waren in de databanken.
 
-_Merk op_ dat we voorlopig ook NH4 opnemen in de analyse, ter informatie.
-Vermits het geen primaire milieuvariabele is, zullen we ze vermoedelijk terug schrappen in een latere versie.
-XXXXXXXXXXXXXXX
-
 ## Dataset SURF_03.4_lentic
 
 ### Inlezen en voorbewerken
 
 We lezen de data voor SURF_03.4_lentic in en doen enkele voorbewerkingen.
 
-De variabelen `nh4`, `no3` en `ptot` vertegenwoordigen de concentratie van respectievelijk NH~4~^+^-N, NO~3~^-^-N en P~tot~, uitgedrukt in mg/l.
+De variabelen `no3` en `ptot` vertegenwoordigen de concentratie van respectievelijk NO~3~^-^-N en P~tot~, uitgedrukt in mg/l.
 We voegen tevens de log~10~-getransformeerde waarde van de doelvariabelen toe, alsook de bepaalbaarheidsgrens wanneer een numerieke meetwaarde ontbreekt omdat ze lager is dan de bepaalbaarheidsgrens.
 
 ```{r}
@@ -43,7 +39,8 @@ chem_lentic_long <-
       "lentic_chem_improved_values",
       root = file.path(datapath, "intermediate")
     ) %>% 
-      as_tibble(),
+      as_tibble() %>% 
+      filter(variable %in% c("no3", "ptot")),
     join_by(loc_code, date_sampling),
     relationship = "many-to-many",
     unmatched = "drop"
@@ -248,7 +245,7 @@ Er zijn in de jitterplots duidelijke patronen te zien van discrete waarden; dit 
 
 We lezen de data voor SURF_03.4_lotic in en doen enkele voorbewerkingen.
 
-De variabelen `nh4`, `no3` en `po4` vertegenwoordigen de concentratie van respectievelijk NH~4~^+^-N, NO~3~^-^-N en PO~4~^3-^-P, uitgedrukt in mg/l.
+De variabelen `no3` en `po4` vertegenwoordigen de concentratie van respectievelijk NO~3~^-^-N en PO~4~^3-^-P, uitgedrukt in mg/l.
 
 ```{r}
 chem_lotic <- 
@@ -257,7 +254,6 @@ chem_lotic <-
   select(
     loc_code = rank,
     date_sampling = date,
-    nh4,
     no3,
     po4
   ) %>% 
@@ -268,7 +264,6 @@ chem_lotic <-
       select(
         loc_code = unit_id,
         date_sampling = date,
-        nh4 = NH4_N,
         no3 = NO3_N,
         po4 = PO4_P
       ) %>% 
@@ -290,7 +285,7 @@ chem_lotic <-
     sixyear_period = floor((year_sampling - 1988) / 6) %>% factor()
   ) %>% 
   relocate(type) %>% 
-  relocate(nh4, no3, po4, .after = last_col()) %>% 
+  relocate(no3, po4, .after = last_col()) %>% 
   arrange(type, loc_code, date_sampling)
 # setting year_month as factor with all relevant levels, for plotting
 year_months_lotic <- 
@@ -315,7 +310,7 @@ We leiden ook een lange vorm af van de dataset, waarbij elke meetwaarde in een a
 chem_lotic_long <- 
   chem_lotic %>% 
   pivot_longer(
-    c(nh4, no3, po4),
+    c(no3, po4),
     names_to = "variable",
     values_to = "value"
   ) %>% 
@@ -352,7 +347,7 @@ loqdata_3260 <-
   read_vc("loqdata_3260", root = file.path(datapath, "intermediate")) %>% 
   as_tibble() %>% 
   select(-unit) %>% 
-  filter(variable %in% c("nh4", "no3", "po4")) %>% 
+  filter(variable %in% c("no3", "po4")) %>% 
   mutate(variable = fct_drop(variable))
 chem_lotic_long %>% 
   left_join(
@@ -416,9 +411,8 @@ loqdata_3260_yearlevel <-
   mutate(
     variable = fct_recode(
       variable,
-      nh4 = "1",
-      no3 = "2", 
-      po4 = "3"
+      no3 = "1", 
+      po4 = "2"
     )
   )
 ```
