@@ -47,7 +47,7 @@ diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist
 extent <- 512 # m
 # n_bins <- 50
 min_pair_distance <- 1 # m
-bin_target <- 128
+bin_target <- 100
 
 
 analysis_label <- "waterchemistry_filterdepthfiltered"
@@ -226,6 +226,13 @@ diff_meta <- diff_data %>%
       mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
   )
 
+diff_meta %>%
+  mutate(
+    short_filters = (flength1 <= 1.0) & (flength2 <= 1.0),
+    equiprofund = abs(dz) <= 1.0
+  ) %>% 
+  filter(short_filters, equiprofund) %>% 
+  nrow()
 
 ```
 
@@ -308,11 +315,15 @@ diff_all <- diff_meta %>%
   # mutate(dt = abs(difftime(date1, date2, units = "days")))
 
 
-diff_all %>% ggplot(aes(x = ds)) +
+g <- diff_all %>% ggplot(aes(x = ds)) +
   geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  labs(x = "afstand (m)", y = "aantal paren") +
   theme_bw()
 
-# diff_all %>% glimpse()
+print(g)
+
+
+diff_all %>% glimpse()
 # diff_all %>% filter(is_first_dnh4) %>% glimpse()
 # diff_all %>% filter(pair == "4178_2586") %>% glimpse()
 # diff_all %>% filter(pair == "4178_2586") %>% select(ds, date, dnh4)
@@ -370,6 +381,22 @@ diff_all %>%
 diff_all <- diff_all %>%
   filter(short_filters, equiprofund)
 ```
+
+```{r}
+
+g <- diff_all %>%
+  ggplot(aes(x = ds)) +
+  geom_histogram(bins = 128, fill = "lightgray", color = "black") +
+  labs(x = "afstand (m)", y = "aantal paren") +
+  theme_bw()
+
+ggsave("figures/distance_paircount_histogram.pdf", g, dpi = 300)
+ggsave("figures/distance_paircount_histogram.svg", g, dpi = 300)
+print(g)
+
+```
+
+
 
 # binning
 

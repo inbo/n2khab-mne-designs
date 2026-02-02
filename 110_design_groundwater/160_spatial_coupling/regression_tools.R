@@ -309,6 +309,7 @@ regression_by_soilclass <- function(
   if (return_fit) return(matern_fit)
 
   sink_file <- glue::glue("{label}_{reg_var}_{sc}.rds")
+  print(sink_file)
   saveRDS(matern_fit, file = here::here(regression_storage_path, sink_file))
 
   sink_file <- glue::glue("{label}_{reg_var}_{sc}_binned_observations.csv")
@@ -343,7 +344,12 @@ regression_by_soilclass <- function(
 
 
 
-add_regression_to_plot <- function(h, optimizer_results, color = "black") {
+add_regression_to_plot <- function(
+      h,
+      optimizer_results,
+      color = "black",
+      skip_threshold = FALSE
+    ) {
 
   # optimizer_results <- reference
 
@@ -363,6 +369,10 @@ add_regression_to_plot <- function(h, optimizer_results, color = "black") {
     threshold = 0.01,
     prep_fcn = shift_nugget_matern4p
   )
+
+  if (skip_threshold) {
+    threshold = NA
+  }
 
   # plotting
   maxx <- max(regx)

@@ -1,3 +1,21 @@
+---
+title: "Summary: Spatial Coupling of Groundwater Variables"
+bibliography: references_csl.json
+date: "2026-02-05"
+format:
+  pdf:
+    toc: true
+    html-math-method: katex
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+    embed-resources: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
 *Disclaimer:*
 This is a draft for a communication document.
 As of this moment, the draft is created by a single author, Falk Mielke.
@@ -167,7 +185,7 @@ We vormen hiervoor virtueel paren van grondwatermeetpunten, die een bepaalde (we
 
 ![Dataset: aantal paren per afstand.](distance_paircount_histogram.pdf)
 
-In totaal komen er *31671 paren aan bod* (na filteren / zie beneden) met een afstand tussen 1 meter en 1 kilometer (maar noot: elke installatie kan er meerdere keer voorkomen, dan met verschillende partners).
+In totaal komen er *17730 paren aan bod* (na filteren / zie beneden) met een afstand tussen 1 meter en 1 kilometer (maar noot: elke installatie kan er meerdere keer voorkomen, dan met verschillende partners).
 We werken verder enkel met metingen (waterstanden of waterchemie) die op één en dezelfde dag gebeurden.
 Herhaaldelijke simultane metingen worden per installatiepaar gemiddeld voor de verdere samenvatting.
 Chemische metingen gaan terug tot in de jaren 1980.
@@ -196,6 +214,8 @@ Dit zorgt voor stabielere *variogrammen* (zie volgende) en duidelijkere, scherpe
 Andererzijds betekend het wel ook dat we afstandsregels voor het hergebruik van installaties enkel kunnen toepassen indien er ook in het veld aan de filtercriteria voldaan wordt.
 
 
+## Methode: Variogrammen
+
 Ter benadering van de vraag na een kritische afstand waarbij een bepaalde verschil in een doelvariabele bereikt wordt gebruiken we [**variogrammen**](https://en.wikipedia.org/wiki/Variogram) [@Matheron1962, @Cressie1993].
 Deze zijn een geëtableerde tool om de samenhang van afstand en verschil in kaart te brengen [@moraga2023], vaak in voorbereiding van volgende analysestappen (bv. interpolatie via *kriging*).
 De verschil wordt middels een regressie met een Matérn-functie in relatie tot de afstand gezet.
@@ -207,24 +227,126 @@ Om de grote variatie tussen de "bins" statistisch te kunnen vatten zijn er twee 
 Voor de rest is dit de toepassing van een standaard-methode die geschikt is voor de bewerking van onze onderzoeksvraag.
 
 
+Variogrammen zijn niet de enige methode om ruimtelijke afhankelijkheid te analyseren.
+Autocorrelogrammen zijn meer geschikt als er ruimtelijk periodische fenomenen te verwachten zijn, en hier niet van meerwaarde.
+Modelering (bv. met sdmTMB, [@Anderson2025]) baseerd zich vaak op netwerktechnieken [@Porfiri2020] en eist een samenhangende datanetwerk van toevallige observaties.
+Door de bovengenoemde continuë en categorische invloedparameters (bodemklasse, helling, installatieeigenschappen) voldoet ons dataset niet aan deze voorwaardes, en een poging om modelering toe te passen bleek geen stabiele, betrouwbare resultaten op te leveren.
+
+De geschikte methode voor een antwoord op onze wetenschappelijke vraagstelling zijn *variogrammen*.
+
+
 ## Data: Grondwaterchemie en Waterstanden
 
+### Waterchemie
+In de databank WATINA zijn twee categoriën van meetvariabelen gecapteerd: *waterstanden* en *waterchemie*.
+
+De primaire doelvariabele voor deze analyse zijn **concentraties van chemische verbindingen** in het grondwater.
+Metingen van de waterchemie gebeuren relatief laagfrequent (in een tijdinterval van minimaal twee weken), en na een labo-analyse.
+Dit zorgt voor enkele bijzonderheden in de data.
+Van de relevante chemiche verbindingen zijn twee gekozen: ammonium \(NH_4\) en nitraat \(NO_3\).
+Een technische beperking zijn de algemeen lage concentraties van deze elementen in het grondwater.
+De uitkomstvariabelen zijn log-normaalverdeelt (gecorrigeerd door log-transformatie van de concentraties).
+Bovendien zitten een cruciaal aandel van de metingen onder het detectielimiet van de labo-toestellen; deze zijn opgeslaan op een arbitraire lage waarde en pas sinds 2015 afzonderlijk gemarkeerd. 
+In het verleden zijn verschillende labo-apparraten gebruikt; de detectielimieten zijn dus niet tijdconstant.
+(Seizoenaliteit en andere temporele faktoren hebben maar beperkte invloed op de data, omdat enkel metingen op één en dezelfde dag in de analyse opgenomen zijn.)
+
+Hoewel er variogrammen voor chemische metingen beschikbaar zijn, valt op dat deze geen stabiele curves en daarom geen consistente resultaten over verschillende chemische elementen opleveren.
 
 
-- limits of groundwater chemistry
+### Waterstanden
 
-## Methodologie
+In tegenstelling tot waterchemie zijn de opnames van **waterstanden** in WATINA hoogfrequent. 
+Er zijn meer herhalingen per peilbuispaar, geen detectielimieten, en de schaal eist geen log-transformatie.
+We gebruiken het absolute verschil in waterstanden, en passen de boven vermeldde filters toe.
 
-- referentie naar variogrammen
+Een relevante factor, naast de bodemklasse, is de referentiewaarde van de waterstanden.
+Beschikbare referenties zijn gedefinieerd door de [Tweede Algemene Waterpassing](https://nl.wikipedia.org/wiki/Tweede_Algemene_Waterpassing) (*mTAW*, een populatiebrede referentiesysteem) en het maaiveld (*mMaaiveld*, een lokale referentie).
+Zowel *mTAW*, als ook *mMaaiveld* zijn relevant voor de interpretatie van de variogrammen.
+
+![Difference between mTAW and mMaaiveld](obswell_scheme_groundwater_level_reference.pdf)
+
+
+Hoewel waterstanden niet de eigenlijke doelvariabelen zijn, is toch voor logische reden aan te nemen dat de ruimtelijke variatie in waterstanden een goede benadering van waterchemie zijn. 
+De voornamelijke reden voor lokale correlatie in waterstanden zijn ofwel (1) laterale uitwisseling of (2) gemeenschappelijke invloedfaktoren zijn zoals neerslag, transpiratie, grondwaterstromingen.
+Deze faktoren werken evenwel op de waterchemie; uiteindelijk is het lokaal beschikbare watervolume een component van de chemische concentratie.
+
+Inzover staan de analyses op waterstanden voor een deel in als vervanger van de waterchemie: we zien consistente resultaten waar voldoende data beschikbar is, en kunnen andererzijds informatiegaten opvullen.
 
 
 # Resultaten
 
-- variogrammen voor waterchemie (instabiel)
-- variogrammen voor waterstanden (benadering)
+## Waterstanden
+
+De volgende afbeelding toont de Matérn-regressie van gemiddelde verschillen in waterstanden (mMaaiveld) op verschillende bodemklassen (donkerbruin: zwaar; geel: lichte bodem; groen: venen). 
+
+![Matérn-regressie van waterstandsverschillen per bodemklasse.](output_variograms_mMaaiveld.pdf)
+
+De horizontale as representeerd de toenemende afstand tussen paren, terwijl op de vertikale as het lokale verschil in waterstand (`mMaaiveld`) aangeduidt is.
+
+De ruwe data ("bin"-gemiddelde verschillen per afstand) zijn als kleine cirkels afgebeeldt: achter elke cirkel zitten 100 installatieparen, per bodemklasse (kleur).
+De uitkomst van de Matérn-regressie is aangeduidt via de doorgaande curve.
+Horizontale constanten zijn typische regressieparameters: "nugget" (beginwaarde) en "sill" (plateauwaarde).
+Vertikale gekleurde balken tonen telkens de omslagpunt van de curve ("sigma"-regressieparameter, meer rechts) en de afstands-grenswaarde waar volgens de regressie het verschil van \(1 cm\) verbroken wordt.
+
+
+De ze grens-afstanden zijn, zoals volgt:
+
+
+| parameter    | 1cm grenswaarde | sigma |
+| correlatie   |           ~ 4 % |  50 % |
+|:-------------|----------------:|------:|
+| zware bodem  |           9.0 m |  70 m |
+| lichte bodem |          14.9 m | 109 m |
+| venen        |           2.4 m |  11 m |
+
+Verder berekenen de variogrammen een basis-variabiliteit ("nugget") van meer dan 10 cm en een maximum-variabiliteit van minder dan 40 cm.
+De curve voor venen is een uitzondering: er is geen duidelijke stijging te registreren en de Matérn-functie is geen geschikte fit voor de data.
+
+
+Dezelfde analyse met de andere referentie-coördinatensysteem (mTAW) toont duidelijke afwijkingen.
+
+![Matérn-regressie van waterstandsverschillen mTAW per bodemklasse.](output_variograms_mTAW.pdf)
+
+
+| parameter    | 1cm grenswaarde | sigma |
+| correlatie   |           ~ 2 % |  50 % |
+|:-------------|----------------:|------:|
+| zware bodem  |          11.4 m | 140 m |
+| lichte bodem |          22.4 m | 246 m |
+| venen        |          16.5 m | 254 m |
+
+
+Ondanks het feit dat de data *a priori* gefilterd zijn op helling, blijven de curves continu stijgen. 
+Een asymptotische plateauwaarde ("sill") wordt binnen de onderzochte afstanden niet duidelijk bereikt.
+Dit is een effect van het referentiesysteem: twee meetpunten met identieke waterstand onder het maaiveld kunnen een verschil in mTAW tonen, puur omwille van het hoogteprofiel van de Vlaamse landschap. 
+
+
+
+## Waterchemie
+
+:::{.callout-warning}
+Voor de waterstanden kozen wij een grenswaarde (1 cm) om een bereik voor de assumptie van gelijke grondwatersituatie te meten.
+Echter is er omwille van de log-schaal en detectiewaarde-problematiek voor *waterchemie* niet onmidelijk een grenswaarde te bepalen.
+
+Hieronder tonen wij de regressieparameter `sigma`, met de herinnering dat deze de afstand representeerd waarbij volgens de regressie nog 50% van de ruimtelijke correlatie behouden is.
+
+:::
+
+
+![Matérn-regressie van log-concentratie-verschillen NH4 per bodemklasse.](output_variograms_nh4.pdf)
+
+
+![Matérn-regressie van log-concentratie-verschillen NO3 per bodemklasse.](output_variograms_no3.pdf)
+
+
 
 
 # Discussie
+
+
+# Appendix
+
++ bootstrapping?
 
 
 # TODO References
@@ -252,3 +374,12 @@ Cressie N. (1993). Statistics for spatial data. John Wiley & Sons.
 
 Moraga, Paula. (2023). Spatial Statistics for Data Science: Theory and Practice
 with R. Chapman & Hall/CRC Data Science Series. ISBN 9781032633510
+
+Anderson, S.C., E.J. Ward, P.A. English, L.A.K. Barnett., J.T. Thorson. 2025.
+sdmTMB: an R package for fast, flexible, and user-friendly generalized linear
+mixed effects models with spatial and spatiotemporal random fields. Journal of
+Statistical Software. 115(2):1–46. https://doi.org/10.18637/jss.v115.i02.
+
+Maurizio Porfiri, Manuel Ruiz Marín; An information-theoretic approach to study
+spatial dependencies in small datasets. Proc. A 1 October 2020; 476
+(2242): 20200113. https://doi.org/10.1098/rspa.2020.0113

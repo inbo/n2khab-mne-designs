@@ -78,9 +78,9 @@ load_plotdata <- function(
 }
 
 load_fitdata <- function(
-    label = c(subset_selection, "allin", "maaiveld"),
+    label, # = c(subset_selection, "allin", "maaiveld"),
     soilclass = c("heavy", "light", "peat"),
-    regression_variable = c("dw", "dm")
+    regression_variable = c("dw", "dm", "dnh4", "dno3", "dpo4")
   ) {
   data_file <- combine_path(
     stitch_filepath(label, soilclass, regression_variable,
@@ -312,9 +312,12 @@ for (sc in names(data)) {
   regression_result <- data[[sc]]
   g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc])
 }
-g + xlab("distance (m)") + ylab("mean absolute difference (mTAW)") +
-  ylim(0, 1.6) +
+g <- g + xlab("distance (m)") + ylab("mean absolute difference (mTAW)") +
+  ylim(0, 1.0) +
   theme_minimal()
+
+ggsave(glue::glue("figures/output_variograms_mTAW.pdf"), g, dpi = 300)
+print(g)
 
 ```
 
@@ -341,9 +344,9 @@ knitr::kable(
 
 ```{r load-regressions-dm}
 data_m <- list(
-  "heavy" = load_fitdata("maaiveld", "heavy", "dm"),
-  "light" = load_fitdata("maaiveld", "light", "dm"),
-  "peat" = load_fitdata("maaiveld", "peat", "dm")
+  "heavy" = load_fitdata("waterlevels", "heavy", "dm"),
+  "light" = load_fitdata("waterlevels", "light", "dm"),
+  "peat" = load_fitdata("waterlevels", "peat", "dm")
 )
 
 ```
@@ -358,9 +361,12 @@ for (sc in names(data_m)) {
   regression_result <- data_m[[sc]]
   g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc])
 }
-g + xlab("distance (m)") + ylab("mean absolute difference (mMaaiveld)") +
-  ylim(0, 1.6) +
+g <- g + xlab("distance (m)") + ylab("mean absolute difference (mMaaiveld)") +
+  ylim(0, 0.6) +
   theme_minimal()
+
+ggsave(glue::glue("figures/output_variograms_mMaaiveld.pdf"), g, dpi = 300)
+print(g)
 
 ```
 
@@ -459,6 +465,18 @@ threshold_quantiles <- sub_boots %>%
     q02 = quantile(threshold, c(0.02)),
     median = quantile(threshold, c(0.50)),
     q98 = quantile(threshold, c(0.98)),
+    .by = soilclass 
+  ) 
+knitr::kable(threshold_quantiles, digits = 1)
+```
+
+
+```{r}
+threshold_quantiles <- sub_boots %>%
+  summarize(
+    q02 = quantile(sigma, c(0.02)),
+    median = quantile(sigma, c(0.50)),
+    q98 = quantile(sigma, c(0.98)),
     .by = soilclass 
   ) 
 knitr::kable(threshold_quantiles, digits = 1)
@@ -674,4 +692,157 @@ g + xlab("distance (m)") + ylab("mean absolute difference (mTAW)") +
 
 ```{r session-info}
 sessionInfo()
+```
+
+
+
+
+# Appendix
+
+I required identical plots for the chemical measurement, and append them here for simplicity.
+
+### NH₄
+
+
+```{r}
+  
+lchemd <- \(dfile) readRDS(dfile) # arrow::read_parquet(dfile)
+fi_str <- \(chem_soil) glue::glue("waterchemistry_filterdepthfiltered_d{chem_soil}_regression.rds")
+
+data_chem <- list(
+  "heavy" = lchemd(here::here(local_cache_folder, "regression", fi_str("nh4_heavy"))),
+  "light" = lchemd(here::here(local_cache_folder, "regression", fi_str("nh4_light"))),
+  "peat" = lchemd(here::here(local_cache_folder, "regression", fi_str("nh4_peat")))
+)
+
+```
+
+
+```{r}
+
+g <- ggplot(NULL)
+for (sc in names(data_chem)) {
+  regression_result <- data_chem[[sc]]
+  g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc], skip_threshold = TRUE)
+}
+g <- g + xlab("distance (m)") + ylab("difference in log concentration (NH₄)") +
+  # ylim(0, 0.6) +
+  theme_minimal()
+
+ggsave(glue::glue("figures/output_variograms_nh4.pdf"), g, dpi = 300)
+print(g)
+
+```
+
+
+```{r}
+knitr::kable(
+    t(sapply(names(data_chem),
+      FUN = function(sc) calculate_limit(
+              data_chem[[sc]],
+              threshold = 0.01,
+              fit_fcn = matern_function,
+              prep_fcn = shift_nugget_matern4p
+            )
+    )),
+    digits = 1
+  )
+```
+
+
+### NO₃
+
+
+```{r}
+  
+lchemd <- \(dfile) readRDS(dfile) # arrow::read_parquet(dfile)
+fi_str <- \(chem_soil) glue::glue("waterchemistry_filterdepthfiltered_d{chem_soil}_regression.rds")
+
+data_chem <- list(
+  "heavy" = lchemd(here::here(local_cache_folder, "regression", fi_str("no3_heavy"))),
+  "light" = lchemd(here::here(local_cache_folder, "regression", fi_str("no3_light"))),
+  "peat" = lchemd(here::here(local_cache_folder, "regression", fi_str("no3_peat")))
+)
+
+```
+
+
+```{r}
+
+g <- ggplot(NULL)
+for (sc in names(data_chem)) {
+  regression_result <- data_chem[[sc]]
+  g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc], skip_threshold = TRUE)
+}
+g <- g + xlab("distance (m)") + ylab("difference in log concentration (NO₃)") +
+  # ylim(0, 0.6) +
+  theme_minimal()
+
+ggsave(glue::glue("figures/output_variograms_no3.pdf"), g, dpi = 300)
+print(g)
+
+```
+
+
+```{r}
+knitr::kable(
+    t(sapply(names(data_chem),
+      FUN = function(sc) calculate_limit(
+              data_chem[[sc]],
+              threshold = 0.01,
+              fit_fcn = matern_function,
+              prep_fcn = shift_nugget_matern4p
+            )
+    )),
+    digits = 1
+  )
+```
+
+
+### PO₄
+
+
+```{r}
+  
+lchemd <- \(dfile) readRDS(dfile) # arrow::read_parquet(dfile)
+fi_str <- \(chem_soil) glue::glue("waterchemistry_filterdepthfiltered_d{chem_soil}_regression.rds")
+
+data_chem <- list(
+  "heavy" = lchemd(here::here(local_cache_folder, "regression", fi_str("po4_heavy"))),
+  "light" = lchemd(here::here(local_cache_folder, "regression", fi_str("po4_light"))),
+  "peat" = lchemd(here::here(local_cache_folder, "regression", fi_str("po4_peat")))
+)
+
+```
+
+
+```{r}
+
+g <- ggplot(NULL)
+for (sc in names(data_chem)) {
+  regression_result <- data_chem[[sc]]
+  g <- add_regression_to_plot(g, regression_result, color = soilclass_colors[sc], skip_threshold = TRUE)
+}
+g <- g + xlab("distance (m)") + ylab("difference in log concentration (PO₄)") +
+  # ylim(0, 0.6) +
+  theme_minimal()
+
+ggsave(glue::glue("figures/output_variograms_po4.pdf"), g, dpi = 300)
+print(g)
+
+```
+
+
+```{r}
+knitr::kable(
+    t(sapply(names(data_chem),
+      FUN = function(sc) calculate_limit(
+              data_chem[[sc]],
+              threshold = 0.01,
+              fit_fcn = matern_function,
+              prep_fcn = shift_nugget_matern4p
+            )
+    )),
+    digits = 1
+  )
 ```
