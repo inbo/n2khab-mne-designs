@@ -338,13 +338,18 @@ regression_wrapper <- function(
     optimizer_results
   )
 
-  # calculate 1cm threshold
-  optimizer_results$threshold <- calculate_limit(
-    optimizer_results,
-    threshold = 0.01,
-    fit_fcn = matern_function_3p,
-    prep_fcn = shift_nugget_matern3p
-  )
+  # calculate various thresholds
+  scale <- optimizer_results$par[1]
+  optimizer_results$thresholds <- lapply(
+      c(0.01, 0.02, 0.03, 0.05, 0.10, 0.05 * scale, 0.10 * scale, 0.15 * scale),
+      FUN = \(thresh) calculate_limit(
+        optimizer_results,
+        threshold = thresh,
+        fit_fcn = matern_function_3p,
+        prep_fcn = shift_nugget_matern3p
+      )
+    )
+
 
   # par <- optimizer_results$par
   # par[3] <- 0 # no nugget
@@ -451,7 +456,15 @@ datawrap_bootstrap <- function(reference, pass_data) {
         "sigma" = result$par[2],
         "nugget" = result$par[3],
         # "nu" = result$par[4],
-        "threshold" = result$threshold
+        "threshold" = result$thresholds[[1]],
+        "threshold001" = result$thresholds[[1]],
+        "threshold002" = result$thresholds[[2]],
+        "threshold003" = result$thresholds[[3]],
+        "threshold005" = result$thresholds[[4]],
+        "threshold010" = result$thresholds[[5]],
+        "threshold005p" = result$thresholds[[6]],
+        "threshold010p" = result$thresholds[[7]],
+        "threshold015p" = result$thresholds[[8]]
       )))
   }
   return(bootstrap_function)
@@ -485,7 +498,15 @@ subset_bootstrap <- function(sc, sub_data, n_iterations = 999){
       "sigma" = reference$par[2],
       "nugget" = reference$par[3],
       # "nu" = reference$par[4],
-      "threshold" = reference$threshold,
+        "threshold" = reference$thresholds[[1]],
+        "threshold001" = reference$thresholds[[1]],
+        "threshold002" = reference$thresholds[[2]],
+        "threshold003" = reference$thresholds[[3]],
+        "threshold005" = reference$thresholds[[4]],
+        "threshold010" = reference$thresholds[[5]],
+        "threshold005p" = reference$thresholds[[6]],
+        "threshold010p" = reference$thresholds[[7]],
+        "threshold015p" = reference$thresholds[[8]],
       "soilclass" = sc
     ))
 
