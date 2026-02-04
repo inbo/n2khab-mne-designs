@@ -134,7 +134,7 @@ print_regression_results <- function(orsl, label = "", indicate_threshold = TRUE
 #   sum((predictor_function(x) - y)^2)
 
 
-# Finally, a quick histogram plot of residuals.
+# a quick histogram plot of residuals.
 plot_residuals_histogram <- function (x, y, predictor_function, ...) {
   residuals <- predictor_function(x) - y
   ggplot(NULL, aes(x = residuals)) +
@@ -144,7 +144,38 @@ plot_residuals_histogram <- function (x, y, predictor_function, ...) {
 }
 
 
+# a table of different thresholds
+print_regression_thresholds <- function(orsl, thresholds, label = "", threshold_in_percent = FALSE) {
+  par <- paste(round(orsl$par, 4), collapse = ", ")
+  conv <- orsl$convergence
+  eps <- orsl$value
 
+
+  # print(
+  #   glue::glue("{label}: conv {conv} at ({par}), mse {round(eps, 1)}")
+  # )
+
+  if (threshold_in_percent) {
+    thresholds <- (thresholds/100) * orsl$par[1]
+  }
+
+  values <- c()
+  for (thresh in thresholds) {
+    threshold_value <- calculate_limit(
+      orsl,
+      threshold = thresh,
+      fit_fcn = matern_function,
+      prep_fcn = shift_nugget_matern4p
+    )
+    values <- c(values, sprintf("%.1f", threshold_value))
+    # print(
+    #   glue::glue("==> Threshold of {thresh} reached at {round(threshold_value, 3)} m distance.")
+    # )
+
+  }
+
+  print(glue::glue("| {sc} | {paste0(values, collapse = ' | ')} |"))
+}
 
 
 
@@ -348,7 +379,7 @@ add_regression_to_plot <- function(
       h,
       optimizer_results,
       color = "black",
-      skip_threshold = FALSE
+      thresholds_in_percent = FALSE
     ) {
 
   # optimizer_results <- reference
@@ -364,15 +395,27 @@ add_regression_to_plot <- function(
   range <- optimizer_results$par[2]
   nugget <- optimizer_results$par[3]
   sill <- scale + nugget
-  threshold <- calculate_limit(
-    optimizer_results,
-    threshold = 0.01,
-    prep_fcn = shift_nugget_matern4p
-  )
 
-  if (skip_threshold) {
-    threshold = NA
+  if (thresholds_in_percent) {
+    thresholds <- lapply(
+      c(0.05 * scale, 0.15 * scale),
+      FUN = \(thresh) calculate_limit(
+        optimizer_results,
+        threshold = thresh,
+        prep_fcn = shift_nugget_matern4p
+      )
+    )
+  } else {
+    thresholds <- lapply(
+      c(0.01, 0.1), # 0.02, 0.03, 0.05,
+      FUN = \(thresh) calculate_limit(
+        optimizer_results,
+        threshold = thresh,
+        prep_fcn = shift_nugget_matern4p
+      )
+    )
   }
+
 
   # plotting
   maxx <- max(regx)
@@ -381,8 +424,8 @@ add_regression_to_plot <- function(
   plotx <- plotx[plotx>0]
 
   h <- h +
-    geom_vline(xintercept = threshold, color = color, alpha = 1.0) +
-    geom_vline(xintercept = range, color = color, alpha = 1.0) +
+    geom_vline(xintercept = unlist(thresholds), color = color, alpha = 1.0) +
+    # geom_vline(xintercept = range, color = color, alpha = 1.0) +
     geom_hline(yintercept = nugget, color = color, alpha = 1.0) +
     geom_hline(yintercept = sill, color = color, alpha = 1.0) +
     geom_point(aes(x = regx, y = regy),

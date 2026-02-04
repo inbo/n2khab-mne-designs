@@ -73,8 +73,9 @@ Voor de rest is dit de toepassing van een standaard-methode die geschikt is voor
 
 Variogrammen zijn niet de enige methode om ruimtelijke afhankelijkheid te analyseren.
 Autocorrelogrammen zijn meer geschikt als er ruimtelijk periodische fenomenen te verwachten zijn, en hier niet van meerwaarde.
-Modelering (bv. met sdmTMB, [@Anderson2025]) baseerd zich vaak op netwerktechnieken [@Porfiri2020] en eist een samenhangende datanetwerk van toevallige observaties.
-Door de bovengenoemde continuë en categorische invloedparameters (bodemklasse, helling, installatieeigenschappen) voldoet ons dataset niet aan deze voorwaardes, en een poging om modelering toe te passen bleek geen stabiele, betrouwbare resultaten op te leveren.
+Er zijn verschillende methodes om ruimtelijke variabelen te modeleren (bv. met sdmTMB, [@Anderson2025]). 
+Velen daarvan gebruiken evenwel variogrammen om ruimtelijke samenhang mee te kunnen kwantificeren.
+
 
 De geschikte methode voor een antwoord op onze wetenschappelijke vraagstelling zijn *variogrammen*.
 
@@ -89,7 +90,10 @@ De primaire doelvariabele voor deze analyse zijn **concentraties van chemische v
 Metingen van de waterchemie gebeuren relatief laagfrequent (in een tijdinterval van minimaal twee weken), en na een labo-analyse.
 
 Dit zorgt voor enkele bijzonderheden in de data.
-Van de relevante chemiche verbindingen zijn twee gekozen: ammonium \(NH_4\) en nitraat \(NO_3\).
+Van de relevante chemiche verbindingen zijn twee gekozen: ammonium $NH_4$ en nitraat $NO_3$.
+
+[TODO fosfaat ook maar dan enkel "heavy" indien asymmetrie in aandeel detectielimieten]
+
 Een technische beperking zijn de algemeen lage concentraties van deze elementen in het grondwater.
 De uitkomstvariabelen zijn log-normaalverdeelt (gecorrigeerd door log-transformatie van de concentraties).
 Bovendien zitten een cruciaal aandel van de metingen onder het detectielimiet van de labo-toestellen; deze zijn opgeslaan op een arbitraire lage waarde en pas sinds 2015 afzonderlijk gemarkeerd. 
@@ -116,7 +120,7 @@ Hoewel waterstanden niet de eigenlijke doelvariabelen zijn, is toch voor logisch
 De voornamelijke reden voor lokale correlatie in waterstanden zijn ofwel (1) laterale uitwisseling of (2) gemeenschappelijke invloedfaktoren zijn zoals neerslag, transpiratie, grondwaterstromingen.
 Deze faktoren werken evenwel op de waterchemie; uiteindelijk is het lokaal beschikbare watervolume een component van de chemische concentratie.
 
-Inzover staan de analyses op waterstanden voor een deel in als vervanger van de waterchemie: we zien consistente resultaten waar voldoende data beschikbar is, en kunnen andererzijds informatiegaten opvullen.
+Inzover staan de analyses op waterstanden voor een deel in als proxy ("vervanger") van de waterchemie: we zien consistente resultaten waar voldoende data beschikbar is, en kunnen andererzijds aanvullen waar een gebrek aan informatie over waterchemie de besluitvorming beperkt.
 
 
 # Resultaten
@@ -132,19 +136,18 @@ De horizontale as representeerd de toenemende afstand tussen paren, terwijl op d
 De ruwe data ("bin"-gemiddelde verschillen per afstand) zijn als kleine cirkels afgebeeldt: achter elke cirkel zitten 100 installatieparen, per bodemklasse (kleur).
 De uitkomst van de Matérn-regressie is aangeduidt via de doorgaande curve.
 Horizontale constanten zijn typische regressieparameters: "nugget" (beginwaarde) en "sill" (plateauwaarde).
-Vertikale gekleurde balken tonen telkens de omslagpunt van de curve ("sigma"-regressieparameter, meer rechts) en de afstands-grenswaarde waar volgens de regressie het verschil van \(1 cm\) verbroken wordt.
+Vertikale gekleurde balken tonen telkens de afstands-grenswaardes waar volgens de regressie het verschil van $1 cm$/$2 cm$/... verbroken wordt.
 
 
-De ze grens-afstanden zijn, zoals volgt:
+Deze grens-afstanden zijn, zoals volgt:
 
 
-| parameter    | 1cm grenswaarde | sigma |
-|--------------|----------------:|------:|
-| correlatie   |           ~ 4 % |  50 % |
-| zware bodem  |           9.0 m |  70 m |
-| lichte bodem |          14.9 m | 109 m |
-| venen        |           2.4 m |  11 m |
-: Grenswaardes voor waterstanden mMaaiveld
+| grenswaarde  | 1 cm | 2 cm | 3 cm | 5 cm | 10 cm |
+|--------------|-----:|-----:|-----:|-----:|------:|
+| zware bodem  |  9.0 | 14.2 | 18.8 | 27.3 |  48.8 |
+| lichte bodem | 14.9 | 23.5 | 31.2 | 45.5 |  83.0 |
+| venen        |  2.4 |  3.9 |  5.3 |  8.4 |     / |
+: Verschillende grenswaardes voor waterstanden mMaaiveld. (Op venen licht het totale verschil onder de 10 cm.)
 
 Verder berekenen de variogrammen een basis-variabiliteit ("nugget") van meer dan 10 cm en een maximum-variabiliteit van minder dan 40 cm.
 De curve voor venen is een uitzondering: er is geen duidelijke stijging te registreren en de Matérn-functie is geen geschikte fit voor de data.
@@ -155,38 +158,57 @@ Dezelfde analyse met de andere referentie-coördinatensysteem (mTAW) toont duide
 ![Matérn-regressie van waterstandsverschillen mTAW per bodemklasse.](output_variograms_mTAW.pdf)
 
 
-| parameter    | 1cm grenswaarde | sigma |
-|:-------------|----------------:|------:|
-| correlatie   |           ~ 2 % |  50 % |
-| zware bodem  |          11.4 m | 140 m |
-| lichte bodem |          22.4 m | 246 m |
-| venen        |          16.5 m | 254 m |
-: Grenswaardes voor waterstanden mMaaiveld
+| grenswaarde  | 1 cm | 2 cm | 3 cm | 5 cm | 10 cm |
+|--------------|-----:|-----:|-----:|-----:|------:|
+| zware bodem  | 11.4 | 17.5 | 22.7 | 31.8 |  52.4 |
+| lichte bodem | 22.4 | 34.5 | 44.8 | 63.0 | 104.4 |
+| venen        | 16.5 | 25.2 | 32.6 | 45.3 |  72.5 |
+: Verschillende grenswaardes voor waterstanden mTAW.
+
 
 Ondanks het feit dat de data *a priori* gefilterd zijn op helling, blijven de curves continu stijgen. 
 Een asymptotische plateauwaarde ("sill") wordt binnen de onderzochte afstanden niet duidelijk bereikt.
 Dit is een effect van het referentiesysteem: twee meetpunten met identieke waterstand onder het maaiveld kunnen een verschil in mTAW tonen, puur omwille van het hoogteprofiel van de Vlaamse landschap. 
+Een deel van het verschil is dus gewoon te verklaren door het hoogteprofiel.
+
+Doordat de verschillen in waterstanden mTAW blijven stijgen, worden niet enkel de waarden op lange afstand aangetrokken.
+De Matérn-functie heeft maar een bepaald aantal vrijheidsgrades. 
+Het fitten van de punten op lange afstand gaat daarom ten kosten van de weinige proximale referentiepunten.
+Per gevolg zijn zijn de grenswaardes over het algemeen groter, maar dit effect is niet veroorzaakt door echte correlatie van dichtbije waterstandsveranderingen.
 
 
 
 ## Waterchemie
 
-:::{.callout-warning}
-Voor de waterstanden kozen wij een grenswaarde (1 cm) om een bereik voor de assumptie van gelijke grondwatersituatie te meten.
+Voor de waterstanden kozen wij voor een serie van grenswaardes (1 cm) om een bereik voor .
 Echter is er omwille van de log-schaal en detectiewaarde-problematiek voor *waterchemie* niet onmidelijk een grenswaarde te bepalen.
 
 Hieronder tonen wij de regressieparameter `sigma`, met de herinnering dat deze de afstand representeerd waarbij volgens de regressie nog 50% van de ruimtelijke correlatie behouden is.
 
-:::
 
 
 ![Matérn-regressie van log-concentratie-verschillen NH4 per bodemklasse.](output_variograms_nh4.pdf)
 
+| grenswaarde |   5% |  10% |  15% |
+|-------------|-----:|-----:|-----:|
+| heavy       |  3.3 |  5.2 |  6.9 |
+| light       | 30.8 | 48.6 | 64.6 |
+| peat        |  5.9 |  9.3 | 12.4 |
+
 
 ![Matérn-regressie van log-concentratie-verschillen NO3 per bodemklasse.](output_variograms_no3.pdf)
 
+| grenswaarde |  5% |  10% |  15% |
+|-------------|----:|-----:|-----:|
+| heavy       | 1.8 |  2.8 |  3.7 |
+| light       | 7.3 | 11.5 | 15.3 |
+| venen       |   / |    / |    / |
 
 
+## TODO
++ bootstrapping!
++ 100 pt -> fig cap
++ check detection limit per soilclass (PO4?)
 
 # Discussie
 ## Samenvatting
@@ -201,9 +223,12 @@ bodemklasse, helling, continuïteit, installatieeigenschappen (flength, fdepth),
 
 Afwijkend -> tot 10m van de celrand; mits loceval.
 
+## misc
+
+Venen: plat; ofwel onmiddelij verschil, ofwel meetwaarde afstandsonafhankelijk
+
 # Appendix
 
-+ bootstrapping?
 
 
 # TODO References
