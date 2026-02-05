@@ -33,11 +33,11 @@ library("parallel")  |> void() # parallel processing
 
 # if (getOption("browser") == "") options(browser = "librewolf") 
 
-# data is loaded from cache
-source("./auxiliary_data_queries.R")
-
-# regression has been done before
-source("regression_tools.R") 
+# user-set parameters
+cluster_dist <- 3400 # m # parameter for clustering
+data_export_file <- glue::glue("data/waterlevel_data_cl{cluster_dist}.parquet")
+chem_export_file <- glue::glue("data/waterchemistry_data_cl{cluster_dist}_alltimesd.parquet")
+diffdata_export_file <- glue::glue("data/waterchemistry_diffdata_cl{cluster_dist}_alltimesd.parquet")
 
 
 # for reference
@@ -57,16 +57,15 @@ soilclass_colors <- c(
 
 ```{r parameters}
 #| code-fold: false
-extent <- 500 # m
-maxx <- 1000 # for regression
 
-bin_target <- 100 # alternative: observations per bin
-cap_dw <- 4 # m # maximum accepted water level difference
+# parameters
+extent <- 512 # m
+# n_bins <- 50
+min_pair_distance <- 1 # m
+bin_target <- 100
 
-slope_threshold    <- 0.01/1 # 1 cm per meter
-wadi_threshold     <- units::set_units(Inf, "m")
-dfdepth_threshold  <- 1 # m # Inf
-filter_length_limit <- 1 # m
+analysis_label <- "waterchemistry_filterdepthfiltered"
+regression_storage_path <- here::here("cache", "regression")
 
 n_bootstraps <- 2**16 # number of bootstrapping iterations
 ```
@@ -75,33 +74,123 @@ n_bootstraps <- 2**16 # number of bootstrapping iterations
 
 ```{r load-data}
 
-meta_data <- join_auxiliary_cache(label = "metadata") %>%
-  join_auxiliary_cache(label = "elevation", index_column = "pp_idx") %>%
-  join_auxiliary_cache("waterdistance", index_column = "pp_idx")
-  # %>% join_auxiliary_cache("empiricalmodes", index_column = "pp_idx") 
+pp_data <- read_parquet(data_export_file)
 
-diff_data <- join_auxiliary_cache(label = "diffdata") %>% 
-  filter(if_all(c(w1, w2, dw, m1, m2, dm), ~ !is.na(.x)))
+std_chem <- read_parquet(file = chem_export_file) %>%
+  mutate(date = as.Date(as.character(date), format = "%Y%m%d"))
+pp_chem_nh4 <- std_chem %>%
+  select(pp_idx, sample_idx, date, meq_nh4_log, meq_nh4_raw) %>% 
+  summarize(
+    across(everything(), ~mean(., na.rm = TRUE)),
+    .by = pp_idx
+  )
 
-meta_join <- meta_data %>%
-  select(pp_idx, flength, fdepth, pp_code, mp_idx, cluster,
+# std_chem %>%
+#   filter(pp_idx %in% c(4178, 2586)) %>%
+#   arrange(desc(date))
+
+```
+
+
+loading the differentials and inspecting time intervals:
+
+```{r load-diffdata}
+
+diff_data_raw <- read_parquet(diffdata_export_file) %>%
+  filter(!is_same_location) # only different locations
+
+dt <- diff_data_raw %>%
+  filter(is_first_dnh4 | is_first_dno3 | is_first_dpo4) %>% 
+  # mutate(dt = as.numeric(date2 - date1, "days")) %>% already stored
+  pull(dt)
+
+breaks <- c(0., 0.4, 1.1, 6., 8., 13., 15., 20., 22., 25., 35., 50., 60., 80., 120., 400.)
+hist(dt[dt <= max(breaks)], breaks)
+
+message(sum(dt == 0) / length(dt))
+
+```
+
+
+
+```{r timefilter-diff-data}
+
+join_a_chemical <- function(.data, chem) {
+  # .data <- diff_backbone
+  # chem <- "nh4"
+
+  cols <- c(
+    "pp_idx1", "date1", "pp_idx2", "date2", "dt",
+    glue::glue("meq_{chem}_log1"),
+    glue::glue("meq_{chem}_log2"),
+    glue::glue("d{chem}"),
+    glue::glue("d{chem}r"),
+    glue::glue("is_first_d{chem}")
+  )
+  
+  .data %>% 
+    left_join(
+      diff_data_raw %>% 
+        select(!!!rlang::syms(cols)) %>%
+        filter(!!as.symbol(glue::glue("is_first_d{chem}"))) %>% 
+        filter(dt < 1)
+      ,
+      by = join_by(pp_idx1, date1, pp_idx2),
+      suffix = c("", glue::glue("_{chem}")),
+      relationship = "many-to-many"
+    ) %>%
+    return()
+}
+
+diff_backbone <- diff_data_raw %>%
+  distinct(pp_idx1, date1, pp_idx2) %>%
+  mutate(date2 = NA, dt = NA)
+
+diff_data_mixed <- diff_backbone %>%
+  join_a_chemical("nh4") %>%
+  join_a_chemical("no3") %>%
+  join_a_chemical("po4") %>%
+  select(-date2, -dt)
+
+diff_data <- diff_data_mixed  %>%
+  filter(!(is.na(dnh4)&is.na(dno3)&is.na(dpo4)))
+
+diff_data %>%
+  mutate(
+    nan_nh4 = is.na(dnh4),
+    nan_no3 = is.na(dno3),
+    nan_po4 = is.na(dpo4)
+  ) %>% 
+  count(nan_nh4, nan_no3, nan_po4) %>%
+  knitr::kable()
+
+```
+
+
+```{r join-diffdata}
+
+pp_join <- pp_data %>%
+  filter(fdepth <= 5) %>% 
+  select(pp_idx, fdepth, flength, pp_code, mp_idx, cluster,
          x, y, soilclass, elevation_dhmv, slope_r2.5m,
          wata_min_dist, wata_dist_class,
-         # emd_n, emd_amp1, emd_amp2, emd_ampsum,
-         # emd_qdiff, emd_residual_qdiff
+         emd_n, emd_amp1, emd_amp2, emd_ampsum,
+         emd_qdiff, emd_residual_qdiff
          )
+# pp_join %>% nrow()
+# pp_join %>% distinct() %>% nrow()
+# yes, they are unique
 
 diff_meta <- diff_data %>%
-  select(pp_idx1, pp_idx2) %>%
-  distinct() %>%
-  left_join(
-    meta_join,
+  distinct(pp_idx1, pp_idx2) %>%
+  inner_join(
+    pp_join,
     by = join_by(pp_idx1 == pp_idx),
     relationship = "many-to-one",
     suffix = c("", "1")
   ) %>%
-  left_join(
-    meta_join,
+  inner_join(
+    pp_join,
     by = join_by(pp_idx2 == pp_idx),
     relationship = "many-to-one",
     suffix = c("1", "2")
@@ -115,136 +204,231 @@ diff_meta <- diff_data %>%
       dwadi = wata_min_dist2-wata_min_dist1,
       dslope = slope_r2.5m2-slope_r2.5m1,
       melevation = mean(c(elevation_dhmv2, elevation_dhmv1)),
-      mslope_r2.5m = mean(c(slope_r2.5m2, slope_r2.5m1)),
-      mslope = abs(dh) / ds
-  ) %>%
-  filter(
-    ds <= extent,
-    wata_min_dist1 < wadi_threshold,
-    wata_min_dist2 < wadi_threshold,
-    mslope < slope_threshold,
-    flength1 <= filter_length_limit,
-    flength2 <= filter_length_limit,
-    abs(dz) < dfdepth_threshold
+      mslope = mean(c(slope_r2.5m2, slope_r2.5m1)) 
   )
 
-
-
-diff_meta %>% count(soilclass1)
+diff_meta %>%
+  mutate(
+    short_filters = (flength1 <= 1.0) & (flength2 <= 1.0),
+    equiprofund = abs(dz) <= 1.0
+  ) %>% 
+  filter(short_filters, equiprofund) %>% 
+  nrow()
 
 ```
 
-
-:::{.callout-warning}
-- water distance was filtered to be below `{r} sprintf("%s", wadi_threshold)`.
-- Pairs with an elevation difference of more than `{r} slope_threshold` m per m distance were removed.
-- Filterdepth difference was limited to observations below `{r} sprintf("%s", dfdepth_threshold)`.
-
-After that, `{r} nrow(diff_meta)` location pairs remain, counting `{r} nrow(diff_data)` simultaneous water level measurements.
-:::
-
+`diff_meta` are the observed, distinct pairs. There are <19k.
 
 
 
 ```{r glimpse-data}
 
 # diff_meta %>% glimpse
-# diff_data %>% glimpse
 
-diff_meta <- diff_meta %>%
+diff_all <- diff_meta %>%
   select(pp_idx1, pp_idx2, cluster1,
+      flength1, flength2,
       x1, y1, x2, y2, 
-      soilclass1, wata_dist_class1, wata_dist_class2,
+      soilclass1, # ecoregion,
+      wata_dist_class1, wata_dist_class2,
       ds, dh, dz,
       # damp, dqdiff,
       dwadi, dslope,
       melevation, mslope
   ) %>%
   mutate(
-    pair = factor(paste0(
-      as.character(pp_idx1), "_", as.character(pp_idx2), sep = "")
-    )
-  ) 
-
-
-diff_joined <- diff_meta %>% 
+    pair = factor(glue::glue("{pp_idx1}_{pp_idx2}"))
+  ) %>%
   left_join(diff_data,
     by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
     relationship = "one-to-many"
-  ) %>% 
-  filter(abs(dw) <= ds, abs(dw) <= cap_dw, abs(dm) <= cap_dw) # remove outliers
+  ) %>%
+  filter(ds >= min_pair_distance) %>% 
+  # filter(
+  #   # ds >= extent/n_bins
+  #   date2 - date1 == 0 # already filtered
+  # ) %>%
+  mutate(date = date1) %>% select(-date1)
+  # mutate(dt = abs(difftime(date1, date2, units = "days")))
 
-# glimpse(diff_joined)
 
-# diff_meta %>% select(cluster1, pp_idx1, pp_idx2, ds, mslope) %>% arrange(-ds) %>% head
+g <- diff_all %>% ggplot(aes(x = ds)) +
+  geom_histogram(bins = 256, fill = "lightgray", color = "black") +
+  labs(x = "afstand (m)", y = "aantal paren") +
+  theme_bw()
+
+print(g)
+
+
+diff_all %>% glimpse()
+# diff_all %>% filter(is_first_dnh4) %>% glimpse()
+# diff_all %>% filter(pair == "4178_2586") %>% glimpse()
+# diff_all %>% filter(pair == "4178_2586") %>% select(ds, date, dnh4)
+
+```
+
+`diff_all` contains all the observations of water chemistry at the pairs (~53k), but only those which are "firsts" for differences of either chemical.
+
+# pruning
+
+Here, the filter criteria are applied.
+
+```{r}
+diff_all_raw <- diff_all
+diff_all <- diff_all %>%
+  mutate(
+    short_filters = (flength1 <= 1.0) & (flength2 <= 1.0),
+    equiprofund = abs(dz) <= 1.0
+  )
+
+```
+
+```{r}
+
+diff_all %>% ggplot(aes(
+    x = ds,
+    group = as.factor(short_filters),
+    fill = as.factor(short_filters)
+    )) +
+  geom_histogram(bins = 64, color = "black") +
+  theme_bw() +
+  theme(legend.position = c(.9,.9))
+
+```
+
+```{r}
+
+diff_all %>% ggplot(aes(
+    x = ds,
+    group = as.factor(equiprofund),
+    fill = as.factor(equiprofund)
+    )) +
+  geom_histogram(bins = 64, color = "black") +
+  theme_bw() +
+  theme(legend.position = c(.9,.9))
+
+```
+
+```{r}
+diff_all %>%
+  count(short_filters, equiprofund)
+```
+
+```{r}
+diff_all <- diff_all %>%
+  filter(short_filters, equiprofund)
 ```
 
 
 
 # grouping and binning
 
+```{r}
+parameter_of_choice <- "dnh4"
+```
+
+
+After some good prior experience, I will once more apply binning with variable bin width, to achieve **equal sample size per bin**.
+Many location pairs are repeatedly measured, i.e. both of the pair are simultaneously measured on different days.
+
+
+
 ```{r equibin-preparation}
 #| code-fold: false
 
-
-# test <- diff_joined %>%
-#   summarize(
-#     n_obs = sum(as.integer( (!is.na(dw)) & (!is.na(dm)) )),
-#     soilclass = first(soilclass1),
-#     cluster = first(cluster1),
-#     ds = mean(ds, na.rm = TRUE),
-#     dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
-#     dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
-#     .by = pair 
-#   ) %>% ungroup %>% arrange(-ds)
-
-diff_equigrouped <- diff_joined %>%
+# this is the full length data, just with a group column.
+diff_equigrouped <- diff_all %>%
   summarize(
-    n_obs = sum(as.integer( (!is.na(dw)) & (!is.na(dm)) )),
+    n_obs = sum(as.integer(!(
+      is.na(dnh4[is_first_dnh4]) |
+      is.na(dno3[is_first_dno3]) |
+      is.na(dpo4[is_first_dpo4])
+    ))),
+    n_nh4 = sum(as.integer(!is.na(dnh4[is_first_dnh4]))),
+    n_no3 = sum(as.integer(!is.na(dno3[is_first_dno3]))),
+    n_po4 = sum(as.integer(!is.na(dpo4[is_first_dpo4]))),
     soilclass = first(soilclass1),
+    # ecoregion = first(ecoregion),
     cluster = first(cluster1),
     ds = mean(ds, na.rm = TRUE),
-    dw = 1/(n_obs)*sum(abs(dw), na.rm = TRUE),
-    dm = 1/(n_obs)*sum(abs(dm), na.rm = TRUE),
+    # dt = mean(abs(date2-date1), na.rm = TRUE),
+    # semivar = 1/(2*n_obs)*sum(dPC1^2, na.rm = TRUE),
+    dnh4 = 1/(n_nh4)*sum(abs(dnh4[is_first_dnh4]), na.rm = TRUE),
+    dno3 = 1/(n_no3)*sum(abs(dno3[is_first_dno3]), na.rm = TRUE),
+    dpo4 = 1/(n_po4)*sum(abs(dpo4[is_first_dpo4]), na.rm = TRUE),
+    dnh4r = 1/(n_nh4)*sum(abs(dnh4r[is_first_dnh4]), na.rm = TRUE),
+    dno3r = 1/(n_no3)*sum(abs(dno3r[is_first_dno3]), na.rm = TRUE),
+    dpo4r = 1/(n_po4)*sum(abs(dpo4r[is_first_dpo4]), na.rm = TRUE),
+    # dPC1 = 1/(n_obs)*sum(abs(dPC1), na.rm = TRUE),
+    # dPC2 = 1/(n_obs)*sum(abs(dPC2), na.rm = TRUE),
+    # dPC3 = 1/(n_obs)*sum(abs(dPC3), na.rm = TRUE),
     .by = pair 
   ) %>% ungroup %>% arrange(ds) %>%
   group_by(soilclass) %>% 
   mutate(
-    distance_equibin = ggplot2::cut_number(
+    distance_equibin = cut_number(
       ds, as.integer(floor(n()/min(c(n()/8, bin_target))))
     ) # cut to equal sized bins
   ) %>%
+  relocate(distance_equibin) %>% 
   ungroup
 
+# diff_equigrouped %>% glimpse()
+# diff_equigrouped %>% head(9) %>% tail(1) %>% knitr::kable()
+# 4178_2586
     
-diff_equibinned <- diff_equigrouped %>%
+combine_grouped <- function (val, cnt) sum(val*cnt, na.rm = TRUE)/sum(cnt, na.rm = TRUE)
+mean_finite <- function (val) mean(val[is.finite(val)], na.rm = TRUE)
+
+# Here, grouped observations get thrown into bins.
+diff_binned <- diff_equigrouped %>%
   summarize(
     cnt = n(),
     ds = mean(ds), 
+    # dt = mean(dt), 
     n_obs = sum(n_obs),
-    dw = mean(dw, na.rm = TRUE), 
-    dm = mean(dm, na.rm = TRUE), 
+    n_nh4 = sum(n_nh4),
+    n_no3 = sum(n_no3),
+    n_po4 = sum(n_po4),
+    # semivariance_groupmean = mean(semivar, na.rm = TRUE),
+    # semivariance_all = combine_grouped(semivar, cnt),
+    # dPC1_all = combine_grouped(dPC1, n_obs),
+    dnh4  = mean_finite(dnh4),
+    dno3  = mean_finite(dno3),
+    dpo4  = mean_finite(dpo4),
+    dnh4r = mean_finite(dnh4r),
+    dno3r = mean_finite(dno3r),
+    dpo4r = mean_finite(dpo4r),
+    # dPC1 = mean(dPC1, na.rm = TRUE), 
+    # dPC2 = mean(dPC2, na.rm = TRUE), 
+    # dPC3 = mean(dPC3, na.rm = TRUE), 
     .by = c(distance_equibin, soilclass)
   ) %>%
-  ungroup %>% arrange(ds)
+  ungroup %>%
+  arrange(ds) %>%
+  filter(ds <= extent)
 
+print(diff_binned %>% pull(cnt) %>% sum())
+print(diff_binned %>% filter(ds < 100) %>% pull(cnt) %>% sum())
+print(sum(diff_binned$n_obs))
+print(sum(diff_binned$n_nh4))
+print(sum(diff_binned$n_no3))
+print(sum(diff_binned$n_po4))
 ```
+
+There are 18345 pairs, which are assigned to a distance bin. 
+Repeated observations (simultaneous measurement on different occasions) are averaged.
+
 
 
 ```{r equibin-samplesize}
 #| label: fig-equibin-sample-size
-#| fig-cap: "Cumulative size per bin for the different soilclass groups. Bin widths are variable to generate balanced sample sizes. The height (''Δy'') of each step is identical. Perfectly homogeneous bins would fall on the diagonal line; steep sloped ranges indicate narrow bins, whereas wider-than-average bins would manifest in shallower slopes."
-
-diff_equibinned %>%
+diff_binned %>%
   ggplot(aes(x = ds, y = cnt, color = soilclass)) +
-  geom_step(stat = "ecdf") +
+  geom_step() +
   geom_hline(yintercept = 0, color = "darkgrey") +
-  geom_abline(intercept = 0, slope = 1/extent, color = "darkgrey") +
-  scale_fill_manual(values = soilclass_colors) +
-  scale_color_manual(values = soilclass_colors) +
   theme_bw()
 ```
-
 
 
 
@@ -281,7 +465,7 @@ trafo <- function(x) x
 
 regression_wrapper <- function(
     regression_data, 
-    regression_variable = "dm",
+    regression_variable = parameter_of_choice,
     ...) {
   
   x <- regression_data$ds
@@ -366,13 +550,9 @@ regression_wrapper <- function(
 ```
 
 
-
-
-# variograms {#sec-variograms}
-... in repeated execution.
-
-
-
+```{r}
+diff_equibinned <- diff_binned
+```
 
 
 # bootstrapping
@@ -383,10 +563,10 @@ regression_wrapper <- function(
 
 ```{r regression-reference}
 lower_limits = c(0.0,  0.0, 0.0)# 0.1)
-upper_limits = c(4.0, maxx, 4.0)#16.01)
+upper_limits = c(4.0, extent, 4.0)#16.01)
 reference <- regression_wrapper(
   regression_data = diff_equibinned,
-  regression_variable = "dm",
+  regression_variable = parameter_of_choice,
   par = c(0.5, 10., 0.1), 
   lower = lower_limits,
   upper = upper_limits
@@ -436,11 +616,14 @@ datawrap_bootstrap <- function(reference, pass_data) {
     
     # jittering the observations
     # see https://influentialpoints.com/Training/properties-of-bootstrap_estimators.htm#howm
-    boot_sample$dm <- jitter(boot_sample$dm, amount = 0.1*sd(boot_sample$dm))
+    # boot_sample$dm <- jitter(boot_sample$dm, amount = 0.1*sd(boot_sample$dm))
+    boot_sample$dnh4 <- jitter(boot_sample$dnh4, amount = 0.1*sd(boot_sample$dnh4))
+    boot_sample$dno3 <- jitter(boot_sample$dno3, amount = 0.1*sd(boot_sample$dno3))
+    boot_sample$dpo4 <- jitter(boot_sample$dpo4, amount = 0.1*sd(boot_sample$dpo4))
 
     result <- regression_wrapper(
       regression_data = boot_sample,
-      regression_variable = "dm",
+      regression_variable = parameter_of_choice,
       # par = reference$par,
       par = c(0.5, 10., 0.1),
       lower = lower_limits,
@@ -612,11 +795,11 @@ Plots:
 ```{r plot-all-parameters}
 silence <- suppressWarnings
 print(plot_param("threshold", limit_x = 32) |> silence())
-print(plot_param( "threshold001", limit_x =  50) |> silence())
-print(plot_param( "threshold002", limit_x = 100) |> silence())
-print(plot_param( "threshold003", limit_x = 100) |> silence())
-print(plot_param( "threshold005", limit_x = 100) |> silence())
-print(plot_param( "threshold010", limit_x = 250) |> silence())
+print(plot_param("threshold001") |> silence())
+print(plot_param("threshold002") |> silence())
+print(plot_param("threshold003") |> silence())
+print(plot_param("threshold005") |> silence())
+print(plot_param("threshold010") |> silence())
 print(plot_param("threshold005p") |> silence())
 print(plot_param("threshold010p") |> silence())
 print(plot_param("threshold015p") |> silence())
