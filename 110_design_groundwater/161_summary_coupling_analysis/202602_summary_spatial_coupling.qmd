@@ -27,7 +27,7 @@ knitr:
 We steunen die hierin volgende analyse op de hele databasis van WATINA.
 We vormen hiervoor virtueel paren van bestaande grondwatermeetpunten, die een bepaalde (werkelijke) afstand hebben.
 
-![Dataset: aantal paren per afstand.](distance_paircount_histogram.pdf)
+![Dataset: aantal paren per afstand.](figures/distance_paircount_histogram.pdf)
 
 In totaal komen er *17730 paren aan bod* (na filteren / zie beneden) met een afstand tussen 1 meter en 1 kilometer (maar noot: elke installatie kan er meerdere keer voorkomen, dan met verschillende partners).
 We werken verder enkel met metingen (waterstanden of waterchemie) die op één en dezelfde dag gebeurden (quasi-tegelijkertijd).
@@ -62,11 +62,12 @@ Andererzijds betekend het wel ook dat we afstandsregels voor het hergebruik van 
 
 Ter benadering van de vraag na een kritische afstand waarbij een bepaalde verschil in een doelvariabele bereikt wordt gebruiken we [**variogrammen**](https://en.wikipedia.org/wiki/Variogram) [@Matheron1962, @Cressie1993].
 Deze zijn een geëtableerde tool om de samenhang van afstand en verschil in kaart te brengen [@moraga2023], vaak in voorbereiding van volgende analysestappen (bv. interpolatie via *kriging*).
-De verschil wordt middels een regressie met een Matérn-functie in relatie tot de afstand gezet.
+De paarwijze verschil in een meetwaarde wordt middels een regressie met een Matérn-functie in relatie tot de afstand gezet.
 Hiervoor is het nodig om de observaties in "bins" (bakjes) samen te vatten ("binning").
 Technische details over de gebruikte techniek en analysekeuzes hebben wij [in een tutorial samengevat](https://tutorials.inbo.be/tutorials/spatial_variograms/).
-Om de grote variatie tussen de "bins" statistisch te kunnen vatten zijn er twee specifieke afwijkingen toegepast, die een berekening van Matérn-regressies mogelijk maken. 
-(i) Als afstandsmaat gebruiken wij de absolute verschil ipv. een "semivariance", de laatste omvat een quadratische omvorming die verschillen in onze data niet evenmatig afdekt; (ii) gebruiken wij dynamische "bin"-breedte om de bins evenmatig te vullen, wat voorkomt dat er enkele uitschieters met weinig leden de curve vertekenen (variatie door variatie in bin sample size).
+Om de grote variatie tussen de "bins" statistisch te kunnen vatten zijn er twee specifieke methodische aanpassingen toegepast, die een berekening van Matérn-regressies mogelijk maken. 
+(i) Als afstandsmaat gebruiken wij de absolute verschil ipv. een "semivariance", de laatste omvat een quadratische omvorming die verschillen in onze data niet evenmatig afdekt. 
+(ii) Wij gebruiken dynamische "bin"-breedte om de bins evenmatig te vullen, wat voorkomt dat er enkele uitschieters met weinig leden de curve vertekenen (variatie elemineren die niet van de verschilwaardes afkomstig is maar veroorzaakt door variatie in bin sample size).
 
 Voor de rest is dit de toepassing van een standaard-methode die geschikt is voor de bewerking van onze onderzoeksvraag.
 
@@ -113,7 +114,7 @@ Een relevante factor, naast de bodemklasse, is de referentiewaarde van de waters
 Beschikbare referenties zijn gedefinieerd door de [Tweede Algemene Waterpassing](https://nl.wikipedia.org/wiki/Tweede_Algemene_Waterpassing) (*mTAW*, een populatiebrede referentiesysteem) en het maaiveld (*mMaaiveld*, een lokale referentie).
 Zowel *mTAW*, als ook *mMaaiveld* zijn relevant voor de interpretatie van de variogrammen.
 
-![Difference between mTAW and mMaaiveld](obswell_scheme_groundwater_level_reference.pdf)
+![Difference between mTAW and mMaaiveld](figures/obswell_scheme_groundwater_level_reference.pdf)
 
 
 Hoewel waterstanden niet de eigenlijke doelvariabelen zijn, is toch voor logische reden aan te nemen dat de ruimtelijke variatie in waterstanden een goede benadering van waterchemie zijn. 
@@ -123,13 +124,23 @@ Deze faktoren werken evenwel op de waterchemie; uiteindelijk is het lokaal besch
 Inzover staan de analyses op waterstanden voor een deel in als proxy ("vervanger") van de waterchemie: we zien consistente resultaten waar voldoende data beschikbar is, en kunnen andererzijds aanvullen waar een gebrek aan informatie over waterchemie de besluitvorming beperkt.
 
 
+## TODO Bootstrapping
+
+Om de onzekerheid van de Matérn-regressie te bepalen, gebruiken we de "bootstrapping"-methode.
+<https://www.modernstatisticswithr.com/modchapter.html#a-general-approach>
+
+65536 herhalingen
+toevallig trekken (met herhaling) van observaties uit de dataset
+steekproefgrootte van toevalstrekking komt overeen met echte dataset
+
+
 # Resultaten
 
-## Waterstanden
+## Waterstanden - tov. Maaiveld
 
 De volgende afbeelding toont de Matérn-regressie van gemiddelde verschillen in waterstanden (mMaaiveld) op verschillende bodemklassen (donkerbruin: zwaar; geel: lichte bodem; groen: venen). 
 
-![Matérn-regressie van waterstandsverschillen per bodemklasse.](output_variograms_mMaaiveld.pdf)
+![Matérn-regressie van waterstandsverschillen per bodemklasse.](figures/output_variograms_mMaaiveld.pdf)
 
 De horizontale as representeerd de toenemende afstand tussen paren, terwijl op de vertikale as het lokale verschil in waterstand (`mMaaiveld`) aangeduidt is.
 
@@ -153,9 +164,19 @@ Verder berekenen de variogrammen een basis-variabiliteit ("nugget") van meer dan
 De curve voor venen is een uitzondering: er is geen duidelijke stijging te registreren en de Matérn-functie is geen geschikte fit voor de data.
 
 
+TODO bootstrap
+![Bootstrap van de grenswaarde: afstand waarop 0.01m waterstandsvershil overschreden worden.](figures/bootstrap_dm_threshold001.pdf)
+
+![Bootstrap van de grenswaarde: afstand waarop 0.05m waterstandsvershil overschreden worden.](figures/bootstrap_dm_threshold005.pdf)
+
+![Bootstrap van de grenswaarde: afstand waarop 0.10m waterstandsvershil overschreden worden.](figures/bootstrap_dm_threshold010.pdf)
+
+
+## Waterstanden - TAW
+
 Dezelfde analyse met de andere referentie-coördinatensysteem (mTAW) toont duidelijke afwijkingen.
 
-![Matérn-regressie van waterstandsverschillen mTAW per bodemklasse.](output_variograms_mTAW.pdf)
+![Matérn-regressie van waterstandsverschillen mTAW per bodemklasse.](figures/output_variograms_mTAW.pdf)
 
 
 | grenswaarde  | 1 cm | 2 cm | 3 cm | 5 cm | 10 cm |
@@ -177,6 +198,12 @@ Het fitten van de punten op lange afstand gaat daarom ten kosten van de weinige 
 Per gevolg zijn zijn de grenswaardes over het algemeen groter, maar dit effect is niet veroorzaakt door echte correlatie van dichtbije waterstandsveranderingen.
 
 
+![Bootstrap van de grenswaarde: afstand waarop 0.01m waterstandsvershil overschreden worden.](figures/bootstrap_dw_threshold001.pdf)
+
+![Bootstrap van de grenswaarde: afstand waarop 0.05m waterstandsvershil overschreden worden.](figures/bootstrap_dw_threshold005.pdf)
+
+![Bootstrap van de grenswaarde: afstand waarop 0.10m waterstandsvershil overschreden worden.](figures/bootstrap_dw_threshold010.pdf)
+
 
 ## Waterchemie
 
@@ -187,7 +214,7 @@ Hieronder tonen wij de regressieparameter `sigma`, met de herinnering dat deze d
 
 
 
-![Matérn-regressie van log-concentratie-verschillen NH4 per bodemklasse.](output_variograms_nh4.pdf)
+![Matérn-regressie van log-concentratie-verschillen NH4 per bodemklasse.](figures/output_variograms_nh4.pdf)
 
 | grenswaarde |   5% |  10% |  15% |
 |-------------|-----:|-----:|-----:|
@@ -196,7 +223,7 @@ Hieronder tonen wij de regressieparameter `sigma`, met de herinnering dat deze d
 | peat        |  5.9 |  9.3 | 12.4 |
 
 
-![Matérn-regressie van log-concentratie-verschillen NO3 per bodemklasse.](output_variograms_no3.pdf)
+![Matérn-regressie van log-concentratie-verschillen NO3 per bodemklasse.](figures/output_variograms_no3.pdf)
 
 | grenswaarde |  5% |  10% |  15% |
 |-------------|----:|-----:|-----:|
