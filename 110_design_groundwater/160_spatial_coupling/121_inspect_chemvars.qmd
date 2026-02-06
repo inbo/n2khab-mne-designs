@@ -45,6 +45,7 @@ if (getOption("browser") == "") options(browser = "librewolf")
 
 # user-set parameters
 cluster_dist <- 3400 # m # parameter for clustering
+data_export_file <- glue::glue("data/waterlevel_data_cl{cluster_dist}.parquet")
 allchem_export_file <- glue::glue("data/waterchemistry_alldata.parquet")
 
 ```
@@ -61,7 +62,14 @@ chem_data <- read_parquet(allchem_export_file) %>%
     year = floor(date/10000),
     yearmonth = floor(date/100)
   ) %>%
-  arrange(date)
+  arrange(date) %>%
+  left_join(
+    read_parquet(data_export_file) %>%
+      select(pp_idx, soilclass),
+    by = join_by(pp_idx)
+  )
+
+
 
 ```
 
@@ -211,7 +219,7 @@ find_concentration_peaks <- function(log_concentration, n_peaks = 10, label = ""
 one_var <- \(var) chem_data %>%
   # filter(is.na(loq) | !loq) %>% # optionally filter those under detection limit
   filter(chem == var) %>%
-  select(pp_idx, year, yearmonth, date, loq, meq, mmol) %>%
+  select(pp_idx, year, yearmonth, date, loq, meq, mmol, soilclass) %>%
   filter(is.finite(meq), is.finite(mmol))
 
 nonna <- \(x) x[!is.na(x)]
@@ -407,5 +415,53 @@ ggsave("figures/rates_po4.png", g, width = 16, height = 9, dpi = 300)
 print(g)
 ```
 
+
+
+
+# PO₄ - heavy soil
+
+Checking PO4 rates of "heavy" soil only: hypothesis that there might be relevant variation in detectionlimit rates across soilclasses.
+
+```{r}
+po4_peaks
+
+result_rates <- data_po4 %>%
+  filter(soilclass == "heavy") %>% 
+  mutate_at(vars(year, yearmonth), as.character) %>% 
+  filter(year > 1982) %>% 
+  # filter(is.na(loq) | !loq) %>% 
+  group_by(year) %>% 
+  group_modify(~ {
+    .x %>%
+      summarize(
+        r_latest = rate_between(meq, 0.0009, 0.0010),
+        r_peak1 = rate_between(meq, 0.0010, 0.00110),
+        r_peak2 = rate_between(meq, 0.00060, 0.00069)
+      )
+    }
+  ) %>%
+  arrange(year)
+
+result_rates <- bind_rows(
+  result_rates,
+  result_rates[nrow(result_rates),]
+)
+
+g <- result_rates %>% 
+  ggplot2::ggplot(aes(x = as.integer(year))) +
+  ggplot2::geom_step(aes(y = r_latest), color = "darkred") +
+  ggplot2::annotate("text", x = 2020, y = 0.9, label = "N[c == 0.0014]/N", color = "darkred") +
+  ggplot2::geom_step(aes(y = r_peak1), color = "skyblue") +
+  ggplot2::annotate("text", x = 2012, y = 0.78, label = "N[c == 0.0010]/N", color = "skyblue") +
+  ggplot2::geom_step(aes(y = r_peak2), color = "orange") +
+  ggplot2::annotate("text", x = 1998, y = 0.45, label = "N[c == 0.00065]/N", color = "orange") +
+  ggplot2::geom_vline(aes(xintercept = 1990.5)) +
+  ggplot2::geom_vline(aes(xintercept = 2008.5)) +
+  ggplot2::geom_vline(aes(xintercept = 2015.5)) +
+  ggplot2::labs(x = "year/month", y = "observation probability of a given PO₄ concentration")
+
+ggsave("figures/rates_po4_heavy.png", g, width = 16, height = 9, dpi = 300)
+print(g)
+```
 
 
