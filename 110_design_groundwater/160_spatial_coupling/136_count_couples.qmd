@@ -1,0 +1,337 @@
+---
+title: "Count Couples"
+bibliography: references_csl.json
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    code-fold: true
+    embed-resources: true
+knitr:
+  opts_chunk:
+    echo: true
+---
+
+
+```{r setup}
+#| include: false
+void <- suppressPackageStartupMessages
+library("dplyr")     |> void() # our favorite data wrangling toolbox
+library("tidyr")     |> void() # some pivoting of tables
+library("arrow")     |> void() # writing parquet files
+library("ggplot2")   |> void() # a visualization toolbox
+library("sf")        |> void() # "simple" features
+library("mapview")   |> void() # see sites on a map
+
+local_cache_folder = "./gegevens"
+
+
+if (getOption("browser") == "") options(browser = "librewolf") # req for mapview
+
+```
+
+# Count Peilbuis Couples
+
+```{r read-peilpuntjes}
+
+pp_meta_data_raw <- arrow::read_parquet(
+    file.path(local_cache_folder, "waterlevel_data_cl3400.parquet")
+  )
+
+pp_meta_data <- pp_meta_data_raw %>%
+  select(
+    pp_idx,
+    x,
+    y,
+    ref_mv,
+    ref_taw,
+    pblen,
+    flength,
+    fdepth,
+    pp_vld,
+    pp_code,
+    mp_idx,
+    mp_vld,
+    region,
+    cluster,
+    soilclass,
+    elevation_dhmv,
+    slope_r2.5m,
+    wata_min_dist,
+    wata_dist_class
+  )
+
+
+pp_meta_data %>% sample_n(5) %>% t() %>% knitr::kable()
+
+```
+
+# Waterlevels
+
+```{r waterlevel-data}
+
+diffdata_levels_raw <- arrow::read_parquet(
+    file.path(local_cache_folder, "waterlevel_diffdata_cl3400.parquet")
+  ) 
+
+diffdata_levels_count <- diffdata_levels_raw %>% 
+  mutate(nonnan_levels = as.integer(!is.na(dw))) %>% 
+  summarize(
+    n_levels = sum(nonnan_levels),
+    levels_date_min = min(date),
+    levels_date_max = max(date),
+    .by = c(pp_idx1, pp_idx2)
+  ) %>%
+  mutate(
+    has_levels = TRUE
+  )
+
+diffdata_levels_count %>% sample_n(4) %>% t() %>% knitr::kable()
+
+```
+
+# Chemistry
+
+
+```{r reload-data}
+
+diffdata_chem_raw <- arrow::read_parquet(
+    file.path(
+      local_cache_folder,
+      "waterchemistry_diffdata_cl3400.parquet"
+    )
+  ) 
+
+diffdata_chem_count <- diffdata_chem_raw %>% 
+  filter(date1==date2) %>% 
+  mutate(
+    nonnan_nh4 = as.integer(!is.na(dnh4)),
+    nonnan_no3 = as.integer(!is.na(dno3)),
+    nonnan_po4 = as.integer(!is.na(dpo4))
+  )  %>%
+  summarize(
+    n_nh4 = sum(nonnan_nh4),
+    n_no3 = sum(nonnan_nh4),
+    n_po4 = sum(nonnan_nh4),
+    chem_date_min = min(date1),
+    chem_date_max = max(date1),
+    .by = c(pp_idx1, pp_idx2)
+  ) %>%
+  mutate(has_chemistry = TRUE)
+
+diffdata_chem_count %>% sample_n(4) %>% t() %>% knitr::kable()
+
+```
+
+
+# Merge Levels and Chemistry
+
+(numbers 1 and 2 of the pairs can be swapped.)
+
+
+```{r levels-join-chemistry}
+
+diffdata_count <- bind_rows(
+  diffdata_levels_count %>%
+    inner_join(
+      diffdata_chem_count,
+      by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2),
+      relationship = "one-to-one"
+    ),
+  diffdata_levels_count %>%
+    inner_join(
+      diffdata_chem_count,
+      by = join_by(pp_idx1 == pp_idx2, pp_idx2 == pp_idx1),
+      relationship = "one-to-one"
+    )
+)
+
+diffdata_count <- bind_rows(
+  diffdata_count,
+  diffdata_levels_count %>%
+    anti_join(
+      diffdata_count,
+      by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2)
+    ) %>%
+    anti_join(
+      diffdata_count,
+      by = join_by(pp_idx1 == pp_idx2, pp_idx2 == pp_idx1)
+    )
+  )  
+
+diffdata_count <- bind_rows(
+  diffdata_count,
+  diffdata_chem_count %>%
+    anti_join(
+      diffdata_count,
+      by = join_by(pp_idx1 == pp_idx1, pp_idx2 == pp_idx2)
+    ) %>%
+    anti_join(
+      diffdata_count,
+      by = join_by(pp_idx1 == pp_idx2, pp_idx2 == pp_idx1)
+    )
+  )  
+
+
+diffdata_count <- diffdata_count %>% 
+  mutate(
+    n_levels = replace_na(n_levels, 0),
+    n_nh4 = replace_na(n_levels, 0),
+    n_no3 = replace_na(n_levels, 0),
+    n_po4 = replace_na(n_levels, 0),
+    has_chemistry = replace_na(has_chemistry, FALSE),
+    has_levels = replace_na(has_levels, FALSE)
+  )
+
+diffdata_count %>% sample_n(4) %>% t() %>% knitr::kable()
+
+diffdata_count %>%
+  count(has_chemistry, has_levels)
+
+```
+
+
+# Join Metadata
+
+
+```{r join-metadata}
+
+diff_meta <- diffdata_count %>%
+  left_join(
+    pp_meta_data,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("", "1")
+  ) %>%
+  left_join(
+    pp_meta_data,
+    by = join_by(pp_idx2 == pp_idx),
+    relationship = "many-to-one",
+    suffix = c("1", "2")
+  ) %>%
+  mutate(
+    ds = sqrt((x2-x1)^2 + (y2-y1)^2),
+    dh = elevation_dhmv2-elevation_dhmv1,
+    dz = fdepth2-fdepth1,
+    dwadi = wata_min_dist2-wata_min_dist1,
+    dslope = slope_r2.5m2-slope_r2.5m1,
+    short_filters = (flength1 <= 1.0) & (flength2 <= 1.0),
+    equiprofund = abs(dz) <= 1.0
+  ) %>% 
+  filter_at(vars(x1, y1, x2, y2), all_vars(!is.na(.))) %>%
+  filter(soilclass1 == soilclass2) %>%
+  rename(soilclass = soilclass1) %>%
+  select(-soilclass2)
+
+  
+
+diff_meta %>% sample_n(4) %>% t() %>% knitr::kable()
+
+
+```
+
+# Ecoregion
+
+```{r join-ecoregion}
+
+ecoregions <- n2khab::read_ecoregions() %>% 
+  select(region_name) %>% 
+  rename(ecoregion = region_name) %>% 
+  mutate(ecoregion = stringr::str_replace(ecoregion, "Ecoregio van de ", ""))
+
+# n2khab::read_ecoregions() %>% sf::st_drop_geometry() %>% distinct(region_name)
+ecoregion_lookup <- bind_rows(
+  diff_meta %>% select(pp_idx1, x1, y1) %>% rename(pp_idx = pp_idx1, x = x1, y = y1),
+  diff_meta %>% select(pp_idx2, x2, y2) %>% rename(pp_idx = pp_idx2, x = x2, y = y2)
+  ) %>%
+  distinct() %>% 
+  sf::st_as_sf(coords = c("x", "y"), crs = 31370) %>% 
+  sf::st_join(ecoregions)
+
+
+diff_meta <- diff_meta %>%
+  left_join(
+    ecoregion_lookup,
+    by = join_by(pp_idx1 == pp_idx),
+    relationship = "many-to-one"
+  )
+
+```
+
+
+# Filtering
+
+
+```{r analysis-filtering}
+min_pair_distance <- 1 # m
+distance_extent <- 512 # m
+
+diff_meta <- diff_meta %>%
+  mutate(
+    is_included = 
+      (ds >= min_pair_distance) &
+      (ds <= distance_extent) &
+      short_filters &
+      equiprofund &
+      (soilclass != "unknown"),
+    id = seq_len(nrow(diff_meta))
+  )
+
+
+  
+diff_meta %>%
+  count(soilclass, is_included, has_levels, has_chemistry) %>%
+  filter(soilclass != "unknown") %>% 
+  tidyr::pivot_wider(names_from = soilclass, values_from = n) %>%
+  mutate(total = heavy + light + peat) %>%
+  knitr::kable()
+```
+
+
+# Export
+
+```{r export-data}
+
+write.csv2(
+  diff_meta,
+  file = file.path(local_cache_folder, "observation_counting.csv")
+)
+
+```
+
+
+# Visualization
+
+<https://stackoverflow.com/a/56549370>
+
+```{r visualize_data}
+
+make_line <- function(x1, y1, x2, y2) {
+  sf::st_linestring(matrix(c(x1, x2, y1, y2), 2, 2))
+}
+
+diff_lines <- diff_meta %>%
+  select(x1, y1, x2, y2) %>% 
+  purrr::pmap(make_line) %>% 
+  sf::st_as_sfc(crs = 31370) %>% 
+  {tibble(
+    id = diff_meta$id,
+    soilclass = diff_meta$soilclass,
+    is_included = diff_meta$is_included,
+    geometry = .
+   )
+  } %>% 
+  sf::st_sf() 
+
+```
+
+
+```{r}
+#| eval: false
+
+mapview::mapview(
+  diff_lines %>% filter(is_included),
+  zcol = "soilclass"
+)
+
+```
