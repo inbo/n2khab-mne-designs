@@ -401,8 +401,8 @@ sample_definition %>%
 ### Steekproefsimulatie
 
 ```{r}
-npops <- 15
-nsamples_per_pop <- 15
+npops <- 5
+nsamples_per_pop <- 5
 ```
 
 Voor elk scenario worden de eerste `r npops` gesimuleerde populaties gebruikt.
@@ -494,6 +494,7 @@ statusdata <-
     }}
 status_res_per_type <-
     statusdata %>%
+    filter(type != "91F0") %>%  # awaiting update of survey package!
     compute_status_persample("type")
 status_res_per_typegroup <-
     compute_status_persample(level = "typegroup",
@@ -701,7 +702,7 @@ trend_estimateslocal <-
     nest(dc, data = -c(sample_id, type)) %>%
   mutate(location_estim =
            pmap(list(data, sample_id, type), function(df, ss, tp) {
-             # log_socket("%s: Fitting model for %s in sample %s in population %s in scenario %s...", respvar, tp, ss, pop, scen, .socket = logsocket)
+             log_socket("%s: Fitting model for %s in sample %s in population %s in scenario %s...", respvar, tp, ss, pop, scen, .socket = logsocket)
              if (n_distinct(df$location) == 1L) {
                fm <- as.formula(paste0("logresp ~ ", timevar))
              } else fm <- as.formula(paste0("logresp ~ ", timevar, ":location"))
@@ -782,8 +783,9 @@ gc()
 ```
 
 ```{r}
-trend_res_per_type <- 
-  trend_estimateslocal %>% 
+trend_res_per_type <-
+  trend_estimateslocal %>%
+  filter(type != "91F0") %>%  # awaiting update of survey package!
   compute_status_persample("type",
                            targetvar = "beta_loc",
                            extra_se_var = "se_loc")
