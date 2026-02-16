@@ -1,0 +1,331 @@
+# Steekproefsimulatie en poweranalyse volgens scenario's {#app:simsamples}
+
+## Aanpak
+
+### Basisset van gesimuleerde populaties zonder lange-termijntrend
+
+We simuleren voor elke responsvariabele een **basisset** van populaties op basis van het overeenkomstige model dat specifiek met dit doel werd gefit.
+Alle gesimuleerde populaties in de basisset zijn gegenereerd op basis van dezelfde modelparameterwaarden (posterior mean van fixed en hyperparameters).
+Omdat de gemodelleerde distributie van random effecten en/of van de repons meer extreme waarden toelaat dan wat realistisch is, trunkeren we deze distributies alvorens er waarden uit te genereren.
+
+Elke gesimuleerde populatie is uniek in zijn trekking van random effecten en residuals.
+De ruimtelijke populatiegrootte wordt voor elk type gedimensioneerd in overeenstemming met de beschikbare schatting hiervan voor de doelpopulatie (zie paragraaf \@ref(popsize)).
+Wel limiteren we de populatiegrootte van een type tot een grootte van 5000 eenheden, om de rekentijd binnen de perken te houden.
+We gaan er van uit dat de steekproefgroottes steeds veel kleiner zijn.
+
+Het nodige aantal gesimuleerde jaren om een trend over een _verschil_ van 12 jaar te berekenen, hangt af van de lengte van één cyclus van de revisit design (panel design)[^revisit] in een scenario (zie \@ref(scen)).
+We werken in scenario's voorlopig alleen met een _serieel alternerende_ revisit design, i.e. een locatie wordt met een vaste _terugkeerperiode_ bemeten én de locaties worden verdeeld over de verschillende jaren van de bezoekcyclus.
+We gaan uit van een terugkeerperiode van maximaal 6 jaar in het geval van een spatiotemporele design (waar ook in de tijd de primaire milieuvariabele slechts steekproefgewijs wordt bepaald), en per definitie 1 jaar in het geval van een spatiale design.
+Het nodige aantal gesimuleerde jaren is $12 + terugkeerperiode$, dus 13 in het geval van een spatiale design en tot 18 bij een spatiotemporele design.
+
+Omdat de gesimuleerde populaties moeten dienen voor scenario's met verschillende lange-termijntrend, laten we de lange-termijntrend weg uit het model.
+Deze wordt in de scenario's vervangen door een gekende lineaire of exponentiële trend.
+
+Deze basisset dient meerdere doelen:
+
+- om design-based steekproeftrekking en inferentie voor specifieke scenario's te simuleren.
+Het gaat dan om herhaalde trekkingen uit een vaste doelpopulatie met bepaalde kenmerken;
+- om de invloed van nieuwe spatiale en temporele random effecten (uit dezelfde distributie) op de voorgaande poweranalyse te kunnen vaststellen.
+
+Merk op dat in het model waar nodig reeds bepaalde types gelumpt werden in 'typeclusters' (in het model voorgesteld als `type`) om voldoende data te hebben per typecluster.
+Een typecluster lumpt niet méér types dan nodig voor de modellering; het gaat dus niet om de typegroepen.
+Types met voldoende data werden dus apart in het model onderscheiden.
+Ook types van de doelpopulatie waarvoor geen data voorhanden waren, werden aan een typecluster (met data) toegewezen.
+
+In de gesimuleerde populaties worden voor elk origineel type van de doelpopulatie observaties gegenereerd op basis van de toewijzing aan typeclusters.
+
+Voor de toestandsinferentie (design-based spatiotemporeel gemiddelde) hebben we slechts een zesjaarperiode nodig.
+Voor de trendinferentie (richtingscoëfficiënt) over een tijdsverschil van 12 jaar benodigen we een periode van 12 jaar + de terugkeerperiode; zie hoger.
+Voor toestandsinferentie kunnen we dus een subset van zes opeenvolgende jaren daarvan gebruiken.
+
+De inputdata om de populaties te simuleren, zien er uit als volgt:
+
+- een hypothetische lijst van locaties (`location`).
+We beschouwen dit voor de simulaties niet spatiaal expliciet;
+- per locatie komt één bepaald type voor (`type`); per type zijn meerdere locaties voorzien;
+- in zoverre het model andere fixed effecten voorziet, worden de waarden ervan per type gespreid overeenkomstig de spreiding in de doelpopulatie;
+- de tijdsstappen waarvoor we een waarde wensen te simuleren in functie van scenario's.
+De tijdsstappen bestrijken een tijdsverschil van 12 jaar -- we zullen immers kijken naar de trend over 12 jaar.
+
+
+### Verhoudingen tussen het aantal locaties per type
+
+Tussen types variëren we enkel in ruimtelijke steekproefgrootte, en niet in de frequentie (temporele steekproefgrootte), zoals voorzien in de ruimtelijke en de temporele design.
+De temporele design is een systematische sampling.
+De ruimtelijke steekproefgrootte van een type is het totaal aantal getrokken locaties van dat type die gedurende één cyclus minstens één keer bemeten worden.
+Rekening houdend met de revisit design (panel design)[^revisit] van het type is dit dus de som, over alle panels, van het aantal locaties per panel[^panel].
+
+[^panel]: Een verzameling van alle locaties die in dezelfde tijdsvensters en volgens hetzelfde terugkeerpatroon worden bemeten, is een zg. _panel_.
+Typisch wordt een revisit design opgebouwd uit meerdere panels, die samen tot een goede verdeling in tijd en ruimte leiden.
+
+De toewijzing van een ruimtelijke steekproefgrootte aan een type bij oneindige populaties (dus voorafgaand aan de eindige-populatiecorrectie) gebeurt proportioneel met de overeenkomstige _spatiale_ variantiecomponent van de typeschatter (van een doelparameter, voor oneindige populaties).
+We voeren daarbij een vereenvoudiging door van de geschatte spatiale variantie per type, omdat deze zeer benaderend moet worden gezien.
+Er is immers een belangrijke onzekerheid op de hyperparameters van de simulatiemodellen.
+Over alle types die met eenzelfde simulatiemodel worden benaderd, gebruiken we maximum 6 verschillende waarden, om schijnbare (kleinere) variantieverschillen tussen types niet te laten doorwerken in de verdeling van het aantal locaties over de types.
+Hiertoe worden types geclusterd (met complete linkage) op basis van de aanvankelijk geschatte spatiale varianties, en per cluster wordt de gemiddelde waarde van de typespecifieke spatiale varianties gebruikt.
+
+Deze benadering kan zowel voor de toestands- als de trendschatter gebeuren, maar we baseren ons op de toestandsschatter vermits deze de belangrijkste is.
+
+Om de spatiale variantie per type stabiel te schatten (voor toestand), maken we een variant van de basisset, met per populatie 500 locaties en 6 tijdsstappen voor elk type (pure panel) en zonder artificieel toegevoegde trend.
+
+
+### Aandachtspunt scenario's: ruimtelijke steekproefgrootte
+
+_Elk scenario_ gaat uit van een keuze van de gemiddelde ruimtelijke steekproefgrootte per type, voor oneindige populaties.
+
+Deze wordt eerst herverdeeld over de types volgens de verhouding van de spatiale varianties, waarbij we tevens een ondergrens hanteren (om typespecifieke steekproefgroottes te vermijden van < 20% van de gemiddelde steekproefgrootte).
+Bij de herverdeling wordt rekening gehouden met het aantal andere types in dezelfde typegroep: hoe meer types in eenzelfde groep zitten, hoe minder locaties nodig zijn per type opdat de _typegroepschatter_ een gelijkaardige variantie heeft als de andere typegroepen.
+
+Daarna worden de ruimtelijke steekproefgroottes (per type) naar beneden bijgesteld op basis van de ruimtelijke populatiegrootte van elk type (finite population correction).
+De steekproefgrootte voor een eindige populatie hangt immers af van zowel de populatiegrootte als van de steekproefgrootte voor een oneindige populatie (zie paragraaf \@ref(popsize)).
+
+
+### Scenario's {#scen}
+
+Scenario's voor steekproeftrekking kunnen zich onderscheiden in:
+
+- het aantal getrokken locaties (voor alle types samen) uit een oneindige populatie;
+- de revisit design[^revisit].
+We werken voor spatiotemporele designs (waar ook in de tijd de primaire milieuvariabele slechts steekproefgewijs wordt bepaald) steeds met een serieel alternerend bezoekpatroon, i.e. een locatie wordt met een vaste _terugkeerperiode_ bemeten én de locaties worden verdeeld over de verschillende jaren van de bezoekcyclus;
+- de grootte van een aan de populatie (post-hoc) toegevoegde lineaire of exponentiële trend.
+
+[^revisit]: De revisit design (s.s.) of panel design betreft de verdeling van locatiebezoeken over de tijd.
+Dit is dus spatiotemporeel: de revisit design neemt de spatiale en temporele design in acht.
+
+#### Definitie van de scenariotrend
+
+De trend kan worden gezien als een constante jaarlijkse verandering van de waarde op elke locatie (positief: toename, negatief: afname), hetzij op de absolute schaal (lineaire trend), hetzij op de logaritmische schaal (exponentiële trend: relatieve verandering).
+
+- Een absolute verandering in $y$ (t.o.v. $y_0$) van $\Delta y$ na $\Delta t$ jaren (resulterend in $y_0 + \Delta y$) komt overeen met een jaarlijkse verandering van $\beta = \frac{\Delta y}{\Delta t}$ in de functie $y = \alpha + \beta \cdot t$.
+- Een relatieve verandering in $y$ (t.o.v. $y_0$) van fractie $f$ na $\Delta t$ jaren (resulterend in $y_0 \cdot (1 + f)$) komt overeen met een grondtal $g = (1 + f)^{1 / \Delta t}$ voor de exponentiële functie $y = \alpha \cdot g^t$,
+of, uitgedrukt op de logaritmische schaal, met een richtingscoëfficiënt $log(g) = \frac{log(1 + f)}{\Delta t}$ in de functie $log(y) = log(\alpha) + log(g) \cdot t$.
+
+Concreet _definiëren_ we een scenariotrend op basis van het resultaat dat we _op een locatie_ artificieel zullen bereiken na $\Delta t$ jaren: hetzij via het geïntroduceerde absolute verschil $\Delta y$ na $\Delta t$ jaren, ofwel via de multiplicatiefactor $(1 + f)$ na $\Delta t$ jaren (bij een relatief verschil).
+
+Om de scenariotrend toe te voegen aan de gesimuleerde respons zonder trend, wordt het locatiespecifieke deel van de respons (verwachte waarde + locatiespecifieke ruisterm) gesubstitueerd in $\alpha$ en vervangen door de boven gestelde uitkomst $y$.
+Andere random componenten van de gesimuleerde respons, niet opgenomen in bovenstaande formules, blijven onveranderd behouden.
+Het opnemen van de locatiespecifieke ruisterm in $\alpha$ maakt in het bijzonder uit voor een exponentiële trend.
+
+In de praktijk hebben we te maken met uiteenlopende modelvormen, afhankelijk van de responsvariabele, onder meer joint models.
+Omwille van deze complexiteit wordt het locatiespecifieke deel van de respons in de praktijk niet (meer) berekend via de deelcomponenten in het model, maar beschouwd als de mediaan van de gesimuleerde responswaarden per locatie.
+De mediaan per locatie staat immers dichter bij de inverse linktransformatie van het locatiegemiddelde in de schaal van de lineaire predictor (~ locatiespecifiek deel van de respons), ongeacht de toegepaste linkfunctie (paragraaf \@ref(modelvorm)).
+In het geval van een loglink voorkomt dit het conflict met negatieve responswaarden.
+
+Merk op dat een toenemende exponentiële trend ($f > 0$) bij milieuvariabelen met negatieve waarden resulteert in steeds sterker dalende waarden.
+
+
+#### Evaluatie van de scenario's
+
+In een scenario-evaluatie (poweranalyse s.l.) zijn we geïnteresseerd in de variatie van een kwaliteitsmaat voor toestand en trend over een reeks gesimuleerde steekproeven heen, zoals de foutenmarge.
+We bekomen dit door de inferentie te doen voor toestand en trend, voor een set gesimuleerde steekproeven per scenario.
+Bovendien bekijken we de variatie daarop, die het gevolg is van de onzekerheid over de doelpopulatie.
+Dat element zal niet tot uiting komen in de schatters tijdens de monitoring (waar we enkel de gerealiseerde doelpopulatie beschouwen), maar we wensen er wel informatie over in de scenario-evaluatie.
+Op die basis, en op basis van de geassocieerde kost, is het mogelijk om een gefundeerde keuze te maken voor één scenario.
+
+#### Aandachtspunten bij de inferentie (in scenario-evaluatie en monitoring)
+
+De inferenties voor toestand en trend houden rekening met de stratificatie volgens type en met de correctie voor eindige populaties.
+Specifiek wordt er in het geval van toestandsinferentie in een spatiotemporele design, waar ook in de tijd de primaire milieuvariabele slechts steekproefgewijs wordt bepaald, bijkomend temporeel gestratificeerd.
+
+Afhankelijk van hoe de instelwaarden zijn uitgedrukt -- absoluut of relatief -- wordt een lineaire trend op de absolute ofwel de logaritmische schaal geanalyseerd.
+Daarbij wordt de **locatiespecifieke trend** geschat met een model.
+Dit model hanteert een locatiespecifiek random intercept en een _typespecifieke_ residuele foutdistributie.
+Er wordt hiervoor per gesimuleerde steekproef en per type een model gefit met als fixed term de interactie tussen tijd en locatie.
+
+De locatiespecifieke trendschattingen worden, met hun model-based standaardfout,  geaggregeerd tot een design-based spatiale inferentie.
+Dit gebeurt zoals hieronder beschreven.
+
+Op basis van de formule (uit de kanstheorie) voor de [totale verwachte waarde](https://en.wikipedia.org/wiki/Law_of_total_expectation):
+
+$$\mu_B \equiv E[B] = E_p[E_\xi[B | L]] \equiv E_p[\beta_L]$$
+
+leiden we de hybride design-model-based trendschatter af (toepassing van @de_gruijter_sampling_2006):
+
+$$\hat{\mu}_B = \hat{\mu}_{p,E_{\xi_0}[B | L]}$$
+
+Betekenis van symbolen:
+
+- $L$: de locatievariabele: fixed in het locatiegebonden model $\xi$, maar random in design $p$.
+- $B$: regressiecoëfficiënt van de temporele superpopulatie: een stochastische variabele met een distributie inherent aan model $\xi$.
+- $E[B]$, $\mu_B$: de verwachte waarde van de stochastische variabele $B$ (ook: 'gemiddelde regressiecoëfficiënt').
+- $\hat{\mu}_B$: de hybride design-model-based schatter van de gemiddelde regressiecoëfficiënt.
+- $E_\xi[B | L]$, $\beta_L$: de volgens een waarheidsgetrouw (juist)  model $\xi$ verwachte waarde van de locatiespecifieke regressiecoëfficiënt, $B | L$. Dit is een zg. conditionele verwachte waarde.
+- $E_p[...]$: verwachte waarde van $...$ voor de spatiale doelpopulatie, in overeenstemming met de spatiale design $p$.
+- $E_{\xi_0}[B | L] = \hat{\mu}_{\xi_0,B | L}$: modelschatting van $E_\xi[B | L] \equiv \beta_L$ op basis van een concreet gefit model $\xi_0$.
+- $\hat{\mu}_{p,E_{\xi_0}[B | L]}$: spatiaal gemiddelde van $E_{\xi_0}[B | L]$ in overeenstemming met de spatiale design $p$.
+
+De overeenkomstige gekwadrateerde standaardfout zullen we baseren op de formule (uit de kanstheorie) voor de [totale variantie](https://en.wikipedia.org/wiki/Law_of_total_variance) van $B$:
+
+$$\sigma^2_B \equiv Var[B] = E_p[Var_\xi[B | L]] + Var_p[E_\xi[B | L]]$$
+
+Betekenis van bijkomende symbolen:
+
+- $Var[B]$, $\sigma^2_B$: de variantie van de stochastische variabele $B$.
+- $Var_\xi[B | L]$: de variantie volgens een waarheidsgetrouw (juist) model $\xi$ van de locatiespecifieke regressiecoëfficiënt, $B | L$. Dit is een zg. conditionele variantie.
+- $Var_p[...]$: variantie van $...$ voor de spatiale doelpopulatie, in overeenstemming met de spatiale design $p$.
+
+De formule voor de totale variantie is ook wel gekend als 'Eve's Law', van de initialen 'EV VE' voor 'expectation of variance' en 'variance of expectation'.
+
+In de context van meetnetten wordt de formule voor de totale variantie ook elders toegepast, bv. in andere hybride design-model-based variantieschattingen [@binder_design-based_2003], in de variantieschatting van een two-stage sampling design [@sarndal_model_1992] en in variantieschatting bij multipele imputatie [@rubin_multiple_1996; @onkelinx_working_2017].
+
+Ook in de meetnetten natuurlijk milieu zijn we geïnteresseerd in de trend als 'proces', waarbij we de modelonzekerheid over dit proces mee willen betrekken in de onzekerheid van de schatter, zodat we niet alleen de spatiale variantie van de modelschattingen beschouwen.
+
+De hybride design-model-based schatter van de totale variantie van $B$ is dan:
+
+$$\hat{\sigma^2}_{B} = \hat{\mu}_{p,Var_{\xi_0}[B | L]} + \hat{\sigma^2}_{p,E_{\xi_0}[B | L]}$$
+
+Toegepast voor de gekwadrateerde standaardfout van $\hat{\mu}_B$:
+
+$$\hat{\sigma^2}_{\hat{\mu}_B} = \hat{\mu}_{p,Var_{\xi_0}[E_{\xi_0}[B | L] | L]} + \hat{\sigma^2}_{p,\hat{\mu}_{p,{E_{\xi_0}[B | L]}}} = \hat{\mu}_{p,Var_{\xi_0}[E_{\xi_0}[B | L] | L]} + \hat{\sigma^2}_{p,\hat{\mu}_B}$$
+
+Betekenis van bijkomende symbolen:
+
+- $\hat{\sigma^2_B}$: de hybride design-model-based schatter voor de totale variantie van $B$.
+- $\hat{\sigma^2}_{\hat{\mu}_B}$: de hybride design-model-based schatter voor de totale variantie van de _gemiddelde_ regressiecoëfficiënt (kwadraat van de standaardfout).
+- $Var_{\xi_0}[B | L] = \hat{\sigma^2}_{\xi_0,B | L}$: modelschatting van $Var_\xi[B | L]$ op basis van een concreet gefit model $\xi_0$.
+- $Var_{\xi_0}[E_{\xi_0}[B | L] | L]$: modelschatting van de locatiespecifieke gekwadrateerde standaardfout van $E_{\xi_0}[B | L] = \hat{\mu}_{\xi_0,B | L}$ op basis van een concreet gefit model $\xi_0$.
+- $\hat{\mu}_{p,Var_{\xi_0}[B | L]}$: spatiaal gemiddelde van $Var_{\xi_0}[B | L]$ in overeenstemming met de spatiale design $p$.
+- $\hat{\mu}_{p,Var_{\xi_0}[E_{\xi_0}[B | L] | L]}$: spatiaal gemiddelde van $Var_{\xi_0}[E_{\xi_0}[B | L] | L]$ in overeenstemming met de spatiale design $p$.
+- $\hat{\sigma^2}_{p,E_{\xi_0}[B | L]}$: spatiale variantie van $E_{\xi_0}[B | L]$ in overeenstemming met de spatiale design $p$.
+- $\hat{\sigma^2}_{p,\hat{\mu}_B} = \hat{\sigma^2}_{p,\hat{\mu}_{p,{E_{\xi_0}[B | L]}}}$: spatiale gekwadrateerde standaardfout van het spatiaal gemiddelde $\hat{\mu}_B = \hat{\mu}_{p,{E_{\xi_0}[B | L]}}$ in overeenstemming met de spatiale design $p$.
+
+Merk op dat de formules van de design-model-based schatters niet met de afwijking, en dus de vertekening, tussen het gefitte model $\xi_0$ en het waarheidsgetrouwe, onbekende model $\xi$ rekening kunnen houden.
+Er geldt dus de assumptie dat de gefitte modeltrend een juiste weerspiegeling is van de realiteit.
+In de monitoring zelf proberen we dit maximaal te benaderen via een gelijkmatige spreiding van data in de tijd, en door geen a priori vorm te veronderstellen van de trend (wat we in de scenario-evaluatie wel mogen doen, vermits we een gekende trendvorm simuleren).
+
+
+```{r}
+scheme_respvar <- 
+    read_schemes() %>% 
+    filter(str_detect(scheme, "GW_05\\.1_(terr|aq)|GW_03\\.3")) %>% 
+    select(scheme) %>% 
+    mutate(scheme_sel_label = str_replace_all(scheme, "_|\\.", "-"),
+           filepath_sub = c("gw33_", "gw51a_", "gw51t_"),
+           timevar = c("year_std", rep("hydroyear_std", 2)),
+           submodels = c(FALSE, FALSE, TRUE),
+           submodelpop = map2(scheme, submodels,
+                            ~ if (!.y) NULL else {
+                                read_scheme_types() %>% 
+                                filter(scheme == .x) %>% 
+                                    distinct(submodelpop = typegroup) %>% 
+                                    arrange(submodelpop)
+                            }),
+           respvar = list(c("no3", "nh4", "po4"),
+                          c("lg3_std", "hg3_std"),
+                          c("lg3_lcl", "hg3_lcl")),
+           respvar_label = map(respvar, ~str_replace_all(., "_|\\.", "-")),
+           errmarg_rel = list(rep(TRUE, 3),
+                              rep(TRUE, 2),
+                              c(TRUE, FALSE)),
+           trend_rel = TRUE,
+           # inference_temporal == TRUE refers to spatiotemporal design-based inference,
+           # inference_temporal == FALSE refers to spatial-only design-based inference
+           inference_temporal = c(TRUE, FALSE, FALSE),
+           sim_truncation = list(list(c(uln = 6), c(uln = 6), c(uln = 4)),
+                                 rep(list(NULL), 2),
+                                 list(c(uln = 0), c(ulg = 7))),
+           qual_std_status_errmarg_rel = list(rep(list(c(0.15, 0.1)), 3),
+                                              rep(list(c(0.1, 0.05)), 2),
+                                              rep(list(c(0.1, 0.05)), 2)),
+           # below errmargs for gw33 are based on 0.15*median and 0.10*median
+           qual_std_status_errmarg = list(list(c(6e-3, 4e-3), 
+                                               c(15e-3, 10e-3), 
+                                               c(15e-4, 10e-4)),
+                                          rep(list(c(0.1, 0.05)), 2),
+                                          rep(list(c(0.1, 0.05)), 2)),
+           qual_std_trend = list(c(power_conf80 = 0.8,
+                                   power_conf90 = 0.9)),
+           spfact = c("ecoregion", NA_character_, "soilclass"),
+           scen_def = list(
+               crossing(avg_nrlocs_pertype_infpop = c(15, 30, 60) %>% 
+                          as.integer,
+                        periodicity = c(3, 6) %>% as.integer,
+                        trend_12yearly_multiplier = c(1, 1.2, 1.5)),
+               crossing(avg_nrlocs_pertype_infpop = c(20, 40, 80) %>% 
+                          as.integer,
+                        periodicity = 1L,
+                        trend_12yearly_multiplier = c(1, 2, 3)),
+               crossing(avg_nrlocs_pertype_infpop = c(7, 10, 14, 20, 40) %>% 
+                          as.integer,
+                        periodicity = 1L,
+                        trend_12yearly_multiplier = c(1, 1.2, 1.5))
+           ),
+           cpu_cores_trend = c(3, 5, 2)) %>% 
+    unnest(submodelpop, keep_empty = TRUE) %>% 
+    unnest(c(respvar, 
+             respvar_label, 
+             errmarg_rel,
+             sim_truncation, 
+             starts_with("qual_std_status"))) %>% 
+    mutate(modelname = str_c("model_", filepath_sub, respvar,
+                             ifelse(is.na(submodelpop), "", 
+                                    str_c("_", submodelpop)))) %>% 
+    select(-contains("submodel")) %>% 
+    nest(modelnames = modelname) %>% 
+    nest(specifics = c(respvar, 
+                       respvar_label, 
+                       errmarg_rel,
+                       sim_truncation,
+                       qual_std_status_errmarg_rel,
+                       qual_std_status_errmarg,
+                       qual_std_trend, 
+                       modelnames)) %>% 
+    mutate(modeltypes = list(read_vc("typeclusters_gw33",
+                                     root = "data/10_input") %>% 
+                                 select(type, type_model) %>%
+                                 as_tibble, 
+                             read_vc("typeclusters_gw51a",
+                                     root = "data/10_input") %>% 
+                                 select(type, type_model) %>% 
+                                 as_tibble,
+                             read_vc("typeclusters_gw51t",
+                                     root = "data/10_input") %>% 
+                                 select(type, type_model) %>% 
+                                 as_tibble)) %>% 
+    unnest(specifics) %>% 
+    relocate(scheme, scheme_sel_label, respvar, respvar_label)
+```
+
+
+
+```{r results="asis", warning=FALSE, message=FALSE}
+# the following line will create the possibility to write to stdout from parallel R processes.
+
+# logsocket <- make.socket(port=4000) # only runs after doing `nc -l 4000` in shell
+
+scheme_respvar %>%
+    pwalk(function(scheme_sel,
+                   scheme_sel_label,
+                   respvar,
+                   respvar_label,
+                   filepath_sub,
+                   timevar,
+                   inference_temporal,
+                   spfact,
+                   scen_def,
+                   cpu_cores_trend,
+                   errmarg_rel, # should the error margins be evaluated relative to the estimated value?,
+                   trend_rel, # should the trend be evaluated relative to a reference value?
+                   sim_truncation,
+                   qual_std_status_errmarg_rel,
+                   qual_std_status_errmarg,
+                   qual_std_trend,
+                   modelnames,
+                   modeltypes
+                   ) { 
+        knit_expand("_950_app_sims.Rmd") %>% 
+            {knit_child(text = ., 
+                        quiet = TRUE,
+                        envir =  environment())} %>% 
+            cat(sep = '\n')
+    })
+```
+
+```{r eval=FALSE, echo=FALSE}
+# for manual testing one line of scheme_respvar
+scheme_respvar[6, ] %>% 
+    mutate(scheme = as.character(scheme)) %>% 
+    rename(scheme_sel = scheme) %>% 
+    walk2(., names(.), ~assign(.y, .x[[1]], envir = .GlobalEnv))
+```
+

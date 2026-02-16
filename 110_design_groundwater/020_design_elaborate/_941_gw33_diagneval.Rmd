@@ -1,0 +1,299 @@
+#### Modeldiagnose
+
+```{r}
+sd_res_glob <-
+    map_dbl(precmargs, ~inla.emarginal(invsqrt, .)) %>%
+    .[str_detect(names(.), "residuals")] %>%
+    set_names(strata)
+M1_diagn <-
+    dataset %>%
+    mutate(fitted = M1$summary.fitted.values$mean,
+           resid = fitted - log(.data[[respvar]]),
+           sd_res = sd_res_glob[.data[[stratumvar]]],
+           resid_std = resid / sd_res,
+           resid_exp = exp(fitted) - .data[[respvar]]
+    ) %>% 
+    filter(!is.na(resid))
+```
+
+
+##### Residuele analyse
+
+```{r resid-fitted-{{respvar}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted, y = resid_std)) +
+    geom_point() +
+    geom_smooth()
+```
+
+De gestandaardiseerde residuen (op de schaal van de lineaire predictor) tonen duidelijke patronen: een gevolg van de vele waarden die in de databank op de helft van de bepaalbaarheidsgrens werden ingesteld.
+De spreiding voldoet min of meer.
+
+De gestandaardiseerde residuen volgen min of meer de normale verdeling, maar de densiteitscurve heeft wel langere staarten.
+
+```{r out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(sample = resid_std)) + geom_qq() + geom_abline() + coord_equal()
+```
+
+
+```{r message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = resid_std)) + geom_histogram(fill = "white", colour = "grey70")
+```
+
+Voor `ecoregion` blijft er nog heel wat residuele heterogeniteit, wat wijst op afwijkingen tussen de gemodelleerde en de reële variatie per ecoregio, op observatieniveau (spatiotemporele residuen).
+Meer bepaald blijkt dat voor de ecoregio's met grotere residuele standaarddeviatie (`sd_res`), deze variatie door het model groter wordt ingeschat dan in realiteit.
+Daardoor hebben de gestandaardiseerde residuen (`resid_std = resid / sd_res`) een kleinere dan gemiddelde variatie.
+Dit is blijkbaar een gevolg van het isoleren van spatiale en temporele variatie voor specifieke ecoregio's, maar dat zou nochtans niet mogen gebeuren.
+
+Door een temporele component in het model te specifiëren is de overall tijdsafhankelijkheid beperkt.
+
+```{r resid-covar-{{respvar}}, message=FALSE, out.width='70%'}
+c("year_std", "type", "ecoregion") %>%
+    walk(function(quosvar) {
+        M1_diagn %>%
+            {ggplot(data = ., aes(x = .data[[quosvar]], y = resid_std)) +
+                    geom_point() +
+                    geom_smooth() +
+                {if (is.factor(M1_diagn[[quosvar]]) && 
+                     sum(str_length(unique(M1_diagn[[quosvar]]))) > 40) {
+                  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+                } else NULL}} %>%
+            print
+    })
+```
+
+Ondanks de integratie van een temporele trend blijft nog wat autocorrelatie over op het lokale niveau - hieronder voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven).
+
+```{r}
+lagcorr <-
+    M1_diagn %>%
+    semi_join(
+        dataset %>% 
+          distinct(loc_code, type, year) %>%  
+          count(loc_code, type) %>% 
+          filter(n >= 4),
+        by = c("loc_code", "type")) %>%
+    # NA residuals are due to NA response values:
+    filter(!is.na(resid_std)) %>% 
+    # ignoring monthly variation by sampling 1 observation per loc_code x type x year_std:
+    group_by(loc_code, type, year_std) %>%
+    slice_sample(n = 1) %>%
+    ungroup %>% 
+    pivot_wider(id_cols = year_std,
+                names_from = c(loc_code, type),
+                values_from = resid_std) %>%
+    arrange(year_std) %>%
+    left_join(tidyr::expand(., year_std = full_seq(year_std, 1)),
+              .,
+              by = "year_std") %>%
+    select(-year_std) %>%
+    map2_df(names(.), function (x, name) {
+        result <- acf(x, na.action = na.pass, plot = FALSE)
+        presult <- acf(x, na.action = na.pass, type = "partial", plot = FALSE)
+        tibble(locxtype = name,
+               lag = result$lag[,1,1],
+               acf = result$acf[,1,1],
+               pacf = c(1, presult$acf[,1,1]))
+    }) %>%
+    filter(lag > 0, lag < 7)
+```
+
+Grafiek met nadruk op het patroon van de autocorrelatiefunctie (1 lijn correspondeert met 1 tijdsreeks).
+
+```{r fig.height=5, fig.width=6, out.width='70%'}
+lagcorr %>%
+    inner_join(lagcorr %>%
+                   distinct(locxtype) %>%
+                   mutate(subset = rep(1:15, each = ceiling(n() / 15))[1:n()]) %>%
+                   group_by(subset) %>%
+                   mutate(id = factor(1:n())) %>%
+                   ungroup,
+               by = "locxtype") %>%
+    ggplot(aes(x = lag, y = acf, group = id, colour = id)) +
+    geom_line() +
+    theme(legend.position = "none") +
+    facet_wrap(~subset, labeller = "label_both")
+```
+
+Een beperkt aantal tijdsreeksen toont geen autocorrelatie.
+Andere vertonen een afnemende autocorrelatie, wat wijst op een geleidelijke trend.
+Nog andere vertonen een wisselend positieve en negatieve autocorrelatie, wat wijst op een cyclische trend.
+
+We zien geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
+
+Residuele spatiale correlatie op verschillende schalen:
+
+```{r eval=!("read-provinces" %in% knitr::all_labels())}
+provinces <-
+    read_admin_areas(dsn = "provinces") %>%
+    select(province = name)
+```
+
+```{r}
+M1_diagn %>%
+    as_points(warn_dupl = FALSE) %>%
+    ggplot() +
+    geom_sf(data = provinces, fill = "grey70") +
+    geom_sf(aes(colour = resid_std)) +
+    scale_colour_gradientn(colours = rainbow(10)) +
+    coord_sf(datum = st_crs(31370)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          legend.position = "bottom",
+          legend.key.width = unit(0.08, "npc"))
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    filter(!is.na(resid_std)) %>% 
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 500,
+                      cutoff = 5e3)}
+plot_vg(vg)
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    filter(!is.na(resid_std)) %>% 
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 1000,
+                      cutoff = 15e3)}
+plot_vg(vg)
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    filter(!is.na(resid_std)) %>% 
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 5000,
+                      cutoff = 75e3)}
+plot_vg(vg)
+```
+
+
+
+##### Analyse van random effecten `cluster_id` en `year_std`
+
+We verifiëren de orthogonaliteit tussen de spatiale en temporele random effecten.
+
+```{r}
+M1_diagn <-
+    M1_diagn %>%
+    inner_join(select_ranef_subset(M1, "cluster", nullify = 1e-8),
+               by = c("cluster_id" = "ID")) %>%
+    nest(data = -stratum_) %>% 
+    mutate(data = 
+               map2(data, stratum_, 
+                       ~mutate(.x, 
+                               ranef_clus = 
+                                   .x[[str_c("ranef_cluster_stratum_", .y)]])
+                    )
+           ) %>% 
+    unnest(data) %>% 
+    select(-starts_with("ranef_cluster_stratum_")) %>% 
+    inner_join(select_ranef_subset(M1, "year_std"),
+               by = c("year_std" = "ID")) %>%
+    nest(data = -stratum_) %>% 
+    mutate(data = 
+               map2(data, stratum_, 
+                       ~mutate(.x, 
+                               ranef_year = 
+                                   .x[[str_c("ranef_year_std_stratum_", .y)]])
+                    )
+           ) %>% 
+    unnest(data) %>% 
+    select(-starts_with("ranef_year_std_stratum_")) %>% 
+    mutate(fitted_without_ranef = fitted - ranef_year - ranef_clus)
+```
+
+```{r}
+M1_diagn %>% 
+    ggplot(aes(x = ranef_clus, y = ranef_year)) +
+    geom_point() +
+    facet_wrap(~stratum_) +
+    coord_fixed()
+```
+
+We beoordelen hieronder de resp. random effecten ten opzichte van de gefitte waarde met de beide random effecten ervan afgetrokken.
+
+###### `cluster_id`
+
+```{r ranef-clus-fitted-{{subdataset_label}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted_without_ranef, y = ranef_clus)) +
+    geom_point() +
+    geom_smooth() +
+    facet_wrap(~stratum_, scales = "free_x")
+```
+
+###### `year_std`
+
+```{r ranef-year-fitted-{{subdataset_label}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted_without_ranef, y = ranef_year)) +
+    geom_point() +
+    geom_smooth() +
+    facet_wrap(~stratum_, scales = "free_x")
+```
+
+
+#### Modelevaluatie
+
+We beschouwen de modelfit op verschillende manieren.
+
+##### Fitted vs. observed
+
+```{r fitted-obs-{{respvar}}, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = log(.data[[respvar]]), y = fitted)) +
+    geom_point(size = 0.3) +
+    geom_abline(colour = "red") +
+    coord_equal()
+```
+
+```{r fitted-obs-stratum-{{respvar}}, out.width='70%', fig.width=7, fig.height=6}
+M1_diagn %>%
+    ggplot(aes(x = log(.data[[respvar]]), y = fitted)) +
+    geom_point(size = 0.3) +
+    geom_abline(colour = "grey70") +
+    coord_equal() +
+    facet_wrap(~.data[[stratumvar]])
+```
+
+```{r fitted-obs-type-{{respvar}}, eval=(stratumvar!="type"), out.width='70%', fig.width=7, fig.height=6}
+M1_diagn %>%
+    ggplot(aes(x = log(.data[[respvar]]), y = fitted)) +
+    geom_point(size = 0.3) +
+    geom_abline(colour = "grey70") +
+    coord_equal() +
+    facet_wrap(~type)
+```
+
+##### RMSE
+
+Dit betreft de vierkantswortel van de gemiddelde kwadratische afwijking.
+Het is vooral bruikbaar voor distributies die een constante variantie veronderstellen, zoals de gaussiaanse.
+
+- op de schaal van de lineaire predictor:
+
+```{r}
+cat("RMSE:", M1_diagn$resid^2 %>% mean(na.rm = TRUE) %>% sqrt %>% round(3))
+```
+
+- op de schaal van de respons:
+
+```{r}
+cat("RMSE:", M1_diagn$resid_exp^2 %>% mean(na.rm = TRUE) %>% sqrt %>% round(3))
+```
+
+(Noot: RMSE penaliseert de modelcomplexiteit niet; DIC en WAIC geven daarom overall een beter beeld voor robuuste modelselectie)
+
+

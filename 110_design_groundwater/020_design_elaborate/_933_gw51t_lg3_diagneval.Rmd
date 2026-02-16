@@ -1,0 +1,367 @@
+#### Modeldiagnose
+
+```{r}
+sd_res_glob <-
+    map_dbl(precmargs, ~inla.emarginal(invsqrt, .)) %>%
+    .[str_detect(names(.), "residuals")] %>%
+    set_names(strata)
+M1_diagn <-
+    dataset %>%
+    mutate(fitted = M1$summary.fitted.values$mean,
+           resid = fitted - .data[[respvar]],
+           sd_res = sd_res_glob[.data[[stratumvar]]],
+           resid_std = resid / sd_res,
+           cpo = M1$cpo$cpo,
+           cpo_failed = M1$cpo$failure >= 0.2
+    )
+```
+
+
+##### Residuele analyse
+
+```{r resid-fitted-{{subdataset_label}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted, y = resid_std)) +
+    geom_point() +
+    geom_smooth()
+```
+
+Normale verdeling redelijk OK.
+
+```{r out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(sample = resid_std)) + geom_qq() + geom_abline() + coord_equal()
+```
+
+
+```{r message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = resid_std)) + geom_histogram(fill = "white", colour = "grey70")
+```
+
+De residuele heterogeniteit is beperkt dankzij de stratumafhankelijke residuele hyperparameter.
+Door een temporele component in het model te specifiëren is de overall tijdsafhankelijkheid beperkt.
+
+```{r resid-covar-{{subdataset_label}}, message=FALSE, out.width='70%'}
+c("hydroyear_std", "type", "soilclass") %>%
+    walk(function(quosvar) {
+        M1_diagn %>%
+            {ggplot(data = ., aes(x = .data[[quosvar]], y = resid_std)) +
+                    geom_point() +
+                    geom_smooth() +
+                {if (is.factor(M1_diagn[[quosvar]]) && 
+                     sum(str_length(unique(M1_diagn[[quosvar]]))) > 40) {
+                  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+                } else NULL}} %>%
+            print
+    })
+```
+
+Ondanks de integratie van een temporele trend blijft nog heel wat autocorrelatie over op het lokale niveau - hieronder voor de tijdreeksen met minstens 10 observaties (lags 1 tot 6 jaar weergegeven).
+
+```{r}
+lagcorr <-
+    M1_diagn %>%
+    semi_join(
+        dataset %>% count(loc_code, type) %>% filter(n >= 10),
+        by = c("loc_code", "type")) %>%
+    pivot_wider(id_cols = hydroyear_std,
+                names_from = c(loc_code, type),
+                values_from = resid_std) %>%
+    arrange(hydroyear_std) %>%
+    left_join(tidyr::expand(., hydroyear_std = full_seq(hydroyear_std, 1)),
+              .,
+              by = "hydroyear_std") %>%
+    select(-hydroyear_std) %>%
+    map2_df(names(.), function (x, name) {
+        result <- acf(x, na.action = na.pass, plot = FALSE)
+        presult <- acf(x, na.action = na.pass, type = "partial", plot = FALSE)
+        tibble(locxtype = name,
+               lag = result$lag[,1,1],
+               acf = result$acf[,1,1],
+               pacf = c(1, presult$acf[,1,1]))
+    }) %>%
+    filter(lag > 0, lag < 7)
+```
+
+Grafiek met nadruk op het patroon van de autocorrelatiefunctie (1 lijn correspondeert met 1 tijdsreeks).
+
+```{r fig.height=5, fig.width=6, out.width='70%'}
+lagcorr %>%
+    inner_join(lagcorr %>%
+                   distinct(locxtype) %>%
+                   mutate(subset = rep(1:15, each = ceiling(n() / 15))[1:n()]) %>%
+                   group_by(subset) %>%
+                   mutate(id = factor(1:n())) %>%
+                   ungroup,
+               by = "locxtype") %>%
+    ggplot(aes(x = lag, y = acf, group = id, colour = id)) +
+    geom_line() +
+    theme(legend.position = "none") +
+    facet_wrap(~subset, labeller = "label_both")
+```
+
+Een beperkt aantal tijdsreeksen toont geen autocorrelatie.
+Andere vertonen een afnemende autocorrelatie, wat wijst op een geleidelijke trend.
+Nog andere vertonen een wisselend positieve en negatieve autocorrelatie, wat wijst op een cyclische trend.
+
+We zien geen duidelijke spatiale correlatie: de random effecten lijken dit dus op te lossen.
+
+Residuele spatiale correlatie op verschillende schalen:
+
+```{r eval=!("read-provinces" %in% knitr::all_labels())}
+provinces <-
+    read_admin_areas(dsn = "provinces") %>%
+    select(province = name)
+```
+
+```{r}
+M1_diagn %>%
+    as_points(warn_dupl = FALSE) %>%
+    ggplot() +
+    geom_sf(data = provinces, fill = "grey70") +
+    geom_sf(aes(colour = resid_std)) +
+    scale_colour_gradientn(colours = rainbow(10)) +
+    coord_sf(datum = st_crs(31370)) +
+    theme_bw() +
+    theme(panel.grid = element_blank(),
+          legend.position = "bottom",
+          legend.key.width = unit(0.08, "npc"))
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 500,
+                      cutoff = 5e3)}
+plot_vg(vg)
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 1000,
+                      cutoff = 15e3)}
+plot_vg(vg)
+```
+
+```{r warning=FALSE, message=FALSE, out.width='70%'}
+vg <-
+    M1_diagn %>%
+    {gstat::variogram(resid_std ~ x + y,
+                      data = as_points(., warn_dupl = FALSE),
+                      width = 5000,
+                      cutoff = 75e3)}
+plot_vg(vg)
+```
+
+
+
+##### Analyse van random effecten `loc_code` en `cluster_id`
+
+Omdat `loc_code` en `cluster_id` sterk gecorreleerd zijn, beoordelen we de resp. random effecten ten opzichte van de gefitte waarde met de beide random effecten ervan afgetrokken.
+
+```{r}
+M1_diagn <-
+    M1_diagn %>%
+    inner_join(M1$summary.random$loc_code %>%
+                   select(loc_code = ID,
+                          ranef_loc = mean) %>%
+                   mutate(loc_code = factor(loc_code,
+                                            levels = levels(M1_diagn$loc_code))),
+               by = "loc_code") %>%
+    inner_join(M1$summary.random$cluster_id %>%
+                   select(cluster_id = ID,
+                          ranef_clus = mean) %>%
+                   mutate(cluster_id = factor(cluster_id,
+                                              levels = levels(M1_diagn$cluster_id))),
+               by = "cluster_id") %>%
+    mutate(fitted_without_ranef = fitted - ranef_loc - ranef_clus)
+```
+
+
+
+###### `loc_code`
+
+```{r message=FALSE, out.width='70%'}
+tibble(ranef = M1$summary.random$loc_code$mean,
+       ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for loc_code"]])) %>%
+    (function(df) {
+        p <-
+            df %>%
+            ggplot(aes(sample = ranef_std)) + geom_qq() + geom_abline() + coord_equal()
+        q <-
+            df %>%
+            ggplot(aes(x = ranef_std)) + geom_histogram(fill = "white", colour = "grey70")
+        print(p); print(q)
+    })
+```
+
+De variatie van het random effect:
+
+```{r ranef-loc-fitted-{{subdataset_label}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted_without_ranef, y = ranef_loc)) +
+    geom_point() +
+    geom_smooth()
+```
+
+###### `cluster_id`
+
+```{r message=FALSE, out.width='70%'}
+tibble(ranef = M1$summary.random$cluster_id$mean,
+       ranef_std = ranef / inla.emarginal(invsqrt, precmargs[["Precision for cluster_id"]])) %>%
+    (function(df) {
+        p <-
+            df %>%
+            ggplot(aes(sample = ranef_std)) + geom_qq() + geom_abline() + coord_equal()
+        q <-
+            df %>%
+            ggplot(aes(x = ranef_std)) + geom_histogram(fill = "white", colour = "grey70")
+        print(p); print(q)
+    })
+```
+
+De variatie van het random effect:
+
+```{r ranef-clus-fitted-{{subdataset_label}}, message=FALSE, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = fitted_without_ranef, y = ranef_clus)) +
+    geom_point() +
+    geom_smooth()
+```
+
+#### Modelevaluatie
+
+We beschouwen de modelfit op verschillende manieren.
+
+##### Fitted vs. observed
+
+```{r fitted-obs-{{subdataset_label}}, out.width='70%'}
+M1_diagn %>%
+    ggplot(aes(x = .data[[respvar]], y = fitted)) +
+    geom_point(size = 0.3) +
+    geom_abline(colour = "red") +
+    coord_equal()
+```
+
+```{r fitted-obs-type-{{subdataset_label}}, out.width='70%', fig.width=7, fig.height=6}
+M1_diagn %>%
+    ggplot(aes(x = .data[[respvar]], y = fitted)) +
+    geom_point(size = 0.3) +
+    geom_abline(colour = "grey70") +
+    coord_equal() +
+    facet_wrap(~type)
+```
+
+##### RMSE
+
+Dit betreft de vierkantswortel van de gemiddelde kwadratische afwijking.
+Het is vooral bruikbaar voor distributies die een constante variantie veronderstellen, zoals de gaussiaanse.
+
+```{r}
+cat("RMSE:", M1_diagn$resid^2 %>% mean %>% sqrt %>% round(3))
+```
+
+(Noot: RMSE penaliseert de modelcomplexiteit niet; DIC en WAIC geven daarom overall een beter beeld voor robuuste modelselectie)
+
+
+##### CPO
+
+De CPO van een observatie is de kansdichtheidswaarde van de observatie volgens een leave-one-out model.
+
+Voor waarnemingen met een onbetrouwbare CPO-berekening kunnen we de fit niet evalueren:
+
+```{r out.width='70%'}
+M1_diagn %>%
+  filter(cpo_failed) %>%
+  ggplot(aes(x = .data[[respvar]], y = fitted, fill = type)) +
+  geom_abline(colour = "grey70") +
+  geom_point(shape = 21) +
+  coord_equal()
+```
+
+De verdeling van de fit van observaties op basis van de CPO:
+
+```{r message=FALSE, out.width='70%'}
+M1_diagn %>%
+  filter(!cpo_failed) %>%
+  ggplot(aes(x = cpo)) +
+  geom_histogram(fill = "white", colour = "grey70", boundary = 0)
+```
+
+
+
+##### Simulaties
+
+```{r}
+set.seed(123456)
+nsim <- 1000
+# the below code is preferred over 'n=1000' because otherwise
+# the sampled hyperparameter values remain constant among posterior samples
+simdata <- map(1:nsim, ~(inla.posterior.sample(n = 1, result = M1))[[1]])
+```
+
+```{r}
+set.seed(123456)
+nrobs <- nrow(dataset)
+nrstrata <- length(strata)
+evaluation <-
+  map(simdata, ~.$latent[1:nrobs]) %>%
+  do.call(cbind, .) %>%
+  as_tibble(.name_repair = "minimal") %>%
+  magrittr::set_colnames(str_c("sample_", 1:nsim)) %>%
+  mutate(obs = 1:nrobs) %>%
+  # adding stratumvariable, type and observed responses to the sampled latent values:
+  bind_cols(select(dataset, .data[[stratumvar]], type, .data[[respvar]])) %>%
+  relocate(obs, .data[[stratumvar]], type, .data[[respvar]]) %>%
+  pivot_longer(cols = c(-.data[[stratumvar]], -type, -obs, -.data[[respvar]]),
+               names_to = "sample",
+               values_to = "latent_sim") %>%
+  # joining the sampled values of latent with the sampled residual precision (stratum-specific):
+  left_join(map(simdata, ~.$hyper[1:nrstrata]) %>%
+              do.call(cbind, .) %>%
+              as_tibble(.name_repair = "minimal") %>%
+              magrittr::set_colnames(str_c("sample_", 1:nsim)) %>%
+              mutate(!!stratumvar := strata) %>%
+              relocate(.data[[stratumvar]]) %>%
+              pivot_longer(cols = -.data[[stratumvar]],
+               names_to = "sample",
+               values_to = "precision_sim") %>%
+              mutate(sd_sim = 1 / sqrt(precision_sim), .keep = "unused"),
+            by = c(stratumvar, "sample")) %>%
+  # simulating response values (nsim per observation) by sampling from a normal distribution (which is different for each row); actually it's unneeded here as we will use the p-values and corresponding quantile that we determine for each normal distribution:
+  mutate(response_sim = rnorm(mean = latent_sim, sd = sd_sim, n = nsim * nrobs),
+         pval = pnorm(q = .data[[respvar]], mean = latent_sim, sd = sd_sim),
+         z = qnorm(pval)) %>%
+  group_by(obs, type) %>%
+  summarise(pval_avg = mean(pval),
+            z_avg = mean(z),
+            .groups = "drop")
+```
+
+Voor elke observatie is, op basis van zijn covariaatwaarden en op basis van 1000 gesimuleerde waarden voor de fixed en random parameters (incl. random walks) op basis van hun posterior distributies, een gemiddelde waarde bepaald van de standaard normale kwantielfunctie.
+Met andere woorden: `z_avg` geeft aan met welke z-waarde de observatie gemiddeld overeenstemt, gegeven de 1000 gesimuleerde responsen (voor dezelfde covariaatwaarden als de observatie) met telkens een gesimuleerde foutdistributie.
+
+De onderstaande figuren vergelijken de geobserveerde verdeling van `z_avg` (histogram voor alle observaties) met de verwachte verdeling volgens de standaard normale verdeling (volle lijn).
+
+```{r out.width='70%'}
+z_distr <- tibble(quant = seq(-5, 5, 0.05)) %>% mutate(dens = dnorm(quant))
+ggplot(evaluation, aes(x = z_avg)) +
+  geom_histogram(aes(y = stat(density)),
+                 fill = "skyblue3", boundary = 0, binwidth = 0.1) +
+  geom_line(data = z_distr, aes(x = quant, y = dens), alpha = 0.4)
+```
+
+```{r}
+ggplot(evaluation, aes(x = z_avg)) +
+  geom_histogram(aes(y = stat(density)),
+                 fill = "skyblue3", boundary = 0, binwidth = 0.1) +
+  geom_line(data = z_distr, aes(x = quant, y = dens), alpha = 0.4) +
+  facet_wrap(~type, scales = "free_y")
+```
+

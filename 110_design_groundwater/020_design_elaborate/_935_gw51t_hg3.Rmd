@@ -1,0 +1,519 @@
+### Subdataset {{subdataset_name}}
+
+```{r}
+if (!str_detect(subdataset_name, "3$")) {
+stratumvar <- "type" # to support heterogeneity in residuals
+ts_stratumvar <- "type" # for interaction with time in long-term trend
+} else {
+  stratumvar <- "soilclass" # to support heterogeneity in residuals
+  ts_stratumvar <- "soilclass" # for interaction with time in long-term trend
+}
+```
+
+
+```{r include=FALSE}
+rds_filepath <- file.path(datapath, "binary/simmodels",
+                          str_c("model_gw51t_", respvar, "_", 
+                                subdataset_name, ".rds"))
+```
+
+
+Distributie van het aantal beschikbare jaren in locatiespecifieke tijdsreeksen, volgens de strata:
+
+```{r}
+ts_summaries <-
+    dataset %>%
+    count(.data[[ts_stratumvar]], loc_code, name = "nyears") %>%
+    group_by(.data[[ts_stratumvar]]) %>%
+    nest() %>%
+    mutate(nrlocs = map(data, nrow),
+           summary = map(data,
+                         function(x) {
+                             summary(x$nyears) %>%
+                                 enframe %>%
+                                 mutate(value = as.numeric(value)) %>%
+                                 pivot_wider %>%
+                                 janitor::clean_names() %>%
+                                 rename(q1 = x1st_qu, q3 = x3rd_qu)
+                         })) %>%
+    select(-data) %>%
+    unnest(cols = nrlocs:summary) %>%
+    ungroup
+ts_summaries
+```
+
+We laten alleen strata met voldoende locaties en (mediaan) aantal hydrologische jaren per locatie toe in een stratumspecifieke temporele modelcomponent (interactie).
+
+```{r}
+strata_ts <-
+    ts_summaries %>%
+    filter(median >= 3, nrlocs > 15) %>%
+    pull(.data[[ts_stratumvar]]) %>% 
+  as.character
+# the stratum_ variable is only needed in model formulas where it is used - 
+# up to now that is the case when fitting stratum-specific polynomial trends
+dataset <-
+  dataset %>% 
+  mutate(stratum_ = as.character(.data[[ts_stratumvar]]),
+         stratum_ = 
+           ifelse(stratum_ %in% strata_ts, 
+                  stratum_,
+                  NA_character_) %>% 
+           factor(levels = strata_ts),
+         loc_code_idnum = as.integer(loc_code),
+         cluster_idnum = as.integer(cluster_id),
+         intercept = 1)
+# model-specific extra covariates:
+dataset <-
+  bind_cols(dataset,
+    map_dfc(set_names(strata_ts, str_c("stratum_", strata_ts)), 
+             ~as.integer(dataset[[ts_stratumvar]] == .)),
+    map_dfc(set_names(strata_ts, str_c("hydroyear_std_stratum_", strata_ts)), 
+             ~dataset$hydroyear_std)
+  )
+# Beside that, stratum_ is used to predict 
+# values for polynomial trends:
+newdata <- 
+  nesting(!!ts_stratumvar := dataset[[ts_stratumvar]],
+          stratum_ = dataset$stratum_) %>%
+  crossing(intercept = 1,
+           hydroyear_std = full_seq(dataset$hydroyear_std, 1))
+newdata <- 
+    newdata %>% 
+    magrittr::set_colnames(str_c(colnames(.), "_b")) %>% 
+    bind_cols(
+        newdata %>% 
+            magrittr::set_colnames(str_c(colnames(.), "_g"))
+    )
+```
+
+
+```{r}
+strata <- dataset[[stratumvar]] %>% unique %>% sort
+resp <-
+    matrix(data = NA_real_,
+                 nrow = nrow(dataset),
+                 ncol = length(strata) + 1,
+                 dimnames = list(NULL, c("respb",
+                                         str_c(rep("respg_stratum_",
+                                                   length(strata)), 
+                                               strata)))) %>%
+    as_tibble
+resp_b <- resp
+resp_g <- resp
+resp_b[["respb"]] <- as.numeric(dataset[[respvar]] < 0)
+for (stratum in strata) {
+    resp_g[[str_c("respg_stratum_", stratum)]] <-
+        ifelse(dataset[[stratumvar]] == stratum & dataset[[respvar]] < 0,
+               dataset[[respvar]] * (-1),
+               NA_real_)
+}
+covariates_b <- 
+    dataset %>% 
+    magrittr::set_colnames(str_c(colnames(.), "_b")) %>% 
+    bind_cols(
+        dataset %>% 
+            magrittr::set_colnames(str_c(colnames(.), "_g")) %>%
+            mutate(across(everything(), ~NA))
+        )
+covariates_g <- 
+    dataset %>% 
+    magrittr::set_colnames(str_c(colnames(.), "_g")) %>% 
+    bind_cols(
+        dataset %>% 
+            magrittr::set_colnames(str_c(colnames(.), "_b")) %>%
+            mutate(across(everything(), ~NA)),
+        .
+        )
+resp <- bind_rows(resp_b, resp_g)
+covariates <- bind_rows(covariates_b, covariates_g)
+```
+
+#### Model
+
+Modelbouw is gebeurd via git branching (dead ends, ...); alleen het uiteindelijke model wordt hier gepresenteerd.
+
+```{r eval=params$fit_simmodels}
+tempnoise_b <-
+        str_c("f(hydroyear_std_stratum_",
+              strata_ts,
+              "_b, stratum_",
+              strata_ts,
+              "_b, model = 'iid')", collapse = " + ") %>%
+            str2lang
+# copy the binomial random effects in the gamma RE, with a scaling factor:
+tempnoise_g <-
+        str_c("f(hydroyear_std_stratum_",
+              strata_ts,
+              "_g, stratum_",
+              strata_ts,
+              "_g, copy = 'hydroyear_std_stratum_",
+              strata_ts,
+              "_b', fixed = FALSE)", collapse = " + ") %>%
+            str2lang
+modformula <-
+    substitute(Y ~ -1 + intercept_b + intercept_g +
+                   type_b + soilclass_b +
+                   type_g + soilclass_g +
+                   # polynomial trend per stratum:
+                   stratum__b:(hydroyear_std_b + I(hydroyear_std_b^2)) +
+                   stratum__g:(hydroyear_std_g + I(hydroyear_std_g^2)) +
+                   # remaining short-term temporal variation:
+                   stratumtempnoise_b +
+                   stratumtempnoise_g +
+                   f(loc_code_idnum_b, model = "iid") + 
+                   f(loc_code_idnum_g, copy = "loc_code_idnum_b", fixed = FALSE) + 
+                   f(cluster_idnum_b, model = "iid") + 
+                   f(cluster_idnum_g, copy = "cluster_idnum_b", fixed = FALSE),
+               list(stratumtempnoise_b = tempnoise_b,
+                    stratumtempnoise_g = tempnoise_g))
+moddata <-
+    splice(Y = resp,
+           as.list(covariates %>% 
+                       select(starts_with(c("intercept",
+                                            "type",
+                                            "soilclass",
+                                            "loc_code_idnum",
+                                            "cluster_idnum",
+                                            "hydroyear_std",
+                                            "stratum_"))
+                     )))
+# linear combinations to compute posterior of predicted fixed effects:
+lincomb_newdata_b <- 
+  newdata %>% 
+  model.matrix(formula(paste("~ -1 + intercept_b +", 
+                             str_c(ts_stratumvar, "_b"), 
+                             "+ stratum__b:(hydroyear_std_b + I(hydroyear_std_b^2))"
+                             )),
+               data = .) %>% 
+  as_tibble %>% 
+      # the first non-type stratumvariable is not present in the model,
+      # but included in intercept_b:
+  {if (ts_stratumvar != "type") select(., -2) else .} %>% 
+  inla.make.lincombs %>% 
+  {if (nrow(drop_na(newdata)) == nrow(newdata)) . else {
+    c(., 
+      newdata %>% 
+        filter(is.na(stratum__b)) %>% 
+        model.matrix(formula(paste("~ -1 + intercept_b +", 
+                                   str_c(ts_stratumvar, "_b"))), 
+                     data = .) %>% 
+        as_tibble %>% 
+        {if (ts_stratumvar != "type") select(., -2) else .} %>% 
+        inla.make.lincombs)
+  }}
+names(lincomb_newdata_b) <- NULL
+
+lincomb_newdata_g <- 
+  newdata %>% 
+  model.matrix(formula(paste("~ -1 + intercept_g +", 
+                             str_c(ts_stratumvar, "_g"), 
+                             "+ stratum__g:(hydroyear_std_g + I(hydroyear_std_g^2))"
+                             )),
+               data = .) %>% 
+  as_tibble %>% 
+  select(-2) %>% # the first stratumvariable is not present in the model,
+                 # but included in intercept_g
+  inla.make.lincombs %>% 
+  {if (nrow(drop_na(newdata)) == nrow(newdata)) . else {
+    c(., 
+      newdata %>% 
+        filter(is.na(stratum__g)) %>% 
+        model.matrix(formula(paste("~ -1 + intercept_g +", 
+                                   str_c(ts_stratumvar, "_g"))), 
+                     data = .) %>% 
+        as_tibble %>% 
+        select(-2) %>% 
+        inla.make.lincombs)
+  }}
+names(lincomb_newdata_g) <- NULL
+```
+
+
+```{r results="hide", eval=params$fit_simmodels && params$write_simmodels}
+cont_comp <- list(waic = TRUE, dic = TRUE)
+```
+
+
+```{r gw51t-hg3-{{subdataset_name}}-fitmodel, results="hide", eval=params$fit_simmodels && params$write_simmodels}
+system.time(
+    M1 <- inla(modformula,
+               family = c("binomial", rep("gamma", length(strata))),
+               data = moddata,
+               lincomb = c(lincomb_newdata_b, lincomb_newdata_g),
+               control.compute = cont_comp,
+               control.inla = list(force.diagonal = TRUE,
+                                   int.strategy = "eb"),
+               control.predictor = list(link = 1))
+)
+hypernames <- rownames(M1$summary.hyperpar)
+rownames(M1$summary.hyperpar)[str_detect(hypernames, "Gamma")] <-
+    str_c("Stratum ", strata, ": Gamma shape")
+names(M1$marginals.hyperpar)[str_detect(hypernames, "Gamma")] <-
+    str_c("Stratum ", strata, ": Gamma shape")
+```
+
+```{r include=FALSE}
+if (!params$fit_simmodels && params$write_simmodels) {
+  warning("No simulation model fitted - so not overwriting. ",
+          "You probably misspecified a YAML parameter.")
+}
+```
+
+```{r eval=params$fit_simmodels && params$write_simmodels}
+saveRDS(M1, rds_filepath)
+```
+
+```{r results="hide", eval=(params$fit_simmodels && !params$write_simmodels) || params$largemodel_diagn_eval}
+cont_comp <- list(waic = TRUE, dic = TRUE)
+```
+
+```{r results="hide", eval=(params$fit_simmodels && !params$write_simmodels) || params$largemodel_diagn_eval, ref.label="gw51t-hg3-{{subdataset_name}}-fitmodel"}
+```
+
+```{r include=FALSE, eval=!params$largemodel_diagn_eval && !params$fit_simmodels}
+modelname <- basename(rds_filepath) %>% str_remove(".rds")
+if (exists(modelname)) {
+  M1 <- modelname %>% as.name %>% eval
+} else {
+  if (!file.exists(rds_filepath)) {
+    stop("Fitted model not found on disk. ",
+         "Fit model with params$fit_simmodels = TRUE")
+  }
+  M1 <- readRDS(rds_filepath)
+  assign(modelname, M1)
+}
+```
+
+INLA formule:
+
+```{r}
+M1$.args$formula
+```
+
+Likelihood family (distributie van de respons):
+
+```{r}
+cat(paste(colnames(resp), M1$.args$family, sep = ": "), sep = "\n")
+```
+
+
+#### Modelresultaten
+
+De volgende tabellen en output vatten de belangrijkste resultaten samen.
+
+```{r paged.print=FALSE}
+# summary(M1)
+# names(M1)
+M1$summary.fixed %>%
+    select(mean, sd, matches("025|975")) %>%
+    round(3) %>%
+    cbind(ci_excludes_zero = .$`0.025quant` > 0 | .$`0.975quant` < 0) %>% 
+    kable(caption = "Modelresultaten: fixed parameters.") %>%
+    kable_styling()
+```
+
+```{r paged.print=FALSE}
+M1$summary.hyperpar %>% 
+    select(mean, sd, matches("025|975")) %>% 
+    round(3) %>% 
+    kable(caption = "Modelresultaten: hyperparameters.") %>%
+    kable_styling()
+```
+
+```{r paged.print=FALSE}
+cat("\nDIC:", M1$dic$dic,
+    "\nWAIC:", M1$waic$waic,
+    "\nNumber of equivalent replicates:", 
+    summary(M1)$neffp["Number of equivalent replicates", ])
+```
+
+```{r}
+fixedmargs <- M1$marginals.fixed
+precmargs <- M1$marginals.hyperpar[M1$marginals.hyperpar %>%
+                                       names %>%
+                                       str_detect("Precision")]
+shapemargs <- M1$marginals.hyperpar[M1$marginals.hyperpar %>%
+                                       names %>%
+                                       str_detect("shape")]
+betamargs <- M1$marginals.hyperpar[M1$marginals.hyperpar %>%
+                                       names %>%
+                                       str_detect("Beta")]
+pacfmargs <- M1$marginals.hyperpar[M1$marginals.hyperpar %>%
+                                       names %>%
+                                       str_detect("PACF")]
+fittedmargs <- M1$marginals.fitted.values
+```
+
+
+Posterior density plots voor fixed parameters:
+
+```{r warning=FALSE, fig.width=8, fig.height=2/3*ceiling(length(fixedmargs)/4)}
+map_dfr(fixedmargs, ~ as_tibble(.), .id = "effect") %>%
+    split(str_detect(.$effect, "year")) %>% 
+    walk(~
+         {ggplot(., aes(x = x, y = y)) + geom_line() +
+                 labs(x = "effectsize", y = "density") +
+                 facet_wrap(~effect, ncol = 4, scales = "free_y") +
+                 theme(strip.text = element_text(hjust = 0))} %>% 
+         print
+    )
+```
+
+Gemodelleerd lange-termijntijdseffect in het binomiaal resp. het gamma submodel, met daarenboven het fixed effect van de daarbij betrokken stratificatievariabele.
+Beide zullen we wegnemen -- detrending -- om een baseline te hebben voor simulaties.
+Opgelet, de respons is op de schaal van de lineaire predictor.
+
+```{r out.width='70%'}
+newdata %>% 
+  arrange(is.na(stratum__b)) %>% 
+  select(stratum = .data[[str_c(ts_stratumvar, "_b")]], 
+         hydroyear_std = hydroyear_std_b) %>% 
+  bind_cols(M1$summary.lincomb.derived %>% slice_head(n = nrow(newdata))) %>% 
+  ggplot(aes(x = hydroyear_std)) +
+  geom_ribbon(aes(ymin = `0.025quant`,
+                  ymax = `0.975quant`),
+              alpha = 0.2) +
+  geom_line(aes(y = mean), colour = "blue") +
+  labs(y = str_c("posterior mean fixed effect of\nhydroyear_std + ",
+                 ts_stratumvar,
+                 " (binomial submodel)")) + 
+  facet_wrap(~stratum)
+```
+
+
+```{r out.width='70%'}
+newdata %>% 
+  arrange(is.na(stratum__g)) %>% 
+  select(stratum = .data[[str_c(ts_stratumvar, "_g")]], 
+         hydroyear_std = hydroyear_std_g) %>% 
+  bind_cols(M1$summary.lincomb.derived %>% slice_tail(n = nrow(newdata))) %>% 
+  ggplot(aes(x = hydroyear_std)) +
+  geom_ribbon(aes(ymin = `0.025quant`,
+                  ymax = `0.975quant`),
+              alpha = 0.2) +
+  geom_line(aes(y = mean), colour = "blue") +
+  labs(y = str_c("posterior mean fixed effect of\nhydroyear_std + ",
+                 ts_stratumvar,
+                 " (gamma submodel)")) + 
+  facet_wrap(~stratum)
+```
+
+Resterend korte-termijntijdseffect (respons op de schaal van de lineaire predictor):
+
+```{r out.width='70%'}
+M1$summary.random[str_detect(names(M1$summary.random), 
+                              "hydroyear_std_")] %>% 
+  map_dfr(~select(., ID, mean, matches("025|975")),
+          .id = "stratum") %>% 
+  ggplot(aes(x = ID)) +
+  geom_ribbon(aes(ymin = `0.025quant`,
+                  ymax = `0.975quant`),
+              alpha = 0.2) +
+  geom_line(aes(y = mean), colour = "blue") +
+  labs(x = "hydroyear_std", y = "posterior mean effect") + 
+  facet_wrap(~stratum)
+```
+
+
+
+Resultaten hyperparameters:
+
+```{r hyperpar-shape-summary-{{subdataset_label}}, warning=FALSE}
+map_dfr(shapemargs,
+        function(marg){
+            sink(tempfile())
+            summ <-
+                inla.zmarginal(marg)
+            sink()
+            summ %>%
+                as_tibble()
+        },
+        .id = "shape_hyperparameter") %>%
+    mutate_if(is_numeric, ~ round(., 4)) %>%
+    kable(caption = "Karakteristieken van de posterior distributie van de shape hyperparameters. Voorbeeld: 'mean' is de verwachte waarde van de betreffende hyperparameter.") %>%
+    kable_styling()
+```
+
+```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(shapemargs)/3)*1.5}
+map_dfr(shapemargs,
+        ~ as_tibble(.),
+        .id = "hyperpar") %>%
+    ggplot(., aes(x = x, y = y)) + geom_line() +
+        labs(x = "shape", y = "density") +
+        facet_wrap(~hyperpar, ncol = 3, scales = "free_y") +
+        theme(strip.text = element_text(hjust = 0))
+```
+
+```{r hyperpar-summary-{{subdataset_label}}, warning=FALSE}
+map_dfr(precmargs,
+        function(marg){
+            sink(tempfile())
+            summ <-
+                inla.tmarginal(invsqrt, marg) %>%
+                inla.zmarginal
+            sink()
+            summ %>%
+                as_tibble()
+        },
+        .id = "sd_hyperparameter") %>%
+    mutate_if(is_numeric, ~ round(., 4)) %>%
+    mutate(sd_hyperparameter = str_remove(sd_hyperparameter,
+                                          "Precision\\sof\\s|^Precision\\sfor\\s")) %>%
+    kable(caption = "Karakteristieken van de posterior distributie van de hyperparameters die als standaardafwijking uitgedrukt kunnen worden. Voorbeeld: 'mean' is de verwachte waarde van de betreffende standaardafwijking.") %>%
+    kable_styling()
+```
+
+```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(precmargs)/3)*6/7}
+map_dfr(precmargs,
+        ~ as_tibble(inla.tmarginal(fun = invsqrt, .)),
+        .id = "hyperpar") %>%
+    mutate(hyperpar =
+               str_remove(hyperpar,
+                          "Precision\\sof\\s|^Precision\\sfor\\s")) %>%
+    split(str_detect(.$hyperpar, "year")) %>% 
+    walk(~
+      {ggplot(., aes(x = x, y = y)) + geom_line() +
+        labs(x = "standard deviation", y = "density") +
+        facet_wrap(~hyperpar, ncol = 3, scales = "free_y") +
+        theme(strip.text = element_text(hjust = 0))} %>% 
+        print
+  )
+```
+
+De beta hyperparameters zijn de schaalfactoren waarmee de bovenstaande random intercepten van het binomiaal submodel worden vermenigvuldigd om deze te bekomen van het gamma submodel:
+
+```{r hyperpar-beta-summary-{{subdataset_label}}, warning=FALSE}
+map_dfr(betamargs,
+        function(marg){
+            sink(tempfile())
+            summ <-
+                inla.zmarginal(marg)
+            sink()
+            summ %>%
+                as_tibble()
+        },
+        .id = "beta_hyperparameter") %>%
+    mutate_if(is_numeric, ~ round(., 4)) %>%
+    kable(caption = "Karakteristieken van de posterior distributie van de beta hyperparameters. Voorbeeld: 'mean' is de verwachte waarde van de betreffende hyperparameter.") %>%
+    kable_styling()
+```
+
+```{r warning=FALSE, fig.width=9, fig.height=ceiling(length(betamargs)/3)*1.5}
+map_dfr(betamargs,
+        ~ as_tibble(.),
+        .id = "hyperpar") %>%
+    ggplot(., aes(x = x, y = y)) + geom_line() +
+        labs(x = "beta", y = "density") +
+        facet_wrap(~hyperpar, ncol = 3, scales = "free_y") +
+        theme(strip.text = element_text(hjust = 0))
+```
+
+```{r results="asis", warning=FALSE, message=FALSE, eval=params$largemodel_diagn_eval}
+knit_expand("_935_gw51t_hg3_diagneval.Rmd") %>% 
+          {knit_child(text = ., 
+                      quiet = TRUE,
+                      envir =  environment())} %>% 
+          cat(sep = '\n')
+```
+

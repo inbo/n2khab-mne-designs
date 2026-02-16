@@ -20,6 +20,16 @@ params:
   write_analysisdata: TRUE
   commit_nonpublic: TRUE
   gisbase_grass: !r if (.Platform$OS.type == "windows") link2GI::paramGRASSw()$gisbase_GRASS[1] else link2GI::paramGRASSx()$gisbase_GRASS[1]
+  loadmodels_GW_05.1_terr: TRUE
+  loadmodels_GW_05.1_aq: TRUE
+  loadmodels_GW_03.3: TRUE
+  fit_simmodels: FALSE
+  write_simmodels: FALSE
+  largemodel_diagn_eval: FALSE
+  simulate_pops: FALSE
+  simulate_obs: FALSE
+  calculate_trend: FALSE
+  write_scenariofiles: FALSE
 output:
   bookdown::pdf_book:
     base_format: INBOmd::inbo_rapport
@@ -59,7 +69,9 @@ options(stringsAsFactors = FALSE,
         dplyr.summarise.inform = FALSE)
 library(git2rdata)
 library(rprojroot)
+library(tidyr, exclude = "population") # to avoid conflict with our df column 'population'
 library(tidyverse)
+library(patchwork)
 library(stringr)
 library(sf)
 library(rgdal)
@@ -74,6 +86,11 @@ library(gridExtra)
 library(watina)
 library(vegan)
 library(qgisprocess)
+library(INLA)
+library(nlme)
+library(inlatools)
+library(doParallel)
+library(survey)
 uitvoer <- knitr::opts_knit$get("rmarkdown.pandoc.to")
 gitroot <- find_root(is_git_root)
 thisrepo <- repository(gitroot)
@@ -108,7 +125,9 @@ opts_chunk$set(
   comment = ""
 )
 datapath <- file.path(projroot, "data")
-walk(c("binary", 
+walk(c("binary/simmodels", 
+       "binary/simobs", 
+       "binary/simresults", 
        "10_input", 
        "20_intermediate1",
        "21_intermediate2",
@@ -120,6 +139,7 @@ walk(c("binary",
      })
 read_chunk(file.path(projroot, "chunks.R"))
 source(file.path(projroot, "functions.R"))
+modelname_regex <- "^model_gw"
 ```
 
 

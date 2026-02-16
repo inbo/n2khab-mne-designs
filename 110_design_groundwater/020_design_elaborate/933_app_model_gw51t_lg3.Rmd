@@ -1,0 +1,71 @@
+## GW_05.1_terr: lg3_lcl
+
+```{r}
+dataset <- gw51t
+respvar <- "lg3_lcl"
+```
+
+Gezien de computationele problemen om zeldzamere types te behouden, laten we de types met minder observaties weg - of indien verantwoord clusteren we ze met een ander type.
+
+Aantal beschikbare observaties per (al dan niet samengesteld) type:
+
+```{r}
+table(dataset$type) %>% sort(decreasing = TRUE)
+```
+
+Omwille van het grotere aantal types, wordt de dataset in subdatasets gesplitst, waarvoor telkens een apart model wordt gefit.
+
+```{r}
+dataset_nested <- 
+  read_scheme_types(lang = "nl") %>% 
+  filter(scheme == "GW_05.1_terr") %>% 
+  select(type, typegroup) %>% 
+  mutate(subdataset_name = droplevels(typegroup),
+         subdataset_label = str_replace_all(subdataset_name, "_|\\.", "-")) %>%
+  inner_join(read_vc("typeclusters_gw51t",
+                     root = "data/10_input") %>% 
+               select(type, type_model) %>% 
+               as_tibble, .,
+             by = "type") %>% 
+  select(-type, -typegroup) %>% 
+  distinct %>% 
+  rename(type = type_model) %>% 
+  inner_join(dataset, ., by = "type") %>% 
+  nest(data = -c(subdataset_name, subdataset_label)) %>% 
+  arrange(subdataset_name) %>% 
+  mutate(data = map(data, ~mutate(., type = droplevels(type))))
+```
+
+Aantal types en rijen per subdataset:
+
+```{r}
+dataset_nested %>% 
+  mutate(n_types = map_int(data, ~n_distinct(.$type)),
+         n_rows = map_int(data, nrow)) %>% 
+  select(-data, -subdataset_label) %>% 
+  arrange(subdataset_name)
+```
+
+
+```{r results="asis", warning=FALSE, message=FALSE}
+pwalk(list(dataset_nested$data, 
+           dataset_nested$subdataset_name, 
+           dataset_nested$subdataset_label), 
+      function(dataset, subdataset_name, subdataset_label) {
+        knit_expand("_933_gw51t_lg3.Rmd") %>% 
+          {knit_child(text = ., 
+                      quiet = TRUE,
+                      envir =  environment())} %>% 
+          cat(sep = '\n')
+      })
+```
+
+
+```{r eval=FALSE, echo=FALSE}
+# for manual testing one line of dataset_nested
+i <- 4
+dataset <- dataset_nested$data[[i]]
+subdataset_name <- dataset_nested$subdataset_name[[i]]
+subdataset_label <- dataset_nested$subdataset_label[[i]]
+```
+

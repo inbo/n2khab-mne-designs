@@ -1,0 +1,596 @@
+# (PART) Simulatiemodellen, scenario's en scenariokeuze {-}
+
+# Modellen voor steekproefsimulaties
+
+<!-- Onderstaande chunks vereisen dat verder gebruikte modelobjectfiles (rds) reeds op schijf beschikbaar zijn. -->
+
+```{r eval=params$loadmodels_GW_05.1_terr, include=FALSE}
+# GW_05.1_terr
+subdataset_name <- 
+    read_scheme_types(lang = "nl") %>% 
+    filter(scheme == "GW_05.1_terr") %>% 
+    distinct(typegroup) %>% 
+    mutate(subdataset_name = droplevels(typegroup)) %>% 
+    arrange(subdataset_name) %>% 
+    pull(subdataset_name)
+respvar <- c("lg3_lcl", "hg3_lcl")
+gw51t_modelnames <- 
+    str_c("model_gw51t_", 
+          crossing(respvar, subdataset_name) %>% 
+              unite("submodel") %>% 
+              pull("submodel"))
+file.path(datapath, 
+          "binary/simmodels",
+          str_c(gw51t_modelnames, 
+                ".rds")) %>% 
+    walk(function(path) {
+        if (file.exists(path)) {
+            modelname <- basename(path) %>% str_remove(".rds")
+            assign(modelname, readRDS(path), envir = .GlobalEnv)
+        }
+    })
+```
+
+```{r eval=params$loadmodels_GW_05.1_aq, include=FALSE}
+# GW_05.1_aq
+respvar <- c("lg3_std", "hg3_std")
+gw51a_modelnames <- 
+    str_c("model_gw51a_", 
+          respvar)
+file.path(datapath, 
+          "binary/simmodels",
+          str_c(gw51a_modelnames, ".rds")) %>% 
+    walk(function(path) {
+        if (file.exists(path)) {
+            modelname <- basename(path) %>% str_remove(".rds")
+            assign(modelname, readRDS(path), envir = .GlobalEnv)
+        }
+    })
+```
+
+```{r eval=params$loadmodels_GW_03.3, include=FALSE}
+# GW_03.3
+respvar <- c("no3", "nh4", "po4")
+gw33_modelnames <- 
+    str_c("model_gw33_", 
+          respvar)
+file.path(datapath, 
+          "binary/simmodels",
+          str_c(gw33_modelnames, ".rds")) %>% 
+    walk(function(path) {
+        if (file.exists(path)) {
+            modelname <- basename(path) %>% str_remove(".rds")
+            assign(modelname, readRDS(path), envir = .GlobalEnv)
+        }
+    })
+```
+
+In verdere hoofdstukken komen de resultaten van scenario's aan bod, waarbij het effect is doorgerekend van verschillende steekproefgrootte, meetfrequentie en/of herbezoekpatroon, alsook van een hypothetische (lineaire of exponentiële) trend.
+Het doorrekenen van het effect van scenariokeuzes doen we door herhaaldelijk waarden van doelpopulaties en steekproeven na te bootsen (te simuleren).
+Steekproeven worden daarbij uit een gesimuleerde doelpopulatie getrokken in overeenstemming met de kenmerken van een scenario.
+De simulatie van populatiedata gebeurt met behulp van een statistisch model dat de waarde van een responsvariabele (primaire milieuvariabele) schat in functie van covariaten zoals type, jaar en bodemklasse.
+Elk model beschrijft één responsvariabele en is daartoe gefit (gecalibreerd) aan één van de analysedatasets die samengesteld werden in Hoofdstuk \@ref(datasets).
+
+De modellen in dit rapport betreffen 'generalized linear mixed models' (GLMMs) die uitgedrukt kunnen worden als 'latent Gaussian Markov random fields' (GMRF) [@zuur_beginners_2017; @zuur_beginners_2018].
+Ze zijn Bayesiaans gefit met behulp van het R-package INLA, dat een groot aantal GRMF-specificaties toelaat [@rue_bayesian_2017; @lindgren_bayesian_2015; @bakka_spatial_2018].
+In Bijlage \@ref(app:models) is meer detail terug te vinden over de specificatie van deze modellen in R, de modelschattingen, enkele diagnostische kenmerken en een evaluatie van de fit.
+
+Bij de modelbouw is gestreefd naar een goede balans tussen optimale fit op basis van de WAIC / DIC criteria en eenvoud i.v.m. de toepassing (steekproefontwerp).
+Alleen de uiteindelijke modellen zijn in het rapport opgenomen.^[In de git-historiek van de broncode van dit rapport zijn niet-weerhouden alternatieve modelvormen terug te vinden.]
+
+In dit hoofdstuk gaan we in op de aard (betekenis) van de modellen zelf, die te beschouwen zijn als het 'gereedschap' om data mee na te bootsen (scenario's).
+We definiëren met name de mathematische modelvorm, omdat deze weergeeft hoe we de variatie in de responsvariabele structureren.
+Daarbij wordt ook ingegaan op enkele keuzes, die bijvoorbeeld verband houden met kenmerken van de analysedatasets.
+Voorts wordt de modelevaluatie samengevat en wordt een kwalitatieve beoordeling gegeven van de bruikbaarheid van het model.
+
+## Gemeenschappelijke bepalingen voor de modellen
+
+### Modelvorm: algemeen {#modelvorm}
+
+Het model van de respons $Y_i$ voor een (hypothetische) observatie $i$ omvat een lineaire predictor $\eta_i$, een linkfunctie $g$ en een distributiefunctie $f$.
+
+$$Y_i \sim f(\mu_i, ...)$$
+$$\eta_i = g(\mu_i) = X_i \cdot \beta + Z_i$$
+
+- De **lineaire predictor** $\eta_i$ is de som van:
+    - een **systematisch deel** $X_i \cdot \beta$, dat de verwachte waarde van de respons weergeeft in de schaal van de lineaire predictor $\eta_i$.
+    Het is een lineaire combinatie van covariaten (verklarende factoren) waarvoor de waarden bekend moeten zijn (en dus vooropgesteld voor gesimuleerde data), bv. `type`, `year` of `soilclass` (de zg. 'fixed effects').
+    De parameters van de fixed effects zijn de coëfficiënten van deze lineaire combinatie en worden geschat door het model.
+    Ze zijn vervat in de vector (kolommatrix) $\beta$.
+    $X_i$ is de vector (rijmatrix) met de geobserveerde waarde van de covariaten.
+    - een **random deel** $Z_i$, te zien als een som van één of meer ruistermen waarvoor de verwachte waarde nul is (gemiddelde waarde van een oneindige populatie).
+    Het vertegenwoordigt variabele effecten ('random effects') van bv. locatie of tijdstip, waarvan de waarde gemeenschappelijk kan zijn aan meerdere observaties.
+    Elk random effect (ruisterm) wordt beschreven door een zg. _latent model_, dat verondersteld wordt gerespecteerd te zijn bij elke mogelijke observatie, en waarmee dus een nieuwe waarde kan worden gesimuleerd om een nieuwe observatie samen te stellen.
+    De parameters van het latent model worden geschat door R-INLA volgens een op te geven type latent model (bv. Gaussian random effects, Random walk of order 1, ...).
+- De **distributiefunctie** (kansverdeling of kansdichtheid) $f$ van de respons definieert de kansverdeling van $Y_i$ op basis van $\mu_i$, dus typisch op de schaal van de respons (meestal is $\mu_i$ de verwachte waarde van $Y_i$).
+Deze distributiefunctie dicteert in essentie de variatie tussen _de mogelijke individuele observaties_ met eenzelfde gemeenschappelijke schatting $\mu_i$, i.e. de kansverdeling van $\epsilon_i$ in $Y_i = \mu_i + \epsilon_i$.
+Afhankelijk van de distributiefamilie (gaussiaans, gamma, ...) is $f$ behalve door $\mu_i$ bijkomend geparametriseerd door een of meer extra parameters ('$...$'), bv. een standaarddeviatie $\sigma$ bij een gaussiaanse = normale distributie ($Y_i \sim \mathcal{N}(\mu_i, \sigma^2)$).
+Bij de meeste distributiefamilies is $\mu_i$ het gemiddelde van de distributie van $Y_i$ ($\mu_i = E(Y_i)$) en kan $\mu_i$ dus geïnterpreteerd worden op de schaal van de respons.
+Echter, bij de lognormale distributie ($Y_i \sim Lognormal(\mu_i, \sigma^2)$) is $\mu_i$ het gemiddelde van de distributie van $ln(Y_i)$ ($\mu_i = E(ln(Y_i))$; analoog voor $\sigma^2 = Var(ln(Y_i))$).
+Bij een lognormale distributie geldt namelijk dat $ln(Y_i) \sim \mathcal{N}(\mu_i, \sigma^2)$.
+- De **linkfunctie** $g$ definieert een transformatie tussen $\mu_i$ en de lineaire predictor.
+Bij een 'identity link' is er geen transformatie.
+Bij een 'log link' schat de lineaire predictor de natuurlijke logaritme van $\mu_i$, dus $\eta_i = ln(\mu_i)$ of $\mu_i = e^{\eta_i}$.
+
+Soms wordt een respons beschreven door een zg. 'joint model', wat betekent dat de respons samengesteld is uit twee responsen (bv. het product van beide).
+Elk van de deelresponsen kan dan worden gemodelleerd op bovenstaande wijze, maar daarbij kunnen overeenkomende delen van de lineaire predictor gemeenschappelijk worden geschat [@gomez-rubio_bayesian_2021; @krainski_advanced_2021].
+
+### Uitgangspunten
+
+De volgende uitgangspunten zijn aangenomen voor de samenstelling van de lineaire predictor:
+
+- Elk model houdt rekening met minstens één covariaat die de ruimtelijke positie vertegenwoordigt, impliciet (bv. `loc_code`) of expliciet (geografische coördinaten).
+Dit vertegenwoordigt de variatie die het gevolg is van dataverzameling op verschillende locaties.
+- Elk model houdt rekening met minstens één covariaat die het tijdstip vertegenwoordigt, bv. jaar of datum.
+Dit vertegenwoordigt de variatie die het gevolg is van dataverzameling op verschillende tijdstippen.
+- Elk model maakt bovendien onderscheid tussen een lange-termijntrend en korte-termijnvariatie (rond de lange-termijntrend).
+Omdat we in de simulaties zelf een lange-termijntrend opleggen, is het immers noodzakelijk om de korte-termijnvariatie apart in de simulaties te behouden, en de met het model gefitte lange-termijntrend te elimineren (detrending).
+De lange-termijntrend fitten we als een tweedegraadspolynoom.
+Dit verhindert dat korte-termijnvariatie wordt geabsorbeerd in de lange-termijntrend.
+
+### Verdere keuzes
+
+In de meeste (of alle) gevallen wordt er naar gestreefd om typespecifiek te werken bij de specificatie van het systematisch en/of random deel van de lineaire predictor, en in de distributiefunctie van de respons.
+Op die manier is het mogelijk om in steekproefscenario's rekening te houden met verschillende variatiestructuur tussen types, bij het kiezen van steekproefgrootte in ruimte of tijd.
+Typespecifiek werken is mogelijk door het opnemen van de covariaat `type` in het model, of van een spatiale factor waarvoor de kansverdeling per type gekend is zoals `soilclass`; zie \@ref(spatiale-verdeling).
+In het random deel en in de distributiefunctie van de respons is dit mogelijk door een interactie te voorzien met voornoemde covariaat (`type`, of een spatiale factor).
+We spreken hierbij over stratificatie van het model, niet te verwarren met de strata van het meetnet zoals vernoemd in \@ref(popsize) (hoewel ze kunnen overeenkomen).
+De keuze voor de beschouwde spatiale factoren (zie ook \@ref(spatiale-verdeling)) is gebaseerd op voorbereidend modelwerk (Jansen, unpubl.).
+
+Bijvoorbeeld de korte-termijnvariatie (een ruisterm in de lineaire predictor) wordt dan beschreven door een aparte distributiefunctie op maat van elk type of elk niveau van een ruimtelijke covariaat.
+Dit is natuurlijk enkel mogelijk voor types of niveaus met voldoende data.
+Wanneer veel niveaus onvoldoende data bevatten, komt het ook voor dat deze niveaus gelumpt zijn tot één niveau (zie \@ref(gw33-model)).
+
+Omwille van specifieke kenmerken van de analysedataset werden enkele aanpassingen gedaan aan de analysedataset alvorens een model te fitten:
+
+- Omdat hoge waarden van een covariaat de parameterschattingen kunnen bemoeilijken, is ervoor gekozen om het jaar (variabele `hydroyear` of `year`) te standaardiseren door het verschil te nemen met 1989.
+De resulterende variabelen zijn `hydroyear_std` en `year_std`, met waarden van 0 tot 29.
+- Omdat niet van elk type voldoende data van een milieuvariabele beschikbaar zijn voor typespecifieke modellering (paragraaf \@ref(vert-types)), is ervoor gekozen om bepaalde types (met beperkte data) te lumpen met voor de milieuvariabele min of meer verwante types (expertoordeel).
+De gebruikte typeclusters zijn weergegeven in Tabel \@ref(tab:typeclusters).
+Elk type wordt dus nog steeds vertegenwoordigd, maar dit kan gebeuren via een typecluster.
+Deze benadering is ook gevolgd voor types zonder gegevens over een milieuvariabele.
+In de modellen wordt nog steeds gesproken van de variabele `type`, maar de waarde krijgt vaak een suffix `_clus` indien _data_ van meerdere types werden gecombineerd voor de _modelbouw_.
+Bv. het modeltype '9160_clus' is in de data voor meetnet GW_05.1_terr meest vertegenwoordigd door 9160, maar omvat ook de data van 9130_end, 91F0 en 1310_zv.
+
+Omdat we veelal gebruik maken van de default priors van R-INLA, passen we steeds 'model scaling' toe om de zg. hyperparameters van bepaalde latente modellen (o.a. random walk) intern te herschalen  [@gomez-rubio_bayesian_2021].
+Dit maakt dat de default hyperpriors doorgaans meer toepasbaar zullen zijn.
+
+```{r typeclusters}
+read_vc("typeclusters_gw51t",
+        root = "data/10_input") %>% 
+    as_tibble %>% 
+    filter(str_detect(type_model, "_clus$")) %>% 
+    mutate(scheme = "GW_05.1_terr") %>% 
+    select(scheme,
+           typecluster = type_model,
+           type) %>% 
+    bind_rows(
+        read_vc("typeclusters_gw51a",
+                root = "data/10_input") %>% 
+            as_tibble %>% 
+            group_by(type_model) %>% 
+            mutate(scheme = "GW_05.1_aq",
+                   nr_types = n()) %>% 
+            ungroup %>% 
+            filter(nr_types >1) %>% 
+            select(scheme,
+                   typecluster = type_model,
+                   type)
+    ) %>% 
+    bind_rows(
+        read_vc("typeclusters_gw33",
+                root = "data/10_input") %>% 
+            as_tibble %>% 
+            group_by(type_model) %>% 
+            mutate(scheme = "GW_03.3",
+                   nr_types = n()) %>% 
+            ungroup %>% 
+            filter(nr_types >1) %>% 
+            select(scheme,
+                   typecluster = type_model,
+                   type)
+    ) %>% 
+    arrange(across()) %>% 
+    kable(caption = "Typeclusters om overeenkomstige types te generaliseren bij modelbouw of simulaties, bij gebrek aan voldoende data.") %>% 
+    kable_styling(full_width = FALSE)
+```
+
+
+## Mathematische vorm van elk model en modelevaluatie
+
+Voor meer uitgebreide uitkomsten, zie Bijlage \@ref(app:models).
+
+### GW_05.1_terr: `lg3_lcl`
+
+Op basis van de spreiding van de responsvariabele en het beperkte aantal nullen is gekozen voor gaussiaanse modellen.
+Dit wil zeggen dat de responsvariabele een normale kansverdeling volgt waarbij de ligging (het gemiddelde) afhangt van de waarde van covariaten.
+
+Omwille van de grote dataset is één afzonderlijk model gefit _per typegroep_ (cf. Tabel \@ref(tab:typegroups)).
+
+Modelvorm:
+
+$$Y_i \sim \mathcal{N}(\mu_i, \sigma^2_{q_i})$$
+$$\mu_i = \beta_0 + c_i + s_i + \beta_{t,q_i} \cdot t_i + \beta_{t^2,q_i} \cdot t^2_i + u_i + v_i + w_i$$
+$$u_i \sim \mathcal{N}(0,\sigma^2_{u,q_i})$$
+$$v_i \sim \mathcal{N}(0,\sigma^2_v)$$
+$$w_i \sim \mathcal{N}(0,\sigma^2_w)$$
+
+Met:
+
+::: {.largefonttable}
+
+|
+:-|:---------------
+$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en standaarddeviatie ($\sigma$)
+$i$ | _index_ die een unieke (hypothetische) observatie identificeert
+$\beta_0$ | intercept
+$c_i$ | fixed effect van `type` (typecluster)
+$s_i$ | fixed effect van `soilclass`
+$q_i$ | _index_ die het stratum aanduidt waartoe de observatie behoort. Afhankelijk van het model is de stratumvariabele `type` of `soilclass` (volgens wat het beste model oplevert). Het gebruik van deze index geeft aan dat de parameter afhangt van $q_i$.
+$t_i$ | `hydroyear_std`, de variabele in de tweedegraadspolynoom (lange-termijntrend; fixed effect)
+$\beta_{t,q_i}$, $\beta_{t^2,q_i}$ | parameters van de tweedegraadspolynoom
+$u_i$ | random effect van `hydroyear_std` (korte-termijnvariatie)
+$v_i$ | random effect van `loc_code` (locatie)
+$w_i$ | random effect van `cluster_id` (locatiecluster)
+
+:::
+
+De gefitte modellen zijn:
+
+```{r eval=params$loadmodels_GW_05.1_terr, results="asis"}
+if (!any(str_detect(gw51t_modelnames, "lg3"))) error_missing_modelobjects()
+gw51t_modelnames %>% 
+    str_subset("lg3") %>% 
+    str_c("- `", ., "`") %>% 
+    cat(sep = "\n")
+```
+
+
+De figuren geven een idee van de fit en de robuustheid van elk model.
+
+```{r eval=params$loadmodels_GW_05.1_terr, results="asis"}
+gw51t_modelnames %>% 
+    str_subset("lg3") %>% 
+    walk(function(mn) {
+        M1 <- eval(as.name(mn))
+        M1_diagn <- 
+            tibble(observed = extract_observed(M1$.args$data$Y),
+                   fitted = M1$summary.fitted.values$mean,
+                   resid = fitted - observed)
+        plot_modelevaluation(M1, M1_diagn, mn)
+    })
+```
+
+Het aantal 'equivalent replicates' is bij deze modellen aan de lage kant, wat maakt dat de parameterschattingen minder betrouwbaar worden.
+Bij de modelselectie is echter vooral voortgegaan op de informatietheoretische criteria WAIC en DIC, die de balans beschouwen tussen de fit (beter bij meer parameters en dus minder 'equivalent replicates') en de spaarzaamheid (beter bij minder parameters).
+Ondanks het lagere aantal 'equivalent replicates' wezen deze criteria dus uit dat deze modellen beter zijn dan modellen met minder parameters.
+
+_Algemeen resultaat voor de fixed effects:_
+
+- veelal wijken bepaalde types en bodemklassen significant af van het gemeenschappelijke intercept.
+Welke bodemklasse significant is, hangt af van de typegroep, maar een algemeen patroon is dat lichte bodems een lagere LG3 (`lg3_lcl`) hebben;
+- in de dataset treedt over de volledige tijdsspanne (30 jaar) vaker geen lange-termijntrend op dan wel, maar verschillende strata vertonen een significante tweedegraadstrend.
+
+_Algemeen resultaat voor de random effects:_
+
+- de spatiale ruis is groter dan de temporele ruis, en wordt veelal grotendeels opgeslorpt door de locatiecluster (`cluster_id`);
+- de temporele ruis loopt duidelijk uiteen tussen strata;
+- er zijn duidelijke verschillen tussen strata in de residuele ruis op observatieniveau.
+
+Op basis van de resultaten kunnen we **besluiten** dat deze modellen de variatie van de milieuvariabele in de analysedataset redelijkerwijze generaliseren.
+We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpopulaties te simuleren:
+
+- onevenwichtige spatiale en temporele dekking in de analysedata, op typeniveau tevens te zien in de vertegenwoordiging van bodemklassen en ecoregio's in vergelijking met de doelpopulatie;
+- de aannames om bepaalde types bij elkaar te mogen lumpen.
+
+
+### GW_05.1_terr: `hg3_lcl`
+
+Op basis van het grote aantal nullen en de scheve spreiding van de responsvariabele is gekozen voor hurdle gamma modellen (= zero-altered gamma modellen), i.e. een _joint_ bernouilli + gamma model [@zuur_beginners_2018; @krainski_advanced_2021].
+Dit wil zeggen dat de responsvariabele wordt ontleed in twee factoren, die met elkaar vermenigvuldigd kunnen worden:
+
+- een binaire respons (0 of 1) waarbij de waarde 1 betekent dat de responsvariabele verschilt van 0 (en vice-versa).
+Deze responsvariabele volgt een bernoulli kansverdeling (een binomiale kansverdeling met parameter $n = 1$);
+- een respons die steeds verschillend is van 0.
+Deze wordt gefit met een gamma kansverdeling volgt waarbij de ligging (het gemiddelde) afhangt van de waarde van covariaten.
+
+Bovendien draaien we het teken om van de steeds negatieve responsvariabele `hg3_lcl`, aangezien de gamma distributie betrekking heeft op (strikt) positieve waarden.
+
+Merk op dat alleen het gamma submodel toelaat om de grootte van de residuele ruis apart te specifiëren (schatten), dit met behulp van de vormparameter ('shape').
+In een bernouilli distributie volgt de spreiding volledig uit de waarde van de kansparameter.
+
+Omwille van de grote dataset is één joint model gefit _per typegroep_ (cf. Tabel \@ref(tab:typegroups)).
+
+Modelvorm:
+
+$$-Y_i = Y_{b,i} \cdot Y_{g,i}$$
+$$Y_{b,i} \sim Ber(\pi_i) \quad , \quad Y_{g,i} \sim Gamma(\mu_i, \nu_{q_i})$$
+$$\eta_{b,i} = ln(\frac{\pi_i}{1 - \pi_i}) = \beta_{b,0} + c_{b,i} + s_{b,i} + \beta_{b,t,q_i} \cdot t_i + \beta_{b,t^2,q_i} \cdot t^2_i + u_{b,i} + v_{b,i} + w_{b,i}$$
+$$\eta_{g,i} = ln(\mu_i) = \beta_{g,0} + c_{g,i} + s_{g,i} + \beta_{g,t,q_i} \cdot t_i + \beta_{g,t^2,q_i} \cdot t^2_i + u_{g,i} + v_{g,i} + w_{g,i}$$
+$$u_{b,i} \sim \mathcal{N}(0,\sigma^2_{u_b,q_i}) \quad , \quad u_{g,i} = \beta_{u,q_i} \cdot u_{b,i}$$
+$$v_{b,i} \sim \mathcal{N}(0,\sigma^2_{v_b}) \quad , \quad v_{g,i} = \beta_v \cdot v_{b,i}$$
+$$w_{b,i} \sim \mathcal{N}(0,\sigma^2_{w_b}) \quad , \quad w_{g,i} = \beta_w \cdot w_{b,i}$$
+
+Met:
+
+::: {.largefonttable}
+
+|
+:-|:-------------
+$Ber$ | bernouilli distributiefunctie, gedefinieerd door één parameter $\pi$: de kans op waarde 1
+$Gamma$ | gamma distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en vorm ($\nu$).^[Een alternatieve parametrisatie is mogelijk met de parameters vorm en schaal, waarbij $gemiddelde = schaal \cdot vorm$.] De vormparameter verwijst naar de vorm van de distributiefunctie. Beide parameters zijn bepalend voor de variantie.
+$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en standaarddeviatie ($\sigma$)
+$i$ | _index_ die een unieke (hypothetische) observatie identificeert
+$Y_{b,i}$, $Y_{g,i}$ | bernouilli (0 of 1) resp. gamma respons
+$\eta_{b,i}$, $\eta_{g,i}$ | lineaire predictor van de bernouilli resp. gamma respons
+$\beta_{b,0}$, $\beta_{g,0}$ | intercept in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$c_{b,i}$, $c_{g,i}$ | fixed effect van `type` (typecluster) in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$s_{b,i}$, $s_{g,i}$ | fixed effect van `soilclass` in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$q_i$ | _index_ die het stratum aanduidt waartoe de observatie behoort. Afhankelijk van het model is de stratumvariabele `type` of `soilclass` (volgens wat het beste model oplevert). Het gebruik van deze index geeft aan dat de parameter afhangt van $q_i$.
+$t_i$ | `hydroyear_std`, de variabele in de tweedegraadspolynoom (lange-termijntrend; fixed effect)
+$\beta_{b,t,q_i}$, $\beta_{b,t^2,q_i}$, $\beta_{g,t,q_i}$, $\beta_{g,t^2,q_i}$ | parameters van de tweedegraadspolynoom, in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$u_{b,i}$, $u_{g,i}$ | random effect van `hydroyear_std` (korte-termijnvariatie) in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$v_{b,i}$, $v_{g,i}$ | random effect van `loc_code` (locatie) in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$w_{b,i}$, $w_{g,i}$ | random effect van `cluster_id` (locatiecluster) in $\eta_{b,i}$ resp. $\eta_{g,i}$
+$\beta_{u,q_i}$, $\beta_v$, $\beta_w$ | vaste schaalfactor om de random componenten in $\eta_{g,i}$ af te leiden uit deze in $\eta_{b,i}$. Op deze manier brengen we de random effecten van beide deelresponsen in onderling verband (correlatie), desgevallend afhankelijk van het stratum $q_i$
+
+:::
+
+De gefitte modellen zijn:
+
+```{r eval=params$loadmodels_GW_05.1_terr, results="asis"}
+if (!any(str_detect(gw51t_modelnames, "hg3"))) error_missing_modelobjects()
+gw51t_modelnames %>% 
+    str_subset("hg3") %>% 
+    str_c("- `", ., "`") %>% 
+    cat(sep = "\n")
+```
+
+
+De figuren geven een idee van de fit en de robuustheid van elk model.
+
+```{r eval=params$loadmodels_GW_05.1_terr, results="asis"}
+gw51t_modelnames %>% 
+    str_subset("hg3") %>% 
+    walk(function(mn) {
+        M1 <- eval(as.name(mn))
+        nr_obs <- nrow(M1$.args$data$Y) / 2
+        M1_diagn <- 
+            tibble(observed = 
+                       extract_observed(M1$.args$data$Y) %>% 
+                       matrix(ncol = 2, dimnames = list(NULL, c("b", "g"))) %>% 
+                       as_tibble %>% 
+                       mutate(obs = ifelse(b == 1, -b * g, 0)) %>% 
+                       pull(obs),
+                   fitted_b = M1$summary.fitted.values$mean[seq_len(nr_obs)],
+                   fitted_g = M1$summary.fitted.values$mean[nr_obs + seq_len(nr_obs)],
+                   fitted = fitted_b * fitted_g * -1,
+                   resid = fitted - observed)
+        plot_modelevaluation(M1, M1_diagn, mn)
+    })
+```
+
+Het aantal 'equivalent replicates' is bij deze modellen ietwat laag, wat maakt dat de parameterschattingen iets minder betrouwbaar worden.
+Het aantal is wel iets hoger dan bij `lg3_lcl`.
+Bij de modelselectie is echter vooral voortgegaan op de informatietheoretische criteria WAIC en DIC, die de balans beschouwen tussen de fit (beter bij meer parameters en dus minder 'equivalent replicates') en de spaarzaamheid (beter bij minder parameters).
+Ondanks het iets lagere aantal 'equivalent replicates' wezen deze criteria dus uit dat deze modellen beter zijn dan modellen met minder parameters.
+
+Bij het inspecteren van de modelresultaten in Bijlage \@ref(app:models), moet ermee rekening worden gehouden dat de gamma respons een tegengesteld teken heeft t.o.v. de `hg3_lcl` responsvariabele.
+Bijgevolg moeten de fixed parameters in de omgekeerde richting worden geïnterpreteerd.
+
+_Algemeen resultaat voor de fixed effects:_
+
+De volgende effecten zien we zowel bij het bernouilli als het gamma submodel:
+
+- veelal wijken bepaalde types en bodemklassen significant af van het gemeenschappelijke intercept voor bernouilli of gamma.
+Welke bodemklasse significant is, hangt af van de typegroep, maar een algemeen patroon is dat lichte bodems een lagere HG3 hebben;
+- in de dataset treedt over de volledige tijdsspanne (30 jaar) geregeld een stijgende lange-termijntrend op.
+
+_Algemeen resultaat voor de random effects:_
+
+- de spatiale ruis is groter dan de temporele ruis, en wordt in het bernouilli submodel grotendeels opgeslorpt door de locatiecluster (`cluster_id`).
+In het gamma submodel hebben locatie (`loc_code`) en locatiecluster vaker een evenwaardige rol;
+- de temporele ruis loopt duidelijk uiteen tussen strata;
+- er zijn duidelijke verschillen tussen strata in de residuele ruis (observatieniveau) in het gamma submodel: de vormparameter ('shape') hangt duidelijk af van het stratum.
+
+Op basis van de resultaten kunnen we **besluiten** dat deze modellen de variatie van de milieuvariabele in de analysedataset redelijkerwijze generaliseren.
+We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpopulaties te simuleren:
+
+- onevenwichtige spatiale en temporele dekking in de analysedata, op typeniveau tevens te zien in de vertegenwoordiging van bodemklassen en ecoregio's in vergelijking met de doelpopulatie;
+- de aannames om bepaalde types bij elkaar te mogen lumpen.
+
+### GW_05.1_aq: `lg3_std` en `hg3_std`
+
+Wegens de grote parallellen in modelvorm en resultaten, worden de modellen voor `lg3_std` en voor `hg3_std` hier samen besproken.
+
+Op basis van de spreiding van de responsvariabele is gekozen voor gaussiaanse modellen.
+Dit wil zeggen dat de responsvariabele een normale kansverdeling volgt waarbij de ligging (het gemiddelde) afhangt van de waarde van covariaten.
+Merk op dat `lg3_std` en `hg3_std` zowel negatieve als positieve waarden kunnen aannemen.
+
+Modelvorm:
+
+$$Y_i \sim \mathcal{N}(\mu_i, \sigma^2_{q_i})$$
+$$\mu_i = c_i + \beta_{t,q_i} \cdot t_i + \beta_{t^2,q_i} \cdot t^2_i + u_i + w_i$$
+$$u_i \sim \mathcal{N}(0,\sigma^2_{u,q_i})$$
+$$w_i \sim \mathcal{N}(0,\sigma^2_{w,q_i})$$
+
+Met:
+
+::: {.largefonttable}
+
+|
+:-|:---------------
+$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en standaarddeviatie ($\sigma$)
+$i$ | _index_ die een unieke (hypothetische) observatie identificeert
+$c_i$ | fixed effect van `type` (typecluster)
+$q_i$ | _index_ die het type (typecluster) aanduidt waartoe de observatie behoort. Het gebruik van deze index geeft aan dat de parameter afhangt van $q_i$.
+$t_i$ | `hydroyear_std`, de variabele in de tweedegraadspolynoom (lange-termijntrend; fixed effect)
+$\beta_{t,q_i}$, $\beta_{t^2,q_i}$ | parameters van de tweedegraadspolynoom
+$u_i$ | random effect van `hydroyear_std` (korte-termijnvariatie)
+$w_i$ | random effect van `cluster_id` (locatiecluster)
+
+:::
+
+De gefitte modellen zijn:
+
+```{r eval=params$loadmodels_GW_05.1_aq, results="asis"}
+gw51a_modelnames %>% 
+    str_c("- `", ., "`") %>% 
+    cat(sep = "\n")
+```
+
+
+De figuren geven een idee van de fit en de robuustheid van elk model.
+
+```{r eval=params$loadmodels_GW_05.1_aq, results="asis"}
+gw51a_modelnames %>% 
+    walk(function(mn) {
+        M1 <- eval(as.name(mn))
+        M1_diagn <- 
+            tibble(observed = extract_observed(M1$.args$data$Y),
+                   fitted = M1$summary.fitted.values$mean,
+                   resid = fitted - observed)
+        plot_modelevaluation(M1, M1_diagn, mn)
+    })
+```
+
+Het aantal 'equivalent replicates' is bij deze modellen aan de lage kant, wat maakt dat de parameterschattingen minder betrouwbaar worden.
+Bij de modelselectie is echter vooral voortgegaan op de informatietheoretische criteria WAIC en DIC, die de balans beschouwen tussen de fit (beter bij meer parameters en dus minder 'equivalent replicates') en de spaarzaamheid (beter bij minder parameters).
+Ondanks het lagere aantal 'equivalent replicates' wezen deze criteria dus uit dat deze modellen beter zijn dan modellen met minder parameters.
+
+_Algemeen resultaat voor de fixed effects:_
+
+- in de dataset treedt over de volledige tijdsspanne (30 jaar) vaak een lange-termijntrend op bij `lg3_std`, maar niet bij `hg3_std`.
+Deze trend is verschillend tussen types.
+
+_Algemeen resultaat voor de random effects:_
+
+- de spatiale ruis is groter dan de temporele ruis;
+- de spatiale, temporele en residuele ruis lopen duidelijk uiteen tussen strata;
+- bij `hg3_std` zijn de ruistermen veelal kleiner dan bij `lg3_std`.
+
+Op basis van de resultaten kunnen we **besluiten** dat deze modellen de variatie van de milieuvariabele in de analysedataset redelijkerwijze generaliseren.
+We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpopulaties te simuleren:
+
+- onevenwichtige spatiale en temporele dekking in de analysedata, op typeniveau tevens te zien in de vertegenwoordiging van bodemklassen en ecoregio's in vergelijking met de doelpopulatie;
+- de aannames om bepaalde types bij elkaar te mogen lumpen.
+
+
+
+
+
+
+### GW_03.3: `no3`, `nh4` en `po4` {#gw33-model}
+
+Wegens de grote parallellen in modelvorm en resultaten, worden de respectievelijke modellen voor `no3`, `nh4` en `po4` hier samen besproken.
+
+Op basis van de scheve spreiding van deze responsvariabelen en hun strikt positieve waarde, is gekozen voor lognormale modellen.
+Dit wil zeggen dat het logaritme van de responsvariabele een normale kansverdeling volgt, waarbij de ligging (het gemiddelde) afhangt van de waarde van covariaten.
+Ook gammamodellen komen in aanmerking voor deze responsvariabelen en zijn uitgetest, maar hun WAIC en DIC criteria scoorden slechter.
+Bovendien vroegen deze modellen meer rekentijd.
+
+Er is voor de distributie, voor de random componenten en voor het lange-termijntijdseffect gekozen voor een interactie met `ecoregion`.
+In het geval van de random componenten en het lange-termijntijdseffect gebeurt dit specifiek voor de ecoregio's met voldoende data.
+Voor de andere ecoregio's zijn deze modelcomponenten ook voorzien, maar dit is dan voor het gelumpte niveau 'Ecoregio Overige' om voldoende data te hebben.
+De schatting van de residuele variantie gebeurde wel voor elke ecoregio apart.
+Er is in plaats van `ecoregion` ook gekeken naar de fit met `type` of met `soilclass` als interactievariabele, maar die modellen scoorden voor alle responsvariabelen slechter.
+
+Behalve het jaareffect (random) werd er ook gekeken naar het maandeffect (random).
+Er is echter voor geopteerd om het te laten vallen omdat `month` maar heel weinig variatie verklaarde, terwijl het de modellen complexer maakt.
+Dit besluit werd voor `no3` ook gesteund door de informatiecriteria.
+
+Modelvorm:
+
+$$Y_i \sim Lognormal(\mu_i, \sigma^2_{q_i})$$
+$$\mu_i = c_i + \beta_{t,q_i} \cdot t_i + \beta_{t^2,q_i} \cdot t^2_i + u_i + w_i$$
+$$u_i \sim \mathcal{N}(0,\sigma^2_{u,q_i})$$
+$$w_i \sim \mathcal{N}(0,\sigma^2_{w,q_i})$$
+
+Met:
+
+::: {.largefonttable}
+
+|
+:-|:---------------
+$\mathcal{N}$ | normale distributiefunctie, gedefinieerd door twee parameters: gemiddelde ($\mu$) en standaarddeviatie ($\sigma$)
+$i$ | _index_ die een unieke (hypothetische) observatie identificeert
+$q_i$ | _index_ die het stratum aanduidt waartoe de observatie behoort. De stratumvariabele is steeds `ecoregion`. Het gebruik van deze index geeft aan dat de parameter afhangt van $q_i$.
+$c_i$ | fixed effect van `type` (typecluster)
+$t_i$ | `year_std`, de variabele in de tweedegraadspolynoom (lange-termijntrend; fixed effect)
+$\beta_{t,q_i}$, $\beta_{t^2,q_i}$ | parameters van de tweedegraadspolynoom
+$u_i$ | random effect van `year_std` (korte-termijnvariatie)
+$w_i$ | random effect van `cluster_id` (locatiecluster)
+
+:::
+
+De gefitte modellen zijn:
+
+```{r eval=params$loadmodels_GW_03.3, results="asis"}
+gw33_modelnames %>% 
+    str_c("- `", ., "`") %>% 
+    cat(sep = "\n")
+```
+
+
+De figuren geven een idee van de fit en de robuustheid van elk model.
+Merk op dat voor dit meetnet de weergegeven geobserveerde en gefitte waarden betrekking hebben op de log-getransformeerde waarden (met grondtal $e$).
+RMSE-waarden op de schaal van de respons zijn opgenomen in Bijlage \@ref(app:models).
+
+```{r eval=params$loadmodels_GW_03.3, results="asis"}
+gw33_modelnames %>% 
+    walk(function(mn) {
+        M1 <- eval(as.name(mn))
+        M1_diagn <- 
+            tibble(observed = log(extract_observed(M1$.args$data$Y)),
+                   fitted = M1$summary.fitted.values$mean,
+                   resid = fitted - observed) %>% 
+            filter(!is.na(resid))
+        plot_modelevaluation(M1, M1_diagn, mn)
+    })
+```
+
+Het aantal 'equivalent replicates' is bij deze modellen aan de lage kant, wat maakt dat de parameterschattingen minder betrouwbaar worden.
+Bij de modelselectie is echter vooral voortgegaan op de informatietheoretische criteria WAIC en DIC, die de balans beschouwen tussen de fit (beter bij meer parameters en dus minder 'equivalent replicates') en de spaarzaamheid (beter bij minder parameters).
+Ondanks het lagere aantal 'equivalent replicates' wezen deze criteria dus uit dat deze modellen beter zijn dan modellen met minder parameters.
+
+Daarnaast valt een hoge RMSE op te merken: de distributie van observaties rondom de gefitte waarde is relatief breed.
+Er is dus veel residuele variatie die niet verklaard wordt door de lineaire predictor.
+Aangezien de distributie van de respons ook meespeelt in simulaties, is het niet echt een probleem dat de lineaire predictor nog niet de meeste variatie afdekt.
+De gesimuleerde responsen blijven dus realistisch.
+
+
+_Algemeen resultaat voor de fixed effects:_
+
+- terwijl `type` vaak geen duidelijk effect heeft, is dit wel het geval voor `ecoregion`;
+- lange-termijntijdseffect over de volledige tijdsspanne (30 jaar): voor `nh4` en `po4` blijkt er sprake te zijn van een stijging, gevolgd door een daling.
+Bij `no3` wisselt het effect in functie van de ecoregio.
+
+_Algemeen resultaat voor de random effects:_
+
+- de spatiale ruis is groter dan de temporele ruis;
+- de spatiale, temporele en residuele ruis lopen duidelijk uiteen tussen ecoregio's.
+
+Op basis van de resultaten kunnen we **besluiten** dat deze modellen de variatie van de milieuvariabele in de analysedataset redelijkerwijze generaliseren.
+We sommen de voornaamste mogelijke zwaktes op om met deze modellen nieuwe doelpopulaties te simuleren:
+
+- onevenwichtige spatiale en temporele dekking in de analysedata, op typeniveau tevens te zien in de vertegenwoordiging van ecoregio's in vergelijking met de doelpopulatie. Dit uit zich ook in een beperkte databeschikbaarheid voor heel wat ecoregio's;
+- de aanname om bepaalde ecoregio's tot één stratum te mogen lumpen bij de schatting van spatiale en temporele effecten per stratum;
+- de aannames om bepaalde types bij elkaar te mogen lumpen.
+
+
+
+
+
+
+
+
+
+
+<!-- Keep below chunk at the end of this chapter. -->
+
+```{r include=FALSE}
+# dropping model objects
+rm(list = ls(pattern = modelname_regex))
+gc()
+```
+
