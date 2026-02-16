@@ -1,0 +1,192 @@
+# Schatting van `r enforce_lowercase("$\\sigma_s$")` en `r enforce_lowercase("$\\sigma_t$")`
+
+We zullen werken met log~10~-getransformeerde doelvariabelen, omdat de gewenste maximale foutmarges relatief zijn uitgedrukt.
+Dit vertaalt zich op de log-schaal in een constant bereik.
+
+## Temporele doelpopulatie
+
+We leggen vooraf de temporele doelpopulatie (sectie \@ref(spatiotemporeel)) vast in een object.
+
+```{r}
+target_temporal <- 
+  tibble(
+    target_variable = c("no3", "ptot", "po4")
+  ) %>% 
+  expand_grid(scheme = c("SURF_03.4_lentic", "SURF_03.4_lotic")) %>% 
+  mutate(
+    month_min = ifelse(
+      str_detect(target_variable, "^n") & str_detect(scheme, "lentic"),
+      1,
+      4
+    ),
+    month_max = ifelse(
+      str_detect(target_variable, "^n") & str_detect(scheme, "lentic"),
+      3,
+      9
+    )
+  )
+target_temporal %>% kable()
+```
+
+
+## Schatting van varianties voor SURF_03.4_lentic
+
+Met behulp van eenvoudige mixed models (één per doelvariabele) bepalen we een puntschatting van $\sigma_s$ (variatie tussen locaties) en $\sigma_t$ (variatie tussen datums).
+Conform de design onderscheiden we deze varianties genest binnen type en jaar.
+Op de dataset passen we tevens de restrictie toe van de temporele doelpopulatie.
+Het opnemen van de zesjaarperiode als extra niveau had geen wezenlijke invloed op het resultaat en had tevens een hogere AIC; dit is daarom niet behouden.
+
+Om alle data te kunnen fitten, verdelen we de waarden beneden de bepaalbaarheidsgrens `loq` random volgens een uniforme distributie tussen  `0.01 * loq` en `loq`.
+We schatten deze benadering in als conservatief (we verwachten in werkelijkheid geen grotere varianties).
+Deze single imputatie is ook vergeleken met een tweede imputatie volgens dezelfde uniforme distributie (andere seed), en de resultaten lagen zeer dicht in elkaars buurt.
+(Zie ook de noot verder voor vergelijking met left-censored modellering.)
+
+```{r}
+set.seed(20260116) # needed to reproduce runif() imputation
+models_lentic <- 
+  chem_lentic_long %>% 
+  mutate(was_na = is.na(value)) %>% 
+  mutate(
+    value = ifelse(
+      is.na(value),
+      runif(n = n(), min = 0.01, max = 1) * loq,
+      value
+    ),
+    value_log = log10(value),
+    .by = was_na
+  ) %>% 
+  inner_join(
+    target_temporal %>% filter(str_detect(scheme, "lentic")),
+    join_by(variable == target_variable),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  filter(ifelse(
+    month_min > month_max,
+    month_sampling >= month_min | month_sampling <= month_max,
+    month_sampling >= month_min & month_sampling <= month_max
+  )) %>% 
+  # # below conversion to factor appeared unneeded for random intercept model
+  # mutate(
+  #   year_sampling = factor(year_sampling),
+  # ) %>%
+  nest(chemdata = -variable) %>% 
+  mutate(
+    model = map(chemdata, function(cd) {
+      lme(
+        value_log ~ 1,
+        random = ~ 1 | type / year_sampling / loc_code,
+        data = cd
+      )
+    })
+  )
+
+models_lentic$model %>% 
+  map(summary) %>% 
+  set_names(models_lentic$variable)
+```
+
+Samengevat zijn dit de schattingen van interesse:
+
+```{r}
+modelvar_lentic <- 
+  tribble(
+    ~target_variable, ~sd_spatial, ~sd_temporal,
+    "no3", 0.3883823, 0.3361728,
+    "ptot", 0.4555934, 0.3447835
+  )
+modelvar_lentic %>% kable()
+```
+
+Noot: een meer elegante manier is om de waarden expliciet als links-gecensureerd te modelleren, desgevallend gepaard met een volwaardige multipele imputatie.
+Ook dan moet er echter nog steeds een aanname worden gemaakt over de distributie van de responsvariabele (bv.: lognormaal?); de werkelijke distributie in het bereik onder de bepaalbaarheidsgrens blijft sowieso onbekend.
+Een aanpak met expliciet links-gecensureerde data plannen we in de toekomst, als onderdeel van een benadering met steekproefsimulaties.
+
+Een eerste verkenning om de data met package `brms` te fitten met een links-gecensureerde lognormale likelihood distributie gaf gelijkaardige resultaten als de huidige benadering, met een beperkt hogere ruimtelijke en beperkt lagere temporele variantie.
+De _rekentijd_ lag echter relatief hoog (238 s, versus 1 s met `nlme::lme()`); verdere modelaanpassingen zouden het mogelijks verhelpen en ook R-INLA (dat een snel algoritme hanteert) is te overwegen.
+
+
+## Schatting van varianties voor SURF_03.4_lotic
+
+Met behulp van eenvoudige mixed models (één per doelvariabele) bepalen we een puntschatting van $\sigma_s$ (variatie tussen locaties) en $\sigma_t$ (variatie tussen datums).
+Conform de design onderscheiden we deze varianties genest binnen type en jaar.
+Op de dataset passen we tevens de restrictie toe van de temporele doelpopulatie.
+
+Om alle data te kunnen fitten, verdelen we de waarden beneden de bepaalbaarheidsgrens `loq` random volgens een uniforme distributie tussen  `0.01 * loq` en `loq` (waarbij we dit ook doen met geschatte waarden voor de bepaalbaarheidsgrens, waar deze ongekend is).
+We schatten deze benadering in als conservatief (we verwachten in werkelijkheid geen grotere varianties).
+Deze single imputatie is ook vergeleken met een tweede imputatie volgens dezelfde uniforme distributie (andere seed), en de resultaten lagen zeer dicht in elkaars buurt.
+(Zie ook de noot verder voor vergelijking met left-censored modellering.)
+
+Het gaat maar om twee types in dit geval, die sterk verschillend zijn.
+De kleine (en kortdurende) dataset van 7220 liet niet toe om verschillende random effecten te combineren.
+De random effecten voor locatie en voor datum in 7220, wanneer apart begroot, liggen wel in dezelfde lijn als 3260.
+Aangezien de gecombineerde analyse voor 3260 en 7220 quasi hetzelfde resultaat teruggeeft als 3260 alleen, is de analyse beperkt tot 3260, met het idee dezelfde ruimtelijke en temporele steekproefgrootte toe te passen in de 7220-beeksystemen.
+
+Het opnemen van de zesjaarperiode als extra niveau had een lagere AIC en is daarom in dit geval behouden.
+De reden hiervoor is ongetwijfeld de langere tijdreeks in vergelijking met stilstaande wateren.
+
+```{r}
+set.seed(20260116) # needed to reproduce runif() imputation
+models_lotic <- 
+  chem_lotic_long %>% 
+  mutate(was_na = is.na(value)) %>% 
+  mutate(
+    value = case_when(
+      !is.na(value) ~ value,
+      !is.na(loq) ~ runif(n = n(), min = 0.01, max = 1) * loq,
+      .default = runif(n = n(), min = 0.01, max = 1) * loq_inferred
+    ),
+    value_log = log10(value),
+    .by = was_na
+  ) %>% 
+  inner_join(
+    target_temporal %>% filter(str_detect(scheme, "lotic")),
+    join_by(variable == target_variable),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  filter(ifelse(
+    month_min > month_max,
+    month_sampling >= month_min | month_sampling <= month_max,
+    month_sampling >= month_min & month_sampling <= month_max
+  )) %>% 
+  filter(type == "3260") %>% 
+  # # below conversion to factor appeared unneeded for random intercept model
+  # mutate(
+  #   year_sampling = factor(year_sampling),
+  #   month_day = factor(month_day)
+  # ) %>%
+  nest(chemdata = -variable) %>% 
+  mutate(
+    model = map(chemdata, function(cd) {
+      lme(
+        value_log ~ 1,
+        random = ~ 1 | sixyear_period / year_sampling / loc_code / month_day,
+        data = cd
+      )
+    })
+  )
+
+models_lotic$model %>% 
+  map(summary) %>% 
+  set_names(models_lotic$variable)
+```
+
+Samengevat zijn dit de schattingen van interesse:
+
+```{r}
+modelvar_lotic <- 
+  tribble(
+    ~target_variable, ~sd_spatial, ~sd_temporal,
+    "no3", 0.4806848, 0.2550572,
+    "po4", 0.3917011, 0.3178161
+  )
+modelvar_lotic %>% kable()
+```
+
+Noot: een meer elegante manier is om de waarden expliciet als links-gecensureerd te modelleren, desgevallend gepaard met een volwaardige multipele imputatie.
+Ook dan moet er echter nog steeds een aanname worden gemaakt over de distributie van de responsvariabele (bv.: lognormaal?); de werkelijke distributie in het bereik onder de bepaalbaarheidsgrens blijft sowieso onbekend.
+Een aanpak met expliciet links-gecensureerde data plannen we in de toekomst, als onderdeel van een benadering met steekproefsimulaties.
+
+Een eerste verkenning om de data met package `brms` te fitten met een links-gecensureerde lognormale likelihood distributie gaf gelijkaardige resultaten als de huidige benadering, met een beperkt hogere ruimtelijke en beperkt lagere temporele variantie.
+De _rekentijd_ lag echter relatief hoog (377 s, versus 10 s met `nlme::lme()`); verdere modelaanpassingen zouden het mogelijks verhelpen en ook R-INLA (dat een snel algoritme hanteert) is te overwegen.

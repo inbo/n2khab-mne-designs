@@ -30,11 +30,6 @@ _Their subfolders_ are likewise ordered as `010_...` and so on:
 
 Subfolders can contain their own RStudio project on the topic.
 
-For rather large subfolders (e.g. a report on a design), it is advised to further distinguish between a `src` and a `data` folder:
-
-- `src` contains R-scripts and/or bookdown projects
-- `data` is used to keep data sources, used or produced by code in `src`.
-
 Further, note that general binary/large data sources, either raw data sources or data sources produced by code in the
 [n2khab-preprocessing](https://github.com/inbo/n2khab-inputs) repo, should be organised according to data management conventions for N2KHAB projects.
 I.e., these N2KHAB data sources must be stored in a (git-ignored) folder `n2khab_data` (with subfolders `10_raw` and `20_processed`).
@@ -78,6 +73,6 @@ In addition, the monitoring results will aid in assessing the environmental subc
 To this end, each environmental compartment (groundwater, surface water, inundation water, atmosphere and soil) will be served by a specific MNE monitoring subprogramme aligned with the six-year cycles of the Natura 2000 policy.
 
 MNE will provide solid conclusions for (groups of) habitat types at the Flemish scale, but will be based on a selection of sites in space and time.
-Therefore, a statistical approach is needed to achieve the desired (or acceptable) level of precision, significance and power.
+Therefore, a statistical approach is needed to achieve the desired (or acceptable) level of precision, confidence level and power.
 
 

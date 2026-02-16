@@ -1,0 +1,80 @@
+---
+title: "HT_3260_linking"
+author: "Tom De Dobbelaer"
+date: "2022-11-04"
+output: html_document
+---
+```{r load-packages), echo=FALSE}
+require(tidyverse)
+require(inborutils)
+require(sf)
+require(git2rdata)
+```
+
+```{r collect-datasources, eval=FALSE, echo =FALSE}
+#dowload VHA
+temp_download<-tempfile()
+download.file("https://downloadagiv.blob.core.windows.net/vlaamse-hydrografische-atlas-waterlopen/2021/VHA-waterlopen,%202021-02-04/VHA_waterlopen_20210204_GewVLA_Shapefile.zip",temp_download)
+unzip(zipfile = temp_download, exdir = "../data/10_input/")
+rm(temp_download)
+
+#download 100 segments
+download_zenodo("10.5281/zenodo.4452578", path = "../data/10_input/", parallel = FALSE, quiet = FALSE)
+```
+<!--  #we laden de gewenste geodatabase in, in dit geval een samenvoeging van alle eerdere 3260 databanken--> 
+```{r setup, echo = FALSE}
+st_write(mutatedate, st_read("c://git/n2khab-mne-design/210_design_surfacewater/110_datapreparation/data/20_output/hab3260_integration.gpkg"))
+geodata= st_read("c://git/n2khab-mne-design/210_design_surfacewater/110_datapreparation/data/20_output/hab3260_integration.gpkg")%>%
+ rownames_to_column()%>% mutate(rowname_geodatabase = as.numeric(rowname)) %>% select (-c(rowname))
+#we selecteren de naam die bij de vhag_code hoort uit de vha_shapefile, zodat we deze kunnen koppelen aan 100m segmenten
+#deze databastanden naar Q-schijf
+vha_2020_names= st_read("c://Qgis/bronnen/VHA_waterlopen_20200312_GewVLA_Shapefile/Shapefile/Vhag.shp")%>%
+select (c(VHAG, NAAM))%>% rename(vhag_code = VHAG) %>% st_drop_geometry()
+#we koppelen de namen aan de segmenten
+watercourse_100mseg_lines = st_read("../data/10_input/watercourse_100mseg.gpkg", layer = "watercourse_100mseg_lines" )
+watercourse_100mseg_names = watercourse_100mseg_lines%>%
+left_join(vha_2020_names, by = "vhag_code")
+st_write(watercourse_100mseg_names, "../data/20_output/watercourse_100mseg_names.gpkg")
+```
+
+``` {r}
+#we checken hoeveel transecten in de geodatabank geen naam hebben (#94):
+#ieder segment is max 100m lang, we nemen de centroid van elk segment met een buffer van 50m.
+watercourse_100mseg_centroid= watercourse_100mseg_names%>% filter(rank %in% segments_within_buffer_list) %>% st_centroid()%>% st_buffer(dist=50)
+#we snijden de met 50m buffer van de 100m segmenten (NAAM)  met de waterlopen (naam)
+selection_100m_seg= geodata%>%st_intersection(watercourse_100mseg_centroid)%>% mutate (NAAM = toupper(NAAM))%>% mutate (naam = toupper(naam))
+
+```
+
+We controleren of er een mismatch is tussen de naam van de VHAG (vervat in 100m segments) en de naam van de 3260-database, indien ja dan controleren we dit in QGIS. Indien het om een onterechte koppeling van twee verschillende segmenten gaat dan worden deze uit de dataset verwijderd. 
+
+```{r check-mismatch}
+#we checken waar de namen niet overeen komen tussen HT3260 databank en de 100m segmementen
+#als NAAM overeen komt met de VHA dan is er wss een foutje (type/foutieve naam) in de naam van de INBO-databank
+mismatch =  selection_100m_seg  %>% filter(!NAAM == naam)
+#we doen een manuele controle op deze dataset
+st_write(mismatch, "../data/20_output/mismatch.shp")
+st_write(selection_100m_seg, "../data/20_output/selection_100m_seg2.shp")
+```
+
+De controle op een mismatch tussen de naam van de VHAG (vervat in 100m segments) en de naam van de 3260-database gaat niet op voor de polylines in de 3260-databank vaarvoor geen naam gekend is (na). We voeren op deze segmenten ook een manuele controle uit in QGIS. Indien het om een onterechte koppeling van twee verschillende segmenten gaat dan worden deze uit de dataset verwijderd. 
+
+```{r check-na}
+na_segments  = selection_100m_seg %>% filter(is.na(naam))
+st_write(na_segments, "../data/20_output/na_check2.shp")
+```
+
+We combineren de gecontroleerde NA's en mismatches met de wel matchende namen. Vervolgens houden we de periode_min, periode max, source, rank, naam en VHAG-code over voor verdere verwerking in de datavoorbereiding en dataverkenning. 
+
+```{r combine-sets}
+match <- selection_100m_seg %>% filter(NAAM == naam)
+mismatch_verified <- st_read("../data/20_output/oud/mismatch_validated2.shp")%>% rename(LOCAL_DB_RANK = "LOCAL_D", period_min = "perd_mn", period_max = "perd_mx", rowname_geodatabase = "rwnm_gd", vhag_code = "vhag_cd", NAAM = "NAAM_1", geom = "geometry")
+na_verified = st_read("../data/20_output/oud/na_verified2.shp")%>% rename(LOCAL_DB_RANK = "LOCAL_D", period_min = "perd_mn", period_max = "perd_mx", rowname_geodatabase = "rwnm_gd", vhag_code = "vhag_cd", NAAM = "NAAM_1", geom = "geometry")
+
+HT3260_100m_segments <- rbind(match, mismatch_verified, na_verified) %>% st_drop_geometry() %>% select(period_min, period_max, source,rank)%>% distinct()
+write_vc(HT3260_100m_segments,"HT3260_100m_segments", root = "../data/10_input", sorting = c("rank", "source"), strict = FALSE )
+mutatedate <-read_vc("HT3260_100m_segments","../data/10_input/")
+mutatedate = mutatedate %>% mutate(period_min = ifelse(source == "H3260_v1_7", "2018-01-01", period_min )) %>%
+    mutate(period_max = ifelse(source == "H3260_v1_7", "2018-12-31", period_max ))
+write_vc(mutatedate,"HT3260_100m_segments", root = "../data/10_input", sorting = c("rank", "source"), strict = FALSE )
+```
