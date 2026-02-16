@@ -1,0 +1,598 @@
+# Data en verkenning
+
+De hieronder gehanteerde datasets werden in 2022 samengesteld door Tom De Dobbelaer [@de_dobbelaer_data_2022].
+We hebben deze bijkomend geüpdatet met behulp van gegevens over de bepaalbaarheidsgrens, die bij (een deel van) de observaties beschikbaar waren in de databanken.
+
+## Dataset SURF_03.4_lentic
+
+### Inlezen en voorbewerken
+
+We lezen de data voor SURF_03.4_lentic in en doen enkele voorbewerkingen.
+
+De variabelen `no3` en `ptot` vertegenwoordigen de concentratie van respectievelijk NO~3~^-^-N en P~tot~, uitgedrukt in mg/l.
+We voegen tevens de log~10~-getransformeerde waarde van de doelvariabelen toe, alsook de bepaalbaarheidsgrens wanneer een numerieke meetwaarde ontbreekt omdat ze lager is dan de bepaalbaarheidsgrens.
+
+```{r}
+chem_lentic_long <- 
+  read_vc("lentic_chem", root = file.path(datapath, "raw")) %>% 
+  as_tibble() %>% 
+  select(loc_code, FieldSamplingDate, habfield) %>% 
+  distinct() %>% 
+  mutate(
+    loc_code = factor(loc_code),
+    date_sampling = as_date(FieldSamplingDate),
+    month_sampling = month(date_sampling) %>% as.integer(),
+    year_sampling = year(date_sampling) %>% as.integer(),
+    month_day =  str_c(
+      str_pad(month_sampling, 2, pad = "0"),
+      "_",
+      str_pad(day(date_sampling), 2, pad = "0")
+    ),
+    year_month = str_c(year_sampling, "_", str_pad(month_sampling, 2, pad = "0")),
+    sixyear_period = floor((year_sampling - 1988) / 6) %>% factor(),
+    type = habfield %>% tolower %>% fct(levels = levels(read_types()$type)),
+    .keep = "unused"
+  ) %>% 
+  relocate(type) %>% 
+  inner_join(
+    read_vc(
+      "lentic_chem_improved_values",
+      root = file.path(datapath, "intermediate")
+    ) %>% 
+      as_tibble() %>% 
+      filter(variable %in% c("no3", "ptot")),
+    join_by(loc_code, date_sampling),
+    relationship = "many-to-many",
+    unmatched = "drop"
+  ) %>% 
+  mutate(value_log = log10(value)) %>% 
+  relocate(value_log, .after = value) %>% 
+  arrange(type, loc_code, date_sampling, variable)
+# setting year_month as factor with all relevant levels, for plotting
+year_months_lentic <- 
+  expand_grid(
+    yr = chem_lentic_long$year_sampling %>% 
+      range() %>% 
+      full_seq(period = 1),
+    m = 1:12
+  ) %>% 
+  mutate(year_month = str_c(yr, "_", str_pad(m, 2, pad = "0"))) %>% 
+  pull(year_month)
+chem_lentic_long <- 
+  chem_lentic_long %>% 
+  mutate(year_month = factor(year_month, levels = year_months_lentic))
+```
+
+In deze dataset komt elke meetwaarde voor in een afzonderlijke rij.
+
+Structuur van de dataset:
+
+```{r}
+glimpse(chem_lentic_long)
+```
+
+### Beknopte dataverkenning
+
+Het aantal rijen per type, locatie, datum en variabele zou 1 moeten zijn:
+
+```{r}
+chem_lentic_long %>% 
+  count(type, loc_code, date_sampling, variable) %>% 
+  filter(n > 1) %>% 
+  nrow(.) == 0
+```
+
+De dataset bevat een belangrijk aandeel ontbrekende waarden beneden de bepaalbaarheidsgrens.
+
+```{r}
+chem_lentic_long %>% 
+  summarize(
+    n_observations = n(),
+    n_below_loq = sum(below_loq),
+    proportion_below_loq = round(n_below_loq / n_observations, 2),
+    .by = variable
+  ) %>% 
+  kable()
+```
+
+Voor totaal fosfor zijn er minder waarden beschikbaar.
+
+Binnen één meetjaar is de bepaalbaarheidsgrens dezelfde per doelvariabele:
+
+```{r}
+chem_lentic_long %>% 
+  filter(below_loq) %>% 
+  distinct(variable, loq, year_sampling) %>% 
+  pivot_wider(names_from = year_sampling, values_from = loq, names_sort = TRUE) %>% 
+  kable()
+```
+
+In de verkenning beschouwen we een locatie als 'bemeten' indien minstens één doelvariabele is bemeten.
+Of de meetwaarde onder of boven de bepaalbaarheidsgrens is, maakt daarbij niet uit.
+
+Aantal bemeten locaties per type.
+
+```{r paged.print = FALSE}
+chem_lentic_long %>% 
+  distinct(type, loc_code) %>% 
+  count(type)
+```
+
+Aantal bemeten locaties per kalendermaand.
+
+```{r out.width="90%"}
+chem_lentic_long %>% 
+  distinct(loc_code, date_sampling, year_month) %>% 
+  count(year_month) %>% 
+  complete(year_month, fill = list(n = 0)) %>% 
+  ggplot(aes(x = year_month, y = n, group = 1)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+Aantal bemeten locaties per type en per kalendermaand.
+
+```{r fig.height = 12, fig.width = 8, out.width="70%"}
+chem_lentic_long %>% 
+  distinct(type, loc_code, date_sampling, year_month) %>% 
+  count(type, year_month) %>% 
+  mutate(type = fct_drop(type)) %>% 
+  complete(type, year_month, fill = list(n = 0)) %>% 
+  filter(!is.na(type)) %>% 
+  ggplot(aes(x = year_month, y = n, group = type)) +
+  geom_line() +
+  facet_wrap(~type, ncol = 1, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+Verdeling van de tijdsspanne (in maanden) tussen eerste en laatste bemonstering per locatie.
+
+```{r}
+chem_lentic_long %>% 
+  summarize(
+    timespan_months = 
+      ceiling(as.integer(max(date_sampling) - min(date_sampling) + 1) / 30),
+    .by = loc_code
+  ) %>% 
+  count(timespan_months) %>% 
+  ggplot(aes(x = timespan_months, y = n, label = n)) +
+  geom_col(fill = "white", colour = "grey70") +
+  geom_text(size = 3, vjust = -0.3) +
+  scale_x_continuous(breaks = c(1, seq(2, 12, 2), (seq(16, 60, 4)))) +
+  ylab("Number of locations")
+```
+
+Verdeling van het aantal bezoeken per locatie.
+
+```{r}
+chem_lentic_long %>% 
+  distinct(loc_code, date_sampling) %>% 
+  count(loc_code, name = "n_visits") %>% 
+  count(n_visits) %>% 
+  ggplot(aes(x = n_visits, y = n, label = n)) +
+  geom_col(fill = "white", colour = "grey70") +
+  geom_text(size = 3, vjust = -0.3) +
+  scale_x_continuous(breaks = c(1, seq(2, 12, 2), (seq(16, 60, 4)))) +
+  ylab("Number of locations")
+```
+
+Verdeling van de tijdsstap (in dagen) tussen twee opeenvolgende bemonsteringen op dezelfde locatie.
+We knippen de lange staart naar rechts (zeer lage aantallen) bewust af.
+
+```{r warning = FALSE}
+chem_lentic_long %>% 
+  distinct(loc_code, date_sampling) %>% 
+  arrange(loc_code, date_sampling) %>% 
+  mutate(
+    date_sampling_previous = lag(date_sampling),
+    .by = loc_code
+  ) %>% 
+  filter(!is.na(date_sampling_previous)) %>% 
+  mutate(timestep_days = as.integer(date_sampling - date_sampling_previous)) %>% 
+  ggplot(aes(x = timestep_days)) +
+  geom_bar(fill = "white", colour = "grey70") +
+  scale_x_continuous(breaks = seq(0, 700, 7), limits = c(0, 106))
+```
+
+Histogrammen van de doelvariabelen, waarbij de Y-as achtereenvolgens niet-getransformeerd en log~10~-getransformeerd is (de waarden zijn steeds de niet-getransformeerde).
+Waarden beneden de bepaalbaarheidsgrens zijn ontbrekend.
+
+```{r warning=FALSE}
+chem_lentic_long %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 50, fill = "white", colour = "grey70") +
+  facet_wrap(~variable, scales = "free")
+```
+
+```{r warning=FALSE}
+chem_lentic_long %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 50, fill = "white", colour = "grey70") +
+  scale_x_log10(
+    minor_breaks = expand.grid(seq_len(10), 10^c(-3:2)) %>% 
+      apply(1, prod)
+  ) +
+  facet_wrap(~variable, scales = "free")
+```
+
+Violinplots met jitter van de doelvariabelen, waarbij de Y-as achtereenvolgens niet-getransformeerd en log~10~-getransformeerd is (de waarden zijn steeds de niet-getransformeerde).
+Waarden beneden de bepaalbaarheidsgrens zijn ontbrekend.
+
+```{r warning=FALSE}
+chem_lentic_long %>% 
+  ggplot(aes(x = variable, y = value)) +
+  geom_jitter(alpha = 0.1) +
+  geom_violin(colour = "violet", fill = NA, linewidth = 1) +
+  facet_wrap(~variable, scales = "free")
+```
+
+```{r warning=FALSE}
+chem_lentic_long %>% 
+  ggplot(aes(x = variable, y = value)) +
+  geom_jitter(alpha = 0.1) +
+  geom_violin(colour = "violet", fill = NA, linewidth = 1) +
+  scale_y_log10(
+    minor_breaks = expand.grid(seq_len(10), 10^c(-3:2)) %>% 
+      apply(1, prod)
+  ) +
+  facet_wrap(~variable, scales = "free")
+```
+
+Er zijn in de jitterplots duidelijke patronen te zien van discrete waarden; dit moet een gevolg zijn van de meetmethode en/of afrondingen.
+
+
+## Dataset SURF_03.4_lotic
+
+### Inlezen en voorbewerken
+
+We lezen de data voor SURF_03.4_lotic in en doen enkele voorbewerkingen.
+
+De variabelen `no3` en `po4` vertegenwoordigen de concentratie van respectievelijk NO~3~^-^-N en PO~4~^3-^-P, uitgedrukt in mg/l.
+
+```{r}
+chem_lotic <- 
+  read_vc("lotic_cova_3260", root = file.path(datapath, "raw")) %>% 
+  as_tibble() %>% 
+  select(
+    loc_code = rank,
+    date_sampling = date,
+    no3,
+    po4
+  ) %>% 
+  mutate(type = "3260") %>% 
+  bind_rows(
+    read_vc("riv7220_chem", root = file.path(datapath, "raw")) %>% 
+      as_tibble() %>% 
+      select(
+        loc_code = unit_id,
+        date_sampling = date,
+        no3 = NO3_N,
+        po4 = PO4_P
+      ) %>% 
+      mutate(
+        type = "7220",
+        loc_code = as.integer(loc_code)
+      )
+  ) %>% 
+  mutate(
+    type = fct(type, levels = levels(read_types()$type)),
+    month_sampling = month(date_sampling) %>% as.integer(),
+    year_sampling = year(date_sampling) %>% as.integer(),
+    month_day =  str_c(
+      str_pad(month_sampling, 2, pad = "0"),
+      "_",
+      str_pad(day(date_sampling), 2, pad = "0")
+    ),
+    year_month = str_c(year_sampling, "_", str_pad(month_sampling, 2, pad = "0")),
+    sixyear_period = floor((year_sampling - 1988) / 6) %>% factor()
+  ) %>% 
+  relocate(type) %>% 
+  relocate(no3, po4, .after = last_col()) %>% 
+  arrange(type, loc_code, date_sampling)
+# setting year_month as factor with all relevant levels, for plotting
+year_months_lotic <- 
+  expand_grid(
+    yr = chem_lotic$year_sampling %>% 
+      range() %>% 
+      full_seq(period = 1),
+    m = 1:12
+  ) %>% 
+  mutate(year_month = str_c(yr, "_", str_pad(m, 2, pad = "0"))) %>% 
+  pull(year_month)
+chem_lotic <- 
+  chem_lotic %>% 
+  mutate(year_month = factor(year_month, levels = year_months_lotic))
+```
+
+In de korte vorm van de dataset komt één rij overeen met één locatie op één datum, die voor één of meer variabelen (als kolommen) is bemeten.
+
+We leiden ook een lange vorm af van de dataset, waarbij elke meetwaarde in een afzonderlijke rij komt, en waarbij we ook de log~10~-getransformeerde waarde van de doelvariabelen toevoegen.
+
+```{r}
+chem_lotic_long <- 
+  chem_lotic %>% 
+  pivot_longer(
+    c(no3, po4),
+    names_to = "variable",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    variable = factor(variable),
+    value_log = log10(value)
+  ) %>% 
+  filter(!is.na(value)) %>% 
+  arrange(variable, type, loc_code, date_sampling)
+```
+
+Structuur van de dataset:
+
+```{r}
+glimpse(chem_lotic_long)
+```
+
+Voor type 3260 is er een groot aantal nulwaarden in de doelvariabelen.
+In werkelijkheid zijn dit metingen lager dan de bepaalbaarheidsgrens, en zouden het dus ontbrekende waarden moeten zijn.
+
+```{r paged.print = FALSE}
+chem_lotic_long %>% 
+  summarize(
+    n_zero = sum(value == 0),
+    n = n(),
+    .by = c(type, variable)
+  )
+```
+
+Bij verder nazicht zien we dat maar voor een kleiner deel van deze observaties de bepaalbaarheidsgrens beschikbaar is.
+
+```{r}
+loqdata_3260 <- 
+  read_vc("loqdata_3260", root = file.path(datapath, "intermediate")) %>% 
+  as_tibble() %>% 
+  select(-unit) %>% 
+  filter(variable %in% c("no3", "po4")) %>% 
+  mutate(variable = fct_drop(variable))
+chem_lotic_long %>% 
+  left_join(
+    loqdata_3260,
+    join_by(loc_code, date_sampling, variable),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  summarize(
+    n_obs = n(),
+    n_zero = sum(value == 0),
+    n_zero_with_loq = sum(!is.na(loq) & value == 0),
+    proportion_with_loq_if_zero = round(n_zero_with_loq / n_zero, 2),
+    .by = variable
+    ) %>% 
+  kable()
+```
+
+We kunnen tevens vaststellen dat er heel wat variatie bestaat in gehanteerde bepaalbaarheidsgrenzen.
+
+```{r}
+loqdata_3260 %>% 
+  ggplot(aes(x = date_sampling, y = loq)) +
+  geom_point() +
+  facet_wrap(~variable, scales = "free")
+```
+
+We berekenen de jaarlijkse mediane bepaalbaarheidsgrens en fitten een smoother om pieken te dempen.
+
+```{r message=FALSE}
+loqdata_3260_yearlevel <- 
+  loqdata_3260 %>% 
+  mutate(year_sampling = year(date_sampling)) %>% 
+  summarize(
+    loq = median(loq),
+    .by = c(variable, year_sampling)
+  ) %>% 
+  complete(variable, year_sampling = full_seq(year_sampling, 1)) %>% 
+  fill(loq, .by = variable, .direction = "downup")
+p <- 
+  loqdata_3260_yearlevel %>%
+  ggplot(aes(x = year_sampling, y = loq)) +
+  geom_smooth() +
+  facet_wrap(~variable, scales = "free")
+p
+```
+
+
+```{r message=FALSE}
+loqdata_3260_yearlevel <- 
+  ggplot_build(p)$data[[1]] %>% 
+  as_tibble() %>% 
+  mutate(
+    year_sampling = floor(x)
+  ) %>% 
+  rename(variable = PANEL) %>% 
+  summarise(
+    loq = mean(y) %>% round(3),
+    .by = c(year_sampling, variable)
+  ) %>% 
+  mutate(
+    variable = fct_recode(
+      variable,
+      no3 = "1", 
+      po4 = "2"
+    )
+  )
+```
+
+Waar de meting onder de bepaalbaarheidsgrens was (nulwaarden), nemen we de bepaalbaarheidsgrens op in de lange dataset.
+Ook voegen we de hierboven geschatte bepaalbaarheidsgrenzen toe.
+We vervangen in deze dataset de nulwaarden door een ontbrekende waarde.
+
+```{r}
+chem_lotic_long <- 
+  chem_lotic_long %>% 
+  mutate(below_loq = value == 0) %>% 
+  left_join(
+    loqdata_3260,
+    join_by(loc_code, date_sampling, variable),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  left_join(
+    loqdata_3260_yearlevel %>% rename(loq_inferred = loq),
+    join_by(year_sampling, variable),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  mutate(
+    value = ifelse(below_loq, NA_real_, value),
+    value_log = log10(value)
+  )
+```
+
+
+### Beknopte dataverkenning
+
+Het aantal rijen per type, locatie en datum in de korte vorm van de dataset is dikwijls groter dan 1, wat betekent dat er meerdere stalen zijn genalyseerd.
+
+```{r paged.print = FALSE}
+chem_lotic %>% 
+  count(type, loc_code, date_sampling) %>% 
+  count(n, name = "nn")
+```
+
+In de verkenning beschouwen we een locatie als 'bemeten' indien minstens één doelvariabele is bemeten.
+Of de meetwaarde onder of boven de bepaalbaarheidsgrens is, maakt daarbij niet uit.
+
+Aantal bemeten locaties per type.
+
+```{r paged.print = FALSE}
+chem_lotic %>% 
+  distinct(type, loc_code) %>% 
+  count(type)
+```
+
+Aantal bemeten locaties per kalendermaand.
+
+```{r}
+chem_lotic %>% 
+  distinct(pick(-type)) %>% 
+  count(year_month) %>% 
+  complete(year_month, fill = list(n = 0)) %>% 
+  ggplot(aes(x = year_month, y = n, group = 1)) +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = 90, size = 4))
+```
+
+Aantal bemeten locaties per type en per kalendermaand.
+
+```{r fig.height = 8, fig.width = 12}
+chem_lotic %>% 
+  count(type, year_month) %>% 
+  mutate(type = fct_drop(type)) %>% 
+  complete(type, year_month, fill = list(n = 0)) %>% 
+  filter(!is.na(type)) %>% 
+  ggplot(aes(x = year_month, y = n, group = type)) +
+  geom_line() +
+  facet_wrap(~type, ncol = 1, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 90, size = 4))
+```
+
+Verdeling van de tijdsspanne (in maanden) tussen eerste en laatste bemonstering per locatie en per type.
+
+```{r}
+chem_lotic %>% 
+  summarize(
+    timespan_months = 
+      ceiling(as.integer(max(date_sampling) - min(date_sampling) + 1) / 30),
+    .by = c(type, loc_code)
+  ) %>% 
+  ggplot(aes(x = timespan_months)) +
+  geom_histogram(bins = 50, fill = "white", colour = "grey70") +
+  ylab("Number of locations") +
+  facet_wrap(~ type, scales = "free")
+```
+
+Verdeling van het aantal bezoeken per locatie en per type.
+
+```{r}
+chem_lotic %>% 
+  count(type, loc_code, name = "n_visits") %>% 
+  ggplot(aes(x = n_visits)) +
+  geom_histogram(bins = 50, fill = "white", colour = "grey70") +
+  ylab("Number of locations") +
+  facet_wrap(~ type, scales = "free")
+```
+
+Verdeling van de tijdsstap (in dagen) tussen twee opeenvolgende bemonsteringen op dezelfde locatie.
+We knippen de lange staart naar rechts voor 3260 (zeer lage aantallen) bewust af.
+
+```{r warning=FALSE}
+chem_lotic %>% 
+  distinct(type, loc_code, date_sampling) %>% 
+  arrange(type, loc_code, date_sampling) %>% 
+  mutate(
+    date_sampling_previous = lag(date_sampling),
+    .by = c(type, loc_code)
+  ) %>% 
+  filter(!is.na(date_sampling_previous)) %>% 
+  mutate(timestep_days = as.integer(date_sampling - date_sampling_previous)) %>% 
+  ggplot(aes(x = timestep_days)) +
+  geom_bar(fill = "white", colour = "grey70") +
+  scale_x_continuous(breaks = seq(0, 700, 7), limits = c(0, 180)) +
+  facet_wrap(~ type, ncol = 1, scales = "free_y")
+```
+
+Het aantal meetwaarden verschilt tussen de doelvariabelen, en is hoogst bij nitraat en laagst bij orthofosfaat.
+
+```{r paged.print = FALSE}
+chem_lotic_long %>% 
+  count(variable, name = "number_of_measurements")
+```
+
+Histogrammen van de doelvariabelen per type, waarbij de Y-as achtereenvolgens niet-getransformeerd en log~10~-getransformeerd is (de waarden zijn steeds de niet-getransformeerde).
+Waarden beneden de bepaalbaarheidsgrens zijn ontbrekend.
+
+```{r warning=FALSE}
+chem_lotic_long %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 50, fill = "white", colour = "grey70") +
+  facet_grid(type~variable, scales = "free")
+```
+
+```{r warning=FALSE}
+chem_lotic_long %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 50, fill = "white", colour = "grey70") +
+  scale_x_log10(
+    minor_breaks = expand.grid(seq_len(10), 10^c(-3:2)) %>% 
+      apply(1, prod)
+  ) +
+  facet_grid(type~variable, scales = "free")
+```
+
+Violinplots met jitter van de doelvariabelen per type, waarbij de Y-as achtereenvolgens niet-getransformeerd en log~10~-getransformeerd is (de waarden zijn steeds de niet-getransformeerde).
+Waarden beneden de bepaalbaarheidsgrens zijn ontbrekend.
+
+```{r warning=FALSE, fig.width=8, fig.height = 8}
+chem_lotic_long %>% 
+  ggplot(aes(x = variable, y = value)) +
+  geom_jitter(alpha = 0.1) +
+  geom_violin(colour = "violet", fill = NA, linewidth = 1) +
+  facet_wrap(
+    ~ type + variable,
+    scales = "free",
+    labeller = labeller(.multi_line = FALSE)
+  )
+```
+
+```{r warning=FALSE, fig.width=8, fig.height = 8}
+chem_lotic_long %>% 
+  ggplot(aes(x = variable, y = value)) +
+  geom_jitter(alpha = 0.1) +
+  geom_violin(colour = "violet", fill = NA, linewidth = 1) +
+  scale_y_log10(
+    minor_breaks = expand.grid(seq_len(10), 10^c(-3:2)) %>% 
+      apply(1, prod)
+  ) +
+  facet_wrap(
+    ~ type + variable,
+    scales = "free",
+    labeller = labeller(.multi_line = FALSE)
+  )
+```

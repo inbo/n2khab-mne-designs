@@ -1,0 +1,294 @@
+## Steekproefkader {#steekproefkader}
+
+Het steekproefkader van een meetnet is de best beschikbare oplijsting van de eenheden die tot de doelpopulatie van het meetnet behoren.
+
+Een **basissteekproefkader** voor alle meetnetten werd aangemaakt op basis van originele datalagen en datalagen die zijn afgeleid van de Habitatkaart of de Watervlakkenlaag [@wouters_habitatmap_terr_2021; @westra_map_2021; @leyssen_redistribution_2023; @oosterlynck_patrik_2019_3550995; @de_saeger_habitatquarries_2020; @scheers_watervlakken_2022].
+Het basissteekproefkader bevat een laag voor elk stratum.
+Een stratum is een hoofdtype of subtype, waarbij geen overlap voorkomt tussen sub- en hoofdtypes, en welke in het geval van stilstaande wateren en mergelgroeven verder zijn opgedeeld volgens grootteklassen (zie ook \@ref(stratificatie)).
+
+Uit het basissteekproefkader worden de **meetnetspecifieke steekproefkaders** afgeleid.
+Dit gebeurt in eerste instantie door inperking op basis van de lijst types die de doelpopulatie van elk meetnet definiëren.
+De eenheden van een type zijn immers maar vertegenwoordigd in het steekproefkader van een meetnet als het type deel uitmaakt van de doelpopulatie van het meetnet (zie \@ref(doelpop)).
+Daarnaast gelden in sommige meetnetten bijkomende ruimtelijke restricties.
+
+
+### Ruimtelijke restricties
+
+De doelpopulatie van een aantal meetnetten dient ruimtelijk te worden ingeperkt, zoals aangegeven in Tabel \@ref(tab:spatial-restrictions).
+Hiervoor bestaan uiteenlopende motivaties.
+Bepaalde standplaatsen van een type dienen niet te worden opgenomen in het steekproefkader omdat ze niet relevant zijn voor de milieudruk in kwestie.
+Zo zijn standplaatsen van types die zijn opgenomen in de doelpopulatie van het meetnet verdroging via grondwater, met diep grondwater niet verdrogingsgevoelig.
+Ook kan een deel standplaatsen van de types niet matchen met het compartiment of de waterhuishoudingsklasse waartoe het meetnet zich beperkt.
+Een voorbeeld hiervan is type 7220, dat wordt opgesplitst in een terrestrische vorm en een aquatische vorm en zo wordt begrensd in de overeenkomstige meetnetten.
+
+(ref:spatial-restrictions) Voor een deel van de meetnetten wordt de doelpopulatie ruimtelijk ingeperkt.
+
+```{r spatial-restrictions}
+scheme_targetpop_sets %>%
+  filter(stset_name == "mbaa_mne_phase_1_schemes") %>%
+  pluck("scheme_set", 1) %>%
+  filter(!is.na(spatial_restriction)) %>%
+  select(
+    Meetnet = scheme,
+    `Ruimtelijke inperking (Engels)` = spatial_restriction
+  ) %>%
+  kbl_bt(caption = "(ref:spatial-restrictions)") %>%
+  column_spec(column = 2, width = "11cm") %>%
+  kable_styling(full_width = FALSE)
+```
+
+### Verkenning van de steekproefkaders
+
+Om een idee te geven van de samenstelling van de steekproefkaders, verkennen we deze op het vlak van de verdeling over de typeklassen, de waterhuishoudingsklassen en de meetnetspecifieke typegroepen.
+Tot slot worden de steekproefkaders ruimtelijk voorgesteld.
+
+In Figuur \@ref(fig:samplingframe-typeclass) wordt de relatieve verdeling van de types volgens de populatie-eenheden in het steekproefkader per meetnet weergegeven, gegroepeerd volgens **typeklasse** (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)) voor de verklaring van de typeklassen).
+De verhouding waarin een type in het steekproefkader wordt vertegenwoordigd, hangt af van hoeveel types de doelpopulatie definiëren van elk meetnet, de bovenvermelde spatiale restricties en het aantal eenheden van het type ten opzichte van het aantal eenheden van de andere types in het basissteekproefkader.
+Zeldzame types in het basissteekproefkader zullen dus relatief minder vertegenwoordigd zijn in het steekproefkader.
+Het valt onder meer op hoe bossen en struwelen een belangrijk aandeel innemen van het aantal eenheden (de oppervlakte) in het steekproefkader van meetnetten die niet gefocust zijn op specifieke ecosystemen, met name eutrofiëring via het grondwater `GW_03.3`, verdroging via het grondwater - terrestrisch `GW_05.1_terr` en eutrofiëring via de bodem `SOIL_03.2`.
+De verdeling volgens de populatie-eenheden in het steekproefkader van deze meetnetten blijkt een goede weerspiegeling te zijn van de verdeling van de types in het basissteekproefkader (\@ref(fig:basesamplingframe-typeclass)).
+Dit staat in contrast met de meetnetten die wel focussen op specifieke ecosystemen, zoals de aquatische ecosystemen en mergelgroeven.
+
+(ref:samplingframe-typeclass) Relatieve verdeling van de types, gegroepeerd in typeklassen (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)), volgens de populatie-eenheden in het steekproefkader van elk meetnet.
+
+```{r samplingframe-typeclass, fig.cap="(ref:samplingframe-typeclass)", fig.dim = figdim(c(10, 4))}
+typeclass_nunits <-
+  mod_dom_scheme_ssf_stratum_nunits %>%
+  inner_join(n2khab_strata, by = "stratum") %>%
+  inner_join(
+    mne_types %>%
+      select(type, typeclass_name),
+    join_by(type)
+  ) %>%
+  summarize(nunits = sum(nunits), .by = c(module, domain, scheme, typeclass_name))
+typeclass_nunits %>%
+  mutate(scheme = fct_rev(scheme)) %>%
+  ggplot(aes(x = nunits, y = scheme, fill = typeclass_name)) +
+  geom_col(position = "fill", colour = "white", linewidth = 0.2) +
+  scale_x_continuous(
+    labels = scales::label_percent(),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(values = typeclass_cols) +
+  labs(x = "Verdeling populatie-eenheden", y = "Meetnet", fill = "Typeklasse") +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+```
+
+(ref:basesamplingframe-typeclass) Relatieve verdeling van de types, gegroepeerd in typeklassen (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)), volgens de populatie-eenheden in het basissteekproefkader.
+
+```{r basesamplingframe-typeclass, fig.dim = figdim(c(10, 3)), fig.cap="(ref:basesamplingframe-typeclass)"}
+flanders_n2khab_nunits <-
+  domain_stratum_nunits %>%
+  filter(domain == "Flanders") %>%
+  inner_join(n2khab_strata, by = "stratum") %>%
+  inner_join(
+    mne_types %>%
+      select(type, typeclass_name, hydr_class_shortname),
+    join_by(type)
+  )
+flanders_n2khab_typeclass_nunits <-
+  flanders_n2khab_nunits %>%
+  summarize(
+    nunits = sum(nunits),
+    .by = typeclass_name
+  )
+flanders_n2khab_typeclass_nunits %>%
+  ggplot(aes(x = nunits, y = "basissteekproefkader", fill = typeclass_name)) +
+  geom_col(position = "fill", colour = "white", linewidth = 0.2) +
+  scale_x_continuous(
+    labels = scales::label_percent(),
+    expand = expansion(c(0, 0.05))
+  ) +
+  scale_fill_manual(values = typeclass_cols) +
+  guides(fill = guide_legend(ncol = 3, position = "bottom")) +
+  labs(x = "Verdeling populatie-eenheden", fill = "Typeklasse") +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank()
+  )
+```
+
+Met uitzondering van het meetnet eutrofiëring via de bodem (`SOIL_03.2`), wijken de relatieve verdelingen van de populatie-eenheden in de steekproefkaders over de **waterhuishoudingsklasse(n)** (Figuur \@ref(fig:samplingframe-hydrclass) sterk af van de relatieve verdeling voor het basissteekproefkader (Figuur \@ref(fig:basesamplingframe-hydrclass)).
+De types die enkel in de droge waterhuishoudingsklasse voorkomen verdwijnen uit het steekproefkader van (sub)meetnetten waarin de doelpopulatie bestaat uit types die afhankelijk zijn van ondiep grondwater (`GW_03.3`, `GW_05.1_quarries` en `GW_05.1_terr`).
+Het steekproefkader van de (sub)meetnetten die enkel betrekking hebben op aquatische types (`GW_05.1_aq`, `SURF_03.4_lentic` en `SURF_03.4_lotic)` bevatten uiteraard enkel de permanent natte klasse en oppervlaktewaterklasse.
+De verdeling over de waterhuishoudingsklassen in het meetnet eutrofiëring via de bodem (`SOIL_03.2`) is gelijkaardig aan die van het basissteekproefkader, al is de oppervlaktewaterklasse uit het steekproefkader van `SOIL_03.2` verdwenen.
+Waterbodems van oppervlaktewater zijn namelijk opgenomen in het meetnet `SURF_03.2`: eutrofiëring via de bodem, gemeten in het compartiment oppervlaktewater (zie Tabel \@ref(tab:meetnetten)).
+
+
+(ref:samplingframe-hydrclass) Relatieve verdeling van de types, gegroepeerd op basis van hun waterhuishoudingsklasse(n) (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)), volgens de populatie-eenheden in het steekproefkader van elk meetnet.
+
+```{r samplingframe-hydrclass, fig.cap="(ref:samplingframe-hydrclass)", fig.dim = figdim(c(10, 4))}
+hydrclass_nunits <-
+  mod_dom_scheme_ssf_stratum_nunits %>%
+  inner_join(n2khab_strata, by = "stratum") %>%
+  inner_join(
+    mne_types %>%
+      select(type, hydr_class_shortname),
+    join_by(type)
+  ) %>%
+  summarize(
+    nunits = sum(nunits),
+    .by = c(module, domain, scheme, hydr_class_shortname)
+  )
+hydrclass_nunits %>%
+  mutate(scheme = fct_rev(scheme)) %>%
+  ggplot(aes(x = nunits, y = scheme, fill = hydr_class_shortname)) +
+  geom_col(position = "fill") +
+  scale_x_continuous(
+    labels = scales::label_percent(),
+    expand = c(0, 0)
+  ) +
+  scale_fill_discrete_c4a_cat("met.manet") +
+  labs(
+    x = "Verdeling populatie-eenheden",
+    y = "Meetnet",
+    fill = "Waterhuishoudingsklasse"
+  ) +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+```
+
+(ref:basesamplingframe-hydrclass) Relatieve verdeling van de types, gegroepeerd op basis van hun waterhuishoudingsklasse(n) (zie Bijlage \@ref(app-types) (Tabel \@ref(tab:type-lijst)), volgens de populatie-eenheden in het basissteekproefkader.
+
+```{r basesamplingframe-hydrclass, fig.dim = figdim(c(10, 1.8)), fig.cap="(ref:basesamplingframe-hydrclass)"}
+flanders_n2khab_hydrclass_nunits <-
+  flanders_n2khab_nunits %>%
+  summarize(
+    nunits = sum(nunits),
+    .by = hydr_class_shortname
+  )
+flanders_n2khab_hydrclass_nunits %>%
+  ggplot(aes(x = nunits, y = "basissteekproefkader", fill = hydr_class_shortname)) +
+  geom_col(position = "fill") +
+  scale_x_continuous(
+    labels = scales::label_percent(),
+    expand = expansion(c(0, 0.05))
+  ) +
+  scale_fill_discrete_c4a_cat("met.manet") +
+  guides(fill = guide_legend(position = "bottom")) +
+  labs(x = "Verdeling populatie-eenheden", fill = "Waterhuishoudingsklasse") +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.y = element_blank()
+  )
+```
+
+De verdeling van de populatie-eenheden in het steekproefkader per meetnet over de **typegroepen** (Figuur \@ref(fig:nunits-typegroup)) blijkt ongelijkmatig.
+Dit vloeit voort uit de grote oppervlakteverschillen tussen verschillende types en uit de ongelijkmatige verdeling van de types over de typegroepen (Tabel \@ref(tab:typegroups)).
+
+```{r nunits-gw-05-1-quarries}
+# used for inline R code
+nunits_gw_05_1_quarries <-
+  mod_dom_scheme_ssf_stratum_nunits %>%
+  filter(scheme == "GW_05.1_quarries") %>%
+  pull(nunits) %>%
+  sum()
+```
+
+(ref:nunits-typegroup) Het aantal populatie-eenheden in het steekproefkader voor elke typegroep per meetnet. De codes van de typegroepen zijn verklaard in Tabel \@ref(tab:typegroups). (Meetnet `GW_05.1_quarries` heeft slechts één type (met `r nunits_gw_05_1_quarries` eenheden) en er is daarom geen typegroep voor onderscheiden.)
+
+```{r nunits-typegroup, fig.cap="(ref:nunits-typegroup)", fig.dim = figdim(c(10, 6))}
+mod_dom_scheme_ssf_stratum_nunits %>%
+  inner_join(n2khab_strata, join_by(stratum)) %>%
+  inner_join(
+    mne_scheme_types %>%
+      select(scheme, type, typegroup) %>%
+      mutate(typegroup = str_sub(typegroup, -6)),
+    join_by(scheme, type)
+  ) %>%
+  filter(!is.na(typegroup)) %>%
+  summarize(nunits = sum(nunits), .by = c(scheme, typegroup)) %>%
+  ggplot(aes(x = typegroup, y = nunits)) +
+  geom_col(fill = inbocol_2) +
+  facet_wrap(~scheme, scales = "free") +
+  labs(x = "Typegroep", y = "Aantal populatie-eenheden") +
+  our_update_theme_bars() +
+  our_update_theme_facets()
+```
+
+Ter informatie wordt de **ruimtelijke spreiding** van de populatie-eenheden in het steekproefkader van elk meetnet afgebeeld (Figuur \@ref(fig:map-ssf-GW-03-3) tot en met Figuur \@ref(fig:map-ssf-SURF-03-4-lotic)).
+Het raster werd verruwd om de verspreiding van de populatie voldoende zichtbaar te maken.
+Hiervoor werden de oorspronkelijke 32 m x 32 m cellen geaggregeerd tot cellen met 4 of 32 maal grotere dimensies, nl. 128 m x 128 m of 1024 m x 1024 m.
+
+```{r maps-ssf, results="asis"}
+mbaa_mne_phase_1_scheme_grts <-
+  module_domain_schemes %>%
+  select(-is_core_scheme) %>%
+  inner_join(scheme_sampling_frame, join_by(scheme)) %>%
+  inner_join(
+    sp_samplingframe_domain %>%
+      unnest(sampling_frame_domain),
+    join_by(sampling_frame_id, domain),
+    relationship = "many-to-many"
+  ) %>%
+  semi_join(
+    scheme_targetpop_sets %>%
+      filter(stset_name == "mbaa_mne_phase_1_schemes") %>%
+      pluck("targetpops_strata", 1),
+    join_by(scheme, stratum)
+  ) %>%
+  distinct(scheme, grts_address)
+mbaa_mne_phase_1_scheme_grts %>%
+  nest(addresses = grts_address) %>%
+  {
+    walk2(.$scheme, .$addresses, function(sch, add) {
+      fact <- case_when(
+        nrow(add) > 1e5 ~ 4,
+        nrow(add) > 2e4 ~ 16,
+        .default = 32
+      )
+      # aggregating is to make (enough) pixels visible on a map!
+      r <-
+        filter_grts_mh_by_address(add$grts_address, drop_address = TRUE) %>%
+        aggregate(fact = fact, fun = "max", na.rm = TRUE)
+      p <- ggplot() +
+        geom_sf(data = provinces, fill = "white", colour = "grey70") +
+        geom_spatraster(data = r, maxcell = 2e6) +
+        scale_fill_gradient(
+          low = inbocol_3,
+          high = inbocol_3,
+          na.value = "transparent"
+        ) +
+        ggtitle(sch) +
+        theme_bw() +
+        our_update_theme_maps() +
+        theme(
+          legend.position = "none",
+          plot.title = element_text(hjust = 0.025, vjust = -10)
+        )
+      if (interactive()) {
+        print(p)
+      } else {
+        schemename <- str_replace_all(sch, "_|\\.", "-")
+        knit_expand(text = c(
+          paste(
+            "```{r map-ssf-{{schemename}},",
+            "fig.cap = 'Ruimtelijke weergave van het",
+            "steekproefkader van meetnet {{sch}}.",
+            "Voor deze kaart werd elke eenheid geabstraheerd",
+            "tot een GRTS-rastercel. Het raster werd vervolgens verruwd met",
+            "een factor {{fact}} naar een resolutie van {{fact * 32}} m.',",
+            "message = FALSE, fig.dim = c(10, 4.2)}"
+          ),
+          "print(p)",
+          "```"
+        )) %>%
+          {
+            knit_child(
+              text = .,
+              quiet = TRUE,
+              envir = environment()
+            )
+          } %>%
+          cat(sep = "\n")
+      }
+    })
+  }
+```

@@ -1,3 +1,4 @@
+renv::restore()
 library(tidyverse)
 library(inbodb) # see https://inbo.github.io/inbodb
 
@@ -11,6 +12,7 @@ tbl(aquachem, "FactResultAqua") %>% glimpse
 tbl(aquachem, "DimWaterhabitat") %>% glimpse
 tbl(aquachem, "DimAnalysis") %>% glimpse
 tbl(aquachem, "DimComponent") %>% glimpse
+tbl(aquachem, "DimAquaComponent") %>% glimpse
 tbl(aquachem, "DimUnit") %>% glimpse
 tbl(aquachem, "DimSample") %>% glimpse
 tbl(aquachem, "DimStatus") %>% glimpse
@@ -32,7 +34,7 @@ filepath <- ifelse(.Platform$OS.type == "unix",
                    file.path("data/10_input/PRJ_Macrofyten",
                              "habitats/MonitoringPlassen/GIS",
                              "Kartering_waterhabitats.gdb"),
-                   file.path("Q:/Projects/PRJ_Macrofyten/habitats",
+                   file.path("\\\\172.31.11.14/inbo/Prjdata/Projects/PRJ_Macrofyten/habitats",
                              "MonitoringPlassen/GIS",
                              "Kartering_waterhabitats.gdb"))
 lentic_hab <- st_read(filepath,

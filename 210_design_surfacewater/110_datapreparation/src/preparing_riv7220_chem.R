@@ -1,3 +1,4 @@
+renv::restore()
 library(git2rdata)
 library(tidyverse)
 library(n2khab)

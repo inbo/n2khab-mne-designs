@@ -10,10 +10,14 @@ De tabel met eenheidskosten:
 
 ```{r}
 kosten <- 
-    read_excel("../../Meetnetontwerp/Kostencijfers.xlsx", 
-           sheet = "Grondwater",
-           range = cell_cols(c("A:H"))
-           )
+    read_excel(
+        file.path(
+            gitroot,
+            "../../Meetnetontwerp/Achtergrond/Kostencijfers.xlsx"
+        ),
+        sheet = "Grondwater",
+        range = cell_cols(c("A:H"))
+    )
 ```
 
 \blandscape
@@ -107,7 +111,12 @@ geef_kost_per_jaar <- function(df) {
     gather(key = "Activiteittype",
            value = "Aantal_meetpunten_6jaar",
            2:4) %>% 
-    inner_join(df) %>% 
+    inner_join(
+        df,
+        join_by(Activiteittype),
+        relationship = "many-to-many",
+        unmatched = "error"
+    ) %>% 
     mutate(Waarde_per_jaar = 
                round(Aantal_meetpunten_6jaar * Waarde_per_meetpt_per_jaar, 0),
            Aantal_meetpunten_perjaar = ifelse(str_detect(Activiteittype, "kwantiteit"),
@@ -193,8 +202,7 @@ geeftotaal <- function(df) {
     df %>% 
     select(-Aantal_meetpunten_perjaar) %>% 
     gather(key = "Kostentype", value = "Waarde", 3:5) %>% 
-    group_by(Scenario, Kostentype) %>% 
-    summarise(Waarde = sum(Waarde)) %>% 
+    summarise(Waarde = sum(Waarde), .by = c(Scenario, Kostentype)) %>% 
     mutate(Kostentype = factor(Kostentype, 
                                levels = c("VTE_deskundige_perjaar",
                                           "VTE_wetenschapper_perjaar",
@@ -218,8 +226,6 @@ VTE_per_jaar %>%
 
 We merken bij deze tabellen op:
 
-- er zijn meer scenario's mogelijk dan A en B;
-- het is aangewezen om eerst de steekproefgrootteberekeningen op een beter gefundeerde manier te onderbouwen (zie paragraaf \@ref(conclusies));
 - minstens in de eerste cyclus kan de voorziene tijd best met 25% worden verhoogd [@de_gruijter_sampling_2006], omdat extra onvoorziene hindernissen te verwachten zijn;
 - er is *bijkomend* voor elke terreinwerker zesjaarlijks een uitrusting van ca. 6500 EUR aan apparatuur te voorzien;
 - de overige personeelsinzet en werkingsmiddelen, o.a. het ontwerp van de dataketen, het databeheer, de analyses, de kwaliteitshandhaving, de rapportages, projectmanagement e.d., zijn **niet** vervat in de bovenstaande cijfers. De bovenstaande resultaten betreffen alleen het werk dat direct gerelateerd is met de gegevensinzameling.

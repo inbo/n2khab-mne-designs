@@ -1,0 +1,1255 @@
+---
+title: "Sensibility of a shallow top of a piezometer filter"
+author: "Falk Mielke"
+date: "`r lubridate::today()`"
+output:
+  html_document:
+    keep_md: TRUE
+    number_sections: yes
+    code_folding: show
+    code_download: yes
+    fig_width: 10
+    fig_height: 5
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../../header.html
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("dplyr")
+library("dbplot")
+library("watina")
+library("n2khab")
+library("sf")
+library("stringr")
+library("ggplot2")
+library("ggside")
+library("ggridges")
+library("mapview")
+
+
+watina_conn <- connect_watina()
+save_figures <- FALSE # whether/not to save plots in utils::mkdir("./figures")
+```
+
+---
+# installation of the cmdstanr package is optional:
+# 
+# - `remotes::install_github("stan-dev/cmdstanr")`
+# - `cmdstanr::check_cmdstan_toolchain(fix = TRUE)`
+# - `cmdstanr::install_cmdstan()`
+---
+
+
+# Purpose
+In this workbook, I will attempt to redo and extend some of the previous analyses (`110_shallow_filtertop_sensibility/explore_filtertops.Rmd`).
+My goal is to stick with the `watina` capabilities this time.
+
+Tasks:
+
+- Get `obswells` data and `xg3` values for 
+  - a scatter of filter (top) depth *versus* HG3 
+  - bonus: proportion of HG3 above ground per filter depth 
+  - bonus: per soil class
+
+- measurement clusters with `watina::cluster_locs()`: compare proximal wells of different depth
+
+# Load Data
+## concept
+We have to distinguish several levels of spatiotemporal organization of observation well.
+
+One level is **location**, or site. 
+Imagine, per analogy a water well in grandma's garden. 
+Someone drilled a hole in the ground 100 years ago for groundwater retrieval.
+This well is one location.
+
+Yet over time, the actual well installation (**observation well**) was altered. 
+In the beginning, there were stone walls and a bucket.
+At some point, someone installed a mechanical pump to facilitate water retrieval - yet they used exactly the same spot (/location) in granny's garden.
+The latest observation well at that location is an electric pump which is programmed to water granny's potatoes at regular intervals.
+
+
+Transporting this analogy to actual groundwater measurement with `watina`:
+
+- We can query either on *location* level, which might be agnostic to temporary technical exchange of the well hardware; this usually links to installation parameters for the latest installment (requires *aggregation*).
+- Alternatively, we can query the *observation well* level. Consecutive installations will produce multiple lines in the output, which all share the location.
+
+
+In the `watina::get_locs()` function, the `obswells` argument provides choice of level, and `obswell_aggr` provides control of the aggregation strategy.
+
+
+## well locations
+First, I will load the well data. 
+By setting `obswells = FALSE`, they will be on location level (which is different from the strategy in the previous overview).
+
+```{r}
+obswells_db <- get_locs(
+  watina_conn,
+  filterdepth_range = c(0, 5),
+  filterdepth_guess = FALSE,
+  loc_type = "P",
+  loc_validity = c("VLD", "ENT"),
+  obswells = FALSE
+) %>% mutate(filtertop_depth = filterdepth - filterlength / 2)
+# (remember: filterdepth is positive downwards;
+#    thus filtertop_depth must be smaller)
+
+obswells_db %>% count()
+```
+
+
+Always worth comparing with previous excerpts:
+
+```{r}
+obswells_reference <- readRDS("geospatial_example_subset.rds") %>%
+  mutate(filtertop_depth = filterdepth - filterlength / 2)
+
+obswells_reference %>%
+  group_by(loc_code) %>%
+  count() %>%
+  arrange(desc(n))
+location_selection <- "ZWIP017"
+```
+
+(I have tried `ZWIP034` and `ZWIP006`, yet their data availability is less instructive than `ZWIP017`.)
+
+
+```{r}
+glimpse(obswells_reference %>% filter(loc_code == location_selection))
+
+obswells_location <- obswells_db %>%
+  collect() %>%
+  filter(grepl("zwin", area_name, ignore.case = TRUE))
+glimpse(obswells_location %>% filter(loc_code == location_selection))
+```
+
+Note that the well on that location was replaced in May 2010 (and again recently).
+This implies a discontinuity: filter top depth changed by about 2m towards the surface.
+
+
+This is brief confirming evidence that we work "per location" now, aggregation picks the latest values.
+(Will check back below whether `HG3` also restricts to the latest installment.)
+
+
+## xg3 values
+Then, we require the xg3 data for all locations:
+
+```{r}
+xg3s_db <- obswells_db %>%
+  get_xg3(
+    watina_conn,
+    startyear = 1960,
+    truncated = FALSE,
+    with_estimated = FALSE,
+    vert_crs = "local",
+    collect = FALSE
+  )
+glimpse(xg3s_db %>% arrange(desc(hydroyear), loc_code))
+xg3s_db %>% count()
+```
+
+Obviously, XG3 values are collected per location, per year, so we expect *location ⨉ year* table entries with sparse yearly coverage.
+
+How is it with our sample location?
+
+```{r}
+xg3_samplelocation <- xg3s_db %>%
+  filter(loc_code == location_selection) %>%
+  arrange(hydroyear) %>%
+  collect()
+xg3_samplelocation %>%
+  ggplot(aes(x = hydroyear, y = vg3_lcl)) +
+  geom_line() +
+  geom_line(aes(y = hg3_lcl), color = "darkred", linetype = "dashed") +
+  geom_line(aes(y = lg3_lcl), color = "blue", linetype = "dashed") +
+  geom_vline(xintercept = c(2010.5)) +
+  geom_hline(yintercept = c(0)) +
+  ggtitle(paste0("measured water levels of ", location_selection, " location"))
+```
+
+There seems to have been a change in 2010 which affects VG3, yet that might be co-incidence.
+
+## soilmap
+We might categorize by soil class, and the relevant geospatial data are loaded here.
+
+```{r}
+soilmap_raw <-
+  read_soilmap()
+
+soilmap <- soilmap_raw %>%
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      .default = "unknown"
+    ) %>%
+      factor()
+  )
+
+glimpse(soilmap)
+```
+
+
+## actual water levels
+Now, wouldn't it be fun if we could query actual water levels for this location in 2010?
+
+Sit back, and behold.
+
+```{r}
+water_query <- tbl(watina_conn, "FactPeilMeting") %>%
+  filter(.data$MeetpuntWID %in% 6017) %>%
+  select(PeilmetingCategorie, TijdWID, Niveau) %>%
+  mutate(hydroyear = floor((TijdWID - 400) / 10000)) %>%
+  arrange(TijdWID)
+tijd <- tbl(watina_conn, "DimTijd") %>%
+  rename(TijdWID = DatumWID) %>%
+  select(TijdWID, HydroJaar)
+water_query <- water_query %>%
+  left_join(tijd, join_by(TijdWID)) %>%
+  collect() %>%
+  mutate(date = lubridate::ymd(TijdWID))
+glimpse(water_query)
+```
+
+```{r}
+legend_colors <- c(
+  "niveau" = "black",
+  "lg3" = "darkblue",
+  "hg3" = "darkred",
+  "vg3" = "darkgray"
+)
+
+water_query %>%
+  left_join(xg3_samplelocation, join_by(hydroyear)) %>%
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = Niveau, color = "niveau")) +
+  geom_line(aes(y = vg3_lcl, color = "vg3"), linetype = "dashed") +
+  geom_line(aes(y = hg3_lcl, color = "hg3"), linetype = "dashed") +
+  geom_line(aes(y = lg3_lcl, color = "lg3"), linetype = "dashed") +
+  geom_vline(xintercept = as.Date("2010-05-21")) +
+  geom_hline(yintercept = c(0)) +
+  labs(colour = "quantity") +
+  xlim(as.Date("2004-01-01"), as.Date("2022-12-31")) +
+  scale_color_manual(values = legend_colors) +
+  theme(text = element_text(size = 20))
+# ggtitle(
+#   paste0(
+#     "measured water levels of ",
+#     location_selection,
+#     " location (depth change in 2010)"
+#   )
+# )
+
+
+if (save_figures) {
+  ggsave("figures/hg3_zwip017.svg",
+    dpi = 300,
+    width = 16, height = 8, units = "in"
+  )
+}
+```
+
+Interesting. To be followed up.
+
+# Population Plots
+
+## hg3 ~ filtertop
+
+I am interested in the distribution of HG3 values as a function of filter top depth.
+This requires a many-to-one join of `xg3` onto `obswells`.
+
+(At this point, data needs to be collected for spatial join.)
+
+
+Memory point: there are ~hidden duplicates~ co-located clusters in the database.
+```{r, eval=FALSE}
+rs <- DBI::dbGetQuery(watina_conn,
+  "
+   SELECT mp1.*, cnt
+   FROM vwDimMeetpunt AS mp1
+   LEFT JOIN (
+   SELECT DISTINCT
+      MeetpuntXCoordinaat, MeetpuntYCoordinaat, COUNT(*) AS cnt
+   FROM vwDimMeetpunt
+   GROUP BY MeetpuntXCoordinaat, MeetpuntYCoordinaat
+   HAVING COUNT(*) > 1
+   ) AS mp2 ON mp1.MeetpuntXCoordinaat = mp2.MeetpuntXCoordinaat AND mp1.MeetpuntYCoordinaat = mp2.MeetpuntYCoordinaat
+   WHERE cnt IS NOT NULL
+   ORDER BY mp1.MeetpuntXCoordinaat ASC
+     ;
+  "
+  )
+rs  %>% head()
+```
+
+```{r}
+# first, join spatial information
+joined_spatial <- st_join(
+  watina::as_points(
+    obswells_db %>%
+      collect()
+  ), soilmap
+) %>%
+  mutate(soilclass = tidyr::replace_na(soilclass, "unknown"))
+
+# next, append water levels
+xg3_obs <- joined_spatial %>%
+  select(loc_code, filtertop_depth, filterdepth, soilclass) %>%
+  left_join(xg3s_db %>% collect(), join_by(loc_code))
+glimpse(xg3_obs)
+
+
+soilclass_counts <- xg3_obs %>%
+  group_by(soilclass) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+soilclass_colors <- c("#284971", "#8eafd7", "#f0d70f", "#cccccc")
+names(soilclass_colors) <- names(soilclass_counts)
+```
+
+
+The filtertop depth has a soilclass-dependent effect on HG3:
+
+```{r}
+p1 <- xg3_obs %>%
+  filter(!is.na(hg3_lcl)) %>%
+  # filter(hydroyear > 2018) %>%
+  ggplot(aes(x = filtertop_depth, y = hg3_lcl, color = soilclass)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth() +
+  theme_bw()
+
+p1 +
+  geom_vline(xintercept = c(0, 0.3)) +
+  geom_hline(yintercept = c(0)) +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  scale_x_reverse() +
+  coord_cartesian(xlim = c(4, 0), expand = FALSE) +
+  # ggtitle("soil class determines how much HG3 drops with filtertop depth ") +
+  xlab("filtertop depth (m)") + ylab("local HG3 (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.8, 0.15),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+if (save_figures) {
+  ggsave("figures/hg3_filtertopdepth.png",
+    dpi = 300,
+    width = 16, height = 8, units = "in"
+  )
+}
+```
+
+
+## stats
+### conceptual
+This cries for a Bayesian model of the form:
+
+<center>
+$$hg3 \sim 1 + soilclass + (filtertop_depth : soilclass) + \varepsilon\cdot a$$
+</center>
+
+With a Student's T posterior (robust regression)
+
+
+```{r}
+library("brms")
+```
+
+
+### "fixed" slope everything
+... although everything *is* random.
+
+*Thanks to input by Hans!*
+
+```{r}
+model_file <- "models/fixedslope.rds"
+fixedslope_model <- brm(
+  formula = hg3_lcl ~ 0 + soilclass + (filtertop_depth:soilclass),
+  data = xg3_obs,
+  family = student,
+  warmup = 2^10,
+  iter = 2^11,
+  chains = 4,
+  cores = 4,
+  backend = "cmdstanr",
+  file = model_file,
+  file_refit = "on_change",
+  seed = 123
+)
+```
+
+```{r}
+mcmc_plot(fixedslope_model) # forest plot
+plot(fixedslope_model) # traceplot
+summary(fixedslope_model)
+```
+
+### results summary | summary results
+
+- sigma 0.22
+- nu 2.23
+- heavy:    0.02 - 0.05 ftd 
+- light:    0.08 - 0.17 ftd 
+- peat:     0.05 - 0.03 ftd 
+- unknown:  0.07 - 0.18 ftd 
+
+
+### technical notes
+
+- `brms` is disappointingly slow (yet I did not give it specific priors)
+- ... and limited (e.g. could not use double-hierarchical).
+- but it *looks* and *feels* nice!
+
+*(mental note: learn STAN)*
+
+
+### python reference
+Intermediately struggling with `brms`, I felt I needed a refresher.
+
+```{r}
+readr::write_delim(
+  xg3_obs %>% select(-geometry),
+  "xg3obs_data.csv",
+  delim = ";"
+)
+```
+
+Results match those in R.
+```{r, out.width = "80%", eval=FALSE}
+py_figure <- "figures/python_model_fit_hg3_lcl.png"
+if (exists(py_figure)) {
+  knitr::include_graphics(py_figure)
+}
+```
+
+If you would like to try the python code below, start with:
+```{r eval=FALSE}
+reticulate::install_python(version = "3.12.6") # note: "latest" will not work
+reticulate::py_install(c(
+  "scipy",
+  "numpy",
+  "pandas",
+  "seaborn",
+  "pymc",
+  "matplotlib"
+))
+```
+
+Code reference:
+```{python eval=FALSE}
+# import numpy as NP
+import scipy.stats as STATS
+import numpy as NP
+import pandas as PD
+import matplotlib as MP
+import matplotlib.pyplot as PLT
+import seaborn as SB
+import pymc as PM
+import pytensor as PP
+import pytensor.tensor as PT
+
+data = PD.read_csv("xg3obs_data.csv", sep = ";")
+y_var = 'hg3_lcl'
+
+# data cleansing
+data = data.loc[:, ['loc_code', 'hydroyear', 'filtertop_depth', 'soilclass', y_var]]
+data.dropna(inplace = True)
+print(data.loc[data[y_var].values > 10, :])
+data = data.loc[NP.logical_and(data[y_var].values < 2, data[y_var].values > -5), :]
+
+# soilclass category
+data['soilclass'] = PD.Categorical(data['soilclass'])
+categories = data['soilclass'].cat.codes.values
+n_categories = len(NP.unique(data['soilclass'].values))
+cat_order = data['soilclass'].cat.categories
+print(cat_order)
+
+# data dimensions
+n_observations = data.shape[0]
+population_mean = data[y_var].mean()
+population_sd = data[y_var].std()
+
+# values
+x = data['filtertop_depth'].values.ravel()#.reshape((-1,1))
+y = data[y_var].values.ravel()#.reshape((-1, 1))
+
+
+# model construction
+with PM.Model() as model:
+    a = PM.Normal('intercept', mu = population_mean, sigma = 2*population_sd, shape = n_categories)
+
+    b = PM.Normal(f'class_slope', mu = 0, sigma = population_sd, shape = n_categories)
+    d = PM.Data(f'xdata', x)
+    estimator = a[categories] + d * b[categories]
+
+
+    residual = PM.HalfNormal('residual')
+    nu = PM.Normal('dof')
+
+    posterior = PM.StudentT('y', mu = estimator, sigma = residual, nu = nu, observed = y)
+
+
+# sampling
+with model:
+   trace = PM.sample(draws = 2**10 \
+                     , tune = 2**10 \
+                     , chains = 4 \
+                     , progressbar = True \
+                   )
+   result = PM.summary(trace)
+   print(PD.DataFrame(result))
+   PM.plot_trace(trace, combined = True)
+   PLT.show()
+
+# data- and regression plot
+dpi = 300
+cm = 1/2.54
+PLT.rcParams.update({"text.usetex": True})
+fig = PLT.figure(figsize = (16*cm, 8*cm), dpi = dpi)
+fig.subplots_adjust(top = 0.98 , right = 0.98, bottom = 0.16, left = 0.10 )
+
+ax = fig.add_subplot(1, 1, 1)
+x = NP.array([  NP.min(data['filtertop_depth'].values) \
+              , NP.max(data['filtertop_depth'].values) \
+             ])
+colors = {'heavy': "#284971", 'light': "#8eafd7", 'peat': "#f0d70f"}
+
+for nr, cat in enumerate(cat_order):
+    # print(nr, cat)
+    subdat = data.loc[data['soilclass'] == cat, :]
+    ax.scatter(subdat['filtertop_depth'].values, subdat[y_var].values \
+               , s = 1, alpha = 0.2, color = colors.get(cat, "#cccccc") \
+               , zorder = 10)
+
+    m = result.loc[f"class_slope[{nr}]", "mean"]
+    n = result.loc[f"intercept[{nr}]", "mean"]
+    y = m*x+n
+    ax.plot(x, y, color = colors.get(cat, "#cccccc"), label = f"{cat}: \\(y={n:.3f} {m:+.3f}x\\) " \
+            , zorder = 20)
+
+ax.set_xlim(ax.get_xlim()[::-1])
+ax.spines[['top', 'right']].set_visible(False)
+ax.set_xlabel("filtertop depth (m)")
+ax.set_ylabel("local HG3 (m)")
+PLT.legend(loc = 'best', fontsize = 8)
+fig.savefig(f"figures/python_model_fit_{y_var}.png", dpi = 300, transparent = False)
+PLT.tight_layout()
+PLT.show()
+```
+
+
+# Location, Location, Location
+## concept
+The next idea is to compare location clusters.
+
+We search for locations where there are **clusters** ( := groups of wells, some shallow top, some deep), in order to 
+
+- (ia) visualize/compare the local HG3 value difference 
+- (ib) quantify the local HG3 value correlation
+- (ii) comparatively explore the actual water level measurement time series
+
+
+An extended analysis might go to temporal differences: find exchanged wells which change more or less drastically in filter (top) depth, again comparing
+
+- (i) HG3
+- (ii) level time series
+
+## find clusters
+... exploring `watina::cluster_locs()`
+```{r}
+obswell_clusters <- cluster_locs(
+  joined_spatial,
+  max_dist = 2,
+  output_var = "cluster_id",
+  # xvar = x, yvar = y
+)
+count_clusters <- obswell_clusters %>%
+  group_by(cluster_id) %>%
+  count(name = "n_clustermembers") %>%
+  filter(n_clustermembers > 1) %>%
+  st_drop_geometry() 
+
+obswell_clusters <- obswell_clusters %>%
+  left_join(count_clusters, join_by(cluster_id)) %>%
+  filter(!is.na(n_clustermembers)) %>%
+  mutate_at("cluster_id", as.factor)
+
+obswell_clusters %>% count()
+```
+
+Quick notes: 
+
+- (with max_dist=1) clusters never larger than 2, about 600 in total
+- marginally more with max_dist = 2 (n=650), but several with >2 members
+
+
+Here they are:
+```{r}
+obswell_clusters %>%
+  mapview(
+    map.types = c("OpenTopoMap"),
+    zcol = "soilclass"
+  )
+```
+
+## cluster depth differences
+
+Just for fun, quantify the difference of filterdepth within clusters:
+```{r}
+cluster_spans <- obswell_clusters %>%
+  group_by(cluster_id) %>%
+  summarize(
+    n = n(),
+    min_depth = min(filterdepth),
+    max_depth = max(filterdepth),
+    span_filtertop_depth = abs(max(filterdepth) - min(filterdepth)),
+  ) %>%
+  filter(
+    max_depth != min_depth,
+    span_filtertop_depth > 0.1
+  ) %>%
+  arrange(desc(span_filtertop_depth))
+
+cluster_spans %>%
+  ggplot(aes(x = span_filtertop_depth)) +
+  geom_histogram()
+```
+
+
+Then, identify the ones within the clusters which have the largest filterdepth:
+```{r}
+deep_members <- obswell_clusters %>%
+  st_drop_geometry() %>%
+  left_join(cluster_spans, join_by(cluster_id)) %>%
+  filter(!is.na(max_depth), filterdepth == max_depth) %>%
+  select(cluster_id, loc_wid) %>%
+  group_by(cluster_id) %>%
+  summarize(first_deep = min(loc_wid)) %>%
+  select(cluster_id, first_deep) %>%
+  unique() %>%
+  rename(deep_ref = first_deep)
+
+obswell_clusters <-
+  obswell_clusters %>%
+  left_join(deep_members, join_by(cluster_id),
+            relationship = "many-to-one")
+```
+
+
+## bring in water levels
+
+Now, xg3's join in.
+```{r}
+xg3_clustered <- obswell_clusters %>%
+  left_join(xg3s_db %>% collect(), join_by(loc_code))
+glimpse(xg3_clustered)
+``` 
+
+
+Now we can split the dataset into deepest and others:
+```{r}
+deepest <- xg3_clustered %>%
+  filter(loc_wid == deep_ref)
+
+undeep <- xg3_clustered %>%
+  filter(loc_wid != deep_ref)
+```
+
+YOLO!
+
+
+Quick check: are there sites with multiple undeep per `loc_wid`?
+yes!
+```{r}
+undeep %>%
+  st_drop_geometry() %>%
+  count(loc_wid) %>%
+  arrange(desc(n))
+```
+
+## within-cluster variance
+
+Get the relevant parameters and join again.
+
+NOTE: focusing on HG3, for now.
+
+```{r}
+dp <- deepest %>%
+  st_drop_geometry() %>%
+  filter(!is.na(hg3_lcl)) %>%
+  select(loc_wid, loc_code, hydroyear, filterdepth, filtertop_depth, hg3_lcl)
+names(dp) <- paste0("deep.", names(dp))
+
+ud <- undeep %>%
+  filter(!is.na(hg3_lcl)) %>%
+  select(
+    loc_wid, loc_code, soilclass,
+    hydroyear, filterdepth, filtertop_depth,
+    hg3_lcl, deep_ref
+  )
+
+hg3_diffs <- ud %>%
+  left_join(dp,
+    by = join_by(deep_ref == deep.loc_wid, hydroyear == deep.hydroyear),
+    relationship = "many-to-many"
+  ) %>%
+  filter(!is.na(deep.hg3_lcl)) %>%
+  mutate(
+    diff_hg3 = deep.hg3_lcl - hg3_lcl,
+    diff_filterdepth = deep.filterdepth - filterdepth,
+    diff_filtertop_depth = deep.filtertop_depth - filtertop_depth
+  ) %>%
+  group_by(loc_code, soilclass, diff_filterdepth, diff_filtertop_depth) %>%
+  summarize(diff_hg3 = mean(diff_hg3))
+```
+
+
+```{r}
+soilclass_counts <- hg3_diffs %>%
+  group_by(soilclass) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+soilclass_colors <- c("#284971", "#8eafd7", "#f0d70f", "#cccccc")
+names(soilclass_colors) <- names(soilclass_counts)
+
+p <- hg3_diffs %>%
+  ggplot(aes(x = diff_filtertop_depth, y = diff_hg3)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  theme_bw() +
+  geom_hline(yintercept = c(0)) +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  ggtitle(
+    "obswell clusters: filtertop depth has limited influence on local HG3"
+  ) +
+  xlab("difference in filtertop depth (m)") +
+  ylab("site-averaged difference in local HG3 (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.9, 0.2),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+
+p2 <- ggExtra::ggMarginal(p, type = "histogram", binwidth = 0.05)
+p2
+
+if (save_figures) {
+  ggsave("figures/diff_hg3_soilclass.pdf", p2,
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+
+At close inspection, there seems to be a trend in heavy soils. 
+```{r}
+p <- hg3_diffs %>%
+  filter(soilclass != "unknown") %>%
+  ggplot(aes(x = diff_filtertop_depth, y = diff_hg3)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  geom_hline(yintercept = c(0)) +
+  facet_wrap(~soilclass, ncol = 2) +
+  theme_bw() +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  ggtitle(
+    "obswell clusters: on heavy soil, filtertop depth influences HG3"
+  ) +
+  xlab("difference in filtertop depth (m)") +
+  ylab("site-averaged difference in local HG3 (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.9, 0.2),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+if (save_figures) {
+  ggsave("figures/diff_hg3_soilclass_specific.svg", p,
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+
+
+## within-cluster variance, VG3!
+
+Repeat for VG3, where we have more data.
+
+```{r}
+dp <- deepest %>%
+  st_drop_geometry() %>%
+  filter(!is.na(vg3_lcl)) %>%
+  select(loc_wid, loc_code, hydroyear, filterdepth, filtertop_depth, vg3_lcl)
+names(dp) <- paste0("deep.", names(dp))
+
+ud <- undeep %>%
+  filter(!is.na(vg3_lcl)) %>%
+  select(
+    loc_wid, loc_code, soilclass,
+    hydroyear, filterdepth, filtertop_depth,
+    vg3_lcl, deep_ref
+  )
+
+vg3_diffs <- ud %>%
+  left_join(dp,
+    by = join_by(deep_ref == deep.loc_wid, hydroyear == deep.hydroyear),
+    relationship = "many-to-many"
+  ) %>%
+  filter(!is.na(deep.vg3_lcl)) %>%
+  mutate(
+    diff_vg3 = deep.vg3_lcl - vg3_lcl,
+    diff_filterdepth = deep.filterdepth - filterdepth,
+    diff_filtertop_depth = deep.filtertop_depth - filtertop_depth
+  ) %>%
+  group_by(loc_code, soilclass, diff_filterdepth, diff_filtertop_depth) %>%
+  summarize(diff_vg3 = mean(diff_vg3))
+```
+
+
+```{r}
+soilclass_counts <- vg3_diffs %>%
+  group_by(soilclass) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+soilclass_colors <- c("#284971", "#8eafd7", "#f0d70f", "#cccccc")
+names(soilclass_colors) <- names(soilclass_counts)
+
+p <- vg3_diffs %>%
+  ggplot(aes(x = diff_filtertop_depth, y = diff_vg3)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  theme_bw() +
+  geom_hline(yintercept = c(0)) +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  ggtitle(
+    "obswell clusters: filtertop depth has limited influence on local VG3"
+  ) +
+  xlab("difference in filtertop depth (m)") +
+  ylab("site-averaged difference in local VG3 (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.9, 0.2),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+
+p2 <- ggExtra::ggMarginal(p, type = "histogram", binwidth = 0.05)
+p2
+
+if (save_figures) {
+  ggsave("figures/diff_vg3_soilclass.pdf", p2,
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+
+```{r}
+p <- vg3_diffs %>%
+  filter(soilclass != "unknown") %>%
+  ggplot(aes(x = diff_filtertop_depth, y = diff_vg3)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  geom_hline(yintercept = c(0)) +
+  facet_wrap(~soilclass, ncol = 2) +
+  theme_bw() +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  ggtitle(
+    "obswell clusters: on heavy soil, filtertop depth influences VG3"
+  ) +
+  xlab("difference in filtertop depth (m)") +
+  ylab("site-averaged difference in local VG3 (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.9, 0.2),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+if (save_figures) {
+  ggsave("figures/diff_vg3_soilclass_specific.pdf", p,
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+
+
+
+## conclusion
+Sites with heavy soil show a systematic difference between deep and shallow wells, with deep wells over-reporting the water levels. 
+The effect increases with filtertop depth, and is most apparent for HG3/VG3 with a filtertop difference of more than 2m.
+As expected, this effect is not universal, but site-specific: many clusters aggregate around the zero line, but some deviate from it, linked most likely to infiltration and spring areas.
+
+
+In the other soil classes, except for very big differences in filtertop_depth, 
+there is little difference in HG3 (or VG3) values.
+
+
+# Cluster Timelines
+## strategy
+As with the derived XG3 values above, 
+it might be instructive to check variability within clusters 
+for actual water level measurements.
+
+Ingredients, from above:
+
+- `obswell_clusters`
+- `FactPeilMeting.Niveau`
+
+
+This turned out to be inefficient in `R/dbplyr`: the table is huge, and even lazy queries collects it multiple times before joining. 
+SQL is far more efficient than that.
+
+```{r}
+# R - SQL helper functions
+query <- function(query_string) {
+  rs <- DBI::dbGetQuery(watina_conn, query_string)
+  return(rs)
+}
+
+query_difflevels <- function(focal_loc, reference_loc) {
+  query_string <- paste0(
+    " SELECT obs1.t, ",
+    "        i1, ",
+    "        i2, ",
+    "        l1, ",
+    "        l2 ",
+    " FROM (",
+    "     SELECT MeetpuntWID as i1, TijdWID AS t, Niveau AS l1 ",
+    "     FROM FactPeilMeting ",
+    "     WHERE MeetpuntWID = ", focal_loc,
+    " ) obs1 ",
+    " INNER JOIN (",
+    "     SELECT MeetpuntWID as i2, TijdWID AS t, Niveau AS l2 ",
+    "     FROM FactPeilMeting",
+    "     WHERE MeetpuntWID = ", reference_loc,
+    " ) obs2 ",
+    "  ON (obs1.t = obs2.t) ",
+    " ;"
+  )
+  query(query_string)
+}
+```
+
+
+This can be used to query all items (in `lapply`).
+```{r}
+cluster_metadata <- obswell_clusters %>%
+  st_drop_geometry()
+
+if (FALSE) {
+  # optional: save cluster metadata for an external script
+  saveRDS(cluster_metadata, file = "cluster_metadata.RDS")
+  glimpse(cluster_metadata)
+}
+
+cluster_pairs <- cluster_metadata %>%
+  filter(!(loc_wid == deep_ref)) %>%
+  select(loc_wid, deep_ref)
+
+progress <- utils::txtProgressBar(min = 0, max = nrow(cluster_pairs), style = 3)
+
+get_diff_level_per_pair <- function(cluster_id) {
+  utils::setTxtProgressBar(progress, cluster_id)
+  loc <- cluster_pairs[cluster_id, 1]
+  ref <- cluster_pairs[cluster_id, 2]
+
+  diff_levels <- query_difflevels(loc, ref)
+  return(diff_levels)
+}
+```
+
+
+
+<center>
+**ATTENTION**
+</center>
+
+And here we attempt to `apply` the functions.
+
+- takes a long time
+- may kill the RAM
+- but works on SQL, so brace yourself and go.
+
+
+```{r}
+difflevel_file <- "all_diff_levels.rds"
+if (FALSE || exists(difflevel_file)) {
+  all_diff_levels <- lapply(
+    seq(1, nrow(cluster_pairs)),
+    get_diff_level_per_pair
+  ) %>%
+    bind_rows()
+
+  saveRDS(all_diff_levels, file = difflevel_file)
+} else {
+  all_diff_levels <- readRDS(difflevel_file)
+}
+```
+
+
+overview plot:
+```{r}
+all_diff_levels %>%
+  mutate(diff_level = l2 - l1) %>%
+  ggplot(aes(x = diff_level)) +
+  geom_density() +
+  xlim(-1, 1) +
+  geom_vline(xintercept = 0)
+```
+
+
+detail plot:
+```{r}
+try_correlation <- function(l1, l2) {
+  if (length(l1) < 10) {
+    return(invisible(NA))
+  }
+  return(cor.test(l1, l2)$estimate)
+}
+
+mean_diffs <- all_diff_levels %>%
+  mutate(
+    hydroyear = floor((t - 400) / 10000),
+    diff_level = l2 - l1
+  ) %>%
+  group_by(i1, i2) %>% # , hydroyear
+  summarize(
+    dl = mean(diff_level),
+    corr = try_correlation(l1, l2)
+  )
+
+mean_diffs %>%
+  ggplot(aes(x = dl)) +
+  geom_density() +
+  xlim(-1, 1) +
+  geom_vline(xintercept = 0)
+```
+
+Finally, join the `mean_diffs` to location info:
+
+```{r}
+refs <- mean_diffs %>%
+  pull(i2) %>%
+  unique()
+ref_info <- cluster_metadata %>%
+  filter(loc_wid %in% refs) %>%
+  select(loc_wid, x, y, filterdepth, filtertop_depth, soilclass)
+names(ref_info) <- paste0("ref.", names(ref_info))
+
+euclid <- function(x1, y1, x2, y2) {
+  sqrt((x2 - x1)^2 + (y2 - y1)^2)
+}
+
+informed_diffs <- mean_diffs %>%
+  left_join(cluster_metadata,
+            by = join_by(i1 == loc_wid, i2 == deep_ref)) %>%
+  left_join(ref_info, by = join_by(i2 == ref.loc_wid)) %>%
+  mutate(
+    d_ftd = ref.filtertop_depth - filtertop_depth,
+    d_fd = ref.filterdepth - filterdepth,
+    d_dist = euclid(x, y, ref.x, ref.y)
+  )
+```
+
+Analogous to the above: check how difference depends on depth difference
+
+```{r}
+soilclass_counts <- informed_diffs %>%
+  group_by(soilclass) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+soilclass_colors <- c("#284971", "#8eafd7", "#f0d70f", "#cccccc")
+names(soilclass_colors) <- names(soilclass_counts)
+
+p <- informed_diffs %>%
+  ggplot(aes(x = d_ftd, y = dl)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  theme_bw() +
+  geom_hline(yintercept = c(0)) +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  # ggtitle(
+  #   "obswell clusters: filtertop depth has limited influence on water level"
+  # ) +
+  ylim(-2, 1) +
+  xlab("difference in filtertop depth (m)") +
+  ylab("cluster-averaged difference of water level (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.85, 0.2),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+
+p2 <- ggExtra::ggMarginal(p, type = "histogram", binwidth = 0.05, margins = "y")
+p2
+
+if (save_figures) {
+  ggsave("figures/diff_level_soilclass.png", p2,
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+
+Again, a soilclass-specific analysis is justified.
+However, in contrast to HG3, deeper wells do not seem to over-estimate actual levels.
+
+```{r}
+
+p <- informed_diffs %>%
+  filter(soilclass != "unknown") %>%
+  ggplot(aes(x = d_ftd, y = dl)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  geom_hline(yintercept = c(0)) +
+  facet_wrap(~soilclass, ncol = 2) +
+  theme_bw() +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  # ggtitle(
+  #   "obswell clusters: filtertop depth has limited influence on water level"
+  # ) +
+  ylim(-2, 1) +
+  xlab("difference in filtertop depth (m)") +
+  ylab("cluster-averaged difference of water level (m)") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.85, 0.2),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    ),
+    text = element_text(size = 20)
+  )
+
+if (save_figures) {
+  ggsave("figures/diff_level_soilclass_specific.png", p,
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+Besides, we can check (bluntly) how much correlation there is with clusters that
+have >10 shared observation days:
+
+```{r}
+informed_diffs %>%
+  ggplot(aes(x = corr)) +
+  geom_density()
+```
+
+
+```{r}
+soilclass_counts <- informed_diffs %>%
+  filter(!is.na(corr)) %>%
+  group_by(soilclass) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+soilclass_colors <- c("#284971", "#8eafd7", "#f0d70f", "#cccccc")
+names(soilclass_colors) <- names(soilclass_counts)
+
+p <- informed_diffs %>%
+  filter(!is.na(corr)) %>%
+  ggplot(aes(x = d_ftd, y = corr)) +
+  geom_point(aes(color = soilclass)) +
+  geom_smooth(color = "black") +
+  theme_bw() +
+  geom_hline(yintercept = c(0)) +
+  scale_color_manual(values = soilclass_colors, labels = soilclass_counts) +
+  ggtitle("obswell clusters: clusters are highly correlated") +
+  xlab("difference in filtertop depth (m)") +
+  ylab("cluster-averaged correlation coefficient (arb. units)") +
+  ylim(-1, 1)
+
+
+p2 <- ggExtra::ggMarginal(p, type = "histogram", binwidth = 0.05)
+p2
+```
+
+Observations:
+
+- bias might be *a tiny bit positive*, i.e. deeper filters over-estimate the water level
+- yet the effect is O(5cm)
+
+
+
+# NOTES
+
+- [☇] IDEA: see `ZWIP017`, query exchanges with significant change in depth; plot before/after; HG3 discrepancy water level | pressure level
+- Why do some HG3 lie below VG3?
+- Why are HG3&LG3 only calculated intermittently, whereas VG3 is mostly there?
+- What is the difference between `soilsurf_ost` and `measuringref_ost`? Can it explain the HG3 discrepancy?
+- mathjax does not work out of the box (self-contained? js to server?)
+- [☇] there is a `vg3_lcl` > 50m at `STRP048` in hydroyear 2023
+- [TODO] if you use `watina::cluster_locs()` with obswells_db (non-sf), there is a "bad error message" (indeed, it is.)
+- [NOTE] there is "PeilmetingCategorie == 'twijfelachtig'" in 6016... always use "validated"!
+  - validation is manual and can take long
+- there are measurements from outside Flanders: check `area_code = VBS` -> new DWH has a "country" filter
+
+DONE: contact Frederic, Jo Loos for feedback on 
+
+ - the discrepancy in HG3 values (*versus* `FactPeilMeting.Niveau`).
+ - the skyscraper-high vg3 single observation
+
+
+- NOT DONE: Gaussian fit of diff_level, possibly multilevel (involving distance, soilclass)
+
+
+
+```{r}
+DBI::dbDisconnect(watina_conn)
+```
