@@ -11,7 +11,7 @@ geometry: margin=1in
 mainfont: "Calibri"
 fontsize: 11pt
 documentclass: "article"
-csl: https://raw.githubusercontent.com/citation-style-language/styles/master/research-institute-for-nature-and-forest.csl
+csl: "`r if (curl::has_internet()) 'https://raw.githubusercontent.com/citation-style-language/styles/master/research-institute-for-nature-and-forest.csl' else system.file('research-institute-for-nature-and-forest.csl', package = 'INBOmd')`"
 bibliography: ../../refs_mne_design.yaml
 site: bookdown::bookdown_site
 params:
@@ -39,6 +39,7 @@ output:
     keep_md: TRUE
   bookdown::html_document2:
     number_sections: yes
+    code_folding: hide
     fig_caption: yes
     df_print: paged
     toc: TRUE
@@ -48,6 +49,7 @@ output:
       smooth_scroll: FALSE
     includes:
         in_header: header.html
+    keep_md: TRUE
   bookdown::gitbook:
     split_by: "chapter+number"
   bookdown::pdf_document2:
@@ -102,7 +104,6 @@ projroot <- find_root(has_file("design_elaborate.Rproj"))
 #the current git repository, and must be named 'n2khab-mne-nonpublicdata'.
 #Branch 'master' must track the remote branch 'master'. Please arrange all this
 #beforehand, because the code does not setup this clone.
-#For the code to run, you must be connected to the internet.
 
 nonpublicrepo <- repository(file.path(gitroot, 
                                       "..", 
@@ -110,16 +111,22 @@ nonpublicrepo <- repository(file.path(gitroot,
 if (git2r::repository_head(nonpublicrepo)$name != "master") {
   git2r::checkout(nonpublicrepo, "master")
 }
-out <- git2r::pull(nonpublicrepo)
-if (out$conflicts) {
-  stop("Please first fix merge conflicts in n2khab-mne-nonpublicdata",
-       " (locally), in order to complete the git pull, and then try again. ",
-       "While doing this, keep an eye on any messages from `git status`.")
+
+if (!curl::has_internet()) {
+    warning("Executing offline; git repository with non-public data ",
+            "could not be fetched.")
+} else {
+    out <- git2r::pull(nonpublicrepo)
+    if (out$conflicts) {
+        stop("Please first fix merge conflicts in n2khab-mne-nonpublicdata",
+             " (locally), in order to complete the git pull, and then try again. ",
+             "While doing this, keep an eye on any messages from `git status`.")
+    }
 }
 ################################################################################
 
 opts_chunk$set(
-  echo = FALSE,
+  echo = TRUE,
   dpi = 300,
   fig.align = "center",
   comment = ""
