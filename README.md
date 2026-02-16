@@ -78,6 +78,6 @@ In addition, the monitoring results will aid in assessing the environmental subc
 To this end, each environmental compartment (groundwater, surface water, inundation water, atmosphere and soil) will be served by a specific MNE monitoring subprogramme aligned with the six-year cycles of the Natura 2000 policy.
 
 MNE will provide solid conclusions for (groups of) habitat types at the Flemish scale, but will be based on a selection of sites in space and time.
-Therefore, a statistical approach is needed to achieve the desired (or acceptable) level of precision, significance and power.
+Therefore, a statistical approach is needed to achieve the desired (or acceptable) level of precision, confidence level and power.
 
 
