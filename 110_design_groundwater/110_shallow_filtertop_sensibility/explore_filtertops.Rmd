@@ -1,0 +1,839 @@
+---
+title: "Sensibility of a shallow top of a piezometer filter"
+author: "Falk Mielke"
+date: "`r lubridate::today()`"
+output:
+  html_document:
+    keep_md: TRUE
+    number_sections: yes
+    code_folding: show
+    code_download: yes
+    fig_width: 10
+    fig_height: 5
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../../header.html
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(watina)
+library(dplyr)
+library(dbplot)
+library(n2khab)
+library(stringr)
+library(ggplot2)
+
+save_figures <- TRUE # whether/not to save plots in utils::mkdir("./figures")
+
+watina_conn <- connect_watina()
+```
+
+# Key Observations (or maybe not...)
+
+- the majority of measurement locations are equipped with piezometers ([see here](#datajoin))
+- there are non-piezo wells with short filters ([see here](#filterlengths))
+- a cluster of the shallowest filter tops are actually non-piezo; some are above ground ([see here](#filtertops))
+- apparrently, HG3 can be positive ([see here](#hg3_dist)): this would be the case with normal rain or floods, to which `Hg3` is extra sensitive; it affects both types of measurement setups ([see here](#hg3_shallow))
+- the HG3 distribution and above-surface HG3 does not depend much on soilclass ([see here](#soilclass))
+
+
+# Data Collection
+
+## Fetching observation well properties
+
+In order to explore distribution of filter tops, we look at observation wells with filter no deeper than 5 m.
+
+```{r}
+obswells_db <- get_locs(
+  watina_conn,
+  filterdepth_range = c(0, 5),
+  filterdepth_guess = FALSE,
+  loc_type = "P",
+  loc_validity = c("VLD", "ENT"),
+  obswells = TRUE
+) %>% mutate(line_nr = row_number())
+```
+
+Structure of the data:
+
+```{r}
+glimpse(obswells_db)
+count(obswells_db)
+```
+
+Duplicates are replaced sites (as read from `PeilpuntStatusCode, PeilpuntStatusNaam, PeilpuntToestandCode`):
+```{r}
+obswells_db %>%
+  group_by(loc_wid) %>%
+  count() %>%
+  filter(n > 4) %>%
+  arrange(desc(n))
+```
+
+
+## OBSOLETE: Query Measurement Technique
+<center>
+**WARNING**
+</center>
+The database columns `PeilpuntTypeNaam` and `PeilpuntTypeCode` used below are not reliable. 
+Their content is flawed due to the similarity of the installation type names in Dutch, and the general similarity of observation wells and piezometer installations.
+It is advised to instead use the filter top depth (less than 0.3m) as a distinguishing characteristic, or analyze with filter top depth as a continuous variable.
+
+
+To find out what technique was used to get the water levels, we query extra info: `PeilpuntType*`.
+```{r}
+pptype <- tbl(watina_conn, "vwDimPeilpunt") %>%
+  filter(
+    PeilpuntStatusCode %in% c("VLD", "ENT", "CLD"),
+    PeilpuntOpenbaarheidTypeCode == "PLME",
+    PeilpuntOpenbaarheidCode == "UNKWN"
+  ) %>%
+  select(
+    loc_wid = MeetpuntWID,
+    pp_typecode = PeilpuntTypeCode,
+    pp_type = PeilpuntTypeNaam,
+    obswell_installdate = PeilpuntPlaatsing
+  )
+```
+
+
+Are there any duplicates in the `pptype`? -> yes, but they should disappear on joining
+
+```{r}
+pptype %>%
+  group_by(loc_wid, obswell_installdate) %>%
+  count() %>%
+  filter(n > 4) %>%
+  arrange(desc(n))
+```
+
+```{r}
+pptype <- pptype %>% distinct()
+glimpse(pptype)
+count(pptype)
+```
+
+
+```{r}
+pptype %>%
+  group_by(loc_wid) %>%
+  count() %>%
+  filter(n > 1) %>%
+  arrange(desc(n))
+```
+
+
+## Joining Data {#datajoin}
+Then join this to the obswells data:
+```{r}
+count(obswells_db) %>% print()
+obswells <- obswells_db %>%
+  left_join(pptype, join_by(loc_wid, obswell_installdate))
+glimpse(obswells)
+count(obswells) %>% print()
+```
+
+Finally, it is time to collect the lazy SQL table.
+Collaction is necessary to use stringr/tidyr manipulations which do not translate to SQL.
+
+```{r}
+obswells <- obswells %>% collect()
+obswells <- obswells %>% mutate(pp_type_grp = word(pp_type, 1))
+obswells <- obswells %>%
+  mutate_at(vars(pp_type_grp), ~ tidyr::replace_na(., "onbekend"))
+glimpse(obswells)
+```
+
+And a quick check what we have in the pipe:
+```{r}
+ggplot(obswells, aes(x = "", y = pp_type_grp, fill = pp_type_grp)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar("y", start = 0)
+
+type_counts <- obswells %>%
+  group_by(pp_type_grp) %>%
+  summarize(n = n()) %>%
+  mutate(freq = 100.0 * n / sum(n))
+get_frq <- function(typ) {
+  sprintf(
+    "%.1f %%",
+    type_counts[type_counts$pp_type_grp == typ, "freq"][[1]]
+  )
+}
+```
+
+Indeed, most measuring stations seem to be piezometers (`r get_frq("piëzometer")`).
+About `r get_frq("peilbuis")` of measurements are wells, and `r get_frq("onbekend")` are unknown.
+
+
+## Technical Documentation
+some locations have been replaced over time; there can have been a switch from piezo to well or the other way round.
+
+- example: `MeetpuntWID == 9930`
+- the install date is relevant for joins, otherwise successors are cross-mixed
+
+Some have `MeetpuntWID == -1`, this seems nonsense (but should be removed by the `left_join`).
+
+
+# Data Inspection
+## General
+How many observation wells are there?
+
+```{r}
+obswells %>%
+  group_by(pp_type_grp, pp_type) %>%
+  count() %>%
+  print()
+count(obswells) %>% print()
+```
+
+## Filter Lengths {#filterlengths}
+What is the **absolute** distribution of `filterlength`?
+
+```{r}
+# Histogram
+ggplot(
+  obswells,
+  aes(x = filterlength, fill = pp_type_grp, colour = pp_type_grp)
+) +
+  geom_histogram(aes(y = after_stat(count)),
+    binwidth = 0.05,
+    colour = "black",
+  ) +
+  xlim(-0.01, 2.01) +
+  ggtitle("filterlength usage count per installation type")
+
+
+filterlengths <- obswells %>% pull(filterlength)
+filterlengths %>% quantile(seq(0, 1, 0.05))
+```
+
+
+There are some preferred lengths: 0.3, 0.5, 1.0 and 2.0 meters.
+
+
+What is the **relative** distribution of `filterlength` within groups?
+
+```{r}
+# Densities; normalized per group
+ggplot(
+  obswells,
+  aes(x = filterlength, fill = pp_type_grp, colour = pp_type_grp)
+) +
+  geom_density(alpha = 0.8, color = "black") +
+  xlim(-0.2, 2.2) +
+  ggtitle("group-normalized densities of filter length")
+```
+
+
+And in a different view: 
+
+```{r}
+obswells %>%
+  mutate(age = lubridate::year(obswell_installdate) - 1979) %>%
+  filter(age > 0) %>%
+  ggplot(aes(y = filterlength, x = filterdepth,
+             fill = pp_type_grp, color = pp_type_grp)) +
+  geom_point(alpha = 0.67, aes(size = age^2)) +
+  ylim(-0.01, 2.01)
+
+ggsave("figures/filterlengths.pdf")
+```
+
+
+
+
+A considerable number of non-piezo wells has short filters.
+
+
+Did the types (e.g. "unknown") change over time?
+```{r}
+obswells %>%
+  mutate(year = lubridate::year(obswell_installdate)) %>%
+  ggplot(aes(x = year, fill = pp_type_grp, colour = pp_type_grp)) +
+  geom_histogram(binwidth = 1, color = "black") +
+  ggtitle("new installation type per year")
+```
+
+2001 was a busy year...
+
+
+## Shallow Filtertops {#filtertops}
+
+To explore the availability of shallow filtertops, we need to derive `filtertop_depth` from `filterdepth` and `filterlength`.
+(See `watina/R/get.R#get_locs()` for the original calculation.)
+
+```{r}
+obswells <- obswells %>%
+  mutate(filtertop_depth = filterdepth - filterlength / 2)
+# filterdepth is positive downwards; thus filtertop_depth must be smaller
+```
+
+Explore `filtertop_depth` values:
+
+```{r}
+filtertop_depth_vals <- obswells %>% pull(filtertop_depth)
+length(filtertop_depth_vals)
+quantile(filtertop_depth_vals, seq(0, 1, 0.05))
+
+ggplot(obswells, aes(x = filtertop_depth, fill = pp_type_grp)) +
+  geom_histogram(aes(y = after_stat(count)),
+    binwidth = 0.05,
+    colour = "black"
+  ) +
+  geom_vline(xintercept = c(0, 0.3)) +
+  scale_x_reverse() +
+  coord_flip() +
+  xlab("filter top depth (m; positive: down)") +
+  guides(fill = guide_legend(title = "Well Type")) +
+  theme(text = element_text(size = 20))
+# ggtitle(
+# "distribution of filter top depths per installation type"
+# )
+if (save_figures) {
+  ggsave("figures/filtertop_depth_distribution.svg",
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+- Conventionally, 0.3m is the criterium for "shallow".
+- From a distribution standpoint, I guess 49cm is still shallow; yet I prefer to exclude the bunch of 50cm's.
+- I cannot make sense of above-ground filtertops, and will remove them.
+
+How many shallow filtertops?
+
+```{r}
+depth_classes <- obswells %>%
+  mutate(
+    above_ground = filtertop_depth < 0,
+    below_30cm = filtertop_depth < 0.3,
+    below_50cm = filtertop_depth < 0.5
+  ) %>%
+  count(pp_type_grp, above_ground, below_30cm, below_50cm) %>%
+  tidyr::pivot_wider(values_from = n, names_from = pp_type_grp)
+
+knitr::kable(depth_classes)
+```
+
+Noted: We have quite a number of shallow filtertop locations.
+- Some are unplausible (<=0), and should be excluded.
+- A cluster of the shallowest ones are actually non-piezo.
+
+
+```{r}
+obswells %>%
+  ggplot(aes(x = pp_type_grp, y = filtertop_depth, fill = pp_type_grp)) +
+  geom_violin(draw_quantiles = c(0.05, 0.25, 0.50, 0.75, 0.95), alpha = 0.6) +
+  geom_point(
+    position = position_jitter(seed = 1, width = 0.2),
+    alpha = 0.2, fill = "white"
+  ) +
+  geom_hline(yintercept = 0) +
+  geom_hline(yintercept = 0.3) +
+  scale_y_continuous(trans = "reverse")
+```
+
+```{r}
+obswells %>%
+  ggplot(aes(x = pp_type_grp, y = filterlength, fill = pp_type_grp)) +
+  geom_point(
+    position = position_jitter(seed = 1, width = 0.40),
+    alpha = 0.33, fill = "white"
+  )
+```
+
+
+
+# Sensibility of shallow filtertops: what about HG3 values?
+## Append Data
+
+We first need to load the `xg3` data corresponding to the selected locations.
+```{r}
+xg3s_db <- obswells %>%
+  # filter( (filtertop_depth > 0) & (filtertop_depth < 0.5) )  %>%
+  get_xg3(
+    watina_conn,
+    startyear = 1900,
+    truncated = FALSE
+  )
+glimpse(xg3s_db %>% arrange(desc(hydroyear), loc_code))
+
+xg3s <- xg3s_db %>% collect()
+```
+
+*side note:* the `Precalc` table only seems to contain the latest data for our example (`MeetpuntWID == 9930`, `loc_code == "OPHP004"`).
+```{r}
+xg3s %>%
+  arrange(desc(hydroyear), loc_code) %>%
+  filter(loc_code == "OPHP004")
+```
+
+The tricky thing is to get the "pp_type" right; it can change during the year.
+```{r}
+latest_pp <- obswells %>%
+  arrange(desc(obswell_installdate)) %>%
+  summarize(
+    latest_installment = dplyr::first(obswell_installdate),
+    filterdepth = dplyr::first(filterdepth),
+    filtertop_depth = dplyr::first(filtertop_depth),
+    pp_type = dplyr::first(pp_type),
+    pp_type_grp = dplyr::first(pp_type_grp),
+    .by = c(loc_wid, loc_code)
+  ) %>%
+  mutate(shallow = (filtertop_depth > 0) & (filtertop_depth < 0.5)) %>%
+  select(-latest_installment)
+
+glimpse(latest_pp %>% filter(loc_code == "OPHP004"))
+latest_pp %>% count()
+```
+
+## HG3 distribution {#hg3_dist}
+Let's have a look at how frequently HG3 values are above soil surface in piezometers with filterdepth <= 3 m (the usual limit), and how this might be related to soil texture and to the `filterdepth` or `filtertop_depth` value.
+
+General distribution is like this:
+```{r}
+xg3s %>%
+  ggplot(aes(x = hg3_lcl)) +
+  geom_histogram(binwidth = 0.1, color = "black", fill = "white") +
+  geom_vline(xintercept = 0) +
+  coord_flip() +
+  ggtitle("bulk HG3 distribution (water level height: positive up)")
+```
+
+*reference frame:**
+
+- hg3 is defined from soil surface, pointing up!
+- filtertop_depth is defined from surface, pointing down
+
+```{r}
+xg3_obswells <- xg3s %>%
+  left_join(latest_pp, join_by(loc_code))
+```
+
+
+```{r}
+xg3_obswells %>%
+  filter(pp_type_grp != "onbekend", !is.na(hg3_lcl)) %>%
+  ggplot(aes(x = hg3_lcl, fill = shallow)) +
+  theme_bw() +
+  geom_histogram(binwidth = 0.1, color = "black") +
+  geom_vline(xintercept = 0) +
+  facet_grid(. ~ pp_type_grp, scales = "free_x") +
+  scale_fill_manual(values = c("#356196", "#f0d70f")) +
+  coord_flip() +
+  xlab("local HG3 (m)") +
+  ylab("observation count") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.95, 0.1),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    )
+  ) +
+  ggtitle("HG3 (local), direct measurement")
+
+if (save_figures) {
+  ggsave("figures/hg3_local_details.pdf",
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+
+
+## shallow piezos {#hg3_shallow}
+```{r}
+xg3_shallowpiez <- xg3_obswells %>%
+  filter(pp_type_grp == "piëzometer", shallow == TRUE) # , filtertop_depth > 0)
+glimpse(xg3_shallowpiez)
+
+xg3_shallowpiez %>%
+  filter(!if_any(hg3_lcl, is.na)) %>%
+  ggplot(aes(x = hg3_lcl)) +
+  geom_histogram(binwidth = 0.1, color = "black", fill = "white") +
+  geom_vline(xintercept = 0) +
+  coord_flip() +
+  ggtitle("HG3 (local), only shallow piezometers")
+```
+
+Apparrently, HG3 can be positive: 
+
+- affects both types of measurement setups (piezometers and wells)
+- could be the case with floods, maybe even just intense rain and tube filling, to which `HG3` is extra sensitive
+
+
+## check coordinate reference systems
+
+The CRS of the watina data seems to match `soilmap` coordinates (see below *Belgian Lambert 72*).
+According to documentation,
+
+> DimBodem	PeilpuntXCoordinaat	Description	X Coördinaat van het peilpunt in Lambert 72
+> DimBodem	PeilpuntYCoordinaat	Description	Y Coördinaat van het peilpunt in Lambert 72
+
+Unfortunately, I fail to reproduce the documentation query.
+```{r}
+query_table_names <- "SELECT name FROM sys.tables ORDER BY name ASC;"
+table_names <- DBI::dbGetQuery(watina_conn, query_table_names)
+
+query_columns <- "
+  SELECT *,
+       OBJECT_NAME(object_id) as table_name 
+  FROM sys.columns;"
+
+column_infos <- DBI::dbGetQuery(watina_conn, query_columns) %>%
+  filter(table_name == "DimPeilpunt")
+
+column_infos %>%
+  filter((name %in% c("PeilpuntXCoordinaat", "PeilpuntYCoordinaat")))
+
+if (FALSE) {
+  # the documentation could not be queried from the database
+  query_documentation <- "SELECT * FROM sys.documentation;"
+  documentation <- DBI::dbGetQuery(watina_conn, query_documentation)
+
+  documentation <- DBI::dbGetQuery(watina_conn, "SELECT * FROM vwDocumentatie;")
+}
+```
+
+
+## case study extract
+
+Select a suitable example case for the geospatial experience below:
+```{r}
+obswells[grep("zwin", obswells$area_name, ignore.case = TRUE), ] %>%
+  saveRDS("geospatial_example_subset.rds")
+
+obswells %>% saveRDS("geospatial_all_data.rds")
+xg3s %>% saveRDS("ecohydrological_xg3s.rds")
+```
+
+
+
+# code break!
+```{r}
+dbDisconnect(watina_conn)
+```
+
+
+*Grab a coffee, restart your R session, and continue on the code below...*
+
+The code chunks below should mostly be de-serialized from the above.
+
+```{r setup2, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("dplyr")
+library("dbplot")
+library("n2khab")
+library("sf")
+library("stringr")
+library("ggplot2")
+library("ggridges")
+library("mapview")
+```
+
+# Soil
+
+## data loading
+```{r}
+obswells_sample <- readRDS("geospatial_example_subset.rds")
+print(obswells_sample)
+```
+
+
+Simplified texture classes from the soilmap:
+
+```{r} 
+soilmap_raw <-
+  read_soilmap()
+
+soilmap <- soilmap_raw[grep(
+  "zwin",
+  soilmap_raw$bsm_region,
+  ignore.case = TRUE
+), ]
+
+soilmap <- soilmap %>%
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      .default = "unknown"
+    ) %>%
+      factor()
+  )
+
+glimpse(soilmap)
+```
+
+- https://r-spatial.github.io/mapview/articles/mapview_02-advanced.html
+
+Visual inspection of the soil class for focus location:
+```{r}
+soilmap %>%
+  mapview(
+    zcol = "soilclass",
+    alpha.regions = 0.6,
+    map.types = c("OpenStreetMap", "OpenTopoMap"),
+    alpha = 0.4
+  )
+```
+
+
+## CRS check
+The CRS of the soilmap is **BD72 / Belgian Lambert 72** (ID: EPSG 31370)
+```{r}
+st_crs(soilmap)
+```
+
+
+## inspection
+Let's take a closer look at what we have.
+Multipolygons:
+```{r}
+soilmap_light <- soilmap %>%
+  filter(soilclass == "heavy")
+glimpse(soilmap_light)
+```
+
+
+... and points:
+```{r}
+obswells_sample[, c("x", "y")]
+```
+
+converting points (https://stackoverflow.com/a/45484314)
+```{r}
+sf_points <- st_as_sf(
+  x = obswells_sample,
+  coords = c("x", "y"),
+  crs = st_crs(soilmap_light)
+)
+```
+
+This makes them plottable:
+```{r}
+soilmap %>%
+  mapview(
+    zcol = "soilclass",
+    alpha.regions = 0.6,
+    map.types = c("OpenStreetMap", "OpenTopoMap"),
+    alpha = 0.4
+  ) +
+  mapview(sf_points)
+```
+
+
+We can get intersects:
+
+- https://gis.stackexchange.com/a/282769
+```{r}
+intersects <- st_intersects(soilmap, sf_points, sparse = FALSE)
+print(paste(nrow(soilmap), nrow(sf_points), nrow(intersects), ncol(intersects)))
+heatmap(1 * intersects, Colv = NA, Rowv = NA)
+
+which(intersects, arr.ind = TRUE)
+```
+noted: I intersect a soilmap with points; the rows are the soilmap, the cols are the points.
+
+
+... yet to transfer attributes, I might want to join:
+
+- https://gis.stackexchange.com/a/466059
+```{r}
+joined_spatial <- st_join(sf_points, soilmap)
+glimpse(joined_spatial %>% filter(!if_any(soilclass, is.na)))
+```
+... here we go.
+
+
+Let's check whether there's more soil info for Zwin in the full dataset.
+```{r}
+joined_spatial <- st_join(sf_points, soilmap_raw %>%
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      .default = "unknown"
+    ) %>%
+      factor()
+  ))
+glimpse(joined_spatial %>% filter(!if_any(soilclass, is.na)))
+
+mapview(joined_spatial,
+  zcol = "soilclass",
+  map.types = c("OpenStreetMap", "OpenTopoMap"),
+  alpha = 0.6
+)
+```
+
+Good. I can work with this.
+
+
+# All Soil and Dirt {#soilclass}
+With this data example in place, I will get the soil type info to all the `obswells`.
+
+## prepare data
+This requires `obswells` and `xg3s`, as used above.
+```{r}
+if (!exists("obswells")) {
+  obswells <- readRDS("geospatial_all_data.rds")
+}
+if (!exists("xg3s")) {
+  xg3s <- readRDS("ecohydrological_xg3s.rds")
+}
+
+obswells_placed <- obswells %>%
+  filter(!if_any(c("x", "y"), is.na))
+glimpse(obswells_placed)
+print(paste("Loss of locations: ", nrow(obswells), nrow(obswells_placed)))
+```
+
+Additionally, the complete soilmap will be required, with soil class.
+```{r}
+soilmap <- soilmap_raw %>%
+  transmute(
+    soilclass = case_when(
+      str_detect(bsm_mo_tex, "V") ~ "peat",
+      str_detect(bsm_mo_tex, "^U") ~ "heavy",
+      str_detect(bsm_mo_tex, "[SZPLX]") ~ "light",
+      str_detect(bsm_mo_tex, ".+") ~ "heavy",
+      .default = "unknown"
+    ) %>%
+      factor()
+  )
+glimpse(soilmap)
+```
+
+Obswells can be converted to an `sf` object (based on `x, y` location of the wells).
+```{r}
+obswells_points <- st_as_sf(
+  x = obswells_placed,
+  coords = c("x", "y"),
+  crs = st_crs(soilmap)
+)
+```
+
+
+Then, the spatial join of well and soil data will append the soil class information.
+```{r}
+soiled_obswells <- st_join(obswells_points, soilmap) %>%
+  filter(!if_any(soilclass, is.na))
+glimpse(soiled_obswells)
+```
+
+
+As seen above, the xg3 seems to cover the latest installations, which are to be extracted here:
+```{r}
+latest_soiled <- soiled_obswells %>%
+  arrange(desc(obswell_installdate)) %>%
+  group_by(loc_wid, loc_code) %>%
+  summarize(
+    latest_installment = dplyr::first(obswell_installdate),
+    filterdepth = dplyr::first(filterdepth),
+    filtertop_depth = dplyr::first(filtertop_depth),
+    soilclass = dplyr::first(soilclass),
+  ) %>%
+  ungroup() %>%
+  mutate(shallow = (filtertop_depth > 0) & (filtertop_depth < 0.5)) %>%
+  select(-latest_installment)
+```
+
+Finally, `xg3s` can be joined.
+```{r}
+soilclass_obswell_xg3s <- xg3s %>%
+  left_join(latest_soiled, join_by(loc_code)) %>%
+  filter(!if_any(hg3_lcl, is.na)) %>%
+  mutate(soilclass = tidyr::replace_na(soilclass, "unknown"))
+
+# sample size, for display in the plots below
+soilclass_counts <- soilclass_obswell_xg3s %>%
+  group_by(soilclass) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(label = paste0(soilclass, " (", n, ")"))
+soilclass_counts <- setNames(soilclass_counts$label, soilclass_counts$soilclass)
+```
+
+
+## Visualize
+
+The question is whether the occurrence of unexpectedly high `HG3` is associated with a soil type. 
+
+Visually, this seems not to be the case:
+```{r}
+soilclass_obswell_xg3s %>%
+  ggplot(aes(x = hg3_lcl, y = soilclass, fill = soilclass)) +
+  theme_bw() +
+  geom_density_ridges(
+    stat = "binline",
+    binwidth = 0.05,
+    scale = 2.4,
+    alpha = 0.6,
+    color = "black"
+  ) +
+  geom_vline(xintercept = 0) +
+  scale_fill_manual(values = c("#284971", "#8eafd7", "#f0d70f", "#b2b2b2")) +
+  xlim(-2, 1) +
+  scale_y_discrete(labels = soilclass_counts) +
+  coord_flip() +
+  xlab("local HG3 (m)") +
+  ylab("observation count") +
+  theme(
+    legend.position = "inside", legend.position.inside = c(0.95, 0.1),
+    legend.background = element_rect(
+      fill = "white",
+      linewidth = 0.5,
+      linetype = "solid",
+      colour = "lightgray"
+    )
+  ) +
+  ggtitle("HG3 (local), direct measurement")
+
+if (save_figures) {
+  ggsave("figures/hg3_soilclass_details.pdf",
+    dpi = 300, width = 16, height = 8, units = "in"
+  )
+}
+```
+## Statistical Tests
+... do not make sense because
+
+- data is not normally distributed
+- sample size is unequal
+- sample size is large (i.e. conventional tests will trigger upon miniscule differences).
+
+```{r}
+get_group <- function(grp) {
+  x <- soilclass_obswell_xg3s %>%
+    filter(soilclass == grp) %>%
+    pull("hg3_lcl")
+  return(x)
+}
+ks.test(get_group("light"), get_group("heavy"))
+ks.test(get_group("light"), get_group("peat"))
+
+wilcox.test(get_group("light"), get_group("heavy"))
+wilcox.test(get_group("light"), get_group("peat"))
+```
+↑ **ignore the p-values!**
+
+What I would rather like to do is a model with an adequate distribution for HG3 which incorporates (and quantifies) an effect of `soilclass`.
+
+My skill in R is (yet) insufficient to tackle this.
+But I will learn.
+
+
+
+

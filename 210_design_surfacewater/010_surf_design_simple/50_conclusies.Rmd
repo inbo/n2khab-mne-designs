@@ -1,0 +1,54 @@
+# Conclusies {#conclusies}
+
+We herhalen het resultaat van sectie \@ref(steekproefgrootte) en berekenen de totale steekproefgroottes.
+
+We stellen onderstaande aantallen voorop als minimale noden in een serieel alternerend herbezoekpatroon over de jaren (i.e. elk jaar andere locaties bezoeken, volgens een cyclus van 6 jaar):
+
+- 60 resp. 30 jaarlijkse locaties per typegroep in _SURF_03.4_lentic_, voor een relatieve foutenmarge van 10% resp. 15%;
+- 65 resp. 30 jaarlijkse locaties per typegroep in _SURF_03.4_lotic_, voor een relatieve foutenmarge van 10% resp. 15%;
+- 6 herhalingen per jaar voor _SURF_03.4_lentic_ (3 NO3 + 3 Ptot, elk in een ander tijdsvenster);
+- 3 herhalingen per jaar voor _SURF_03.4_lotic_ (3 NO3 + 3 PO4).
+
+Hieruit bekomen we het totaal aantal bemonsteringen in een cyclus van 6 jaar voor 4 typegroepen in SURF_03.4_lentic en 2 typegroepen in SURF_03.4_lotic (legende: `n_tg` = aantal locaties per typegroep over 6 jaar, `n_all` = aantal locaties over 6 jaar voor alle typegroepen, `m` = aantal herhalingen per jaar, `n_visits_tg` = aantal bemonsteringen voor een typegroep over 6 jaar, `n_visits_all` = aantal bemonsteringen voor alle typegroepen):
+
+```{r}
+sample_sizes %>% 
+  distinct(relative_errormargin, scheme) %>% 
+  filter(relative_errormargin >= 0.1) %>% 
+  mutate(
+    n_tg = case_when(
+      relative_errormargin == 0.1 & scheme == "SURF_03.4_lentic" ~ 60L * 6L,
+      relative_errormargin == 0.1 & scheme == "SURF_03.4_lotic" ~ 65L * 6L,
+      relative_errormargin == 0.15 & scheme == "SURF_03.4_lentic" ~ 30L * 6L,
+      relative_errormargin == 0.15 & scheme == "SURF_03.4_lotic" ~ 30L * 6L,
+      .default = NA_integer_
+    ),
+    n_all = ifelse(
+      scheme == "SURF_03.4_lentic",
+      n_tg * 4,
+      n_tg * 2
+    ),
+    m = ifelse(scheme == "SURF_03.4_lentic", 6L, 3L),
+    n_visits_tg = n_tg * m,
+    n_visits_all = ifelse(
+      scheme == "SURF_03.4_lentic",
+      n_visits_tg * 4,
+      n_visits_tg * 2
+    )
+  ) %>% 
+  arrange(relative_errormargin, scheme) %>% 
+  kable()
+```
+
+<!-- Samenstelling typegroepen: -->
+
+<!-- ```{r} -->
+<!-- n2khabmon::read_scheme_types(lang = "nl") %>%  -->
+<!--   filter(str_detect(scheme, "SURF_03\\.4")) %>%  -->
+<!--   select(scheme, typegroup, type) %>%  -->
+<!--   arrange(typegroup) -->
+<!-- ``` -->
+
+
+
+

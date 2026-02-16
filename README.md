@@ -15,6 +15,7 @@ The main folders consider the following topics:
 - `010_making_choices_website`: website on choices (selections) for MNE
 - `020_framework_design_monitoring`: a framework for design choices, inference strategy and other aspects of the monitoring workflow (data management, data quality, analytical, reporting, revision, QAQC)
 - `030_preparations`: preparatory work supporting design choices, not specific to one of the compartments
+- `100_design_common`: design that comprises multiple environmental compartments
 - `110_design_groundwater`: design of the monitoring subprogramme for the groundwater compartment
 - `210_design_surfacewater`: same for the surfacewater compartment
 - `310_design_atmosphere`: same for the atmospheric compartment
@@ -29,11 +30,6 @@ _Their subfolders_ are likewise ordered as `010_...` and so on:
 
 Subfolders can contain their own RStudio project on the topic.
 
-For rather large subfolders (e.g. a report on a design), it is advised to further distinguish between a `src` and a `data` folder:
-
-- `src` contains R-scripts and/or bookdown projects
-- `data` is used to keep data sources, used or produced by code in `src`.
-
 Further, note that general binary/large data sources, either raw data sources or data sources produced by code in the
 [n2khab-preprocessing](https://github.com/inbo/n2khab-inputs) repo, should be organised according to data management conventions for N2KHAB projects.
 I.e., these N2KHAB data sources must be stored in a (git-ignored) folder `n2khab_data` (with subfolders `10_raw` and `20_processed`).
@@ -44,6 +40,10 @@ What _you_ have to do is explained in the following **vignette** - read it! :
 ```r
 vignette("v020_datastorage", package = "n2khab")
 ```
+
+Further the [n2khabmon](https://github.com/inbo/n2khabmon) package provides additional functions and resources aimed at N2KHAB monitoring.
+
+For more information on the relation with associated repositories, have a look at the README of repo [n2khab-monitoring](https://github.com/inbo/n2khab-monitoring).
 
 
 ## How to contribute to this repository?
@@ -70,9 +70,9 @@ MNE aims at drawing conclusions on both state and trend of environmental charact
 The programme will allow to prioritize, underpin and evaluate environment-oriented nature policy measures at the Flemish scale by generating representative long-term data of known quality.
 Hence, its primary function is to provide quantitative diagnostics of relevant environmental issues.
 In addition, the monitoring results will aid in assessing the environmental subcriteria of the conservation status of habitats and provide reliable information for the monitoring reports for the European Commission (Habitats Directive article 17).
-To this end, each environmental compartment (groundwater, surface water, atmosphere and soil) will be served by a specific MNE monitoring subprogramme aligned with the six-year cycles of the Natura 2000 policy.
+To this end, each environmental compartment (groundwater, surface water, inundation water, atmosphere and soil) will be served by a specific MNE monitoring subprogramme aligned with the six-year cycles of the Natura 2000 policy.
 
 MNE will provide solid conclusions for (groups of) habitat types at the Flemish scale, but will be based on a selection of sites in space and time.
-Therefore, a statistical approach is needed to achieve the desired (or acceptable) level of precision, significance and power.
+Therefore, a statistical approach is needed to achieve the desired (or acceptable) level of precision, confidence level and power.
 
 
