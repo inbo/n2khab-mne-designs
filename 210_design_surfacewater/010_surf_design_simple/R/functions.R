@@ -67,3 +67,12 @@ plot_m_to_errmarg <- function(df, facet_scales = "free_y") {
       panel.grid.major.y = element_line(colour = "grey70")
     )
 }
+
+
+enforce_lowercase <- function(x) {
+  if (knitr::is_latex_output()) {
+    str_glue("\\lowercase{{{x}}}")
+  } else {
+    str_glue("{x}")
+  }
+}
