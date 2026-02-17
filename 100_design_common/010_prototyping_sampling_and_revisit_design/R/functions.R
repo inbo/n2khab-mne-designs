@@ -987,7 +987,7 @@ subsample_and_relax_adhocfag <- function(fag_cal,
 #' to access them on-demand. Loading the DB only loads the index but not the
 #' contents. The function sets this up as in a specific environment, so that one
 #' can use `get("object_name", envir = an_environment)` and `ls(envir =
-#' en_environment)`.
+#' an_environment)`.
 #'
 #' @param rdata_filepath File path to the RData file.
 #' @param new_envir_name String to be used as the name of the new environment.
