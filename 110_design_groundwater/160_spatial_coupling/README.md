@@ -62,9 +62,9 @@ Instead, you will find tables below which give an overview of the relevant scrip
 | **!** | `116_review_slopefilter`                                  | Refine previously explored filters and binning choices, which also includes the final filter settings.                                                      |
 |       | `117_review_ecoregion`                                    | Segmenting the data by ecoregion instead of soilclass.                                                                                                      |
 | **!** | `118_summary`                                             | Textual overview of the analysis outcome, which re-loads and explains regressions from previous files.                                                      |
-|       | `300_spatialcoupling_waterlevels_extract_regressions.qmd` | Example script to extract previously stored regressions and retrieve details about the difference-distance relation captured by variograms.                 |
-|       | `301_waterlevel_ridgelines.qmd`                           | Distribution of difference values per distance bin (detail).                                                                                                |
-|       | `136_count_couples.qmd`                                   | Counting and mapping all pairs of installations which were included in the analysis.                                                                        |
+|       | `300_spatialcoupling_waterlevels_extract_regressions` | Example script to extract previously stored regressions and retrieve details about the difference-distance relation captured by variograms.                 |
+|       | `301_waterlevel_ridgelines`                           | Distribution of difference values per distance bin (detail).                                                                                                |
+|       | `136_count_couples`                                   | Counting and mapping all pairs of installations which were included in the analysis.                                                                        |
 
 
 Note that script `100_download_and_plot_waterlevel_for_vgram.qmd` has to be run prior to the others.
@@ -80,18 +80,18 @@ Analogous to water levels, there is a download script to acquire the data, and c
 
 |       | qmd file                                       | purpose                                                                              |
 |-------|:-----------------------------------------------|:-------------------------------------------------------------------------------------|
-|       | `120_waterchemistry_reload.qmd`                | Technical script to re-load chemistry data from `WATINA`.                            |
-|       | `121_inspect_chemvars.qmd`                     | Data exploration, e.g. to reverse-extract detection limit changes                    |
-|       | `130_chemistry_variograms.qmd`                 | Explorative prototype for variogram computation.                                     |
-|       | `132_chemistry_ridgeplots.qmd`                 | Distribution of difference values per distance bin.                                  |
-| **!** | `133_chemistry_variograms_filterdepth.qmd`     | Chemistry variograms after relevant homogenizing of filter depth and length.         |
-|       | `134_chemistry_variograms_longrange.qmd`       | Same variograms, but with a longer maximum pair distance.                            |
-|       | `135_resample_bootstrap_waterchemistry.qmd`    | Bootstrapping by resampling of chemistry measurements.                               |
-|       | `302_chemistry_variograms_ecoregion.qmd`       | Variograms of water chemistry, per ecoregion.                                        |
-|       | `303_chemistry_ridgelines_ecoregion.qmd`       | Distribution of water chemistry differences, per bin and ecoregion.                  |
+|       | `120_waterchemistry_reload`                | Technical script to re-load chemistry data from `WATINA`.                            |
+|       | `121_inspect_chemvars`                     | Data exploration, e.g. to reverse-extract detection limit changes                    |
+|       | `130_chemistry_variograms`                 | Explorative prototype for variogram computation.                                     |
+|       | `132_chemistry_ridgeplots`                 | Distribution of difference values per distance bin.                                  |
+| **!** | `133_chemistry_variograms_filterdepth`     | Chemistry variograms after relevant homogenizing of filter depth and length.         |
+|       | `134_chemistry_variograms_longrange`       | Same variograms, but with a longer maximum pair distance.                            |
+|       | `135_resample_bootstrap_waterchemistry`    | Bootstrapping by resampling of chemistry measurements.                               |
+|       | `302_chemistry_variograms_ecoregion`       | Variograms of water chemistry, per ecoregion.                                        |
+|       | `303_chemistry_ridgelines_ecoregion`       | Distribution of water chemistry differences, per bin and ecoregion.                  |
 |       | `304a_assemble_detection_limits.org`           | Hard-coded, extracted detection limits.                                              |
-|       | `304b_chemistry_variograms_detectionlimit.qmd` | Variograms after excluding measurements close to detection limit.                    |
-|       | `136_count_couples.qmd`                        | Counting and mapping all pairs of installations which were included in the analysis. |
+|       | `304b_chemistry_variograms_detectionlimit` | Variograms after excluding measurements close to detection limit.                    |
+|       | `136_count_couples`                        | Counting and mapping all pairs of installations which were included in the analysis. |
 
 
 ### Auxiliary Files
@@ -110,6 +110,9 @@ Analogous to water levels, there is a download script to acquire the data, and c
 
 See `305_summarize_extra_analyses.org` for a timeline of analysis outcomes and design choices.
 
+
+|         |                                                                                                              |
+|--------:|:-------------------------------------------------------------------------------------------------------------|
 | 2024-11 | Initiation of the analysis.                                                                                  |
 | 2025-05 | Initial round-up of the analysis; afterwards: internal presentation and discussion.                          |
 | 2026-01 | Revision of water chemistry data; identification of a bug regarding data validation; overhaul and extension; |
