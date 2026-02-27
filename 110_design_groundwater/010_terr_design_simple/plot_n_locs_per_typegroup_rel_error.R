@@ -70,6 +70,7 @@ errors <-
     ) %>%
     unnest(data) %>%
     mutate(
+        scheme = str_glue("{scheme} | {target_variable}"),
         stdev_mu = stdev_spatial / sqrt(n),
         log_error = qnorm(1 - alpha / 2) * stdev_mu,
         rel_error = 10^log_error - 1,
@@ -107,6 +108,7 @@ scenarios_relerror <-
         stdev_spatial == max(stdev_spatial),
         .by = scheme
     ) %>%
+    mutate(scheme = str_glue("{scheme} | {target_variable}")) %>%
     select(scheme, rel_error, scenario)
 
 p <-
@@ -147,17 +149,22 @@ p <-
     scale_x_continuous(breaks = seq(0, 2000, 100)) +
     labs(
       x = "Number of locations per typegroup",
-      y = "Value (minimal/good refers to relative error)",
+      caption = str_c(
+          "'minimal' and 'good' refer to the information quality of the relative error:\n",
+          "minimal = considered as the minimum quality to be achieved; ",
+          "good = considered as good quality"
+      ),
       linetype = "Quality measure"
     ) +
     theme(
       legend.position = "top",
-      legend.title.position = "top"
+      legend.title.position = "top",
+      plot.caption = element_text(hjust = 0)
     )
 
 p
 
-ggsave("relerror_and_reldetdiff.png", p, width = 11, height = 8)
+ggsave("relerror_and_reldetdiff.png", p, width = 11, height = 10)
 
 
 
