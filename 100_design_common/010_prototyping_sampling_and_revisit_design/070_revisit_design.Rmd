@@ -684,9 +684,19 @@ scheme_moco_ps_spsubset_fas_panels <-
 
 Defining date intervals and assigning panels to these intervals.
 
-`year_origin` is used to build up the revisit design (including the membership design) in order to align panel numbering with the monitoring and reporting cycle.
-Also, using the same year to start panel numbering maximizes chances for matching locations between schemes x module combo.
+The concept of the 'target cycle' (monitoring cycle of the target variable) of a scheme x module combo x panel set is used to define the time where the first panel begins.
 
+- In the first target cycle, `year_first` is used to position the first panel (hence, all panels).
+This is done in order to realize the spatial samples starting from the lowest GRTS address for each stratum.
+It is a protection against sample size changes during the first target cycle.
+- In all later target cycles, `year_origin` is used as the reference year to build up the revisit design (including the membership design) in order to align panel numbering with the monitoring and reporting cycle.
+While `year_first` can differ between modules and schemes, using the common reference `year_origin` maximizes chances for matching locations between schemes x module combo.
+
+As a result, overlaps can occur between the first and second target cycle.
+This should not normally pose a conceptual problem.
+How these overlaps are to be dealt with (leave as-is or not), is still to be looked at.
+
+**Missing functionality**: consider whether the overlaps between first and second target cycle need further handling.
 
 ```{r}
 scheme_moco_ps_spsubset_panel_calendar <-
@@ -708,9 +718,26 @@ scheme_moco_ps_spsubset_panel_calendar <-
     ),
     panels = panel
   ) %>%
+  # join the target cycle duration of scheme x moco x ps (this normally matches
+  # the cycle durations in module_scheme_props). scheme_ps_target_paneldesign
+  # can still contain non-core schemes that can be dropped because they lack
+  # (non-core) panels (non-core FAG panels only apply to locations not covered
+  # by a corresponding core FAG)
+  inner_join(
+    scheme_ps_target_paneldesign %>% 
+      select(
+        scheme,
+        module_combo_code,
+        panel_set,
+        target_cycle_duration_y = cycle_duration_y
+      ),
+    join_by(module_combo_code, scheme, panel_set),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
   # define date intervals from year_origin to year_last, by panel_period
   mutate(
-    revisit = map(revisit, function(df) {
+    revisit = map2(revisit, target_cycle_duration_y, function(df, tc) {
       df %>%
         distinct() %>%
         mutate(
@@ -727,10 +754,25 @@ scheme_moco_ps_spsubset_panel_calendar <-
             as.integer(),
           panel_cum_months = cumsum(panel_periodmonths),
           panel_cum_months_lag = lag(panel_cum_months, default = 0L),
-          date_start = make_date(year_origin, 1, 1) + 
+          target_cycle = panel_cum_months_lag %/% (tc * 12L) + 1L,
+          date_start = make_date(
+            # shift the dates of the first target cycle backward using
+            # year_first. This creates overlap between first and second target
+            # cycle.
+            if_else(target_cycle == 1, year_first, year_origin),
+            1,
+            1
+          ) + 
             months(panel_cum_months_lag) +
             if_else(!is.na(panel_dateshift), panel_dateshift, months(0)),
-          date_end = make_date(year_origin, 1, 1) + 
+          date_end = make_date(
+            # shift the dates of the first target cycle backward using
+            # year_first. This creates overlap between first and second target
+            # cycle.
+            if_else(target_cycle == 1, year_first, year_origin),
+            1,
+            1
+          ) + 
             months(panel_cum_months) +
             if_else(
               !is.na(panel_enddate_addition),
@@ -817,7 +859,7 @@ scheme_moco_ps_spsubset_panel_calendar <-
       )
     })
   ) %>%
-  select(-fas, -panels, -revisit) %>%
+  select(-fas, -panels, -revisit, -target_cycle_duration_y) %>%
   unnest(panel_date_assignment) %>%
   relocate(panel, .after = spsubset_needed_for_panel)
 ```
