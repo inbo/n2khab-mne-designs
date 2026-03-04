@@ -1723,7 +1723,7 @@ mod_scheme_ps_fag_paneldesign <-
       .default = years(1)
     ),
     # overruling the cycle duration that was set by the module
-    enforce_cycle_duration_y = case_when(
+    enforced_cycle_duration_y = case_when(
       str_detect(field_activity_group, "^GWINST") |
         field_activity_group %in% c("SURFINSTWELLDIVER", "SPATPOSITPIPE") ~ 6L,
       str_detect(scheme, "^GW") &
@@ -1732,12 +1732,12 @@ mod_scheme_ps_fag_paneldesign <-
     ),
     # effective cycle duration
     cycle_duration_y = ifelse(
-      !is.na(enforce_cycle_duration_y),
-      enforce_cycle_duration_y,
+      !is.na(enforced_cycle_duration_y),
+      enforced_cycle_duration_y,
       cycle_duration_y
     ),
     # was cycle duration enforced?
-    enforced_cycle_duration = !is.na(enforce_cycle_duration_y),
+    enforced_cycle_duration = !is.na(enforced_cycle_duration_y),
     # revisit pattern of subperiods, if applicable
     revisit_subpattern = case_when(
       str_detect(field_activity_group, "SURF.*DATACOLL") ~ "pure_panel",
@@ -1812,7 +1812,7 @@ mod_scheme_ps_fag_paneldesign <-
       .default = NA_integer_
     )
   ) %>% 
-  select(-enforce_cycle_duration_y) %>% 
+  select(-enforced_cycle_duration_y) %>% 
   relocate(cycle_duration_y, .before = enforced_cycle_duration) %>% 
   relocate(panel_set, .after = field_activity_group) %>% 
   arrange(field_activity_group)
@@ -1822,7 +1822,7 @@ mod_scheme_ps_fag_paneldesign <-
 (LOCEVAL; potentially LSVI.)
 Only to be considered if this causes enough location overlap between panels in the same year.
 
-**Missing functionality**: speed up of certain FAGs (such as INST) in just the first cycle if `enforce_cycle_duration_y` is `TRUE` (= FAG specific) while the cycle duration of this module is shorter.
+**Missing functionality**: speed up of certain FAGs (such as INST) in just the first cycle if `enforced_cycle_duration` is `TRUE` (= FAG specific) while the cycle duration of this module is shorter.
 
 ADHOC FAGs represent unexpected repair.
 While given a pure panel design for now, their frequency will be reduced in two steps when crafting a field activity calendar:
