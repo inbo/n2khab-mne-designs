@@ -23,19 +23,7 @@ biotic_fag_scheme_aggr <-
     year(date_start) < 2036
   ) %>%
   unnest(scheme_moco_ps) %>%
-  left_join(mhq_scheme_category, by = "scheme") %>%
-  mutate(
-    is_mhq = str_detect(scheme, "^HQ"),
-    scheme = ifelse(is_mhq, str_c("MHQ_", category), as.character(scheme)) %>%
-      factor(levels = c(
-        levels(schemes$scheme),
-        "MHQ_terrestrial_open",
-        "MHQ_terrestrial_forest",
-        "MHQ_lentic",
-        "MHQ_lotic"
-      ))
-  ) %>%
-  select(-is_mhq, -category) %>%
+  simplify_mhq_schemes() %>%
   nest(scheme_moco_ps = c(scheme, module_combo_code, panel_set)) %>%
   mutate(
     year = year(date_start) %>% as.integer(),
