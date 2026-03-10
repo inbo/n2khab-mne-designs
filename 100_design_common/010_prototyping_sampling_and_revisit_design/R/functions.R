@@ -200,6 +200,37 @@ aggregate_sample_size <- function(df,
 }
 
 
+#' Simplify a scheme column by aggregating MHQ schemes
+#'
+#' This transforms the scheme column of a data frame in place, by collapsing its
+#' levels according to MHQ scheme.
+simplify_mhq_schemes <- function(df) {
+  df %>%
+    left_join(
+      mhq_scheme_category,
+      join_by(scheme),
+      relationship = "many-to-one",
+      unmatched = "drop"
+    ) %>%
+    mutate(
+      scheme = ifelse(
+        str_detect(scheme, "^HQ"),
+        str_c("MHQ_", category),
+        as.character(scheme)
+      ) %>%
+        factor(levels = c(
+          levels(schemes$scheme),
+          "MHQ_terrestrial_open",
+          "MHQ_terrestrial_forest",
+          "MHQ_lentic",
+          "MHQ_lotic"
+        ))
+    ) %>%
+    select(-category)
+}
+
+
+
 #' Apply finite population correction to a sample size for infinite populations
 #'
 #' @param n_inf Sample size for infinite populations. Can be a vector.
