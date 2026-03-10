@@ -465,14 +465,34 @@ fag_stratum_grts_calendar %>%
 
 # Write revisit layout diagrams -------------------------------------------
 
+cal_0.14.0_continuation_target_count <-
+  cal_0.14.0_continuation %>%
+  unnest(scheme_moco_ps) %>%
+  # limit to target FAGs (this line needs the chunk to have run that creates the
+  # rvp_0.14.0 environment that has access to the lazy-load database of
+  # rvp_0.14.0 objects)
+  semi_join(
+    get("scheme_moco_ps_spsubset_targetfag", envir = rvp_0.14.0),
+    join_by(scheme, module_combo_code, panel_set, field_activity_group)
+  ) %>%
+  count(scheme, panel_set, targetpanel, date_start, date_interval)
+
+
 make_revislayout_diagram <- function(scheme, max_year = 2050) {
-  scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
-    count(scheme, panel_set, targetpanel, date_start, date_interval) %>%
+  cal_0.14.0_continuation_target_count %>%
+    filter(str_detect(scheme, {{scheme}})) %>%
+    bind_rows(
+      scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
+        filter(str_detect(scheme, {{scheme}})) %>%
+        simplify_mhq_schemes() %>%
+        arrange(panel_set, targetpanel, scheme) %>%
+        count(scheme, panel_set, targetpanel, date_start, date_interval)
+    ) %>%
+    filter(year(date_start) <= max_year) %>%
     mutate(
       ps_targetpanel_n = str_glue("PS{panel_set}{targetpanel} ({n})"),
       dummy = "X"
     ) %>%
-    filter(scheme == {{scheme}}, year(date_start) <= max_year) %>%
     select(-panel_set, -targetpanel, -n, -date_start) %>%
     pivot_wider(
       names_from = date_interval,
