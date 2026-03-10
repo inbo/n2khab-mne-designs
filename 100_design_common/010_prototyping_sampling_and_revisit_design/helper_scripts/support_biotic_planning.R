@@ -20,14 +20,30 @@ biotic_fag_scheme_aggr <-
   ) %>%
   unnest(scheme_moco_ps) %>%
   simplify_mhq_schemes() %>%
-  nest(scheme_moco_ps = c(scheme, module_combo_code, panel_set)) %>%
+  nest(scheme_moco_ps = c(
+    scheme,
+    module_combo_code,
+    panel_set,
+    date_start_upcoming,
+    date_end_upcoming,
+    is_current_occasion
+  )) %>%
   mutate(
     year = year(date_start) %>% as.integer(),
     schemes = map_chr(scheme_moco_ps, function(df) {
-      df$scheme %>%
+      # nr of schemes scheduled LATER which this FAG also serves:
+      n_extra <- df$scheme[!df$is_current_occasion] %>%
+        unique() %>%
+        length()
+      df$scheme[df$is_current_occasion] %>%
         unique() %>%
         sort() %>%
-        str_flatten(collapse = " | ")
+        str_flatten(collapse = " | ") %>%
+        {
+          if (n_extra == 0) . else {
+            str_c(., str_glue(" \u275a and {n_extra} later scheme(s)"))
+          }
+        }
     })
   )
 
@@ -40,6 +56,7 @@ biotic_fag_scheme_aggr %>%
     values_from = n,
     names_sort = TRUE
   ) %>%
+  arrange(schemes) %>%
   write_sheet(
     ss = gs_id,
     sheet = str_c(ws_name_prefix, "biotic_FAG_planning")
