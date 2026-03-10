@@ -502,14 +502,33 @@ make_revislayout_diagram <- function(scheme, max_year = 2050) {
     )
 }
 
-make_revislayout_diagram("GW_03.3") %>%
+make_revislayout_diagram("^GW_03.3$") %>%
   write_sheet(
     ss = gs_id,
     sheet = "revisit GW_03.3"
   )
 
-make_revislayout_diagram("SURF_03.4_lentic", 2031) %>%
+make_revislayout_diagram("^SURF_03.4_lentic$", 2031) %>%
   write_sheet(
     ss = gs_id,
     sheet = "revisit SURF_03.4_lentic"
   )
+
+make_revislayout_diagram("^SURF_03.4_lotic$", 2031) %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "revisit SURF_03.4_lotic"
+  )
+
+make_revislayout_diagram("^SOIL_03.2$") %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "revisit SOIL_03.2"
+  )
+
+make_revislayout_diagram("^HQ") %>%
+  write_sheet(
+    ss = gs_id,
+    sheet = "revisit MHQ"
+  )
+
