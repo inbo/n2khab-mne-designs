@@ -62,8 +62,8 @@ biotic_fag_scheme_collapsed <-
   biotic_fag_scheme_aggr %>%
   mutate(
     scheme_allocation = case_when(
-      str_detect(schemes, "GW") ~ "GW",
       str_detect(schemes, "SURF") ~ "SURF",
+      str_detect(schemes, "GW") ~ "GW",
       str_detect(schemes, "SOIL") ~ "SOIL",
       str_detect(schemes, "MHQ") ~ "MHQ"
     ) %>%
