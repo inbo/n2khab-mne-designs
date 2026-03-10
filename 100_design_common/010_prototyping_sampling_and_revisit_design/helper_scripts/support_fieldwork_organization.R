@@ -948,6 +948,25 @@ fag_fa_stratum_grts_calendar <-
 # sampling unit without considering FAG occasions, since not all field
 # activities necessarily serve all schemes.
 
+cal_0.14.0_continuation
+
+# cal_0.14.0_continuation is a subset of fag_stratum_grts_calendar (without
+# assessment columns) that represents GWSHALL* and READDIVER FAG occasions in
+# 2026 and 2027 from rvp_0.14.0, that are retained in newer FAG calendar
+# versions regardless of the fact that those FAG occasions are no part of the
+# new revisit design. So they are supplementary. Their timing will be kept
+# fixed; however units may still be dropped as they disappear from later
+# versions of the new FAG calendar.
+
+# cal_0.14.0_continuation is the only object that defines a second targetpanel
+# specifically for those FAG occasions; the format is OLDPANELxx (xx being the
+# number). These locations are at the same time part of a regular 'PANELyy',
+# which is not linked to specific FAG occasions and part of the new revisit
+# design: it is just a location attribute. The regular targetpanels are dynamic,
+# i.e. their units can change, while this is not relevant for the FAG occasions
+# of cal_0.14.0, which got the frozen revisit pattern of the panels at the
+# time, which we now call OLDPANELxx.
+
 # Link between field activities and their protocol
 fa_protocol <-
   field_activities %>%
