@@ -1,11 +1,7 @@
-# This code is to support fieldworkplanning.
+# This code is to support biotic fieldworkplanning. It provides overviews of the
+# amount of biotic fieldwork.
 
 library(ggplot2)
-
-
-
-# Counting FAG occasions with LOCEVAL & LSVI activities in 1st cycle --------
-
 
 # First run setup chunk
 #
@@ -116,65 +112,5 @@ biotic_fag_scheme_collapsed %>%
   mutate(dummy = "X") %>%
   pivot_wider(names_from = field_activity_group, values_from = dummy, values_fill = "") %>%
   View()
-
-
-
-
-
-
-
-
-# Inspection of specific sample sizes -------------------------------------
-
-generate_sample_size_table <- function(df) {
-  df %>%
-    summarize(
-      nunits = sum(nunits),
-      .by = c(
-        module,
-        domain,
-        scheme,
-        cycle_duration_y,
-        type,
-        sp_sample_size_all_panels_type
-      )
-    ) %>%
-    mutate(
-      yearly_sample_size = round(sp_sample_size_all_panels_type / cycle_duration_y, 1),
-      fraction_sampled = sp_sample_size_all_panels_type / nunits,
-      rel_abs_size = str_c(round(fraction_sampled, 3), " (", sp_sample_size_all_panels_type, ")")
-    ) %>%
-    select(
-      module,
-      domain,
-      scheme,
-      type,
-      rel_abs_size
-    ) %>%
-    arrange(module, scheme, domain, type) %>%
-    pivot_wider(
-      names_from = domain,
-      values_from = rel_abs_size,
-      names_sort = TRUE
-    )
-}
-
-module_domain_scheme_ps_stratum_sample_size %>%
-  filter(
-    type %in% c("4010", "4030", "6230_hmo", "7140_oli", "9190"),
-    scheme %in% c("GW_03.3", "SOIL_03.2")
-  ) %>%
-  generate_sample_size_table()
-
-module_domain_scheme_ps_stratum_sample_size %>%
-  filter(
-    !(type %in% c("4010", "4030", "6230_hmo", "7140_oli", "9190")),
-    scheme %in% c("GW_03.3", "SOIL_03.2")
-  ) %>%
-  nest(.by = type) %>%
-  slice_sample(n = 10) %>%
-  unnest(data) %>%
-  generate_sample_size_table() %>%
-  print(n = Inf)
 
 
