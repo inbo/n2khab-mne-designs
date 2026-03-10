@@ -1013,6 +1013,7 @@ scheme_moco_fa_fieldvar <-
 
 # Derive the short-term FAG calendar at the stratum x location x FAG occasion, and
 # include some of the location attributes.
+main_year <- 2026
 fag_stratum_grts_calendar_shortterm_attribs <-
   fag_stratum_grts_calendar %>%
   select(
@@ -1028,15 +1029,7 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     \(df) any(str_detect(df$scheme, "^GW"))
   )) %>%
   filter(
-    year(date_start) < 2026 |
-      # include groundwater cleaning & sampling activities from 2026
-      (
-        year(date_start) < 2027 &
-          str_detect(
-            field_activity_group,
-            "SHALL(CLEAN|SAMP)"
-          )
-      ) |
+    year(date_start) <= main_year |
       # already allow the first GWINST, GW*LEVREAD* & SPATPOSIT* FAGs from the
       # next years to be executed:
       (
@@ -1051,17 +1044,24 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   ) %>%
   select(-has_gw) %>%
   # count(date_start, date_end, date_interval) %>%
-  # move the fieldwork that was kept for 2024, to 2025, since that is indeed
-  # its meaning
+  # move the LOCEVAL fieldwork that was kept for main_year - 1, to main_year,
+  # since that is indeed its meaning
   mutate(
     across(c(date_start, date_end), \(x) {
-      if_else(year(date_start) == 2024, x + years(1), x)
+      if_else(
+        year(date_start) == main_year - 1 &
+          str_detect(field_activity_group, "LOCEVAL"),
+        x + years(1),
+        x
+      )
     }),
     date_interval = interval(
       force_tz(date_start, "Europe/Brussels"),
       force_tz(date_end, "Europe/Brussels")
     )
   ) %>%
+  # drop past activities
+  filter(year(date_start) >= main_year) %>%
   unnest(scheme_moco_ps) %>%
   # adding location attributes
   inner_join(
@@ -1093,7 +1093,7 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # location x FAG occasion. Note that the scheme_ps_targetpanels attribute is a
   # shrinked version of the one at the level of the whole sample (see sampling
   # unit attributes in the beginning), since we limited the activities to those
-  # planned before 2026 (sometimes later), and then generate
+  # planned before main_year + 1 (sometimes later), and then generate
   # stratum_scheme_ps_targetpanels as a location attribute. So it says
   # specifically which schemes x panel sets x targetpanels are served by the
   # specific fieldwork at a specific date interval.
@@ -1349,17 +1349,24 @@ fag_stratum_grts_calendar %>%
 ## Making selections for short-term orthophoto assessments ---------------------
 
 # Making a list of terrestrial locations to be assessed using orthophotos in
-# 2025. The procedure evaluates somewhat larger areas in which the unit is
+# locevalyr. The procedure evaluates somewhat larger areas in which the unit is
 # situated, so we rather have a polygon evaluation which says: can this be the
 # targeted stratum or not? Because of expected negative results and hence the
 # need for replacements at polygon level (dropping the unit without a local
 # field replacement), the locations that are scheduled for field evaluation in
-# both 2025 and 2026 are provided for orthophoto evaluation.
+# both locevalyr and locevalyr + 1 can be provided for orthophoto evaluation.
+
+# The main LOCEVAL year for which below code is intended:
+locevalyr <- 2026
+# The highest LOCEVAL year for which below code is intended (usually: locevalyr
+# + 1):
+maxlocevalyr <- locevalyr
+
 orthophoto_shortterm_type_grts <-
   fag_stratum_grts_calendar %>%
   filter(
     str_detect(field_activity_group, "LOCEVAL"),
-    year(date_start) < 2027
+    year(date_start) <= maxlocevalyr
   ) %>%
   distinct(
     scheme_moco_ps,
@@ -1389,8 +1396,6 @@ orthophoto_shortterm_type_grts <-
     unmatched = c("error", "drop")
   ) %>%
   filter(
-    # only consider schemes scheduled in 2025:
-    str_detect(scheme, "^(GW|HQ)"),
     # only keep cell-based types (aquatic & 7220 will be more reliable or simply
     # not possible to evaluate on orthophoto)
     str_detect(grts_join_method, "cell")
@@ -1420,20 +1425,22 @@ orthophoto_shortterm_type_grts <-
     scheme_ps_targetpanel = str_glue(
       "{ scheme }:PS{ panel_set }{ targetpanel }"
     ),
-    loceval_year = ifelse(year(date_start) < 2025, 2025, year(date_start)) %>%
+    loceval_year = ifelse(
+      year(date_start) < locevalyr,
+      locevalyr,
+      year(date_start)
+    ) %>%
       as.integer()
   ) %>%
   select(-targetpanel, -date_start) %>%
   relocate(panel_set, .after = grts_join_method) %>%
-  # set priorities based on loceval_year; for 2026 differentiate according to
-  # GRTS address (because lower GRTS addresses have more chance to end up as
-  # replacement). The latter is done within spatial poststratum & panel set
+  # set priorities based on loceval_year; for loceval_year > locevalyr
+  # differentiate according to GRTS address (because lower GRTS addresses have
+  # more chance to end up as replacement). The latter is done within spatial
+  # poststratum & panel set
   mutate(
     priority_orthophoto = case_when(
-      # priority 10: in 2025 there may not be time left to do these LOCEVALs in
-      # the field (and secondly, this is currently not yet ready XXXXXXXXXXX)
-      str_detect(scheme, "^HQ") ~ 10L,
-      loceval_year == 2025 ~ 1L,
+      loceval_year == locevalyr ~ 1L,
       grts_address <= median(grts_address) ~ 2L,
       .default = 3L
     ),
@@ -1445,8 +1452,8 @@ orthophoto_shortterm_type_grts <-
     # Note that the scheme_ps_targetpanels attribute is a shrinked version of
     # the one at the level of the whole sample (see sampling unit attributes in
     # the beginning), since we limited the activities to LOCEVAL activities
-    # planned before 2027, and then generate stratum_scheme_ps_targetpanels as a
-    # location attribute.
+    # planned no later than maxlocevalyr, and then generate
+    # stratum_scheme_ps_targetpanels as a location attribute.
     scheme_ps_targetpanels = str_flatten(
       sort(unique(scheme_ps_targetpanel)),
       collapse = " | "
