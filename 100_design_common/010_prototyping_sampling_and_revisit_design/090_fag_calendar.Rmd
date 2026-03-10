@@ -297,6 +297,9 @@ fag_stratum_grts_calendar_cycleid %>%
 ```
 
 Replacing FAG with most superior one if more than one FAG is present for a simplified FAG, at each location x stratum and per FAG cycle ID.
+At the same time, we gather the schemes for which each auxiliary FAG (as represented by the simplified FAG) is serving, either at the occasion itself (planned for this scheme), or also for a later occasion in the same FAG cycle ID.
+The latter distinction is given by the `is_current_occasion` column in the `scheme_moco_ps` tibbles.
+The (upcoming) start and end dates of the linked planned occasions are also added in these tibbles for each of these involved schemes.
 
 ```{r}
 fag_stratum_grts_calendar_cycleid <- 
@@ -315,24 +318,70 @@ fag_stratum_grts_calendar_cycleid <-
       .default = field_activity_group
     ),
     # following code is to replace scheme_moco_ps by the aggregation of all
-    # involved scheme_moco_ps tibbles in the groups where simplification is
-    # triggered (and can lead to removal of rows in the next section). This is
+    # involved scheme_moco_ps tibbles per auxiliary fag_simplified in order to
+    # track all served schemes after later FAG removals (next section). This is
     # done in several steps.
+    #
+    # 1. add the start and end dates to scheme_moco_ps (for auxiliary &
+    # non-auxiliary FAGs)
+    scheme_moco_ps_dates = pmap(
+      list(
+        scheme_moco_ps,
+        date_start,
+        date_end
+      ),
+      function(smp, ds, de) {
+        bind_cols(
+          smp,
+          tibble(
+            date_start_upcoming = ds,
+            date_end_upcoming = de
+          )
+        )
+      }
+    ),
+    # 2. combine the scheme_moco_ps tibbles per group as one tibble, for
+    # auxiliary FAGs
     scheme_moco_ps_lump = if_else(
-      fag_simplifiable & !is.na(simplification_rank),
-      list(scheme_moco_ps),
+      fag_is_auxiliary,
+      list(scheme_moco_ps_dates),
       list(NULL)
     ),
-    scheme_moco_ps_cleaned = map(scheme_moco_ps_lump, function(df_list) {
+    scheme_moco_ps_lump = map(scheme_moco_ps_lump, function(df_list) {
       if (is.null(df_list)) return(NULL)
-      list_rbind(df_list) %>% distinct()
+      list_rbind(df_list)
     }),
+    # 3. for the auxiliary FAGs, add the start date of the current FAG occasion;
+    # drop older linked dates & keep only the first date for each scheme;
+    # determine whether it matches the current FAG occasion
+    scheme_moco_ps_lump_2 = map2(
+      scheme_moco_ps_lump,
+      date_start,
+      function(smpl, ds) {
+        if (is.null(smpl)) return(NULL)
+        bind_cols(smpl, tibble(date_start_current_occasion = ds)) %>% 
+          filter(date_start_upcoming >= date_start_current_occasion) %>% 
+          filter(
+            date_start_upcoming == min(date_start_upcoming),
+            .by = c(scheme, module_combo_code, panel_set)
+          ) %>% 
+          mutate(
+            is_current_occasion = 
+              date_start_current_occasion == date_start_upcoming
+          ) %>% 
+          select(-date_start_current_occasion)
+      }
+    ),
+    # 4. directly add is_current_occasion = TRUE for non-auxiliary FAGs
     scheme_moco_ps = map2(
-      scheme_moco_ps,
-      scheme_moco_ps_cleaned,
-      function(smp, smpc) {
-        if (is.null(smpc)) return(smp)
-        smpc
+      scheme_moco_ps_lump_2,
+      scheme_moco_ps_dates,
+      function(smpl, smpd) {
+        if (is.null(smpl)) {
+          smpd %>% mutate(is_current_occasion = TRUE)
+        } else {
+          smpl
+        }
       }
     ),
     .by = c(
@@ -343,7 +392,12 @@ fag_stratum_grts_calendar_cycleid <-
       cycle_id
     )
   ) %>% 
-  select(-simplification_rank, -scheme_moco_ps_lump, -scheme_moco_ps_cleaned) %>% 
+  select(
+    -simplification_rank,
+    -scheme_moco_ps_dates,
+    -scheme_moco_ps_lump,
+    -scheme_moco_ps_lump_2
+  ) %>% 
   # deduplicate FAG occasions due to the simplification. Since we aligned
   # scheme_moco_ps, these cannot differ within a group where FAG simplification
   # has been done
@@ -399,10 +453,7 @@ fag_stratum_grts_calendar_result <-
       # we retain the first unique date_start values, notably the number of
       # expected location visits in the FAG cycle, when more visits remain than
       # expected. Exploration showed that this can apply to a wide range of
-      # FAGs. Note that this filter will drop values of scheme_moco_ps for other
-      # schemes in the same FAG cycle that are catered for by the same FAG but
-      # in later occasions that exceed n_locvisits_per_fagcycle (especially
-      # relevant for LOCEVAL FAGs).
+      # FAGs.
       date_start %in% head(sort(unique(date_start)), first(n_locvisits_per_fagcycle)),
     .by = c(
       stratum,
@@ -632,7 +683,20 @@ cal_0.14.0_continuation <-
       !str_detect(field_activity_group, "READDIVER")
   ) %>% 
   select(-first_date_start) %>% 
-  nest(scheme_moco_ps = c(scheme, module_combo_code, panel_set)) %>% 
+  # add extra columns for scheme_moco_ps:
+  mutate(
+    date_start_upcoming = date_start,
+    date_end_upcoming = date_end,
+    is_current_occasion = TRUE
+  ) %>% 
+  nest(scheme_moco_ps = c(
+    scheme,
+    module_combo_code,
+    panel_set,
+    date_start_upcoming,
+    date_end_upcoming,
+    is_current_occasion
+  )) %>% 
   relocate(scheme_moco_ps, targetpanel)
 ```
 
