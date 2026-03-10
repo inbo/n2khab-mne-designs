@@ -1106,7 +1106,31 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
+  # adding old targetpanel of the imported FAG occasions from rvp_0.14.0. A part
+  # is dropped because of occasions that don't happen in the main year.
+  left_join(
+    cal_0.14.0_continuation %>%
+      unnest(scheme_moco_ps) %>%
+      mutate(ps_oldtargetpanel = str_c("PS", panel_set, targetpanel)) %>%
+      select(-date_interval, -targetpanel),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_set,
+      stratum,
+      grts_address,
+      date_start,
+      date_end,
+      field_activity_group,
+      rank
+    ),
+    relationship = "one-to-one",
+    unmatched = "drop"
+  ) %>%
+  mutate(ps_oldtargetpanel = factor(ps_oldtargetpanel)) %>%
   relocate(grts_address_final:domain_part, .after = grts_address) %>%
+  relocate(grts_join_method, .after = grts_address_final) %>%
+  relocate(ps_oldtargetpanel, .before = date_start) %>%
   select(-module_combo_code) %>%
   # flatten scheme x panel set x targetpanel to unique strings per stratum x
   # location x FAG occasion. Note that the scheme_ps_targetpanels attribute is a
