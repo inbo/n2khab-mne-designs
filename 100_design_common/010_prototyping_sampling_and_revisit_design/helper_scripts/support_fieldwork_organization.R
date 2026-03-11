@@ -1120,7 +1120,9 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   left_join(
     cal_0.14.0_continuation %>%
       unnest(scheme_moco_ps) %>%
-      mutate(ps_oldtargetpanel = str_c("PS", panel_set, targetpanel)) %>%
+      mutate(
+        scheme_ps_oldtargetpanel = str_c(scheme, ":PS", panel_set, targetpanel)
+      ) %>%
       select(-date_interval, -targetpanel),
     join_by(
       scheme,
@@ -1136,10 +1138,10 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     relationship = "one-to-one",
     unmatched = "drop"
   ) %>%
-  mutate(ps_oldtargetpanel = factor(ps_oldtargetpanel)) %>%
+  mutate(scheme_ps_oldtargetpanel = factor(scheme_ps_oldtargetpanel)) %>%
   relocate(grts_address_final:domain_part, .after = grts_address) %>%
   relocate(grts_join_method, .after = grts_address_final) %>%
-  relocate(ps_oldtargetpanel, .before = date_start) %>%
+  relocate(scheme_ps_oldtargetpanel, .before = date_start) %>%
   select(-module_combo_code) %>%
   # flatten scheme x panel set x targetpanel to unique strings per stratum x
   # location x FAG occasion. Note that the scheme_ps_targetpanels attribute is a
