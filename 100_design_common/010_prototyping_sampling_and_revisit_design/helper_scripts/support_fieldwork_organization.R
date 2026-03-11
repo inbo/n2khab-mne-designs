@@ -952,7 +952,7 @@ cal_0.14.0_continuation
 
 # cal_0.14.0_continuation is a subset of fag_stratum_grts_calendar (without
 # assessment columns) that represents GWSHALL* and READDIVER FAG occasions in
-# 2026 and 2027 from rvp_0.14.0, that are retained in newer FAG calendar
+# 2026 and 2027 from rep_0.14.0, that are retained in newer FAG calendar
 # versions regardless of the fact that those FAG occasions are no part of the
 # new revisit design. So they are supplementary. Their timing will be kept
 # fixed; however units may still be dropped as they disappear from later
@@ -1106,7 +1106,7 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
-  # adding old targetpanel of the imported FAG occasions from rvp_0.14.0. A part
+  # adding old targetpanel of the imported FAG occasions from rep_0.14.0. A part
   # is dropped because of occasions that don't happen in the main year.
   left_join(
     cal_0.14.0_continuation %>%

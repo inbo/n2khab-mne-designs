@@ -469,10 +469,10 @@ cal_0.14.0_continuation_target_count <-
   cal_0.14.0_continuation %>%
   unnest(scheme_moco_ps) %>%
   # limit to target FAGs (this line needs the chunk to have run that creates the
-  # rvp_0.14.0 environment that has access to the lazy-load database of
-  # rvp_0.14.0 objects)
+  # rep_0.14.0 environment that has access to the lazy-load database of
+  # rep_0.14.0 objects)
   semi_join(
-    get("scheme_moco_ps_spsubset_targetfag", envir = rvp_0.14.0),
+    get("scheme_moco_ps_spsubset_targetfag", envir = rep_0.14.0),
     join_by(scheme, module_combo_code, panel_set, field_activity_group)
   ) %>%
   count(scheme, panel_set, targetpanel, date_start, date_interval)
