@@ -1054,7 +1054,7 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   ) %>%
   mutate(has_gw = map_lgl(
     scheme_moco_ps,
-    \(df) any(str_detect(df$scheme, "^GW"))
+    \(df) any(str_detect(df$scheme[df$is_current_occasion], "^GW"))
   )) %>%
   filter(
     year(date_start) <= main_year |
@@ -1090,6 +1090,28 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   ) %>%
   # drop past activities
   filter(year(date_start) >= main_year) %>%
+  # generating some attributes of the FAG occasion with regard to associated
+  # schemes
+  mutate(
+    schemes_served_all = map_chr(scheme_moco_ps, function(df) {
+      str_flatten(df$scheme %>% sort(), collapse = "|")
+    }) %>%
+      factor(),
+    nr_schemes_current = map_int(scheme_moco_ps, function(df) {
+      sum(df$is_current_occasion)
+    }),
+    nr_schemes_later = map_int(scheme_moco_ps, function(df) {
+      sum(!df$is_current_occasion)
+    }),
+    scheme_moco_ps = map(scheme_moco_ps, function(df) {
+      df %>%
+        filter(is_current_occasion) %>%
+        select(scheme, module_combo_code, panel_set)
+    })
+  ) %>%
+  # unnesting schemes for which the FAG was originally planned in the current
+  # date interval (is_current_occasion is TRUE), in order to add their
+  # targetpanel attribute etc
   unnest(scheme_moco_ps) %>%
   # adding location attributes
   inner_join(
@@ -1123,7 +1145,12 @@ fag_stratum_grts_calendar_shortterm_attribs <-
       mutate(
         scheme_ps_oldtargetpanel = str_c(scheme, ":PS", panel_set, targetpanel)
       ) %>%
-      select(-date_interval, -targetpanel),
+      select(
+        -ends_with("upcoming"),
+        -is_current_occasion,
+        -date_interval,
+        -targetpanel
+      ),
     join_by(
       scheme,
       module_combo_code,
@@ -1165,7 +1192,11 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     }) %>%
       factor()
   ) %>%
-  relocate(scheme_ps_targetpanels)
+  relocate(
+    scheme_ps_targetpanels,
+    schemes_served_all,
+    starts_with("nr_schemes")
+  )
 
 # Derive an object where stratum x scheme_ps_targetpanels is flattened per
 # location x FAG occasion. Beware that in reality, more locations will emerge
@@ -1190,6 +1221,10 @@ unite_stratum_and_schemepstargetpanels <- function(df) {
 }
 fag_grts_calendar_shortterm_attribs <-
   fag_stratum_grts_calendar_shortterm_attribs %>%
+  select(
+    -schemes_served_all,
+    -starts_with("nr_schemes")
+  ) %>%
   unite_stratum_and_schemepstargetpanels() %>%
   summarize(
     stratum_scheme_ps_targetpanels =
@@ -1366,7 +1401,10 @@ if (FALSE) {
 fag_stratum_grts_calendar %>%
   filter(str_detect(field_activity_group, "INST")) %>%
   unnest(scheme_moco_ps) %>%
-  filter(str_detect(scheme, "^GW")) %>%
+  filter(
+    str_detect(scheme, "^GW"),
+    is_current_occasion
+  ) %>%
   distinct(stratum) %>%
   # adding type attributes
   inner_join(
