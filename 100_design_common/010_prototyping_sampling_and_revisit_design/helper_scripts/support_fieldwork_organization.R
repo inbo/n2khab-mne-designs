@@ -946,7 +946,16 @@ fag_fa_stratum_grts_calendar <-
 # which combinations of scheme x module combo x panel set the FAG is serving.
 # This may be a SUBSET of the same information at the level of the spatial
 # sampling unit without considering FAG occasions, since not all field
-# activities necessarily serve all schemes.
+# activities necessarily serve all schemes. The tibbles in the scheme_moco_ps
+# list column also make clear what was the (original) date interval for this FAG
+# in the related schemes. Only for auxiliary FAGs, i.e. where the timing doesn't
+# essentially impact the measurement of the target variable, this date interval
+# can be later than that of the planned FAG itself (stated by
+# 'is_current_occasion'). It means that a deduplication has taken place in order
+# to cater for multiple schemes by a single FAG occasion. A listed later
+# 'upcoming' date interval of an associated scheme is restricted to the period
+# during which the auxiliary FAG (in the scheduled time interval) is still
+# relevant to subsequent FAGs in that scheme.
 
 cal_0.14.0_continuation
 
