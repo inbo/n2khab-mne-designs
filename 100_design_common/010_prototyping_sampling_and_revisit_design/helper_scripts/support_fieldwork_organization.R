@@ -1338,20 +1338,44 @@ fieldwork_shortterm_prioritization_shorter <-
   relocate(stratum_scheme_ps_targetpanels)
 
 
-# write a GeoPackage containing the first object as point layer, if needed
+# write GeoPackage point layers of the first object (shortterm fieldwork by
+# stratum), filtered in several ways
 if (FALSE) {
   gpkg_path <- file.path(datapath, "binary/results/fieldwork_shortterm.gpkg")
-  fieldwork_shortterm_prioritization_by_stratum %>%
+  fieldwork_shortterm_prioritization_points <-
+    fieldwork_shortterm_prioritization_by_stratum %>%
     add_point_coords_grts(
       grts_var = "grts_address_final",
       spatrast = grts_mh,
       spatrast_index = grts_mh_index
     ) %>%
-    mutate(date_interval = as.character(date_interval)) %>%
+    mutate(date_interval = as.character(date_interval))
+  fieldwork_shortterm_prioritization_points %>%
     write_sf(
       gpkg_path,
-      layer = "fieldwork_shortterm_prioritization_by_stratum",
+      layer = "fieldwork_shortterm_ALL",
       delete_dsn = TRUE
+    )
+  fieldwork_shortterm_prioritization_points %>%
+    filter(str_detect(field_activity_group, "LOCEVAL")) %>%
+    select(-rank, -scheme_ps_oldtargetpanel) %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_LOCEVAL",
+      delete_layer = TRUE
+    )
+  fieldwork_shortterm_prioritization_points %>%
+    filter(
+      str_detect(field_activity_group, "LOCEVAL"),
+      # only keep cell-based types (aquatic & 7220 will be more reliable or
+      # simply not possible to evaluate on orthophoto)
+      str_detect(grts_join_method, "cell")
+    ) %>%
+    select(-rank, -scheme_ps_oldtargetpanel) %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_LOCEVAL_cellbased",
+      delete_layer = TRUE
     )
 }
 
