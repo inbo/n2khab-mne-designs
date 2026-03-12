@@ -1266,7 +1266,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL07)") ~ 6L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL01)") ~ 7L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL08|PS2PANEL04)") ~ 8L,
-      str_detect(scheme_ps_targetpanels, "GW_05\\.") ~ 9L
+      str_detect(scheme_ps_targetpanels, "GW_05\\.") ~ 11L
     ),
     priority_surf = case_when(
       str_detect(scheme_ps_targetpanels, "SURF_03\\.4_[a-z]+:PS\\dPANEL02") ~ 2L,
