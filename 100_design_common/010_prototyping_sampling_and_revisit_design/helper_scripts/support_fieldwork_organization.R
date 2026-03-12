@@ -1288,12 +1288,6 @@ fieldwork_shortterm_prioritization_by_stratum <-
       priority_mhq,
       na.rm = TRUE
     ),
-    priority_2 = pmax(1L, as.integer(round(priority / nr_schemes_current))),
-    priority_2 = ifelse(
-      priority_2 > 1 & nr_schemes_later > 0,
-      priority_2 - 1L,
-      priority_2
-    ),
     wait_watersurface = str_detect(stratum, "^31|^2190_a"),
     wait_3260 = stratum == "3260",
     wait_7220 = str_detect(stratum, "^7220"),
