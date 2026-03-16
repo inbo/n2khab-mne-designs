@@ -103,17 +103,18 @@ sample_sizes <-
       13 - month_max + month_min
     ),
     var_spatial = sd_spatial^2,
+    var_year = sd_year^2,
     var_temporal = sd_temporal^2,
-    n_tg_max = (var_spatial + var_temporal) / var_mu,
+    n_tg_max = (2 * var_spatial + var_year + var_temporal) / (2 * var_mu),
     # m_max = var_temporal / (var_mu - var_spatial),
-    relative_sd = sd_temporal / sd_spatial,
-    m_opt = sd_temporal / sd_spatial * sqrt(cost_spatial / cost_temporal),
+    relative_sd = sd_temporal / sqrt(2 * var_spatial + var_year),
+    m_opt = relative_sd * sqrt(cost_spatial / cost_temporal),
     m_to_ntg = pmap(
-      list(nr_months, var_mu, var_spatial, var_temporal),
-      function(nmon, vm, vs, vt) {
+      list(nr_months, var_mu, var_spatial, var_year, var_temporal),
+      function(nmon, vm, vs, vy, vt) {
         tibble(
           m = seq_len(nmon * 2),
-          n_tg = vs / vm + 1 / m * vt / vm,
+          n_tg = vs / vm + 1 / 2 * vy / vm + 1 / (2 * m) * vt / vm,
           n_tg_yearly = n_tg / 6
         )
       }
@@ -155,9 +156,11 @@ sample_sizes %>%
     n_tg,
     m,
     var_spatial,
+    var_year,
     var_temporal) %>% 
   mutate(
-    var_mu = n_tg^(-1) * (var_spatial + m^(-1) * var_temporal),
+    var_mu = 
+      n_tg^(-1) * (var_spatial + 1 / 2 * (var_year + m^(-1) * var_temporal)),
     logscale_errormargin = sqrt(var_mu) * qnorm(1 - 0.1 / 2),
     relative_errormargin = 10^logscale_errormargin - 1,
     match = round(relative_errormargin, 2) == target_relerrmarg
@@ -265,6 +268,7 @@ m_to_errmarg <-
     target_variable,
     alpha,
     var_spatial,
+    var_year,
     var_temporal,
     nr_months,
     n_tg,
@@ -274,11 +278,11 @@ m_to_errmarg <-
   ) %>% 
   mutate(
     calc_errmarg = pmap(
-      list(nr_months, n_tg, var_spatial, var_temporal, alpha),
-      function(nmon, ntg, vs, vt, a) {
+      list(nr_months, n_tg, var_spatial, var_year, var_temporal, alpha),
+      function(nmon, ntg, vs, vy, vt, a) {
         tibble(
           m = seq_len(nmon * 2),
-          sd_mu = sqrt(1 / ntg * (vs + 1 / m * vt)),
+          sd_mu = sqrt(ntg^(-1) * (vs + 1 / 2 * (vy + m^(-1) * vt))),
           relative_errormargin = 10^(sd_mu * qnorm(1 - a / 2)) - 1
         )
       }
@@ -303,6 +307,7 @@ m_to_errmarg_fixed_n <-
     alpha,
     relative_errormargin,
     var_spatial,
+    var_year,
     var_temporal,
     nr_months,
     n_tg,
@@ -318,11 +323,11 @@ m_to_errmarg_fixed_n <-
   select(-relative_errormargin) %>% 
   mutate(
     calc_errmarg = pmap(
-      list(nr_months, n_tg, var_spatial, var_temporal, alpha),
-      function(nmon, ntg, vs, vt, a) {
+      list(nr_months, n_tg, var_spatial, var_year, var_temporal, alpha),
+      function(nmon, ntg, vs, vy, vt, a) {
         tibble(
           m = seq_len(nmon * 2),
-          sd_mu = sqrt(1 / ntg * (vs + 1 / m * vt)),
+          sd_mu = sqrt(ntg^(-1) * (vs + 1 / 2 * (vy + m^(-1) * vt))),
           relative_errormargin = 10^(sd_mu * qnorm(1 - a / 2)) - 1
         )
       }
@@ -350,6 +355,7 @@ m_to_errmarg_fixed_n_ceiling <-
     alpha,
     relative_errormargin,
     var_spatial,
+    var_year,
     var_temporal,
     nr_months,
     n_tg,
@@ -366,11 +372,11 @@ m_to_errmarg_fixed_n_ceiling <-
   select(-relative_errormargin) %>% 
   mutate(
     calc_errmarg = pmap(
-      list(nr_months, n_tg, var_spatial, var_temporal, alpha),
-      function(nmon, ntg, vs, vt, a) {
+      list(nr_months, n_tg, var_spatial, var_year, var_temporal, alpha),
+      function(nmon, ntg, vs, vy, vt, a) {
         tibble(
           m = seq_len(nmon * 2),
-          sd_mu = sqrt(1 / ntg * (vs + 1 / m * vt)),
+          sd_mu = sqrt(ntg^(-1) * (vs + 1 / 2 * (vy + m^(-1) * vt))),
           relative_errormargin = 10^(sd_mu * qnorm(1 - a / 2)) - 1
         )
       }
@@ -386,10 +392,10 @@ plot_m_to_errmarg(m_to_errmarg_fixed_n_ceiling, facet_scales = "fixed") +
 We kunnen hieruit **besluiten** dat:
 
 - voor een **foutenmarge van maximum 10%**:
-  - in _SURF_03.4_lentic_ jaarlijks 60 locaties per typegroep met 3 herhalingen voor NO3 en 3 herhalingen voor Ptot volstaan (dus 6 bezoeken in totaal; NO3 en Ptot hebben een andere periode in het jaar als temporele doelpopulatie);
+  - in _SURF_03.4_lentic_ jaarlijks 50 locaties per typegroep met 3 herhalingen voor NO3 en 3 herhalingen voor Ptot volstaan (dus 6 bezoeken in totaal; NO3 en Ptot hebben een andere periode in het jaar als temporele doelpopulatie);
   - in _SURF_03.4_lotic_ jaarlijks 65 locaties per typegroep met 3 herhalingen voor NO3 en PO4 volstaan (dus 3 bezoeken in totaal);
 - voor een **foutenmarge van maximum 15%**:
-  - in _SURF_03.4_lentic_ jaarlijks 30 locaties per typegroep met 3 herhalingen voor NO3 en 3 herhalingen voor Ptot volstaan (dus 6 bezoeken in totaal; NO3 en Ptot hebben een andere periode in het jaar als temporele doelpopulatie);
+  - in _SURF_03.4_lentic_ jaarlijks 25 locaties per typegroep met 3 herhalingen voor NO3 en 3 herhalingen voor Ptot volstaan (dus 6 bezoeken in totaal; NO3 en Ptot hebben een andere periode in het jaar als temporele doelpopulatie);
   - in _SURF_03.4_lotic_ jaarlijks 30 locaties per typegroep met 3 herhalingen voor NO3 en PO4 volstaan (dus 3 bezoeken in totaal).
 
 Ter informatie wordt hieronder ook het verband weergegeven tussen de _lokale_ relatieve foutenmarge, voor uitspraak over het temporele gemiddelde van één locatie gedurende één jaar, en het aantal herhalingen dat daarvoor nodig is op _één locatie_, bij een betrouwbaarheidsniveau ($1 - \alpha$) van 90%.
