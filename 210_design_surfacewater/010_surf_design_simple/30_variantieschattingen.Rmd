@@ -75,7 +75,7 @@ models_lentic <-
     model = map(chemdata, function(cd) {
       lme(
         value_log ~ 1,
-        random = ~ 1 | type / year_sampling / loc_code,
+        random = ~ 1 | type / loc_code / twoyear_period / year_sampling,
         data = cd
       )
     })
@@ -91,9 +91,9 @@ Samengevat zijn dit de schattingen van interesse:
 ```{r}
 modelvar_lentic <- 
   tribble(
-    ~target_variable, ~sd_spatial, ~sd_temporal,
-    "no3", 0.3883823, 0.3361728,
-    "ptot", 0.4555934, 0.3447835
+    ~target_variable, ~sd_spatial, ~sd_year, ~sd_temporal,
+    "no3", 0.4015105, 8.081265e-05, 0.3356899,
+    "ptot", 0.3978903, 0.1841218, 0.3450599
   )
 modelvar_lentic %>% kable()
 ```
@@ -101,9 +101,6 @@ modelvar_lentic %>% kable()
 Noot: een meer elegante manier is om de waarden expliciet als links-gecensureerd te modelleren, desgevallend gepaard met een volwaardige multipele imputatie.
 Ook dan moet er echter nog steeds een aanname worden gemaakt over de distributie van de responsvariabele (bv.: lognormaal?); de werkelijke distributie in het bereik onder de bepaalbaarheidsgrens blijft sowieso onbekend.
 Een aanpak met expliciet links-gecensureerde data plannen we in de toekomst, als onderdeel van een benadering met steekproefsimulaties.
-
-Een eerste verkenning om de data met package `brms` te fitten met een links-gecensureerde lognormale likelihood distributie gaf gelijkaardige resultaten als de huidige benadering, met een beperkt hogere ruimtelijke en beperkt lagere temporele variantie.
-De _rekentijd_ lag echter relatief hoog (238 s, versus 1 s met `nlme::lme()`); verdere modelaanpassingen zouden het mogelijks verhelpen en ook R-INLA (dat een snel algoritme hanteert) is te overwegen.
 
 
 ## Schatting van varianties voor SURF_03.4_lotic
@@ -161,7 +158,7 @@ models_lotic <-
     model = map(chemdata, function(cd) {
       lme(
         value_log ~ 1,
-        random = ~ 1 | sixyear_period / year_sampling / loc_code / month_day,
+        random = ~ 1 | sixyear_period / loc_code / twoyear_period / year_sampling / month_day,
         data = cd
       )
     })
@@ -177,9 +174,9 @@ Samengevat zijn dit de schattingen van interesse:
 ```{r}
 modelvar_lotic <- 
   tribble(
-    ~target_variable, ~sd_spatial, ~sd_temporal,
-    "no3", 0.4806848, 0.2550572,
-    "po4", 0.3917011, 0.3178161
+    ~target_variable, ~sd_spatial, ~sd_year, ~sd_temporal,
+    "no3", 0.4826833, 0.0688238, 0.2578382,
+    "po4", 0.3932113, 0.05897901, 0.3174737
   )
 modelvar_lotic %>% kable()
 ```
@@ -187,6 +184,3 @@ modelvar_lotic %>% kable()
 Noot: een meer elegante manier is om de waarden expliciet als links-gecensureerd te modelleren, desgevallend gepaard met een volwaardige multipele imputatie.
 Ook dan moet er echter nog steeds een aanname worden gemaakt over de distributie van de responsvariabele (bv.: lognormaal?); de werkelijke distributie in het bereik onder de bepaalbaarheidsgrens blijft sowieso onbekend.
 Een aanpak met expliciet links-gecensureerde data plannen we in de toekomst, als onderdeel van een benadering met steekproefsimulaties.
-
-Een eerste verkenning om de data met package `brms` te fitten met een links-gecensureerde lognormale likelihood distributie gaf gelijkaardige resultaten als de huidige benadering, met een beperkt hogere ruimtelijke en beperkt lagere temporele variantie.
-De _rekentijd_ lag echter relatief hoog (377 s, versus 10 s met `nlme::lme()`); verdere modelaanpassingen zouden het mogelijks verhelpen en ook R-INLA (dat een snel algoritme hanteert) is te overwegen.
