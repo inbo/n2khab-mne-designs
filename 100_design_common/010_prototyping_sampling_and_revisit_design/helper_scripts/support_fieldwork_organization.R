@@ -848,20 +848,13 @@ replacement_cellcenters <- tibble(
   st_as_sf(coords = c("x", "y"), crs = crs(grts_mh))
 
 # SpatRaster of all replacement cells; note the use of the cells argument:
-units_cell_replacement_rast <-
+replacement_cell_rast <-
   filter_grtsraster_by_address(
     spatrast = grts_mh,
     spatrast_index = grts_mh_index,
     cells = cellnrs_replacement
   )
-global(units_cell_replacement_rast, "notNA")[1, 1] == length(cellnrs_replacement)
-
-
-
-
-
-
-
+global(replacement_cell_rast, "notNA")[1, 1] == length(cellnrs_replacement)
 
 
 
@@ -1598,7 +1591,7 @@ tibble(
     "stratum_schemepstargetpanel_spsamples_terr_polygonreplacementcells",
     "stratum_schemepstargetpanel_spsamples_terr_replacementcells",
     "cellnrs_replacement",
-    "units_cell_replacement_rast",
+    "replacement_cell_rast",
     "fag_fa",
     "faseqs",
     "faseqs_fag_fa",
