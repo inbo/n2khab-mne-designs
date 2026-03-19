@@ -856,7 +856,87 @@ replacement_cell_rast <-
   )
 global(replacement_cell_rast, "notNA")[1, 1] == length(cellnrs_replacement)
 
+if (FALSE) {
+  # replacement cells as polygons
+  replacement_cell_polygons <-
+    replacement_cell_rast %>%
+    as.polygons(aggregate = FALSE) %>%
+    st_as_sf() %>%
+    # to prefer the tibble approach in sf, we need to convert forth and back
+    as_tibble() %>%
+    # it appears that the CRS is actually retrieved from the tibble, but I don't
+    # understand how (so the crs argument below isn't needed)
+    st_as_sf(crs = "EPSG:31370")
 
+
+  # spatial objects of replacement cells joined to the cell-based sampling units
+
+  stratum_schemepstargetpanel_spsamples_terr_replacementcells_sfpoint <-
+    replacement_cellcenters %>%
+    select(grts_address_replac = grts_address) %>%
+    right_join(
+      stratum_schemepstargetpanel_spsamples_terr_replacementcells %>%
+        unnest(replacement_cells),
+      join_by(grts_address_replac),
+      relationship = "one-to-many",
+      unmatched = "drop"
+    ) %>%
+    relocate(
+      stratum,
+      grts_address,
+      grts_address_final,
+      grts_address_replac,
+      ranknr
+    ) %>%
+    arrange(
+      stratum,
+      grts_address,
+      grts_address_final,
+      grts_address_replac
+    ) %>%
+    relocate(geometry, .after = last_col())
+
+  stratum_schemepstargetpanel_spsamples_terr_replacementcells_sfpolygon <-
+    replacement_cell_polygons %>%
+    mutate(grts_address_replac = as.integer(GRTSmaster_habitats)) %>%
+    select(grts_address_replac) %>%
+    right_join(
+      stratum_schemepstargetpanel_spsamples_terr_replacementcells %>%
+        unnest(replacement_cells),
+      join_by(grts_address_replac),
+      relationship = "one-to-many",
+      unmatched = "drop"
+    ) %>%
+    relocate(
+      stratum,
+      grts_address,
+      grts_address_final,
+      grts_address_replac,
+      ranknr
+    ) %>%
+    arrange(
+      stratum,
+      grts_address,
+      grts_address_final,
+      grts_address_replac
+    ) %>%
+    relocate(geometry, .after = last_col())
+
+  # writing replacement cells to a geopackage
+  gpkg_path <- file.path(datapath, "binary/results/replacement_cells.gpkg")
+  stratum_schemepstargetpanel_spsamples_terr_replacementcells_sfpoint %>%
+    write_sf(
+      gpkg_path,
+      layer = "replacementcells_CELLCENTERS",
+      delete_dsn = TRUE
+    )
+  stratum_schemepstargetpanel_spsamples_terr_replacementcells_sfpolygon %>%
+    write_sf(
+      gpkg_path,
+      layer = "replacementcells_CELLS",
+      delete_layer = TRUE
+    )
+}
 
 
 ## FAG occasions, field activities and variables ------------------------
