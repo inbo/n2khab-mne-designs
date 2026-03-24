@@ -1618,6 +1618,6 @@ save(
   list = objects$name,
   file = file.path(
     datapath,
-    "binary/intermediate/fieldworg_checksums.RData"
+    "binary/intermediate/fieldworg_codesnippets.RData"
   )
 )
