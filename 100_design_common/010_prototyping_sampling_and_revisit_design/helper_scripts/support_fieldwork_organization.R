@@ -1552,7 +1552,7 @@ orthophoto_shortterm_cell_centers <-
 
 ## Writing object checksums to verify reproducibility -------------------------
 
-tibble(
+objects <- tibble(
   name = c(
     "versions_required",
     "scheme_moco_ps_stratum_targetpanel_spsamples",
@@ -1594,7 +1594,10 @@ tibble(
     "orthophoto_shortterm_type_grts",
     "orthophoto_shortterm_cells",
     "orthophoto_shortterm_cell_centers"
-  ),
+  )
+)
+objects %>%
+  mutate(
   xxh64sum = map_chr(name, \(x) {
     # terra objects need special handling;
     # https://github.com/rspatial/terra/issues/1844
@@ -1609,3 +1612,12 @@ tibble(
 
 
 
+# Writing an RData file for debugging or direct object usage --------------
+
+save(
+  list = objects$name,
+  file = file.path(
+    datapath,
+    "binary/intermediate/fieldworg_checksums.RData"
+  )
+)
