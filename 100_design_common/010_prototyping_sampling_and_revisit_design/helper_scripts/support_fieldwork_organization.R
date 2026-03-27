@@ -1292,6 +1292,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
     wait_3260 = stratum == "3260",
     wait_7220 = str_detect(stratum, "^7220"),
     wait_floating = stratum == "7140_mrd",
+    wait_mhq = str_detect(scheme_ps_targetpanels, "^HQ.*?(?!\\|)"),
     wait_any = if_any(starts_with("wait"))
   ) %>%
   select(-matches("priority_.+")) %>%
@@ -1303,6 +1304,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
     wait_3260,
     wait_7220,
     wait_floating,
+    wait_mhq,
     wait_any,
     stratum,
     grts_address,
@@ -1327,6 +1329,7 @@ fieldwork_shortterm_prioritization_shorter <-
     wait_3260 = all(wait_3260),
     wait_7220 = all(wait_7220),
     wait_floating = all(wait_floating),
+    wait_mhq = all(wait_mhq),
     wait_any = all(wait_any),
     .by = !c(
       stratum_scheme_ps_targetpanels,
