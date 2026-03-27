@@ -1374,7 +1374,28 @@ if (FALSE) {
     select(-rank, -scheme_ps_oldtargetpanel) %>%
     write_sf(
       gpkg_path,
-      layer = "fieldwork_shortterm_LOCEVAL_cellbased",
+      layer = "fieldwork_shortterm_LOCEVAL_cellbased_CELLCENTERS",
+      delete_layer = TRUE
+    )
+  units_cell_polygon %>%
+    inner_join(
+      fieldwork_shortterm_prioritization_by_stratum %>%
+        filter(
+          str_detect(field_activity_group, "LOCEVAL"),
+          # only keep cell-based types (aquatic & 7220 will be more reliable or
+          # simply not possible to evaluate on orthophoto)
+          str_detect(grts_join_method, "cell")
+        ) %>%
+        select(-rank, -scheme_ps_oldtargetpanel),
+      join_by(grts_address_final),
+      relationship = "one-to-many",
+      unmatched = c("drop", "error")
+    ) %>%
+    relocate(grts_address_final, .after = grts_address) %>%
+    relocate(geometry, .after = last_col()) %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_LOCEVAL_cellbased_CELLS",
       delete_layer = TRUE
     )
 }
