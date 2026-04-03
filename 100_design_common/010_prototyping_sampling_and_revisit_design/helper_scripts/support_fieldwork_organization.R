@@ -1634,10 +1634,13 @@ objects %>%
 
 # Writing an RData file for debugging or direct object usage --------------
 
-save(
-  list = objects$name,
-  file = file.path(
-    datapath,
-    "binary/intermediate/fieldworg_codesnippets.RData"
+objects %>%
+  filter_out(str_detect(name, "^grts_mh")) %>%
+  pull(name) %>%
+  save(
+    list = .,
+    file = file.path(
+      datapath,
+      "binary/intermediate/fieldworg_codesnippets.RData"
+    )
   )
-)
