@@ -1116,21 +1116,7 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # adding location attributes
   inner_join(
     scheme_moco_ps_stratum_targetpanel_spsamples %>%
-      select(
-        scheme,
-        module_combo_code,
-        panel_set,
-        stratum,
-        grts_join_method,
-        grts_address,
-        grts_address_final,
-        # retaining 3 cols that drive subsampling location(s) in the unit:
-        is_forest,
-        in_mhq_samples,
-        last_type_assessment_in_field,
-        domain_part,
-        targetpanel
-      ) %>%
+      select(-is_aquatic) %>%
       # deduplicating 7220:
       distinct(),
     join_by(scheme, module_combo_code, panel_set, stratum, grts_address),
