@@ -57,6 +57,7 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
     scheme,
     module_combo_code,
     panel_set,
+    targetpanel,
     stratum,
     # 'aquatic' column will be improved for 7220 later on (now it simply has a
     # duplication (TRUE + FALSE) of all locations)
@@ -67,7 +68,6 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
     grts_address,
     grts_address_final,
     domain_part,
-    targetpanel,
     in_mhq_samples,
     last_type_assessment = assessment_date,
     last_type_assessment_in_field = assessed_in_field,
