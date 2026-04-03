@@ -1152,8 +1152,18 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     unmatched = "drop"
   ) %>%
   mutate(scheme_ps_oldtargetpanel = factor(scheme_ps_oldtargetpanel)) %>%
-  relocate(grts_address_final:domain_part, .after = grts_address) %>%
-  relocate(grts_join_method, .after = grts_address_final) %>%
+  relocate(targetpanel, .after = panel_set) %>%
+  relocate(grts_join_method, sample_support_code, .after = stratum) %>%
+  relocate(
+    grts_address_final,
+    domain_part,
+    is_forest,
+    in_mhq_samples,
+    last_type_assessment_in_field,
+    last_type_assessment,
+    last_inaccessible,
+    .after = grts_address
+  ) %>%
   relocate(scheme_ps_oldtargetpanel, .before = date_start) %>%
   select(-module_combo_code) %>%
   # flatten scheme x panel set x targetpanel to unique strings per stratum x
