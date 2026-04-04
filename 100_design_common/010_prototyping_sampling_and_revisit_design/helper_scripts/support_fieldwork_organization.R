@@ -57,6 +57,7 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
     scheme,
     module_combo_code,
     panel_set,
+    targetpanel,
     stratum,
     # 'aquatic' column will be improved for 7220 later on (now it simply has a
     # duplication (TRUE + FALSE) of all locations)
@@ -67,7 +68,6 @@ scheme_moco_ps_stratum_targetpanel_spsamples <-
     grts_address,
     grts_address_final,
     domain_part,
-    targetpanel,
     in_mhq_samples,
     last_type_assessment = assessment_date,
     last_type_assessment_in_field = assessed_in_field,
@@ -1189,21 +1189,7 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # adding location attributes
   inner_join(
     scheme_moco_ps_stratum_targetpanel_spsamples %>%
-      select(
-        scheme,
-        module_combo_code,
-        panel_set,
-        stratum,
-        grts_join_method,
-        grts_address,
-        grts_address_final,
-        # retaining 3 cols that drive subsampling location(s) in the unit:
-        is_forest,
-        in_mhq_samples,
-        last_type_assessment_in_field,
-        domain_part,
-        targetpanel
-      ) %>%
+      select(-is_aquatic) %>%
       # deduplicating 7220:
       distinct(),
     join_by(scheme, module_combo_code, panel_set, stratum, grts_address),
@@ -1239,8 +1225,18 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     unmatched = "drop"
   ) %>%
   mutate(scheme_ps_oldtargetpanel = factor(scheme_ps_oldtargetpanel)) %>%
-  relocate(grts_address_final:domain_part, .after = grts_address) %>%
-  relocate(grts_join_method, .after = grts_address_final) %>%
+  relocate(targetpanel, .after = panel_set) %>%
+  relocate(grts_join_method, sample_support_code, .after = stratum) %>%
+  relocate(
+    grts_address_final,
+    domain_part,
+    is_forest,
+    in_mhq_samples,
+    last_type_assessment_in_field,
+    last_type_assessment,
+    last_inaccessible,
+    .after = grts_address
+  ) %>%
   relocate(scheme_ps_oldtargetpanel, .before = date_start) %>%
   select(-module_combo_code) %>%
   # flatten scheme x panel set x targetpanel to unique strings per stratum x
@@ -1365,6 +1361,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
     wait_3260 = stratum == "3260",
     wait_7220 = str_detect(stratum, "^7220"),
     wait_floating = stratum == "7140_mrd",
+    wait_mhq = str_detect(scheme_ps_targetpanels, "^HQ.*?(?!\\|)"),
     wait_any = if_any(starts_with("wait"))
   ) %>%
   select(-matches("priority_.+")) %>%
@@ -1376,6 +1373,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
     wait_3260,
     wait_7220,
     wait_floating,
+    wait_mhq,
     wait_any,
     stratum,
     grts_address,
@@ -1400,6 +1398,7 @@ fieldwork_shortterm_prioritization_shorter <-
     wait_3260 = all(wait_3260),
     wait_7220 = all(wait_7220),
     wait_floating = all(wait_floating),
+    wait_mhq = all(wait_mhq),
     wait_any = all(wait_any),
     .by = !c(
       stratum_scheme_ps_targetpanels,
@@ -1646,7 +1645,7 @@ orthophoto_shortterm_cell_centers <-
 
 ## Writing object checksums to verify reproducibility -------------------------
 
-tibble(
+objects <- tibble(
   name = c(
     "versions_required",
     "scheme_moco_ps_stratum_targetpanel_spsamples",
@@ -1688,7 +1687,10 @@ tibble(
     "orthophoto_shortterm_type_grts",
     "orthophoto_shortterm_cells",
     "orthophoto_shortterm_cell_centers"
-  ),
+  )
+)
+objects %>%
+  mutate(
   xxh64sum = map_chr(name, \(x) {
     # terra objects need special handling;
     # https://github.com/rspatial/terra/issues/1844
@@ -1703,3 +1705,15 @@ tibble(
 
 
 
+# Writing an RData file for debugging or direct object usage --------------
+
+objects %>%
+  filter_out(str_detect(name, "^grts_mh")) %>%
+  pull(name) %>%
+  save(
+    list = .,
+    file = file.path(
+      datapath,
+      "binary/intermediate/fieldworg_codesnippets.RData"
+    )
+  )
