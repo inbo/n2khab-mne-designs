@@ -1327,9 +1327,8 @@ fieldwork_shortterm_prioritization_by_stratum <-
       # READDIVER, CLEAN & SHALLSAMP FAGs can be done as it suits, in the
       # locations where LOCEVAL is already executed)
       !is.na(scheme_ps_oldtargetpanel) ~ NA_integer_,
-      # switch priorities for PS1PANEL02 and PS1PANEL03 from 15 April on!
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL02|PS2PANEL01)") ~ 1L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL03|PS2PANEL02)") ~ 2L,
+      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL03|PS2PANEL01)") ~ 1L,
+      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL02|PS2PANEL02)") ~ 2L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL04)") ~ 3L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL0[56]|PS2PANEL03)") ~ 4L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL07)") ~ 6L,
