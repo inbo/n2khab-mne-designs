@@ -49,6 +49,8 @@ rdata_set <- c(
   "mhq_scheme_category",
   "submod_dom_scheme_ssf_stratum_nunits",
   "module_domain_schemes",
+  "module_schemes",
+  "module_targetpops",
   "submodule_domain_scheme_typestats",
   "submodule_domain_scheme_stratumstats",
   "submodule_domain_scheme_ps_designattr",
