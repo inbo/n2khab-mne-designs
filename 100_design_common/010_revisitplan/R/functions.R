@@ -160,7 +160,8 @@ collapse_strata <- function(df) {
         "91E0", "91E0_vn"
       ),
       by = c("stratum" = "main_type"),
-      relationship = "many-to-many"
+      relationship = "many-to-many",
+      unmatched = "drop"
     ) %>%
     mutate(
       stratum = ifelse(is.na(subtype), stratum, subtype) %>%
