@@ -137,14 +137,14 @@ apply_activity_sequence_filters <- function(df) {
 collapse_strata <- function(df) {
   df %>%
     mutate(
-      stratum = case_match(
+      stratum = recode_values(
         stratum,
         "5130_hei" ~ "5130",
         "5130_kalk" ~ "5130",
         "rbbkam+" ~ "rbbkam",
         "rbbzil+" ~ "rbbzil",
         "9120_qb" ~ "9120",
-        .default = stratum
+        default = stratum
       )
     ) %>%
     left_join(
