@@ -131,7 +131,7 @@ apply_activity_sequence_filters <- function(df) {
 #' - adding units, associated with a main type, to each corresponding subtype
 #' layer that triggered the expansion to the main type.
 #'
-#' In effect, 'collapsing' means leads to less stratum levels, but _more_ rows.
+#' In effect, 'collapsing' leads to less stratum levels, but _more_ rows.
 #'
 #' @param df A data frame with a `stratum` column.
 collapse_strata <- function(df) {
