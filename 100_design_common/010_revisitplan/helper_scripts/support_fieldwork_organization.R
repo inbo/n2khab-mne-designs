@@ -351,7 +351,6 @@ if (FALSE) {
 vbi_overlaps %>%
   inner_join(
     stratum_schemepstargetpanel_spsamples %>%
-      filter(is_forest) %>%
       select(
         stratum,
         grts_address_final,
