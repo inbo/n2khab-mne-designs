@@ -140,7 +140,7 @@ vbi_overlaps %>%
         grts_address_final,
         scheme_ps_targetpanels
       ),
-    join_by(grts_address == grts_address_final),
+    join_by(grts_address_overlapped_cell == grts_address_final),
     relationship = "one-to-one",
     unmatched = c("error", "drop")
   )
