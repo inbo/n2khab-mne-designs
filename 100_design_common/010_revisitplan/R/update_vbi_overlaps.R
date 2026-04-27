@@ -23,17 +23,29 @@ grts_mh_index <- tibble(
 ) %>%
   filter(!is.na(grts_address))
 
-forest_units_rast <-
+units_cell_rast <-
   scheme_moco_ps_stratum_sppost_spsamples_sf %>%
   st_drop_geometry() %>%
-  mutate(is_forest = str_detect(stratum, "^9|^2180|^rbbppm")) %>%
-  filter(is_forest) %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    n2khab_types_expanded_properties %>%
+      select(type, sample_support_code),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  filter(str_detect(sample_support_code, "cell")) %>%
   pull(grts_address_final) %>%
   filter_grtsraster_by_address(spatrast = grts_mh, spatrast_index = grts_mh_index)
-set.names(forest_units_rast, "grts_address_final")
+set.names(units_cell_rast, "grts_address_final")
 
-forest_units_polygon <-
-  forest_units_rast %>%
+units_cell_polygon <-
+  units_cell_rast %>%
   as.polygons(aggregate = FALSE) %>%
   st_as_sf() %>%
   # to prefer the tibble approach in sf, we need to convert forth and back
@@ -61,7 +73,7 @@ vbi_buffers <-
 
 vbi_buffers %>%
   st_join(
-    forest_units_polygon %>%
+    units_cell_polygon %>%
       rename(grts_address_overlapped_cell = grts_address_final),
     left = FALSE
   ) %>%
