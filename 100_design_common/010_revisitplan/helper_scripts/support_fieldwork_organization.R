@@ -365,7 +365,12 @@ vbi_overlaps %>%
     unmatched = c("error", "drop")
   )
 
-# representing as polygons object (circles)
+# some VBI locations may overlap more than one MNE sampling unit:
+vbi_overlaps %>%
+  count(plot_id) %>%
+  filter(n > 1)
+
+# representing the involved VBI locations as polygons object (circles)
 vbi_overlaps_sf <-
   vbi_overlaps %>%
   distinct(plot_id, x, y) %>%
@@ -376,6 +381,13 @@ vbi_overlaps_sf <-
     agr = "identity"
   ) %>%
   st_buffer(18)
+
+# calculating the overlapped surface area per MNE sampling unit
+units_cell_polygon %>%
+  st_intersection(vbi_overlaps_sf) %>%
+  mutate(overlapped_cell_area = st_area(.)) %>%
+  st_drop_geometry() %>%
+  rename(grts_address_overlapped_cell = grts_address_final)
 
 
 
