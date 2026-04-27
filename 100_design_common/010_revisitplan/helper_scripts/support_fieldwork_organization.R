@@ -512,7 +512,7 @@ missing_polygons <-
 
 # adding all GRTS addresses that belong to these polygons, by cell-center
 missing_pol_grts <-
-  extract(grts_mh, missing_polygons, small = FALSE) %>%
+  terra::extract(grts_mh, missing_polygons, small = FALSE) %>%
   as_tibble() %>%
   inner_join(
     tibble(
@@ -525,7 +525,7 @@ missing_pol_grts <-
     unmatched = "error"
   ) %>%
   select(-ID, grts_address = GRTSmaster_habitats) %>%
-  # filtering is needed since all polygons are listed by extract():
+  # filtering is needed since all polygons are listed by terra::extract():
   filter(!is.na(grts_address))
 
 # Finally, joining the stratum from the sampling-units-that-missed-their-polygon
