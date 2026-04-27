@@ -368,7 +368,13 @@ vbi_overlaps %>%
 # representing as polygons object (circles)
 vbi_overlaps_sf <-
   vbi_overlaps %>%
-  st_as_sf(coords = c("x", "y"), crs = 31370, agr = "identity") %>%
+  distinct(plot_id, x, y) %>%
+  st_as_sf(
+    coords = c("x", "y"),
+    remove = FALSE,
+    crs = 31370,
+    agr = "identity"
+  ) %>%
   st_buffer(18)
 
 
