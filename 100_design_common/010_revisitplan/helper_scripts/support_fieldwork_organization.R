@@ -345,9 +345,13 @@ if (FALSE) {
 
 ## Inspecting VBI locations that overlap sampling units --------------------------
 
-# vbi_overlaps represents the VBI plot centers that overlap MNE sampling units.
-# For privacy reasons, the full list of VBI locations is not stored publicly.
+# vbi_overlaps represents the center coordinates of VBI plots (circles with
+# radius 18 m) that overlap MNE sampling units. For privacy reasons, the full
+# list of VBI locations is not stored publicly.
+#
+# Below, some further processing is demonstrated.
 
+# joining attributes stratum and scheme_ps_targetpanels to vbi_overlaps:
 vbi_overlaps %>%
   inner_join(
     stratum_schemepstargetpanel_spsamples %>%
