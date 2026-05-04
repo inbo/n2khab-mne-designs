@@ -31,7 +31,7 @@ compare_old_new <- function(objname) {
   )
 }
 
-for (i in rdata_set[1:15]) {
+for (i in rdata_set) {
   if (!compare_old_new(i)) {
     msg <- glue::glue("Difference detected for {i}")
     warning(msg)
