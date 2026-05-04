@@ -15,10 +15,10 @@ Generating a sampling unit calendar, i.e. with timing per FAG (updated for bioti
 Note that the spatial subset is a mere attribute, as is already expressed by stratum and also FAG (in case of 7220).
 
 ```{r}
-scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial <- 
-  scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>% 
-  unnest(panel_membership) %>% 
-  unnest(fas) %>% 
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial <-
+  scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>%
+  unnest(panel_membership) %>%
+  unnest(fas) %>%
   inner_join(
     scheme_moco_ps_spsubset_panel_calendar,
     join_by(
@@ -31,27 +31,27 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial <-
     ),
     relationship = "many-to-many",
     unmatched = c("error", "drop")
-  ) %>% 
+  ) %>%
   relocate(
     sp_poststratum,
     panel,
     starts_with("date"),
     .after = notation_paneldesign
-  ) %>% 
+  ) %>%
   # join biotic FAG timings
   left_join(
-    bioticfag_spsubset_type_timing %>% 
+    bioticfag_spsubset_type_timing %>%
       inner_join(
         n2khab_strata,
         join_by(type),
         relationship = "many-to-many",
         unmatched = c("error", "drop")
-      ) %>% 
+      ) %>%
       select(-type),
     join_by(field_activity_group, in_aquatic_subset, stratum),
     relationship = "many-to-one",
     unmatched = "drop"
-  ) %>% 
+  ) %>%
   # update date intervals of biotic FAGs
   mutate(
     date_start = if_else(
@@ -68,12 +68,12 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial <-
       is.na(month_start),
       date_interval,
       interval(
-        force_tz(date_start, "Europe/Brussels"), 
+        force_tz(date_start, "Europe/Brussels"),
         force_tz(date_end, "Europe/Brussels")
       )
     )
-  ) %>% 
-  select(-matches("^month|^day")) %>% 
+  ) %>%
+  select(-matches("^month|^day")) %>%
   arrange(
     scheme,
     module_combo_code,
@@ -96,17 +96,17 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial <-
 Checking that all calendar rows match a row of `scheme_moco_ps_spsubset_fas_paneldesign`.
 
 ```{r}
-scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>% 
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
   distinct(pick(
     -c(panel, starts_with("date"), grts_address, stratum, sp_poststratum)
-  )) %>% 
+  )) %>%
   inner_join(
-    scheme_moco_ps_spsubset_fas_paneldesign %>% 
+    scheme_moco_ps_spsubset_fas_paneldesign %>%
       unnest(fas),
     join_by(
-      scheme, 
-      module_combo_code, 
-      panel_set, 
+      scheme,
+      module_combo_code,
+      panel_set,
       in_aquatic_subset,
       spsubset_needed_for_panel,
       field_activity_group,
@@ -121,17 +121,17 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
     # don't distinguish between schemes that got a sample size or not. So we
     # expect some cases to be dropped.
     unmatched = c("error", "drop")
-  ) %>% 
+  ) %>%
   invisible()
 ```
 
 Checking that all panel designs x FAGs x spatial subsets are present as expected (using `scheme_moco_ps_spsubset_fas_panelcount`), in each scheme x module combo x panel set.
 
 ```{r}
-scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>% 
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
   distinct(pick(
     -c(panel, starts_with("date"), grts_address, stratum, sp_poststratum)
-  )) %>% 
+  )) %>%
   inner_join(
     scheme_moco_ps_spsubset_fas_panelcount %>% unnest(fas),
     join_by(
@@ -149,7 +149,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
     ),
     relationship = "one-to-one",
     unmatched = "error"
-  ) %>% 
+  ) %>%
   invisible()
 ```
 
@@ -158,11 +158,11 @@ Note that it's irrelevant to verify the number of panels, since smaller sample s
 Since quite a few FAGs are applied at the same location, it is useful to derive the subset of FAGs ('target FAGs') that represent the main field activity of the target variable(s) in each scheme, in order to use this for further selections.
 
 ```{r}
-scheme_moco_ps_spsubset_targetfag <- 
-  mod_scheme_targetfieldactivity %>% 
+scheme_moco_ps_spsubset_targetfag <-
+  mod_scheme_targetfieldactivity %>%
   # joining FAGs
   inner_join(
-    mod_scheme_field_activity %>% 
+    mod_scheme_field_activity %>%
       distinct(
         module,
         scheme,
@@ -174,22 +174,22 @@ scheme_moco_ps_spsubset_targetfag <-
     # in_aquatic_subset gives duplication:
     relationship = "one-to-many",
     unmatched = c("error", "drop")
-  ) %>% 
-  distinct(module, scheme, in_aquatic_subset, field_activity_group) %>% 
+  ) %>%
+  distinct(module, scheme, in_aquatic_subset, field_activity_group) %>%
   # join module combos:
   inner_join(
-    scheme_ps_target_paneldesign %>% 
-      select(scheme, module_combo_code, module_combo, panel_set) %>% 
+    scheme_ps_target_paneldesign %>%
+      select(scheme, module_combo_code, module_combo, panel_set) %>%
       unnest(module_combo),
     join_by(module, scheme),
     relationship = "many-to-many",
     unmatched = "error"
-  ) %>% 
+  ) %>%
   distinct(
-    scheme, 
-    module_combo_code, 
-    panel_set, 
-    in_aquatic_subset, 
+    scheme,
+    module_combo_code,
+    panel_set,
+    in_aquatic_subset,
     field_activity_group
   )
 ```
@@ -197,7 +197,7 @@ scheme_moco_ps_spsubset_targetfag <-
 Checking the stratum spatial sample sizes for _target_ FAGs in the calendar against the spatial sample sizes from `scheme_moco_ps_stratum_sppost_spsamples`, for each scheme x module combo x panel set.
 
 ```{r}
-scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>% 
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
   distinct(
     scheme,
     module_combo_code,
@@ -206,7 +206,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
     field_activity_group,
     stratum,
     grts_address
-  ) %>% 
+  ) %>%
   semi_join(
     scheme_moco_ps_spsubset_targetfag,
     join_by(
@@ -216,7 +216,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
       in_aquatic_subset, # this one doesn't matter actually
       field_activity_group
     )
-  ) %>% 
+  ) %>%
   count(
     scheme,
     module_combo_code,
@@ -224,9 +224,9 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
     field_activity_group,
     stratum,
     name = "sample_size_fag"
-  ) %>% 
+  ) %>%
   inner_join(
-    scheme_moco_ps_stratum_sppost_spsamples %>% 
+    scheme_moco_ps_stratum_sppost_spsamples %>%
       mutate(
         total_sample_size = map_int(sp_poststr_samples, nrow),
         .keep = "unused"
@@ -241,7 +241,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
     # lhs has duplication due to > 1 target FAG per scheme in some cases
     relationship = "many-to-one",
     unmatched = "error"
-  ) %>% 
+  ) %>%
   invisible()
 ```
 
@@ -274,15 +274,15 @@ Also, they will only happen with a low probability, which we currently still neg
 
 ```{r}
 scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
-  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>% 
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
   # adding some properties of the revisit design
   inner_join(
-    scheme_moco_ps_spsubset_fas_panelcount %>% 
+    scheme_moco_ps_spsubset_fas_panelcount %>%
       select(
-        scheme, 
-        module_combo_code, 
-        panel_set, 
-        in_aquatic_subset, 
+        scheme,
+        module_combo_code,
+        panel_set,
+        in_aquatic_subset,
         spsubset_needed_for_panel,
         year_first,
         year_last,
@@ -303,28 +303,28 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     ),
     relationship = "many-to-one",
     unmatched = "error"
-  ) %>% 
+  ) %>%
   # don't include inapplicable date intervals
   filter(
-    date_start >= make_date(year_first, 1, 1) + 
+    date_start >= make_date(year_first, 1, 1) +
       if_else(!is.na(panel_dateshift), panel_dateshift, months(0)),
-    date_end <= make_date(year_last + 1, 1, 1) + 
+    date_end <= make_date(year_last + 1, 1, 1) +
       if_else(
         !is.na(panel_enddate_addition),
         panel_enddate_addition,
         months(0)
       ) +
-      if_else(!is.na(panel_dateshift), panel_dateshift, months(0)) - 
+      if_else(!is.na(panel_dateshift), panel_dateshift, months(0)) -
       days(1)
-  ) %>% 
+  ) %>%
   # implement a delay for FAGs with a panel design with one subperiod and for
   # FAGs where permanent equipment is installed and spatially positioned, if
   # month(date_start) < month_first in the first year
   mutate(
     delay = if_else(
-      (limit_n_subperiods == 1 | 
-         str_detect(field_activity_group, "INST|SPATPOSIT")) & 
-        year(date_start) == year_first & 
+      (limit_n_subperiods == 1 |
+        str_detect(field_activity_group, "INST|SPATPOSIT")) &
+        year(date_start) == year_first &
         month(date_start) < month_first,
       months(month_first - month(date_start)),
       months(0),
@@ -340,25 +340,25 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     date_interval = if_else(
       delay > months(0),
       interval(
-        force_tz(date_start, "Europe/Brussels"), 
+        force_tz(date_start, "Europe/Brussels"),
         force_tz(date_end, "Europe/Brussels")
       ),
       date_interval
     )
-  ) %>% 
-  select(-delay) %>% 
+  ) %>%
+  select(-delay) %>%
   # drop inapplicable panels in the startup period based on month_first,
   # except for LOCEVAL
   filter(
-    month(date_end) >= month_first | 
+    month(date_end) >= month_first |
       year(date_end) > year_first |
       str_detect(field_activity_group, "LOCEVAL")
-  ) %>% 
+  ) %>%
   # if a panel period overlaps month_first in the first year but starts earlier,
   # then wind up the start date, but not for LOCEVAL and HQ schemes
   mutate(
     delay = if_else(
-      month(date_start) < month_first & 
+      month(date_start) < month_first &
         year(date_start) == year_first &
         !str_detect(field_activity_group, "LOCEVAL") &
         !str_detect(scheme, "^HQ"),
@@ -369,13 +369,13 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     date_interval = if_else(
       delay > months(0),
       interval(
-        force_tz(date_start, "Europe/Brussels"), 
+        force_tz(date_start, "Europe/Brussels"),
         force_tz(date_end, "Europe/Brussels")
       ),
       date_interval
     )
-  ) %>% 
-  select(-delay) %>% 
+  ) %>%
+  select(-delay) %>%
   # drop SURFINSTGAUGE & SPATPOSITGAUGE activities in groundwater schemes that
   # take place earlier than the first corresponding GWINST FAG. Note that we
   # can't use the FAG rank to accomplish this, since SURFINSTGAUGE & GWINST
@@ -399,12 +399,12 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   filter(
     (
       str_detect(scheme, "^GW") &
-      str_detect(field_activity_group, "GAUGE") & 
+        str_detect(field_activity_group, "GAUGE") &
         date_start >= first_date_gwinst
-      ) |
+    ) |
       !str_detect(scheme, "^GW") |
       !str_detect(field_activity_group, "GAUGE")
-  ) %>% 
+  ) %>%
   # Wait at least 3 months after diver installation (this can also be in SURF)
   # to execute a READDIVER FAG. This drops the READDIVER occasions that have the
   # same or an older date interval as their corresponding INST FAG. The
@@ -423,14 +423,14 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
       sp_poststratum,
       grts_address
     )
-  ) %>% 
+  ) %>%
   filter(
     (
       str_detect(field_activity_group, "READDIVER") &
         date_start >= first_date_diverinst + months(3)
     ) |
-    !str_detect(field_activity_group, "READDIVER")
-  ) %>% 
+      !str_detect(field_activity_group, "READDIVER")
+  ) %>%
   {
     if (params$keep_adhoc_acts) {
       # drop ADHOC FAGs that have no matching start date at their location in the
@@ -438,8 +438,8 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
       filter(
         .,
         !str_detect(field_activity_group, "ADHOC") |
-          date_start %in% 
-          date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
+          date_start %in%
+            date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
         .by = c(
           scheme,
           module_combo_code,
@@ -452,7 +452,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     } else {
       .
     }
-  } %>% 
+  } %>%
   select(!c(
     first_date_gwinst,
     first_date_diverinst,
@@ -466,9 +466,9 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
 Generating a temporary, long variant of this intermediate sampling unit calendar result, with a column `activity_sequence`.
 
 ```{r}
-spsamples_calendar_actseqs_long <- 
-  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
-  select(-actseqs) %>% 
+spsamples_calendar_actseqs_long <-
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+  select(-actseqs) %>%
   unnest_longer(actseqs_vec, values_to = "activity_sequence")
 ```
 
@@ -476,8 +476,8 @@ Updating the sampling unit calendar by dropping FAGs (and corresponding activity
 This condition is considered within scheme, module combo, panel set and activity sequence (but see code comment).
 
 ```{r}
-scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <- 
-  spsamples_calendar_actseqs_long %>% 
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
+  spsamples_calendar_actseqs_long %>%
   mutate(
     date_start_first_rank1 = if (length(date_start[rank == 1L]) == 0L) {
       ymd("21000101")
@@ -514,31 +514,31 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
       activity_sequence,
       grts_address
     )
-  ) %>% 
+  ) %>%
   filter(
     rank == 1L |
-      (rank == 2L & 
-         date_end > date_start_first_rank1 ) |
-      (rank == 3L & 
-         date_end > date_start_first_rank1 & 
-         date_end > date_start_first_rank2) |
-      (rank == 4L & 
-         date_end > date_start_first_rank1 & 
-         date_end > date_start_first_rank2 & 
-         date_end > date_start_first_rank3) |
-      (rank == 5L & 
-         date_end > date_start_first_rank1 & 
-         date_end > date_start_first_rank2 & 
-         date_end > date_start_first_rank3 & 
-         date_end > date_start_first_rank4)
-  ) %>% 
+      (rank == 2L &
+        date_end > date_start_first_rank1) |
+      (rank == 3L &
+        date_end > date_start_first_rank1 &
+        date_end > date_start_first_rank2) |
+      (rank == 4L &
+        date_end > date_start_first_rank1 &
+        date_end > date_start_first_rank2 &
+        date_end > date_start_first_rank3) |
+      (rank == 5L &
+        date_end > date_start_first_rank1 &
+        date_end > date_start_first_rank2 &
+        date_end > date_start_first_rank3 &
+        date_end > date_start_first_rank4)
+  ) %>%
   select(
     -year_first,
     -year_last,
     -month_first,
     -starts_with("date_start_first_rank")
-  ) %>% 
-  nest(actseqs = activity_sequence) %>% 
+  ) %>%
+  nest(actseqs = activity_sequence) %>%
   {
     if (params$keep_adhoc_acts) {
       # once more filter out orphaned ADHOC activities (but at the time of writing
@@ -546,8 +546,8 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
       filter(
         .,
         !str_detect(field_activity_group, "ADHOC") |
-          date_start %in% 
-          date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
+          date_start %in%
+            date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
         .by = c(
           scheme,
           module_combo_code,
@@ -560,19 +560,19 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     } else {
       .
     }
-  } %>% 
+  } %>%
   # since the new FAG sets may be smaller than the original FA supergroups, due
   # to dropping FAGs while cleaning, we just call these sets 'fags' so that
   # 'fas' can keep its time-independent but revisit-design
   # (notation_paneldesign) dependent meaning
-  nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>% 
-  relocate(fags, .after = spsubset_needed_for_panel) %>% 
+  nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>%
+  relocate(fags, .after = spsubset_needed_for_panel) %>%
   relocate(
     sp_poststratum,
     panel,
     starts_with("date"),
     .after = notation_paneldesign
-  ) %>% 
+  ) %>%
   arrange(
     scheme,
     module_combo_code,
@@ -598,7 +598,7 @@ gc()
 
 ```{r include=FALSE}
 # to check if this runs without error
-scheme_moco_ps_spsubset_fas_panels %>% 
+scheme_moco_ps_spsubset_fas_panels %>%
   inner_join(
     scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar,
     join_by(
@@ -614,15 +614,15 @@ scheme_moco_ps_spsubset_fas_panels %>%
     # "drop" is allowed because some panels disappear due to the cleaning or
     # to small sample sizes
     unmatched = c("drop", "error")
-  ) %>% 
+  ) %>%
   invisible()
 ```
 
 Code to check which (FAS-specific) panel visits have been dropped (code not evaluated):
 
 ```{r eval=FALSE}
-scheme_moco_ps_spsubset_fas_panels %>% 
-  select(scheme:in_aquatic_subset, notation_paneldesign, panel) %>% 
+scheme_moco_ps_spsubset_fas_panels %>%
+  select(scheme:in_aquatic_subset, notation_paneldesign, panel) %>%
   anti_join(
     scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar,
     join_by(
@@ -650,11 +650,11 @@ But also note that the current strategy is to avoid dropping panel visits and lo
 Checking that, in each stratum and spatial poststratum, the panel designs from the spatial sample calendar are also present in the panel membership object.
 
 ```{r}
-scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
   # this leaves out the panels and the spatial sampling units:
-  distinct(pick(scheme:sp_poststratum), stratum) %>% 
+  distinct(pick(scheme:sp_poststratum), stratum) %>%
   inner_join(
-    scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>% 
+    scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>%
       select(-panel_membership),
     join_by(
       scheme,
@@ -671,7 +671,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
     # Hency we get "many-to-one"
     relationship = "many-to-one",
     unmatched = c("error", "drop")
-  ) %>% 
+  ) %>%
   invisible()
 ```
 
@@ -679,7 +679,7 @@ In the above comparison, listing cases in the panel membership object that are m
 These cases should be limited (or just be absent) to very small strata where a `field_activity_group` with a lower rank outside the monitoring period has been dropped, so that it got eliminated altogether.
 
 ```{r}
-scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>% 
+scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>%
   anti_join(
     scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar,
     join_by(
@@ -692,8 +692,8 @@ scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship %>%
       stratum,
       sp_poststratum
     )
-  ) %>% 
-  mutate(spatial_sample_size = map_int(panel_membership, nrow)) %>% 
+  ) %>%
+  mutate(spatial_sample_size = map_int(panel_membership, nrow)) %>%
   select(-fas, -panel_membership)
 ```
 
@@ -701,8 +701,8 @@ Checking the stratum spatial sample sizes for _target_ FAGs in the calendar agai
 This is the same check as done for the initial calendar.
 
 ```{r}
-scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
-  unnest(fags) %>% 
+scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+  unnest(fags) %>%
   distinct(
     scheme,
     module_combo_code,
@@ -711,7 +711,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
     field_activity_group,
     stratum,
     grts_address
-  ) %>% 
+  ) %>%
   semi_join(
     scheme_moco_ps_spsubset_targetfag,
     join_by(
@@ -721,7 +721,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
       in_aquatic_subset, # this one doesn't matter actually
       field_activity_group
     )
-  ) %>% 
+  ) %>%
   count(
     scheme,
     module_combo_code,
@@ -729,9 +729,9 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
     field_activity_group,
     stratum,
     name = "sample_size_fag"
-  ) %>% 
+  ) %>%
   inner_join(
-    scheme_moco_ps_stratum_sppost_spsamples %>% 
+    scheme_moco_ps_stratum_sppost_spsamples %>%
       mutate(
         total_sample_size = map_int(sp_poststr_samples, nrow),
         .keep = "unused"
@@ -746,7 +746,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
     # lhs has duplication due to > 1 target FAG per scheme in some cases
     relationship = "many-to-one",
     unmatched = "error"
-  ) %>% 
+  ) %>%
   invisible()
 ```
 
@@ -759,15 +759,15 @@ Only executed when specific schemes and module combos are active.
 
 ```{r}
 if (
-  scheme_ps_target_paneldesign %>% 
-  filter(
-    scheme == "GW_03.3",
-    str_detect(module_combo_code, "panfl_pan5.*mbaa")
-  ) %>% 
-  nrow() > 0
+  scheme_ps_target_paneldesign %>%
+    filter(
+      scheme == "GW_03.3",
+      str_detect(module_combo_code, "panfl_pan5.*mbaa")
+    ) %>%
+    nrow() > 0
 ) {
   make_obj_a <- function(calobj) {
-    calobj %>% 
+    calobj %>%
       filter(
         scheme == "GW_03.3",
         str_detect(module_combo_code, "panfl_pan5"),
@@ -777,11 +777,11 @@ if (
         ),
         # note that this one can be dropped once 7220 is handled better
         stratum != "7220"
-      ) %>% 
+      ) %>%
       unnest(panel_membership)
   }
   make_obj_b <- function(calobj) {
-    calobj %>% 
+    calobj %>%
       filter(
         scheme == "GW_03.3",
         str_detect(module_combo_code, "panfl_pan5"),
@@ -791,7 +791,7 @@ if (
         ),
         # note that this one can be dropped once 7220 is handled better
         stratum != "7220"
-      ) %>% 
+      ) %>%
       distinct(
         scheme,
         module_combo_code,
@@ -808,12 +808,12 @@ if (
   obj_b <- make_obj_b(scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar)
   obj_a_n <- obj_a %>% count(notation_paneldesign)
   obj_b_n <- obj_b %>% count(notation_paneldesign)
-  
+
   stopifnot(n_distinct(obj_a_n$n) == 1)
   stopifnot(all.equal(obj_a_n, obj_b_n))
-  
+
   # installation
-  obj_b1 <- obj_b %>% 
+  obj_b1 <- obj_b %>%
     filter(
       panel %in% c(
         "GW_03.3_panflpan5mbaa_24panelsof3m(SER)_PANEL05",
@@ -823,7 +823,7 @@ if (
       )
     )
   # levread
-  obj_b2 <- obj_b %>% 
+  obj_b2 <- obj_b %>%
     filter(
       panel %in% c(
         "GW_03.3_TERR_panflpan5mbaa_2panelsof3m(auto2|SER)[shift(6m)]_PANEL01",
@@ -834,21 +834,21 @@ if (
   # all tests up to here also make sense for the first appearance of the
   # scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar object (which
   # has been updated since)
-  
+
   # levread
-  obj_b3 <- 
-    scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
+  obj_b3 <-
+    scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
     filter(
       panel %in% c(
         "GW_03.3_TERR_panflpan5mbaa_2panelsof3m(auto2|SER)[shift(6m)]_PANEL01",
         "GW_03.3_AQ_panflpan5mbaa_2panelsof3m(auto2|SER)[shift(6m)]_PANEL01"
       ),
       year(date_start) == 2025L
-    ) %>% 
+    ) %>%
     make_obj_b()
   stopifnot(all(obj_b1$grts_address %in% obj_b3$grts_address))
   stopifnot(all(obj_b3$grts_address %in% obj_b1$grts_address))
-  
+
   rm(obj_a, obj_b, obj_a_n, obj_b_n, obj_b1, obj_b2, obj_b3)
 }
 ```
@@ -868,13 +868,13 @@ See `compartment_paneldesign_fags` to find the connection with FAGs.
 if (params$update_spatiotemp_gsheet) {
   gs_id <- "1vqxRmWVuc39HCF15K6xZhJEa5ls7Z7uF_xsEr_swQdk"
   ws_name_prefix <- str_c(str_flatten(modules$code_short), " | ")
-  
+
   compartment_paneldesign_fags %>%
     write_sheet(
       ss = gs_id,
       sheet = str_c(ws_name_prefix, "compartment_paneldesign_FAGs")
     )
-  
+
   scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
     distinct(scheme, module_combo_code, panel_set, generic_panels) %>%
     unnest(generic_panels) %>%
@@ -897,7 +897,7 @@ if (params$update_spatiotemp_gsheet) {
       ss = gs_id,
       sheet = str_c(ws_name_prefix, "generic_panel_relations")
     )
-  
+
   scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
     # don't include ADHOC FAGs:
     filter(notation_paneldesign != "1panelof1m(PUR)") %>%
@@ -941,15 +941,15 @@ The targetpanel notation requires a condition to be met in order to ignore the s
 This object comes closest to the notion of **spatiotemporal samples**.
 
 ```{r}
-scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <- 
-  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>% 
-  unnest(fags) %>% 
+scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <-
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+  unnest(fags) %>%
   semi_join(
     scheme_moco_ps_spsubset_targetfag,
     join_by(scheme, module_combo_code, panel_set, in_aquatic_subset, field_activity_group)
-  ) %>% 
-  nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>% 
-  relocate(fags, .after = spsubset_needed_for_panel) %>% 
+  ) %>%
+  nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>%
+  relocate(fags, .after = spsubset_needed_for_panel) %>%
   (
     # check that spatial subset can be sensibly ignored in the targetpanel label
     function(df) {
@@ -957,13 +957,14 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <-
         distinct(scheme, module_combo_code, panel_set, notation_paneldesign) %>%
         count(scheme, module_combo_code, panel_set) %>%
         filter(n > 1) %>%
-        {nrow(.) == 0} %>%
+        {
+          nrow(.) == 0
+        } %>%
         stopifnot()
       df
-    }
-  ) %>% 
-  mutate(targetpanel = str_match(panel, "_(PANEL\\d\\d)$")[, 2] %>% factor()) %>% 
-  relocate(targetpanel, .after = panel) %>% 
+    }) %>%
+  mutate(targetpanel = str_match(panel, "_(PANEL\\d\\d)$")[, 2] %>% factor()) %>%
+  relocate(targetpanel, .after = panel) %>%
   add_assessment_data()
 ```
 
@@ -971,12 +972,12 @@ Writing a csv file with a few (terrestrial) groundwater scheme examples of schem
 
 ```{r}
 set.seed(24586)
-scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>% 
+scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
   filter(
     year(date_start) < year_origin + 12,
     !in_aquatic_subset,
     str_detect(scheme, "^GW")
-  ) %>% 
+  ) %>%
   unite(
     scheme_moco_ps_sppost_stratum,
     scheme,
@@ -984,10 +985,10 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
     panel_set,
     sp_poststratum,
     stratum
-  ) %>% 
-  # filter(between(n(), 60, 600), .by = scheme_moco_ps_sppost_stratum) %>% 
-  nest(.by = scheme_moco_ps_sppost_stratum) %>% 
-  # slice_sample(n = 15) %>% 
+  ) %>%
+  # filter(between(n(), 60, 600), .by = scheme_moco_ps_sppost_stratum) %>%
+  nest(.by = scheme_moco_ps_sppost_stratum) %>%
+  # slice_sample(n = 15) %>%
   filter(
     str_detect(
       scheme_moco_ps_sppost_stratum,
@@ -1009,33 +1010,33 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
         "GW_05\\.2_panfl_pan5_1_Flanders.*_6430_mr"
       )
     )
-  ) %>% 
-  unnest(data) %>% 
+  ) %>%
+  unnest(data) %>%
   select(
     scheme_moco_ps_sppost_stratum,
     date_start,
     targetpanel,
     grts_address
-  ) %>% 
-  mutate(dummy = "X") %>% 
+  ) %>%
+  mutate(dummy = "X") %>%
   pivot_wider(
     names_from = date_start,
     values_from = dummy,
     names_sort = TRUE,
     values_fill = ""
-  ) %>% 
+  ) %>%
   arrange(
     scheme_moco_ps_sppost_stratum,
     targetpanel,
     grts_address
-  ) %>% 
+  ) %>%
   write_csv(file.path(datapath, "text/results/extract_spatiotempsam.csv"))
 ```
 
 Writing the spatiotemporal samples as a (git-ignored) file, in order to manage its versions in central places such as the 'n2khab-sample-admin' repository.
 
 ```{r}
-scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>% 
+scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
   select(
     scheme,
     module_combo_code,
@@ -1047,7 +1048,7 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
     stratum,
     grts_address,
     grts_address_final
-  ) %>% 
+  ) %>%
   write_vc(
     file = "spatiotemporal_samples",
     root = samplespath,

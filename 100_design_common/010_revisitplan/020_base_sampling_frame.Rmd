@@ -114,22 +114,22 @@ hmt_occ <-
   semi_join(n2khab_types_expanded, by = "type")
 # manually fixing the type of two polygons in habitatmap_terr_2023_v1:
 if ("habitatmap_terr_2023_v1" %in% versions_required) {
-  hmt_occ <- 
-    hmt_occ %>% 
+  hmt_occ <-
+    hmt_occ %>%
     mutate(
       source = case_when(
-        polygon_id == "184091_v2023" & type == "2190_overig" ~ 
+        polygon_id == "184091_v2023" & type == "2190_overig" ~
           "habitatmap_stdized + manual fix",
-        polygon_id == "533826_v2023" & type == "2310" ~ 
+        polygon_id == "533826_v2023" & type == "2310" ~
           "habitatmap_stdized + manual fix",
         .default = source
-      ) %>% 
+      ) %>%
         factor(),
       type = case_when(
         polygon_id == "184091_v2023" & type == "2190_overig" ~ "9120",
         polygon_id == "533826_v2023" & type == "2310" ~ "2130",
         .default = type
-      ) %>% 
+      ) %>%
         factor(levels = typelev)
     )
 }
@@ -306,7 +306,7 @@ if (curl::has_internet()) {
     path2 <- file.path(tempdir(), "watersurfaces_refpoints.yml")
     drive_download(as_id("1Bb07utgZOyMK65TdR64-4VjGP7T6GqMa"), path = path2)
   })
-  points_watsurf <- 
+  points_watsurf <-
     read_vc("watersurfaces_refpoints", tempdir()) %>%
     as_tibble()
   invisible(file.remove(path, path2))
@@ -320,11 +320,11 @@ if (curl::has_internet()) {
     "n2khab-samplingframes/data/watersurfaces"
   )
   stopifnot(dir.exists(mhq_ssfws_datapath))
-  points_watsurf <- 
+  points_watsurf <-
     read_vc("watersurfaces_refpoints", root = mhq_ssfws_datapath) %>%
     as_tibble()
 }
-points_watsurf <- 
+points_watsurf <-
   points_watsurf %>%
   select(polygon_id, x, y) %>%
   st_as_sf(coords = c("x", "y"), crs = 31370)
@@ -640,7 +640,7 @@ hmt_pol_stratum_grts_cellcenter <-
   select(polygon_id, stratum = type) %>%
   mutate(
     stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
-  ) %>% 
+  ) %>%
   inner_join(
     hmt_pol_grts_cellcenter,
     by = "polygon_id",
@@ -656,7 +656,7 @@ hmt_pol_stratum_grts_cell <-
   select(polygon_id, stratum = type) %>%
   mutate(
     stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
-  ) %>% 
+  ) %>%
   inner_join(
     hmt_pol_grts_cell,
     by = "polygon_id",
@@ -688,8 +688,8 @@ Check that no empty GRTS addresses occur:
 We also stitch `hmt_pol_stratum_grts_cellcenter` and `hmt_pol_stratum_grts_cell` together; the resulting data frame will be needed in generating GRTS addresses for local replacements.
 
 ```{r}
-hmt_pol_stratum_grts_cell_all_n2khab <- 
-  bind_rows(hmt_pol_stratum_grts_cellcenter, hmt_pol_stratum_grts_cell) %>% 
+hmt_pol_stratum_grts_cell_all_n2khab <-
+  bind_rows(hmt_pol_stratum_grts_cellcenter, hmt_pol_stratum_grts_cell) %>%
   # following filter should be unneeded after resolving
   # https://github.com/inbo/n2khab-preprocessing/issues/45:
   filter(!is.na(grts_address))
@@ -700,16 +700,16 @@ hmt_pol_stratum_grts_cell_all_n2khab <-
 ```{r}
 stratum_grts_n2khab <-
   stratum_grts_non_cell_n2khab %>%
-  bind_rows(stratum_grts_cell_all_n2khab) %>% 
+  bind_rows(stratum_grts_cell_all_n2khab) %>%
   mutate(
     typelevel_certain = NA,
     assessed_in_field = FALSE,
     assessment_date = NA_Date_,
     inaccessible = factor(NA, levels = c("short term", "long term")),
     replaced_by = NA_integer_,
-    replacement_for = NA_integer_ 
-  ) %>% 
-  relocate(typelevel_certain, .after = stratum) %>% 
+    replacement_for = NA_integer_
+  ) %>%
+  relocate(typelevel_certain, .after = stratum) %>%
   relocate(assessed_in_field, .after = grts_address)
 ```
 
@@ -763,7 +763,7 @@ if (params$update_raw_textdata) {
     dirname(gitroot),
     "n2khab-sample-admin/data/mhq_watersurfaces/rapportage2025"
   )
-  mhq_data_available <- 
+  mhq_data_available <-
     dir.exists(mhq_terr_datapath) && dir.exists(mhq_watersurfaces_datapath)
   if (!mhq_data_available) {
     stop(
@@ -787,7 +787,7 @@ if (params$update_raw_textdata) {
       files,
       file.path(datapath, "text/raw/mhq_assessments"),
       overwrite = TRUE
-    ) %>% 
+    ) %>%
       invisible()
   }
 }
@@ -799,21 +799,21 @@ Reading and preprocessing the local files.
 mhq_assessments_datapath <- file.path(datapath, "text/raw/mhq_assessments")
 mhq_terr_popunits <-
   read_vc("mhq_terr_popunits", root = mhq_assessments_datapath) %>%
-  as_tibble() %>% 
+  as_tibble() %>%
   mutate(
     type = factor(type, levels = levels(n2khab_types$type)),
     source = factor(source),
     across(where(is.numeric), as.integer)
-  ) %>% 
-  select(-sac, -phab, -polygon_id) %>% 
+  ) %>%
+  select(-sac, -phab, -polygon_id) %>%
   rename(
     grts_address = grts_ranking,
     grts_address_drawn = grts_ranking_draw
   )
 mhq_terr_refpoints <-
   read_vc("mhq_terr_refpoints", root = mhq_assessments_datapath) %>%
-  as_tibble() %>% 
-  distinct() %>% 
+  as_tibble() %>%
+  distinct() %>%
   select(
     point_code,
     grts_address = grts_ranking,
@@ -821,9 +821,9 @@ mhq_terr_refpoints <-
   )
 mhq_terr_assessments <-
   read_vc("mhq_terr_assessments", root = mhq_assessments_datapath) %>%
-  as_tibble() %>% 
+  as_tibble() %>%
   filter(assessment_date == max(assessment_date), .by = point_code) %>%
-  select(point_code, assessment_date, type, is_present, inaccessible) %>% 
+  select(point_code, assessment_date, type, is_present, inaccessible) %>%
   mutate(
     inaccessible = factor(inaccessible, levels = c("short term", "long term"))
   )
@@ -842,57 +842,57 @@ mhq_watersurfaces_populationunits <-
 Determining a list of valid terrestrial population units to update the base sampling frame.
 
 ```{r}
-valid_extra_popunits_cell_all_n2khab <- 
-  mhq_terr_popunits %>% 
+valid_extra_popunits_cell_all_n2khab <-
+  mhq_terr_popunits %>%
   # only consider assessment data:
-  filter(str_detect(source, "assessment")) %>% 
+  filter(str_detect(source, "assessment")) %>%
   # expansion of main types to subtypes is needed for compatibility with MNE/MHQ
   # target populations; those main types are subsequently removed. We don't
   # expand subtypes to main types (that is only relevant in joining with some
   # geospatial layers)
-  expand_types(mark = TRUE) %>% 
+  expand_types(mark = TRUE) %>%
   inner_join(
-    read_types() %>% 
+    read_types() %>%
       select(type, typelevel, hydr_class),
     join_by(type),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
-  ) %>% 
+  ) %>%
   filter(
     !(has_been_expanded & typelevel == "main_type"),
     !added_by_expansion | (added_by_expansion & typelevel == "subtype")
-  ) %>% 
-  select(-typelevel, -has_been_expanded, -source) %>% 
+  ) %>%
+  select(-typelevel, -has_been_expanded, -source) %>%
   # at the time of coding, 2 records from lhs needed to be dropped because
   # they are not cell-based types (but aquatic)
-  filter(!(hydr_class %in% c("HC3"))) %>% 
+  filter(!(hydr_class %in% c("HC3"))) %>%
   # adding grts_join_method (either cell or cell_center)
   inner_join(
-    n2khab_types_expanded_properties %>% 
-      select(type, grts_join_method) %>% 
+    n2khab_types_expanded_properties %>%
+      select(type, grts_join_method) %>%
       filter(str_detect(grts_join_method, "cell")),
     join_by(type),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
-  ) %>% 
+  ) %>%
   # include whether a location is assessed at the cell center
   inner_join(
-    mhq_terr_refpoints %>% 
+    mhq_terr_refpoints %>%
       select(point_code, is_cell_center),
     join_by(point_code),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
   left_join(
-    mhq_terr_assessments %>% 
-      filter(is_present) %>% 
+    mhq_terr_assessments %>%
+      filter(is_present) %>%
       select(-is_present),
     join_by(point_code, type),
     relationship = "one-to-one",
     unmatched = "drop"
-  ) %>% 
-  select(-point_code, -hydr_class) %>% 
-  mutate(assessed_in_field = TRUE) %>% 
+  ) %>%
+  select(-point_code, -hydr_class) %>%
+  mutate(assessed_in_field = TRUE) %>%
   filter(
     # don't include legacy sites except if grts_join_method is cell (also, note
     # that all 'bosinventarisatie' sites are considered legacy sites and are
@@ -903,15 +903,15 @@ valid_extra_popunits_cell_all_n2khab <-
     # center
     grts_join_method == "cell_center" & is_cell_center |
       grts_join_method == "cell"
-  ) %>% 
+  ) %>%
   # since the base sampling frame uses strata, not types, we must align
-  rename(stratum = type) %>% 
+  rename(stratum = type) %>%
   mutate(
     typelevel_certain = !added_by_expansion,
     stratum = factor(stratum, levels = levels(n2khab_strata$stratum))
-  ) %>% 
-  select(-added_by_expansion, -grts_join_method, -legacy_site, -is_cell_center) %>% 
-  relocate(grts_address_drawn) %>% 
+  ) %>%
+  select(-added_by_expansion, -grts_join_method, -legacy_site, -is_cell_center) %>%
+  relocate(grts_address_drawn) %>%
   relocate(
     assessed_in_field,
     assessment_date,
@@ -926,20 +926,20 @@ Checking that non-replaced GRTS addresses for cell-center types are unique.
 
 ```{r}
 stopifnot(
-  valid_extra_popunits_cell_all_n2khab %>% 
+  valid_extra_popunits_cell_all_n2khab %>%
     inner_join(
-      n2khab_types_expanded_properties %>% 
+      n2khab_types_expanded_properties %>%
         select(type, grts_join_method),
       join_by(stratum == type),
       relationship = "many-to-one",
       unmatched = c("error", "drop")
-    ) %>% 
+    ) %>%
     filter(
       grts_address_drawn == grts_address,
       grts_join_method == "cell_center"
-    ) %>% 
-    count(grts_address_drawn) %>% 
-    filter(n > 1) %>% 
+    ) %>%
+    count(grts_address_drawn) %>%
+    filter(n > 1) %>%
     nrow() == 0
 )
 ```
@@ -948,12 +948,12 @@ For each _drawn_ GRTS address x type, we expect only one occurrence.
 Listing violations for further enquiry.
 
 ```{r paged.print = FALSE}
-grtsaddrdrawn_duplicates_in_stratum <- 
-  valid_extra_popunits_cell_all_n2khab %>% 
-  count(grts_address_drawn, stratum) %>% 
-  filter(n > 1) %>% 
+grtsaddrdrawn_duplicates_in_stratum <-
+  valid_extra_popunits_cell_all_n2khab %>%
+  count(grts_address_drawn, stratum) %>%
+  filter(n > 1) %>%
   semi_join(
-    valid_extra_popunits_cell_all_n2khab, 
+    valid_extra_popunits_cell_all_n2khab,
     .,
     join_by(grts_address_drawn, stratum)
   )
@@ -965,13 +965,13 @@ Applying a temporary fix.
 <!-- XXXXXX To be revisited! -->
 
 ```{r eval = nrow(grtsaddrdrawn_duplicates_in_stratum) > 0}
-valid_extra_popunits_cell_all_n2khab <- 
-  valid_extra_popunits_cell_all_n2khab %>% 
+valid_extra_popunits_cell_all_n2khab <-
+  valid_extra_popunits_cell_all_n2khab %>%
   # from the duplicates, only keep the one with the highest GRTS address
   anti_join(
-    grtsaddrdrawn_duplicates_in_stratum %>% 
+    grtsaddrdrawn_duplicates_in_stratum %>%
       filter(
-        grts_address != max(grts_address), 
+        grts_address != max(grts_address),
         .by = c(grts_address_drawn, stratum)
       ),
     join_by(grts_address_drawn, grts_address, stratum)
@@ -982,15 +982,15 @@ For each _real_ GRTS address x type, we expect only one occurrence.
 Listing violations for further enquiry.
 
 ```{r paged.print = FALSE}
-grtsaddr_duplicates_in_stratum <- 
-  valid_extra_popunits_cell_all_n2khab %>% 
-  count(grts_address, stratum) %>% 
-  filter(n > 1) %>% 
+grtsaddr_duplicates_in_stratum <-
+  valid_extra_popunits_cell_all_n2khab %>%
+  count(grts_address, stratum) %>%
+  filter(n > 1) %>%
   semi_join(
-    valid_extra_popunits_cell_all_n2khab, 
+    valid_extra_popunits_cell_all_n2khab,
     .,
     join_by(grts_address, stratum)
-  ) %>% 
+  ) %>%
   arrange(grts_address)
 grtsaddr_duplicates_in_stratum
 ```
@@ -1000,14 +1000,14 @@ Applying a temporary fix.
 <!-- XXXXXX To be revisited! -->
 
 ```{r eval = nrow(grtsaddr_duplicates_in_stratum) > 0}
-valid_extra_popunits_cell_all_n2khab <- 
-  valid_extra_popunits_cell_all_n2khab %>% 
+valid_extra_popunits_cell_all_n2khab <-
+  valid_extra_popunits_cell_all_n2khab %>%
   # don't include the duplicates with grts_address != grts_address_drawn; we
   # don't consider them as an actual local replacement
   anti_join(
-    grtsaddr_duplicates_in_stratum %>% 
+    grtsaddr_duplicates_in_stratum %>%
       filter(
-        grts_address != grts_address_drawn, 
+        grts_address != grts_address_drawn,
         .by = c(grts_address_drawn, stratum)
       ),
     join_by(grts_address_drawn, grts_address, stratum)
@@ -1019,9 +1019,9 @@ Verifying that all strata can be found in `n2khab_strata_expanded`.
 ```{r}
 stopifnot(
   valid_extra_popunits_cell_all_n2khab %>%
-  distinct(stratum) %>%
-  anti_join(n2khab_strata_expanded, join_by(stratum)) %>%
-  nrow() == 0
+    distinct(stratum) %>%
+    anti_join(n2khab_strata_expanded, join_by(stratum)) %>%
+    nrow() == 0
 )
 ```
 
@@ -1038,26 +1038,26 @@ We expect that all GRTS addresses, both in `grts_address_drawn` and `grts_addres
 
 ```{r}
 stopifnot(
-  valid_extra_popunits_cell_all_n2khab %>% 
-    distinct(grts_address) %>% 
-    pull(grts_address) %>% 
+  valid_extra_popunits_cell_all_n2khab %>%
+    distinct(grts_address) %>%
+    pull(grts_address) %>%
     all(. %in% values(grts_mh))
 )
 ```
 
 ```{r}
-valid_extra_popunits_cell_all_n2khab %>% 
-  distinct(grts_address_drawn) %>% 
-  pull(grts_address_drawn) %>% 
+valid_extra_popunits_cell_all_n2khab %>%
+  distinct(grts_address_drawn) %>%
+  pull(grts_address_drawn) %>%
   all(. %in% values(grts_mh))
 ```
 
 Listing violations for `grts_address_drawn`:
 
 ```{r}
-grtsaddrdrawn_invalid <- 
-  valid_extra_popunits_cell_all_n2khab %>% 
-  distinct(grts_address_drawn) %>% 
+grtsaddrdrawn_invalid <-
+  valid_extra_popunits_cell_all_n2khab %>%
+  distinct(grts_address_drawn) %>%
   filter(!grts_address_drawn %in% values(grts_mh))
 grtsaddrdrawn_invalid
 ```
@@ -1067,17 +1067,17 @@ Applying a temporary fix.
 <!-- XXXXXX To be revisited! -->
 
 ```{r eval = nrow(grtsaddrdrawn_invalid) > 0}
-valid_extra_popunits_cell_all_n2khab <- 
-  valid_extra_popunits_cell_all_n2khab %>% 
+valid_extra_popunits_cell_all_n2khab <-
+  valid_extra_popunits_cell_all_n2khab %>%
   mutate(
-    drawn_invalid = 
+    drawn_invalid =
       grts_address_drawn %in% grtsaddrdrawn_invalid$grts_address_drawn,
     grts_address_drawn = ifelse(
       drawn_invalid,
-      NA_integer_, 
+      NA_integer_,
       grts_address_drawn
     )
-  ) %>% 
+  ) %>%
   select(-drawn_invalid)
 ```
 
@@ -1089,8 +1089,8 @@ Applying a temporary fix for those cases: we set these values as missing.
 
 ```{r}
 existing_grts_addresses_suspected <- c(1, 22, 54, 73, 82, 86, 105)
-valid_extra_popunits_cell_all_n2khab <- 
-  valid_extra_popunits_cell_all_n2khab %>% 
+valid_extra_popunits_cell_all_n2khab <-
+  valid_extra_popunits_cell_all_n2khab %>%
   mutate(grts_address_drawn = ifelse(
     grts_address_drawn %in% existing_grts_addresses_suspected,
     NA_integer_,
@@ -1108,40 +1108,40 @@ Creating a tidy object with a single GRTS address column, plus indication whethe
 Depending on the purpose, one will need to filter the sampling frame one way or another, using this replacement information.
 
 ```{r}
-valid_extra_popunits_cell_all_n2khab_tidy <- 
-  valid_extra_popunits_cell_all_n2khab %>% 
+valid_extra_popunits_cell_all_n2khab_tidy <-
+  valid_extra_popunits_cell_all_n2khab %>%
   mutate(
-    replaced_by = 
+    replaced_by =
       case_when(
         is.na(grts_address_drawn) | is.na(grts_address) ~ NA_integer_,
         grts_address_drawn != grts_address ~ grts_address,
         .default = NA_integer_
-        ),
-    replacement_for = 
+      ),
+    replacement_for =
       case_when(
         is.na(grts_address_drawn) | is.na(grts_address) ~ NA_integer_,
         grts_address_drawn != grts_address ~ grts_address_drawn,
         .default = NA_integer_
       )
-  ) %>% 
+  ) %>%
   (function(df) {
     bind_rows(
       # adding the GRTS addresses that were drawn
-      df %>% 
+      df %>%
         filter(
           !is.na(grts_address_drawn),
           grts_address_drawn != grts_address
-        ) %>% 
-        select(-grts_address) %>% 
-        rename(grts_address = grts_address_drawn) %>% 
-        relocate(stratum, typelevel_certain) %>% 
+        ) %>%
+        select(-grts_address) %>%
+        rename(grts_address = grts_address_drawn) %>%
+        relocate(stratum, typelevel_certain) %>%
         mutate(replacement_for = NA_integer_),
-      df %>% 
-        select(-grts_address_drawn) %>% 
-        relocate(stratum, typelevel_certain) %>% 
+      df %>%
+        select(-grts_address_drawn) %>%
+        relocate(stratum, typelevel_certain) %>%
         mutate(replaced_by = NA_integer_)
     )
-  }) %>% 
+  }) %>%
   arrange(stratum, grts_address)
 ```
 
@@ -1149,8 +1149,8 @@ Checking that combinations of GRTS address x type are unique.
 
 ```{r}
 stopifnot(
-  valid_extra_popunits_cell_all_n2khab_tidy %>% 
-    distinct(stratum, grts_address) %>% 
+  valid_extra_popunits_cell_all_n2khab_tidy %>%
+    distinct(stratum, grts_address) %>%
     nrow() == nrow(valid_extra_popunits_cell_all_n2khab_tidy)
 )
 ```
@@ -1169,15 +1169,15 @@ As a precaution, we only consider the assessed absences that are not older than:
 In order to align with section \@ref(tidy), we don't include the locations that got a replacement, even though in many (but not all) cases those locations are recorded as absences for the considered type.
 
 ```{r}
-absent_popunits_cell_all_n2khab <- 
-  mhq_terr_assessments %>% 
+absent_popunits_cell_all_n2khab <-
+  mhq_terr_assessments %>%
   mutate(
     oldest_allowed_year = ifelse(
       str_detect(type, forest_types_regex),
       year(today()) - 12,
       year(today()) - 6
     )
-  ) %>% 
+  ) %>%
   # we DON'T yet filter by `!is_present` because in some cases, the point_code
   # has multiple values for the same GRTS address, so this must be filtered and
   # summarized at the GRTS address level
@@ -1185,81 +1185,81 @@ absent_popunits_cell_all_n2khab <-
     !is.na(type),
     !is.na(is_present),
     year(assessment_date) >= oldest_allowed_year
-  ) %>% 
-  select(point_code, type, is_present, assessment_date) %>% 
+  ) %>%
+  select(point_code, type, is_present, assessment_date) %>%
   # expansion of main types to subtypes is needed for compatibility with MNE/MHQ
   # target populations; those main types are subsequently removed. With regard
   # to absences, the concept is simple: if a main type is assessed as absent, it
   # is safe to replace this by 'all its subtypes are absent'. We don't expand
   # subtypes to main types (that is only relevant in joining with some
   # geospatial layers)
-  expand_types(mark = TRUE) %>% 
+  expand_types(mark = TRUE) %>%
   inner_join(
-    read_types() %>% 
+    read_types() %>%
       select(type, typelevel, hydr_class),
     join_by(type),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
-  ) %>% 
+  ) %>%
   # at the time of writing, the net operation is just the removal of main types,
   # since their subtypes were already present:
   filter(
     !(has_been_expanded & typelevel == "main_type"),
     !added_by_expansion | (added_by_expansion & typelevel == "subtype")
-  ) %>% 
-  select(-typelevel, -has_been_expanded, -added_by_expansion) %>% 
+  ) %>%
+  select(-typelevel, -has_been_expanded, -added_by_expansion) %>%
   # add grts_address & include whether a location is assessed at the cell center
   inner_join(
     mhq_terr_refpoints,
     join_by(point_code),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
-  ) %>% 
+  ) %>%
   # some aquatic types seemed to be included:
-  filter(hydr_class != "HC3") %>% 
-  select(-hydr_class) %>% 
+  filter(hydr_class != "HC3") %>%
+  select(-hydr_class) %>%
   inner_join(
-    n2khab_types_expanded_properties %>% 
-      select(type, grts_join_method) %>% 
+    n2khab_types_expanded_properties %>%
+      select(type, grts_join_method) %>%
       filter(str_detect(grts_join_method, "cell")),
     join_by(type),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
-  ) %>% 
-  select(-point_code) %>% 
+  ) %>%
+  select(-point_code) %>%
   # require that cell_center-joined types have an assessment at the cell
   # center in order to accept this as an absence
   filter(
     grts_join_method == "cell_center" & is_cell_center |
       grts_join_method == "cell"
-  ) %>% 
-  select(-grts_join_method, -is_cell_center) %>% 
+  ) %>%
+  select(-grts_join_method, -is_cell_center) %>%
   # since the base sampling frame uses strata, not types, we must align
-  rename(stratum = type) %>% 
+  rename(stratum = type) %>%
   # we can only honour stratum absences if these apply the same (main type /
   # subtype) level as in the base sampling frame. At the time of coding, and due
   # to the expansion operation above, this caused no further change.
   semi_join(
     n2khab_strata,
     join_by(stratum)
-  ) %>% 
+  ) %>%
   # since multiple point_codes can occur within one type x GRTS address, we must
   # resolve this to a single outcome
-  slice_max(assessment_date, by = c(stratum, grts_address)) %>% 
-  select(-assessment_date) %>% 
+  slice_max(assessment_date, by = c(stratum, grts_address)) %>%
+  select(-assessment_date) %>%
   # to avoid potential multiple values of is_present at the same assessment date
   summarize(
     is_present = any(is_present),
     .by = c(stratum, grts_address)
-  ) %>% 
+  ) %>%
   # only keep the absences
-  filter(!is_present) %>% 
-  select(-is_present) %>% 
-  mutate(stratum = factor(stratum, levels = levels(n2khab_strata$stratum))) %>% 
+  filter(!is_present) %>%
+  select(-is_present) %>%
+  mutate(stratum = factor(stratum, levels = levels(n2khab_strata$stratum))) %>%
   # don't regard replaced GRTS addresses as absences to be dropped from the
   # sampling frame; otherwise these cannot be sampled
   anti_join(
-    valid_extra_popunits_cell_all_n2khab_tidy %>% 
+    valid_extra_popunits_cell_all_n2khab_tidy %>%
       filter(!is.na(replaced_by)),
     join_by(stratum, grts_address)
   )
@@ -1268,12 +1268,12 @@ absent_popunits_cell_all_n2khab <-
 Checking that absences are not present in `valid_extra_popunits_cell_all_n2khab`.
 
 ```{r}
-present_absences_cell_all <- 
-  absent_popunits_cell_all_n2khab %>% 
+present_absences_cell_all <-
+  absent_popunits_cell_all_n2khab %>%
   semi_join(
     valid_extra_popunits_cell_all_n2khab,
     join_by(grts_address, stratum)
-  ) %>% 
+  ) %>%
   arrange(stratum, grts_address)
 stopifnot(present_absences_cell_all %>% nrow() == 0)
 ```
@@ -1284,16 +1284,16 @@ stopifnot(present_absences_cell_all %>% nrow() == 0)
 Updating the base sampling frame `stratum_grts_n2khab` by substituting with cells from `valid_extra_popunits_cell_all_n2khab_tidy`, and dropping those that have been assessed as absences in `absent_popunits_cell_all_n2khab`.
 
 ```{r}
-stratum_grts_n2khab <- 
+stratum_grts_n2khab <-
   bind_rows(
     valid_extra_popunits_cell_all_n2khab_tidy,
-    stratum_grts_n2khab %>% 
+    stratum_grts_n2khab %>%
       anti_join(
         valid_extra_popunits_cell_all_n2khab_tidy,
         join_by(stratum, grts_address)
       )
-  ) %>% 
-  anti_join(absent_popunits_cell_all_n2khab, join_by(stratum, grts_address)) %>% 
+  ) %>%
+  anti_join(absent_popunits_cell_all_n2khab, join_by(stratum, grts_address)) %>%
   arrange(stratum, grts_address)
 ```
 
@@ -1301,8 +1301,8 @@ Checking that the essential columns provide unique rows.
 
 ```{r}
 stopifnot(
-  stratum_grts_n2khab %>% 
-    distinct(stratum, grts_address) %>% 
+  stratum_grts_n2khab %>%
+    distinct(stratum, grts_address) %>%
     nrow() == nrow(stratum_grts_n2khab)
 )
 ```
@@ -1316,7 +1316,7 @@ Writing the base sampling frame as a parquet file, in order to always have a fil
 ```{r}
 bsf_path <- file.path(datapath, "binary/results/base_sampling_frame")
 # write dataset
-stratum_grts_n2khab %>% 
+stratum_grts_n2khab %>%
   arrow::write_dataset(
     path = bsf_path,
     basename_template = "base_sampling_frame_{i}.parquet"
@@ -1346,7 +1346,7 @@ for (name in c(
   "stratum_grts_cellcenter_n2khab",
   "stratum_grts_cell_n2khab",
   "stratum_grts_cell_all_n2khab",
-  "hmt_pol_stratum_grts_cell_all_n2khab", 
+  "hmt_pol_stratum_grts_cell_all_n2khab",
   "valid_extra_popunits_cell_all_n2khab_tidy",
   "absent_popunits_cell_all_n2khab",
   "stratum_grts_n2khab"
