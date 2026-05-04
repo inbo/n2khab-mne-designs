@@ -270,24 +270,26 @@ Determining the sampling frame specific population size per domain for strata wi
 
 ```{r}
 ssf_domain_stratum_cellcenter_nunits <-
-  if (params$phab_correct) {
-    sp_samplingframe_domain %>%
-      unnest(sampling_frame_domain) %>%
-      semi_join(
-        n2khab_types_expanded_properties %>%
-          filter(sample_support_code == "cell_conditioned_on_center"),
-        by = c(stratum = "type")
-      ) %>%
-      count(sampling_frame_id, domain, stratum, name = "nunits")
-  } else {
-    stratum_grts_phab_cellcenter_n2khab_collapsed %>%
-      inner_join(
-        sp_samplingframe_domain %>% unnest(sampling_frame_domain),
-        by = c("stratum", "grts_address")
-      ) %>%
-      summarize(nunits = sum(phab) / 100, .by = c(sampling_frame_id, domain, stratum))
+  {
+    if (params$phab_correct) {
+      sp_samplingframe_domain %>%
+        unnest(sampling_frame_domain) %>%
+        semi_join(
+          n2khab_types_expanded_properties %>%
+            filter(sample_support_code == "cell_conditioned_on_center"),
+          by = c(stratum = "type")
+        ) %>%
+        count(sampling_frame_id, domain, stratum, name = "nunits")
+    } else {
+      stratum_grts_phab_cellcenter_n2khab_collapsed %>%
+        inner_join(
+          sp_samplingframe_domain %>% unnest(sampling_frame_domain),
+          by = c("stratum", "grts_address")
+        ) %>%
+        summarize(nunits = sum(phab) / 100, .by = c(sampling_frame_id, domain, stratum))
+    }
   } %>%
-    arrange(pick(-nunits))
+  arrange(pick(-nunits))
 ```
 
 Determining the sampling frame specific population size per domain for strata with cell-based units.
