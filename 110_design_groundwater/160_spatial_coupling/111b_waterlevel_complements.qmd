@@ -362,12 +362,18 @@ Again, with a narrower filter on water distance.
 
 
 ```{r water-distribution-25m}
-water_threshold <- units::set_units(25, "m")
+water_threshold <- units::set_units(30, "m")
 
 diff_meta %>%
-  select(wata_min_dist1) %>%
-  mutate(filltered = wata_min_dist1 >= water_threshold) %>% 
-  ggplot(aes(wata_min_dist1, fill = filltered, color = filltered)) +
+  select(wata_min_dist1, wata_min_dist2) %>%
+  mutate(
+    wata_min_dist_both = pmin(wata_min_dist1, wata_min_dist2)
+  ) %>%
+  select(wata_min_dist_both) %>% 
+  mutate(
+    filltered = wata_min_dist_both >= water_threshold
+  ) %>% 
+  ggplot(aes(wata_min_dist_both, fill = filltered, color = filltered)) +
   geom_histogram(bins = 256) +
   theme_bw()
     
@@ -376,9 +382,11 @@ diff_meta %>%
 
 ```{r water-filter-25m}
 somediff_meta <- diff_meta %>%
+  mutate(
+    wata_min_dist_both = pmin(wata_min_dist1, wata_min_dist2)
+  ) %>% 
   filter(
-    wata_min_dist1 >= water_threshold,
-    wata_min_dist2 >= water_threshold
+    wata_min_dist_both >= water_threshold
   )
 
 paste0(
