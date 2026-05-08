@@ -146,10 +146,11 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
 flanders_buffer <-
   read_admin_areas(dsn = "flanders") %>%
   st_buffer(40)
-# following function will be adapted to support the latest version of the data
-# source; for now use version habitatsprings_2020v2
 units_7220 <-
-  read_habitatsprings(units_7220 = TRUE) %>%
+  read_habitatsprings(
+    units_7220 = TRUE,
+    version = versions_required["habitatsprings"]
+  ) %>%
   .[flanders_buffer, ] %>%
   mutate(unit_id = as.character(unit_id)) %>%
   # replacing unit_id by the grts_address
