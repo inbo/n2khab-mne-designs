@@ -12,7 +12,7 @@
 renv::upgrade() # makes sure latest renv version is in use
 # populate or update renv project library with the package versions used
 renv::hydrate(update = "all")
-# renv::hydrate("yaml") # links a missing package in the renv project library
+# renv::hydrate("yaml", update = "all") # links a missing package in the renv project library
 renv::snapshot() # records packages with their versions in renv.lock
 # renv::record("yaml") # records a renv project library package in renv.lock
 if (file.exists(".Rprofile")) unlink(".Rprofile") # inactivate renv
