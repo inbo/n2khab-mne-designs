@@ -513,7 +513,18 @@ domain_stratum_non_cell_nunits <-
     units_non_cell_n2khab_grts,
     by = c("sample_support_code", "unit_id")
   ) %>%
-  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>%
+  inner_join(
+    domain_grts_n2khab,
+    join_by(grts_address),
+    relationship = "many-to-many",
+  # XXXX DEBUGGING NEEDED: unmatched = c("error", "drop") should be used but
+  # does not work; units are effectively dropped. Two potential sources of
+  # mismatch are 1) the loss of GRTS cells in grts_mh_n2khab when intersecting
+  # with domain Flanders (see domain_grts_n2khab); 2) the fact that cells from
+  # grts_mh_non_cell are missing in grts_mh_n2khab, which has been made with
+  # max() (at least true for address 63023401)
+    unmatched = c("drop", "drop")
+  ) %>%
   count(domain, stratum, name = "nunits")
 ```
 
@@ -529,6 +540,7 @@ domain_stratum_cellcenter_nunits_calculated <-
     stratum_grts_phab_cellcenter_n2khab_collapsed,
     join_by(grts_address),
     relationship = "many-to-many",
+    # XXXX SAME PROBLEM HERE AS IN PREVIOUS CHUNK
     unmatched = c("drop", "drop")
   ) %>%
   summarize(
@@ -544,6 +556,7 @@ domain_stratum_cellcenter_nunits <-
         stratum_grts_n2khab_phabcorrected_no_replacements,
         join_by(grts_address),
         relationship = "many-to-many",
+        # XXXX SAME PROBLEM HERE AS IN PREVIOUS CHUNK
         unmatched = c("drop", "drop")
       ) %>%
       semi_join(
@@ -603,7 +616,13 @@ Determining the population size per domain for strata with cell-based units.
 ```{r}
 domain_stratum_cell_nunits <-
   stratum_grts_cell_n2khab %>%
-  inner_join(domain_grts_n2khab, by = "grts_address", relationship = "many-to-many") %>%
+  inner_join(
+    domain_grts_n2khab,
+    join_by(grts_address),
+    relationship = "many-to-many",
+    # XXXX SAME PROBLEM HERE AS IN 'domain_stratum_non_cell_nunits' CHUNK
+    unmatched = c("drop", "drop")
+  ) %>%
   count(domain, stratum, name = "nunits")
 ```
 
