@@ -209,8 +209,10 @@ sp_samplingframe_domain <-
       ~ inner_join(
         .,
         domain_grts_n2khab,
-        by = "grts_address",
-        relationship = "many-to-many"
+        join_by(grts_address),
+        relationship = "many-to-many",
+        # XXXX SAME PROBLEM HERE AS IN 'domain_stratum_non_cell_nunits' CHUNK
+        unmatched = c("drop", "drop")
       ) %>%
         relocate(domain)
     ),
@@ -258,8 +260,10 @@ ssf_domain_stratum_non_cell_nunits <-
   ) %>%
   inner_join(
     sp_samplingframe_domain %>% unnest(sampling_frame_domain),
-    by = c("stratum", "grts_address"),
-    relationship = "many-to-many"
+    join_by(stratum, grts_address),
+    relationship = "many-to-many",
+    # XXXX SAME PROBLEM HERE AS IN 'domain_stratum_non_cell_nunits' CHUNK
+    unmatched = c("drop", "drop")
   ) %>%
   count(sampling_frame_id, domain, stratum, name = "nunits")
 ```
@@ -284,7 +288,12 @@ ssf_domain_stratum_cellcenter_nunits <-
       stratum_grts_phab_cellcenter_n2khab_collapsed %>%
         inner_join(
           sp_samplingframe_domain %>% unnest(sampling_frame_domain),
-          by = c("stratum", "grts_address")
+          join_by(stratum, grts_address),
+          relationship = "one-to-many",
+          # XXXX SIMILAR PROBLEM HERE AS IN 'domain_stratum_non_cell_nunits'
+          # CHUNK; here we should be able to use 'unmatched = c("drop",
+          # "error")', but some rows of y are not matched by x
+          unmatched = c("drop", "drop")
         ) %>%
         summarize(nunits = sum(phab) / 100, .by = c(sampling_frame_id, domain, stratum))
     }
