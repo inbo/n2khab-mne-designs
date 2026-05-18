@@ -11,6 +11,11 @@ spatiotemporal samples and FAG calendar are unaffected.
 Changes to results
 ------------------
 
+- A fix has been applied to the base sampling frame precursor
+  `stratum_grts_phab_cellcenter_n2khab_collapsed`, as it received a few
+  duplicate rows by accident. As a consequence of fixing this, some population
+  sizes (resulting from counts in the sampling frames) have received tiny
+  adjustments. However these changes did not affect the resulting samples.
 - A few more REP objects are included in the RData file. The most important 
   objects from the RData file are now documented by the
   {[mnedesigndata](https://inbo.github.io/mnedesigndata)} package.
