@@ -533,36 +533,51 @@ As a convenience for fieldwork planning, we will add the concerned occasions fro
 This is done in a very targeted way and it may have the assumption that some needed auxiliary FAGs were already executed that do not occur in this filtered old object (they can still be part of the new calendar at a later time).
 Taking the latter complication into account is considered part of the fieldwork planning itself, as this workflow concentrates on the current design.
 
-Loading specific objects from REP 0.14.0 in the global environment.
+Loading specific objects from older REP versions in the global environment.
 Their names have the version number as a suffix.
 
 ```{r}
-load_needed_objects_0.14.0 <- function(env_to = parent.env(environment())) {
+load_needed_objects <- function(
+  env_to = parent.env(environment()),
+  rep_version
+) {
+  env_from <- paste0("rep_", rep_version) %>%
+    str2lang() %>%
+    eval()
   assign(
-    "cal_0.14.0",
-    get("fag_stratum_grts_calendar", envir = rep_0.14.0),
+    paste0("cal_", rep_version),
+    get("fag_stratum_grts_calendar", envir = env_from),
     env_to
   )
   assign(
-    "sts_0.14.0",
+    paste0("sts_", rep_version),
     get(
       "scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar",
-      envir = rep_0.14.0
-    ),
+      envir = env_from
+    ) %>%
+      mutate(targetpanel = str_c("OLD", targetpanel)),
     env_to
   )
 }
 if (curl::has_internet()) {
   with_drive_quiet({
     rep_0.14.0_path <- file.path(tempdir(), "objects_panflpan5_0.14.0.RData")
+    rep_0.13.1_path <- file.path(tempdir(), "objects_panflpan5_0.13.1.RData")
     drive_download(
       as_id("10-QEVZfVfGyXNyDtI4qZQiB1_2fXcFvt"),
       path = rep_0.14.0_path
     )
+    drive_download(
+      as_id("1EB6cDPr5MX9v9uuJMXEtEkP0p2rI_QMH"),
+      path = rep_0.13.1_path
+    )
   })
   prepare_lazy_get(rep_0.14.0_path, "rep_0.14.0")
-  load_needed_objects_0.14.0()
+  prepare_lazy_get(rep_0.13.1_path, "rep_0.13.1")
+  load_needed_objects(rep_version = "0.14.0")
+  load_needed_objects(rep_version = "0.13.1")
   invisible(file.remove(rep_0.14.0_path))
+  invisible(file.remove(rep_0.13.1_path))
 } else {
   # Clumsy approach; needs maintenance. In the longer term, the management of
   # all this needs more centralization and rigidity.
@@ -570,45 +585,57 @@ if (curl::has_internet()) {
     datapath,
     "binary/results/objects_panflpan5_poc_0.14.0.RData"
   )
-  stopifnot(file.exists(rep_0.14.0_path))
+  rep_0.13.1_path <- file.path(
+    datapath,
+    "binary/results/objects_panflpan5_poc_0.13.1.RData"
+  )
+  stopifnot(file.exists(rep_0.14.0_path), file.exists(rep_0.13.1_path))
   prepare_lazy_get(rep_0.14.0_path, "rep_0.14.0")
-  load_needed_objects_0.14.0()
+  prepare_lazy_get(rep_0.13.1_path, "rep_0.13.1")
+  load_needed_objects(rep_version = "0.14.0")
+  load_needed_objects(rep_version = "0.13.1")
 }
 ```
 
-First creating  some helper objects.
-The first object filters the old spatiotemporal samples by the current spatial sampling units: although the old schedule will not be further updated, we don't allow spatial sampling units that are not present in the current workflow.
-Furthermore, the targetpanels of those spatiotemporal samples are prefixed with `"OLD"` so that a clear distinction is made between:
+The targetpanels of the old spatiotemporal samples are prefixed with `"OLD"` so that a clear distinction is made between:
 
-- these old targetpanels, which will only apply to 'imported' FAG occasions and the composition of which remain frozen;
+- these old targetpanels, which will only apply to 'imported' FAG occasions and the composition of which remains frozen;
 - the current targetpanels, which are directly linked to the location regardless of the location.
 Their composition can change in time due to the use of spare units, a change of spatial sampling frame and so on.
 
+First creating  some helper objects.
+
 ```{r}
-# making a data frame of units from rep_0.14.0 that is relevant to the current
-# calendar and that includes the "OLD" targetpanel column
-relevant_units_0.14.0 <-
+# units from rep_0.14.0 with the "OLD" targetpanel column
+units_0.14.0 <-
   sts_0.14.0 %>%
-  # filter according to current spatiotemporal sample
-  semi_join(
-    scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar,
-    join_by(
-      scheme,
-      module_combo_code,
-      panel_set,
-      in_aquatic_subset,
-      stratum,
-      grts_address
-    )
-  ) %>%
   distinct(
     scheme,
     module_combo_code,
     panel_set,
-    targetpanel = str_c("OLD", targetpanel),
+    targetpanel,
     stratum,
     grts_address
   )
+# EXTRA units from rep_0.13.1
+units_extra_0.13.1 <-
+  sts_0.13.1 %>%
+  distinct(
+    scheme,
+    module_combo_code,
+    panel_set,
+    targetpanel,
+    stratum,
+    grts_address
+  ) %>%
+  anti_join(
+    bind_rows(
+      sts_0.14.0,
+      scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar
+    ),
+    join_by(scheme, stratum, grts_address)
+  )
+
 # create helper object with first READDIVER occasion in new calendar
 first_diverreads_new <-
   fag_stratum_grts_calendar_result %>%
@@ -619,45 +646,59 @@ first_diverreads_new <-
   )
 ```
 
-Filtering the old FAG calendar to keep the occasions that we want to adopt, and add the old targetpanel label.
+Filtering the old FAG calendars and adding the old targetpanel label.
 
 ```{r}
-# subsetting the calendar from rep_0.14.0
-cal_0.14.0_continuation <-
-  cal_0.14.0 %>%
-  select(
-    scheme_moco_ps,
-    stratum,
-    grts_address,
-    date_start,
-    date_end,
-    date_interval,
-    field_activity_group,
-    rank
-  ) %>%
-  filter(
-    str_detect(field_activity_group, "^GW.*(LEVREADDIVERMAN|SHALL)"),
-    between(year(date_start), 2025, 2030)
-  ) %>%
-  unnest(scheme_moco_ps) %>%
-  filter(scheme == "GW_03.3") %>%
-  # adding the targetpanel and dropping irrelevant units wrt new calendar (so
-  # that it maximally reflects a designed calendar given the current knowledge
-  # about units & sample sizes). We need the targetpanel (as fixed in 0.14.0)
-  # for easy subsetting, but we will drop it afterwards since those labels will
-  # become outdated over time compared to the new calendar.
-  inner_join(
-    relevant_units_0.14.0,
-    join_by(
-      scheme,
-      module_combo_code,
-      panel_set,
+filter_old_cal <- function(df) {
+  df %>%
+    select(
+      scheme_moco_ps,
       stratum,
-      grts_address
-    ),
+      grts_address,
+      date_start,
+      date_end,
+      date_interval,
+      field_activity_group,
+      rank
+    ) %>%
+    filter(
+      str_detect(field_activity_group, "^GW.*(LEVREADDIVERMAN|SHALL)"),
+      between(year(date_start), 2025, 2030)
+    ) %>%
+    unnest(scheme_moco_ps) %>%
+    filter(scheme == "GW_03.3")
+}
+cal_0.14.0_shrinked <-
+  cal_0.14.0 %>%
+  filter_old_cal() %>%
+  # adding the targetpanel. We need the targetpanel for easy subsetting,
+  # but we will drop it afterwards since those labels will become outdated over
+  # time compared to the new calendar.
+  inner_join(
+    units_0.14.0,
+    join_by(scheme, module_combo_code, panel_set, stratum, grts_address),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
+cal_0.13.1_shrinked <-
+  cal_0.13.1 %>%
+  filter_old_cal() %>%
+  # adding the targetpanel and dropping irrelevant units. We need the
+  # targetpanel for easy subsetting, but we will drop it afterwards since those
+  # labels will become outdated over time compared to the new calendar.
+  inner_join(
+    units_extra_0.13.1,
+    join_by(scheme, module_combo_code, panel_set, stratum, grts_address),
     relationship = "many-to-one",
     unmatched = "drop"
-  ) %>%
+  )
+```
+
+Combining into a single old FAG calendar and further subsetting it to keep the occasions that we want to adopt.
+
+```{r}
+cal_old_continuation <-
+  bind_rows(cal_0.13.1_shrinked, cal_0.14.0_shrinked) %>%
   filter(
     str_c("PS", panel_set, targetpanel) %in% c(
       str_c("PS1OLDPANEL", str_pad(5:12, width = 2, pad = "0")),
@@ -683,9 +724,11 @@ cal_0.14.0_continuation <-
     relationship = "many-to-one",
     unmatched = "drop"
   ) %>%
-  # only keep READDIVER occasions earlier than those in the new calendar
+  # only keep READDIVER occasions earlier than those in the new calendar, if the
+  # units are common
   filter(
     date_start < first_date_start |
+      str_detect(field_activity_group, "READDIVER") & is.na(first_date_start) |
       !str_detect(field_activity_group, "READDIVER")
   ) %>%
   select(-first_date_start) %>%
@@ -711,7 +754,7 @@ Stitching the old and current FAG calendar.
 ```{r}
 fag_stratum_grts_calendar_result <-
   bind_rows(
-    cal_0.14.0_continuation %>% select(-targetpanel),
+    cal_old_continuation %>% select(-targetpanel),
     fag_stratum_grts_calendar_result
   ) %>%
   arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
@@ -820,7 +863,7 @@ if (params$update_spatiotemp_gsheet) {
 ```{r echo = FALSE}
 for (name in c(
   "fag_stratum_grts_calendar_cycleid",
-  "cal_0.14.0_continuation",
+  "cal_old_continuation",
   "fag_stratum_grts_calendar_result",
   "fag_stratum_grts_calendar",
   "fag_stratum_grts_calendar$scheme_moco_ps[[1]]",
