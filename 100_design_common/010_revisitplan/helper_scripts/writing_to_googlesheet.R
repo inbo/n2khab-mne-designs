@@ -465,21 +465,19 @@ fag_stratum_grts_calendar %>%
 
 # Write revisit layout diagrams -------------------------------------------
 
-cal_0.14.0_continuation_target_count <-
-  cal_0.14.0_continuation %>%
+cal_old_continuation_target_count <-
+  cal_old_continuation %>%
   unnest(scheme_moco_ps) %>%
-  # limit to target FAGs (this line needs the chunk to have run that creates the
-  # rep_0.14.0 environment that has access to the lazy-load database of
-  # rep_0.14.0 objects)
+  # limit to target FAGs
   semi_join(
-    get("scheme_moco_ps_spsubset_targetfag", envir = rep_0.14.0),
+    scheme_moco_ps_spsubset_targetfag,
     join_by(scheme, module_combo_code, panel_set, field_activity_group)
   ) %>%
   count(scheme, panel_set, targetpanel, date_start, date_interval)
 
 
 make_revislayout_diagram <- function(scheme, max_year = 2050) {
-  cal_0.14.0_continuation_target_count %>%
+  cal_old_continuation_target_count %>%
     filter(str_detect(scheme, {{scheme}})) %>%
     bind_rows(
       scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
