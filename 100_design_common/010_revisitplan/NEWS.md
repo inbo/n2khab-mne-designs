@@ -3,39 +3,59 @@
 tag `xxxxxxxxx`
 
 Since this version, a REP changelog has been established as a new file `NEWS.md`.
+The tag messages contain the version-specific section of this changelog.
 
-The tag messages will contain the version-specific section of this changelog.
+This version introduces almost no changes to results. Spatial samples,
+spatiotemporal samples and FAG calendar are unaffected.
 
-This version contains following updates.
+Changes to results
+------------------
 
-- The RData file is extended with a few objects. The most important objects from
-  the RData file are now documented by the
+- A few more REP objects are included in the RData file. The most important 
+  objects from the RData file are now documented by the
   {[mnedesigndata](https://inbo.github.io/mnedesigndata)} package.
 - The VBI overlaps have been updated to take into account the overlap with the
   circular VBI plots with radius 18 m (not just their center), and overlaps are
   no longer restricted to the forest strata from the MNE samples.
-- Style R code with the {styler} package.
-- In the helper script that supports data creation to organize fieldwork:
-  - Fix the 'schemes_served_all' column of the object
-    'fag_stratum_grts_calendar_shortterm_attribs' and derived objects.
-  - Add a 'wait_mhq' column in the shortterm field prioritization object to
-    hold the MHQ-only FAG occasions.
-  - Column order of 'scheme_moco_ps_stratum_targetpanel_spsamples' was
-    slightly adjusted.
-  - More attribute columns have been kept in the shortterm objects, and
-    their order has been slightly adjusted.
-  - Names of replacement cell objects were given (sf points object) or
-    adjusted (SpatRaster object).
-  - The priorities of targetpanels PS1PANEL02 and PS1PANEL03 in GW_03.3
-    have been set to their normal state by switching them. Before, they
-    had been switched with regard to anticipating the bird season. This
-    update specifically affects 'fieldwork_shortterm_prioritization_by_stratum'
-    and a few derived (summarizing) objects.
-  - Update code with regard to VBI overlaps, in accordance with the REP updates.
   
-This version introduces almost no changes to results. Spatial samples,
-spatiotemporal samples and FAG calendar are unaffected.
+Additions
+---------
 
+- Add helper script to compare GRTS-ranges between spatial samples of different
+  types.
+- Mark some unresolved problems for future solving.
+
+Maintenance
+-----------
+
+- Drop the `phab_correct` YAML parameter since we only apply its `TRUE` state.
+- Set explicit data source versions when calling {n2khab} functions.
+- Modernize and harden some outdated {dplyr} function syntax (joins, 
+  `recode_values()`).
+- Style R code with the {styler} package.
+
+Helper script supporting fieldwork organization
+-----------------------------------------------
+
+In the helper script that supports data creation to organize fieldwork:
+
+- Fix the 'schemes_served_all' column of the object
+  'fag_stratum_grts_calendar_shortterm_attribs' and derived objects.
+- Add a 'wait_mhq' column in the shortterm field prioritization object to
+  hold the MHQ-only FAG occasions.
+- Column order of 'scheme_moco_ps_stratum_targetpanel_spsamples' was
+  slightly adjusted.
+- More attribute columns have been kept in the shortterm objects, and
+  their order has been slightly adjusted.
+- Names of replacement cell objects were given (sf points object) or
+  adjusted (SpatRaster object).
+- The priorities of targetpanels PS1PANEL02 and PS1PANEL03 in GW_03.3
+  have been set to their normal state by switching them. Before, they
+  had been switched with regard to anticipating the bird season. This
+  update specifically affects `fieldwork_shortterm_prioritization_by_stratum`
+  and a few derived (summarizing) objects.
+- Update code with regard to VBI overlaps, in accordance with the REP updates.
+  
 # REP 0.15.0 (2026-03-12)
 
 tag `rep_0.15.0`

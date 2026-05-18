@@ -169,7 +169,9 @@ if (params$regenerate_binary_files) {
         domain = domains$domain
       ),
       .,
-      by = "ID"
+      join_by(ID),
+      relationship = "one-to-many",
+      unmatched = "error"
     ) %>%
     select(
       -ID,
@@ -299,7 +301,7 @@ Checking that no strata exist that don't occur in `n2khab_strata`.
 stopifnot(
   stratum_grts_n2khab_collapsed %>%
     distinct(stratum) %>%
-    anti_join(n2khab_strata, by = "stratum") %>%
+    anti_join(n2khab_strata, join_by(stratum)) %>%
     nrow() == 0
 )
 ```
@@ -319,7 +321,7 @@ hmt_pol_phab_cellcenter_n2khab <-
   semi_join(
     n2khab_types_expanded_properties %>%
       filter(sample_support_code == "cell_conditioned_on_center"),
-    by = "type"
+    join_by(type)
   )
 ```
 
@@ -338,7 +340,7 @@ stratum_grts_phab_cellcenter_n2khab_collapsed <-
   hmt_pol_grts_cellcenter %>%
   inner_join(
     hmt_pol_phab_cellcenter_n2khab,
-    by = "polygon_id",
+    join_by(polygon_id),
     relationship = "many-to-many",
     unmatched = c("error", "drop")
   ) %>%
@@ -393,9 +395,8 @@ This is not needed since this object, after applying bernouilli sampling, will o
 #### Apply bernouilli sampling
 
 Determining for each stratum which GRTS addresses are dropped by bernouilli sampling, based on the `raster_runif` data source.
-Note that this step can be turned off with the `phab_correct` parameter.
 
-```{r eval = params$phab_correct}
+```{r}
 stratum_grts_phab_cellcenter_n2khab_collapsed_phabll <-
   tibble(
     grts_address = values(grts_mh_n2khab, na.rm = TRUE)[, 1],
@@ -425,63 +426,58 @@ stratum_grts_n2khab_collapsed_phabexcluded <-
 
 Constructing the phab-corrected collapsed base sampling frame.
 We don't include originally drawn locations of cell-center types if these were replaced but don't occur in the retained locations after bernouilli sampling.
-This is because those originally drawn locations from MHQ were not drawn with phab-correction, introducing bias.
+This is because those originally drawn locations from MHQ were not necessarily drawn with phab-correction, introducing bias.
 
 ```{r}
 stratum_grts_n2khab_phabcorrected <-
-  if (params$phab_correct) {
-    stratum_grts_n2khab_collapsed %>%
-      # add the grts_join attribute
-      inner_join(
-        n2khab_strata,
-        join_by(stratum),
-        relationship = "many-to-one",
-        unmatched = c("error", "drop")
-      ) %>%
-      inner_join(
-        n2khab_types_expanded_properties %>%
-          select(type, grts_join_method),
-        join_by(type),
-        relationship = "many-to-one",
-        unmatched = c("error", "drop")
-      ) %>%
-      filter(
-        # only include replaced drawn GRTS addresses if they match GRTS addresses
-        # retained in stratum_grts_n2khab_collapsed_phabincluded
-        (
-          !is.na(replaced_by) &
-            grts_join_method == "cell_center" &
-            str_c(stratum, grts_address) %in% str_c(
-              stratum_grts_n2khab_collapsed_phabincluded$stratum,
-              stratum_grts_n2khab_collapsed_phabincluded$grts_address
-            )
-        ) | (
-          # include all replaced drawn GRTS addresses for non-cell-center types
-          !is.na(replaced_by) &
-            grts_join_method != "cell_center"
-          # include all non-replaced drawn GRTS addresses
-        ) | is.na(replaced_by)
-      ) %>%
-      select(-type, -grts_join_method) %>%
-      # exclude all cases that have been dropped in the bernouilli sampling
-      anti_join(
-        stratum_grts_n2khab_collapsed_phabexcluded,
-        join_by(stratum, grts_address)
-      ) %>%
-      mutate(
-        # don't refer elsewhere to replaced drawn GRTS addresses if the latter
-        # have been dropped
-        replacement_for = ifelse(
-          !is.na(replacement_for) & !(replacement_for %in% grts_address),
-          NA_integer_,
-          replacement_for
-        ),
-        .by = stratum
-      )
-  } else {
-    # dummy step
-    stratum_grts_n2khab_collapsed
-  }
+  stratum_grts_n2khab_collapsed %>%
+  # add the grts_join attribute
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    n2khab_types_expanded_properties %>%
+      select(type, grts_join_method),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  filter(
+    # only include replaced drawn GRTS addresses if they match GRTS addresses
+    # retained in stratum_grts_n2khab_collapsed_phabincluded
+    (
+      !is.na(replaced_by) &
+        grts_join_method == "cell_center" &
+        str_c(stratum, grts_address) %in% str_c(
+          stratum_grts_n2khab_collapsed_phabincluded$stratum,
+          stratum_grts_n2khab_collapsed_phabincluded$grts_address
+        )
+    ) | (
+      # include all replaced drawn GRTS addresses for non-cell-center types
+      !is.na(replaced_by) &
+        grts_join_method != "cell_center"
+      # include all non-replaced drawn GRTS addresses
+    ) | is.na(replaced_by)
+  ) %>%
+  select(-type, -grts_join_method) %>%
+  # exclude all cases that have been dropped in the bernouilli sampling
+  anti_join(
+    stratum_grts_n2khab_collapsed_phabexcluded,
+    join_by(stratum, grts_address)
+  ) %>%
+  mutate(
+    # don't refer elsewhere to replaced drawn GRTS addresses if the latter
+    # have been dropped
+    replacement_for = ifelse(
+      !is.na(replacement_for) & !(replacement_for %in% grts_address),
+      NA_integer_,
+      replacement_for
+    ),
+    .by = stratum
+  )
 ```
 
 
@@ -512,25 +508,27 @@ domain_stratum_non_cell_nunits <-
   stratum_units_non_cell_n2khab %>%
   inner_join(
     units_non_cell_n2khab_grts,
-    by = c("sample_support_code", "unit_id")
+    join_by(sample_support_code, unit_id),
+    relationship = "many-to-one",
+    unmatched = "error"
   ) %>%
   inner_join(
     domain_grts_n2khab,
     join_by(grts_address),
     relationship = "many-to-many",
-  # XXXX DEBUGGING NEEDED: unmatched = c("error", "drop") should be used but
-  # does not work; units are effectively dropped. Two potential sources of
-  # mismatch are 1) the loss of GRTS cells in grts_mh_n2khab when intersecting
-  # with domain Flanders (see domain_grts_n2khab); 2) the fact that cells from
-  # grts_mh_non_cell are missing in grts_mh_n2khab, which has been made with
-  # max() (at least true for address 63023401)
+    # XXXX DEBUGGING NEEDED: unmatched = c("error", "drop") should be used but
+    # does not work; units are effectively dropped. Two potential sources of
+    # mismatch are 1) the loss of GRTS cells in grts_mh_n2khab when intersecting
+    # with domain Flanders (see domain_grts_n2khab); 2) the fact that cells from
+    # grts_mh_non_cell are missing in grts_mh_n2khab, which has been made with
+    # max() (at least true for address 63023401)
     unmatched = c("drop", "drop")
   ) %>%
   count(domain, stratum, name = "nunits")
 ```
 
 Determining the population size per domain for strata with cell-center-based units.
-Regardless whether phab-correction by bernouilli sampling has been carried out, we also determine population sizes by phab-based calculation from the collapsed base sampling frame, in order to compare both approaches.
+We also determine population sizes by phab-based calculation from the collapsed base sampling frame, in order to compare both approaches.
 
 <!-- Below simplification in domain_stratum_cellcenter_nunits_calculated (representing domains and polygons + their intersection as cells and then summing phab) can be slightly improved by actually intersecting polygons by domains, then calculating phab-corrected areas (see git history for such an approach but still lacking st_intersection()). -->
 
@@ -551,25 +549,21 @@ domain_stratum_cellcenter_nunits_calculated <-
   arrange(domain, stratum)
 
 domain_stratum_cellcenter_nunits <-
-  if (params$phab_correct) {
-    domain_grts_n2khab %>%
-      inner_join(
-        stratum_grts_n2khab_phabcorrected_no_replacements,
-        join_by(grts_address),
-        relationship = "many-to-many",
-        # XXXX SAME PROBLEM HERE AS IN PREVIOUS CHUNK
-        unmatched = c("drop", "drop")
-      ) %>%
-      semi_join(
-        n2khab_types_expanded_properties %>%
-          filter(sample_support_code == "cell_conditioned_on_center"),
-        join_by(stratum == type)
-      ) %>%
-      count(domain, stratum, name = "nunits") %>%
-      arrange(domain, stratum)
-  } else {
-    domain_stratum_cellcenter_nunits_calculated
-  }
+  domain_grts_n2khab %>%
+  inner_join(
+    stratum_grts_n2khab_phabcorrected_no_replacements,
+    join_by(grts_address),
+    relationship = "many-to-many",
+    # XXXX SAME PROBLEM HERE AS IN PREVIOUS CHUNK
+    unmatched = c("drop", "drop")
+  ) %>%
+  semi_join(
+    n2khab_types_expanded_properties %>%
+      filter(sample_support_code == "cell_conditioned_on_center"),
+    join_by(stratum == type)
+  ) %>%
+  count(domain, stratum, name = "nunits") %>%
+  arrange(domain, stratum)
 ```
 
 Listing largest relative and absolute differences between `domain_stratum_cellcenter_nunits` and `domain_stratum_cellcenter_nunits_calculated`:
@@ -656,7 +650,12 @@ Also deriving the population size at type level.
 ```{r}
 domain_type_nunits <-
   domain_stratum_nunits %>%
-  inner_join(n2khab_strata, by = "stratum") %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
   summarize(nunits = sum(nunits), .by = c(domain, type))
 ```
 

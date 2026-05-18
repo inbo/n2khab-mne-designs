@@ -159,7 +159,7 @@ collapse_strata <- function(df) {
         "91E0", "91E0_vm",
         "91E0", "91E0_vn"
       ),
-      by = c("stratum" = "main_type"),
+      join_by(stratum == main_type),
       relationship = "many-to-many",
       unmatched = "drop"
     ) %>%
@@ -189,7 +189,12 @@ aggregate_sample_size <- function(df,
     ) %>%
     filter(!is.na(yearly_sample_size), yearly_sample_size > 0) %>%
     arrange(.data[[modvar]], scheme) %>%
-    left_join(mhq_scheme_category, by = "scheme") %>%
+    left_join(
+      mhq_scheme_category,
+      join_by(scheme),
+      relationship = "many-to-one",
+      unmatched = "drop"
+    ) %>%
     mutate(
       is_mhq = str_detect(scheme, "^HQ"),
       scheme_aggr = ifelse(is_mhq, str_c("MHQ_", category), as.character(scheme))

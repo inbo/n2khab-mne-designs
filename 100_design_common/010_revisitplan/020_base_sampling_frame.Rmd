@@ -39,12 +39,16 @@ In the ideal situation, the base sampling frame is 'resolved' by terrain visits 
 # various main type codes are not added because habitatmap_terr doesn't have
 # them OR they're not involved in MNE/MHQ anyway
 read_types(lang = lang) %>%
-  anti_join(n2khab_types_expanded, by = "type")
+  anti_join(n2khab_types_expanded, join_by(type))
 # following types were added by expansion:
 n2khab_types_expanded %>%
-  anti_join(n2khab_types, by = "type") %>%
-  inner_join(read_types() %>% select(type, typelevel),
-    by = "type"
+  anti_join(n2khab_types, join_by(type)) %>%
+  inner_join(
+    read_types() %>%
+      select(type, typelevel),
+    join_by(type),
+    relationship = "one-to-one",
+    unmatched = c("error", "drop")
   )
 ```
 
@@ -53,7 +57,7 @@ Gathering minimal needed properties of all types.
 ```{r}
 n2khab_types_expanded_properties <-
   read_types() %>%
-  semi_join(n2khab_types_expanded, by = "type") %>%
+  semi_join(n2khab_types_expanded, join_by(type)) %>%
   select(type, typelevel, main_type, typeclass, hydr_class, groundw_dep, flood_dep) %>%
   left_join(
     read_vc(
@@ -65,7 +69,9 @@ n2khab_types_expanded_properties <-
         grts_join_method = ifelse(approach_cellbased, "cell", "cell_center")
       ) %>%
       select(type, grts_join_method),
-    by = "type"
+    join_by(type),
+    relationship = "one-to-one",
+    unmatched = "error"
   ) %>%
   mutate(
     grts_join_method = case_when(
@@ -115,7 +121,7 @@ hmt <- read_habitatmap_terr(
 typelev <- levels(hmt$habitatmap_terr_types$type)
 hmt_occ <-
   hmt$habitatmap_terr_types %>%
-  semi_join(n2khab_types_expanded, by = "type")
+  semi_join(n2khab_types_expanded, join_by(type))
 # manually fixing the type of two polygons in habitatmap_terr_2023_v1:
 if ("habitatmap_terr_2023_v1" %in% versions_required) {
   hmt_occ <-
@@ -139,7 +145,7 @@ if ("habitatmap_terr_2023_v1" %in% versions_required) {
 }
 hmt_pol <-
   hmt$habitatmap_terr_polygons %>%
-  semi_join(hmt_occ, by = "polygon_id") %>%
+  semi_join(hmt_occ, join_by(polygon_id)) %>%
   select(polygon_id)
 ```
 
@@ -152,12 +158,10 @@ wsh <- read_watersurfaces_hab(
 )
 wsh_occ <-
   wsh$watersurfaces_types %>%
-  semi_join(n2khab_types_expanded,
-    by = "type"
-  )
+  semi_join(n2khab_types_expanded, join_by(type))
 wsh_pol <-
   wsh$watersurfaces_polygons %>%
-  semi_join(wsh_occ, by = "polygon_id") %>%
+  semi_join(wsh_occ, join_by(polygon_id)) %>%
   select(polygon_id)
 ```
 
@@ -225,7 +229,9 @@ wsh_pol_area_class <-
     wsh_occ %>%
       select(polygon_id, type),
     .,
-    by = "polygon_id"
+    join_by(polygon_id),
+    relationship = "many-to-one",
+    unmatched = "error"
   ) %>%
   rename(unit_id = polygon_id)
 wsh_strata <-
@@ -259,7 +265,9 @@ n2khab_strata_expanded <-
   n2khab_types_expanded %>%
   left_join(
     bind_rows(wsh_strata, habquarries_strata),
-    by = "type"
+    join_by(type),
+    relationship = "one-to-many",
+    unmatched = "error"
   ) %>%
   unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>%
   select(type, stratum) %>%
@@ -270,7 +278,9 @@ n2khab_strata <-
   n2khab_types %>%
   left_join(
     bind_rows(wsh_strata, habquarries_strata),
-    by = "type"
+    join_by(type),
+    relationship = "one-to-many",
+    unmatched = "error"
   ) %>%
   unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>%
   select(type, stratum) %>%
@@ -540,7 +550,9 @@ stratum_grts_non_cell_n2khab <-
   stratum_units_non_cell_n2khab %>%
   inner_join(
     units_non_cell_n2khab_grts,
-    by = c("sample_support_code", "unit_id")
+    join_by(sample_support_code, unit_id),
+    relationship = "many-to-one",
+    unmatched = "error"
   ) %>%
   select(-sample_support_code, -unit_id) %>%
   # distinct() leads to less rows because of units with same GRTS address.
@@ -569,8 +581,8 @@ Filtering units of `GRTSmaster_habitats` that are part of the target populations
 hmt_pol_cellcenter <-
   n2khab_types_expanded_properties %>%
   filter(sample_support_code == "cell_conditioned_on_center") %>%
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
-  semi_join(hmt_pol, ., by = "polygon_id") %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., join_by(type)) %>%
+  semi_join(hmt_pol, ., join_by(polygon_id)) %>%
   vect()
 ```
 
@@ -587,7 +599,9 @@ if (params$regenerate_binary_files) {
         polygon_id = hmt_pol_cellcenter$polygon_id
       ),
       .,
-      by = "ID"
+      join_by(ID),
+      relationship = "one-to-many",
+      unmatched = "error"
     ) %>%
     select(-ID, grts_address = GRTSmaster_habitats) %>%
     # filtering is needed since all polygons are listed by extract():
@@ -613,8 +627,8 @@ Filtering units of GRTSmaster_habitats that are part of the target populations o
 hmt_pol_cell <-
   n2khab_types_expanded_properties %>%
   filter(sample_support_code == "cell") %>%
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
-  semi_join(hmt_pol, ., by = "polygon_id") %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., join_by(type)) %>%
+  semi_join(hmt_pol, ., join_by(polygon_id)) %>%
   vect()
 
 hmt_pol_grts_cell <-
@@ -622,7 +636,7 @@ hmt_pol_grts_cell <-
   #
   # XXX TAKES 5 MINUTES WITH terra 1.9-11; was much faster before ==> ISSUE
   # needed
-  # 
+  #
   extract(grts_mh, hmt_pol_cell, touches = TRUE) %>%
   as_tibble() %>%
   inner_join(
@@ -631,7 +645,9 @@ hmt_pol_grts_cell <-
       polygon_id = hmt_pol_cell$polygon_id
     ),
     .,
-    by = "ID"
+    join_by(ID),
+    relationship = "one-to-many",
+    unmatched = "error"
   ) %>%
   select(-ID, grts_address = GRTSmaster_habitats)
 ```
@@ -644,7 +660,7 @@ Generating the link between stratum and polygon ID for cell-center & cell types.
 stratum_polygons_cell_all_n2khab <-
   n2khab_types_expanded_properties %>%
   filter(str_detect(sample_support_code, "^cell")) %>%
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., join_by(type)) %>%
   select(stratum = type, polygon_id)
 ```
 
@@ -659,15 +675,17 @@ We can use `n2khab_types_expanded` since for terrestrial types the strata are th
 hmt_pol_stratum_grts_cellcenter <-
   n2khab_types_expanded_properties %>%
   filter(sample_support_code == "cell_conditioned_on_center") %>%
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., join_by(type)) %>%
   select(polygon_id, stratum = type) %>%
   mutate(
     stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
   ) %>%
   inner_join(
     hmt_pol_grts_cellcenter,
-    by = "polygon_id",
-    relationship = "many-to-many"
+    join_by(polygon_id),
+    relationship = "many-to-many",
+    # drop polygons that are not intersected by a cell-center:
+    unmatched = c("drop", "error")
   )
 stratum_grts_cellcenter_n2khab <-
   hmt_pol_stratum_grts_cellcenter %>%
@@ -675,15 +693,16 @@ stratum_grts_cellcenter_n2khab <-
 hmt_pol_stratum_grts_cell <-
   n2khab_types_expanded_properties %>%
   filter(sample_support_code == "cell") %>%
-  semi_join(distinct(hmt_occ, polygon_id, type), ., by = "type") %>%
+  semi_join(distinct(hmt_occ, polygon_id, type), ., join_by(type)) %>%
   select(polygon_id, stratum = type) %>%
   mutate(
     stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
   ) %>%
   inner_join(
     hmt_pol_grts_cell,
-    by = "polygon_id",
-    relationship = "many-to-many"
+    join_by(polygon_id),
+    relationship = "many-to-many",
+    unmatched = "error"
   )
 stratum_grts_cell_n2khab <-
   hmt_pol_stratum_grts_cell %>%
