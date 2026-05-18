@@ -75,7 +75,7 @@ rdata_set <- c(
   "scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar",
   "fag_stratum_grts_calendar",
   "fag_grts_calendar",
-  "cal_0.14.0_continuation",
+  "cal_old_continuation",
   # exporting specific functions:
   "verify_n2khab_data",
   "add_point_coords_grts",
