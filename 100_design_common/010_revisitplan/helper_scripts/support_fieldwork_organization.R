@@ -1057,24 +1057,24 @@ fag_fa_stratum_grts_calendar <-
 # during which the auxiliary FAG (in the scheduled time interval) is still
 # relevant to subsequent FAGs in that scheme.
 
-cal_0.14.0_continuation
+cal_old_continuation
 
-# cal_0.14.0_continuation is a subset of fag_stratum_grts_calendar (without
+# cal_old_continuation is a subset of fag_stratum_grts_calendar (without
 # assessment columns) that represents GWSHALL* and READDIVER FAG occasions in
-# 2026 and 2027 from rep_0.14.0, that are retained in newer FAG calendar
+# 2026 and 2027 from older REP versions, that are retained in newer FAG calendar
 # versions regardless of the fact that those FAG occasions are no part of the
-# new revisit design. So they are supplementary. Their timing will be kept
-# fixed; however units may still be dropped as they disappear from later
-# versions of the new FAG calendar.
+# new revisit design or even the spatial sample. So they are supplementary.
+# Their timing will be kept fixed; however units may still be dropped in future
+# revisit cycles as they disappear from later versions of the new FAG calendar.
 
-# cal_0.14.0_continuation is the only object that defines a second targetpanel
+# cal_old_continuation is the only object that defines a second targetpanel
 # specifically for those FAG occasions; the format is OLDPANELxx (xx being the
 # number). These locations are at the same time part of a regular 'PANELyy',
 # which is not linked to specific FAG occasions, hence not part of the new
 # revisit design: it is just a location attribute. The regular targetpanels are
 # dynamic, i.e. their units can change, while this is not relevant for the FAG
-# occasions of cal_0.14.0, which got the frozen revisit pattern of the panels at
-# the time, which we now call OLDPANELxx.
+# occasions of cal_old_continuation, which got the frozen revisit pattern of the
+# panels at the time, which we now call OLDPANELxx.
 
 # Link between field activities and their protocol
 fa_protocol <-
@@ -1223,10 +1223,10 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
-  # adding old targetpanel of the imported FAG occasions from rep_0.14.0. A part
-  # is dropped because of occasions that don't happen in the main year.
+  # adding old targetpanel of the imported FAG occasions from old REP versions.
+  # A part is dropped because of occasions that don't happen in the main year.
   left_join(
-    cal_0.14.0_continuation %>%
+    cal_old_continuation %>%
       unnest(scheme_moco_ps) %>%
       mutate(
         scheme_ps_oldtargetpanel = str_c(scheme, ":PS", panel_set, targetpanel)
