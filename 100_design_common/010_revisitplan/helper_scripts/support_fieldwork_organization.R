@@ -1278,11 +1278,21 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     "{ scheme }:PS{ panel_set }{ targetpanel }"
   )) %>%
   select(-scheme, -panel_set, -targetpanel) %>%
-  nest(scheme_ps_targetpanels = scheme_ps_targetpanel) %>%
+  nest(
+    scheme_ps_targetpanels = scheme_ps_targetpanel,
+    scheme_ps_oldtargetpanels = scheme_ps_oldtargetpanel
+  ) %>%
   mutate(
     scheme_ps_targetpanels = map_chr(scheme_ps_targetpanels, \(df) {
       str_flatten(
         unique(df$scheme_ps_targetpanel),
+        collapse = " | "
+      )
+    }) %>%
+      factor(),
+    scheme_ps_oldtargetpanels = map_chr(scheme_ps_oldtargetpanels, \(df) {
+      str_flatten(
+        unique(df$scheme_ps_oldtargetpanel),
         collapse = " | "
       )
     }) %>%
@@ -1302,6 +1312,7 @@ fag_stratum_grts_calendar_shortterm_attribs <-
 # First defining a reusable function before creating the object
 unite_stratum_and_schemepstargetpanels <- function(df) {
   df %>%
+    select(-scheme_ps_oldtargetpanels) %>%
     mutate(
       stratum_scheme_ps_targetpanels = str_c(
         stratum,
@@ -1353,7 +1364,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
       # no priority is given to imported FAGs from old versions (these
       # READDIVER, CLEAN & SHALLSAMP FAGs can be done as it suits, in the
       # locations where LOCEVAL is already executed)
-      !is.na(scheme_ps_oldtargetpanel) ~ NA_integer_,
+      !is.na(scheme_ps_oldtargetpanels) ~ NA_integer_,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL03|PS2PANEL01)") ~ 1L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL02|PS2PANEL02)") ~ 2L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL04)") ~ 3L,
@@ -1428,7 +1439,6 @@ fieldwork_shortterm_prioritization_shorter <-
     wait_any = all(wait_any),
     .by = !c(
       stratum_scheme_ps_targetpanels,
-      scheme_ps_oldtargetpanel,
       priority,
       starts_with("wait")
     )
@@ -1456,7 +1466,7 @@ if (FALSE) {
     )
   fieldwork_shortterm_prioritization_points %>%
     filter(str_detect(field_activity_group, "LOCEVAL")) %>%
-    select(-rank, -scheme_ps_oldtargetpanel) %>%
+    select(-rank, -scheme_ps_oldtargetpanels) %>%
     write_sf(
       gpkg_path,
       layer = "fieldwork_shortterm_LOCEVAL",
@@ -1469,7 +1479,7 @@ if (FALSE) {
       # simply not possible to evaluate on orthophoto)
       str_detect(grts_join_method, "cell")
     ) %>%
-    select(-rank, -scheme_ps_oldtargetpanel) %>%
+    select(-rank, -scheme_ps_oldtargetpanels) %>%
     write_sf(
       gpkg_path,
       layer = "fieldwork_shortterm_LOCEVAL_cellbased_CELLCENTERS",
@@ -1484,7 +1494,7 @@ if (FALSE) {
           # simply not possible to evaluate on orthophoto)
           str_detect(grts_join_method, "cell")
         ) %>%
-        select(-rank, -scheme_ps_oldtargetpanel),
+        select(-rank, -scheme_ps_oldtargetpanels),
       join_by(grts_address_final),
       relationship = "one-to-many",
       unmatched = c("drop", "error")
@@ -1628,7 +1638,7 @@ orthophoto_shortterm_type_grts <-
     unmatched = c("error", "drop")
   ) %>%
   relocate(type, .after = stratum) %>%
-  select(-stratum, -rank, -scheme_ps_oldtargetpanel) %>%
+  select(-stratum, -rank, -scheme_ps_oldtargetpanels) %>%
   arrange(
     priority,
     type,
