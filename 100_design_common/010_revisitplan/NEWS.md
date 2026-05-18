@@ -9,7 +9,7 @@ This version introduces almost no changes to results. Spatial samples,
 spatiotemporal samples and FAG calendar are unaffected.
 
 Changes to results
-==================
+------------------
 
 - A few more REP objects are included in the RData file. The most important 
   objects from the RData file are now documented by the
@@ -19,14 +19,14 @@ Changes to results
   no longer restricted to the forest strata from the MNE samples.
   
 Additions
-=========
+---------
 
 - Add helper script to compare GRTS-ranges between spatial samples of different
   types.
 - Mark some unresolved problems for future solving.
 
 Maintenance
-===========
+-----------
 
 - Drop the `phab_correct` YAML parameter since we only apply its `TRUE` state.
 - Set explicit data source versions when calling {n2khab} functions.
@@ -35,7 +35,7 @@ Maintenance
 - Style R code with the {styler} package.
 
 Helper script supporting fieldwork organization
-===============================================
+-----------------------------------------------
 
 In the helper script that supports data creation to organize fieldwork:
 
