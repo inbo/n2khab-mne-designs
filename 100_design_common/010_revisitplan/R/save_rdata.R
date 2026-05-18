@@ -87,17 +87,12 @@ rdata_set <- c(
 
 if (params$save_rdata) {
   module_suffix <- str_c("_", str_flatten(modules$code_short))
-  phabcorr_suffix <- ifelse(
-    params$phab_correct,
-    "",
-    "_nophabcorrection"
-  )
   save(
     list = rdata_set,
     file = file.path(
       datapath,
       "binary/results",
-      str_c("objects", module_suffix, phabcorr_suffix, ".RData")
+      str_c("objects", module_suffix, ".RData")
     )
   )
 }

@@ -283,37 +283,16 @@ ssf_domain_stratum_non_cell_nunits <-
 
 Determining the sampling frame specific population size per domain for strata with cell-center-based units.
 
-<!-- The calculated simplification below, in case isFALSE(params$phab_correct), i.e. representing domains and polygons + their intersection as cells and then summing phab, can be slightly improved by actually intersecting polygons by domains, then calculating phab-corrected areas (see git history for such an approach but still lacking st_intersection()). -->
-
 ```{r}
 ssf_domain_stratum_cellcenter_nunits <-
-  {
-    if (params$phab_correct) {
-      sp_samplingframe_domain %>%
-        unnest(sampling_frame_domain) %>%
-        semi_join(
-          n2khab_types_expanded_properties %>%
-            filter(sample_support_code == "cell_conditioned_on_center"),
-          join_by(stratum == type)
-        ) %>%
-        count(sampling_frame_id, domain, stratum, name = "nunits")
-    } else {
-      stratum_grts_phab_cellcenter_n2khab_collapsed %>%
-        inner_join(
-          sp_samplingframe_domain %>% unnest(sampling_frame_domain),
-          join_by(stratum, grts_address),
-          relationship = "one-to-many",
-          # XXXX SIMILAR PROBLEM HERE AS IN 'domain_stratum_non_cell_nunits'
-          # CHUNK; here we should be able to use 'unmatched = c("drop",
-          # "error")', but some rows of y are not matched by x
-          unmatched = c("drop", "drop")
-        ) %>%
-        summarize(
-          nunits = sum(phab) / 100,
-          .by = c(sampling_frame_id, domain, stratum)
-        )
-    }
-  } %>%
+  sp_samplingframe_domain %>%
+  unnest(sampling_frame_domain) %>%
+  semi_join(
+    n2khab_types_expanded_properties %>%
+      filter(sample_support_code == "cell_conditioned_on_center"),
+    join_by(stratum == type)
+  ) %>%
+  count(sampling_frame_id, domain, stratum, name = "nunits") %>%
   arrange(pick(-nunits))
 ```
 
