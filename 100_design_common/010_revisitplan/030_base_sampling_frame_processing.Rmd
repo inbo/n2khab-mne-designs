@@ -169,7 +169,9 @@ if (params$regenerate_binary_files) {
         domain = domains$domain
       ),
       .,
-      by = "ID"
+      join_by(ID),
+      relationship = "one-to-many",
+      unmatched = "error"
     ) %>%
     select(
       -ID,
@@ -299,7 +301,7 @@ Checking that no strata exist that don't occur in `n2khab_strata`.
 stopifnot(
   stratum_grts_n2khab_collapsed %>%
     distinct(stratum) %>%
-    anti_join(n2khab_strata, by = "stratum") %>%
+    anti_join(n2khab_strata, join_by(stratum)) %>%
     nrow() == 0
 )
 ```
@@ -319,7 +321,7 @@ hmt_pol_phab_cellcenter_n2khab <-
   semi_join(
     n2khab_types_expanded_properties %>%
       filter(sample_support_code == "cell_conditioned_on_center"),
-    by = "type"
+    join_by(type)
   )
 ```
 
@@ -338,7 +340,7 @@ stratum_grts_phab_cellcenter_n2khab_collapsed <-
   hmt_pol_grts_cellcenter %>%
   inner_join(
     hmt_pol_phab_cellcenter_n2khab,
-    by = "polygon_id",
+    join_by(polygon_id),
     relationship = "many-to-many",
     unmatched = c("error", "drop")
   ) %>%
@@ -511,7 +513,9 @@ domain_stratum_non_cell_nunits <-
   stratum_units_non_cell_n2khab %>%
   inner_join(
     units_non_cell_n2khab_grts,
-    by = c("sample_support_code", "unit_id")
+    join_by(sample_support_code, unit_id),
+    relationship = "many-to-one",
+    unmatched = "error"
   ) %>%
   inner_join(
     domain_grts_n2khab,
@@ -655,7 +659,12 @@ Also deriving the population size at type level.
 ```{r}
 domain_type_nunits <-
   domain_stratum_nunits %>%
-  inner_join(n2khab_strata, by = "stratum") %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
   summarize(nunits = sum(nunits), .by = c(domain, type))
 ```
 
