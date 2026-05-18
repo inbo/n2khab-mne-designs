@@ -82,7 +82,8 @@ rdata_set <- c(
   "filter_grtsraster_by_address",
   "get_level3replacement_cellnrs",
   "convert_level0_to_level3",
-  "collapse_strata"
+  "collapse_strata",
+  "add_assessment_data"
 )
 
 if (params$save_rdata) {

@@ -1213,15 +1213,31 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # date interval (is_current_occasion is TRUE), in order to add their
   # targetpanel attribute etc
   unnest(scheme_moco_ps) %>%
-  # adding location attributes
-  inner_join(
+  # adding location attributes; using a left join since
+  # fag_stratum_grts_calendar contains units adopted from old REP versions that
+  # are not present in the sample objects (this can e.g. be checked using
+  # count(., is.na(targetpanel)), count(., is.na(is_forest)) etc on the
+  # intermediate result). Please note that this also means that those locations
+  # (outside current sample) have missing values for several location attributes
+  left_join(
     scheme_moco_ps_stratum_targetpanel_spsamples %>%
       select(-is_aquatic) %>%
       # deduplicating 7220:
       distinct(),
     join_by(scheme, module_combo_code, panel_set, stratum, grts_address),
     relationship = "many-to-one",
-    unmatched = c("error", "drop")
+    unmatched = "drop"
+  ) %>%
+  # restoring several of the location attributes from the phab-corrected base
+  # sampling frame, since the extra units (outside current sample) don't have
+  # them in scheme_moco_ps_stratum_targetpanel_spsamples
+  select(-starts_with("last_"), -grts_address_final) %>%
+  add_assessment_data() %>%
+  select(-typelevel_certain) %>%
+  rename(
+    last_type_assessment_in_field = assessed_in_field,
+    last_type_assessment = assessment_date,
+    last_inaccessible = inaccessible
   ) %>%
   # adding old targetpanel of the imported FAG occasions from old REP versions.
   # A part is dropped because of occasions that don't happen in the main year.
@@ -1273,9 +1289,13 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # planned before main_year + 1 (sometimes later), and then generate
   # stratum_scheme_ps_targetpanels as a location attribute. So it says
   # specifically which schemes x panel sets x targetpanels are served by the
-  # specific fieldwork at a specific date interval.
-  mutate(scheme_ps_targetpanel = str_glue(
-    "{ scheme }:PS{ panel_set }{ targetpanel }"
+  # specific fieldwork at a specific date interval. Note that we substitute the
+  # targetpanel with the OLD targetpanel if the targetpanel is missing, i.e. for
+  # sampling units missing from the current FAG calendar.
+  mutate(scheme_ps_targetpanel = ifelse(
+    is.na(targetpanel),
+    as.character(scheme_ps_oldtargetpanel),
+    str_glue("{ scheme }:PS{ panel_set }{ targetpanel }")
   )) %>%
   select(-scheme, -panel_set, -targetpanel) %>%
   nest(
