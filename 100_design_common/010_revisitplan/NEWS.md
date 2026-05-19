@@ -75,6 +75,9 @@ In the helper script that supports data creation to organize fieldwork:
   short-term fieldwork calendar, effectively removing duplicates.
 - Update code with regard to the uptake of extra sampling units of multiple old
   FAG calendars, in accordance with the REP updates.
+- Add a `wait_obsolete_types` column in the short-term fieldwork calendar to
+  hold specific combinations of field activity group and panel set for types
+  '6410_ve' and '6510_hus', which will be obsoleted.
   
 # REP 0.15.0 (2026-03-12)
 
