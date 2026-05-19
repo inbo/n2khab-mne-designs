@@ -12,7 +12,7 @@ Changes to results
 ------------------
 
 - A fix has been applied to the base sampling frame precursor
-  `stratum_grts_phab_cellcenter_n2khab_collapsed`, as it received a few
+  `stratum_grts_phab_cellcenter_n2khab_collapsed`, as it contained a few
   duplicate rows by accident. As a consequence of fixing this, some population
   sizes (resulting from counts in the sampling frames) have received tiny
   adjustments. However these changes did not affect the resulting samples.
@@ -44,11 +44,11 @@ Helper script supporting fieldwork organization
 
 In the helper script that supports data creation to organize fieldwork:
 
-- Fix the 'schemes_served_all' column of the object
-  'fag_stratum_grts_calendar_shortterm_attribs' and derived objects.
-- Add a 'wait_mhq' column in the shortterm field prioritization object to
+- Fix the `schemes_served_all` column of the object
+  `fag_stratum_grts_calendar_shortterm_attribs` and derived objects.
+- Add a `wait_mhq` column in the shortterm field prioritization object to
   hold the MHQ-only FAG occasions.
-- Column order of 'scheme_moco_ps_stratum_targetpanel_spsamples' was
+- Column order of `scheme_moco_ps_stratum_targetpanel_spsamples` was
   slightly adjusted.
 - More attribute columns have been kept in the shortterm objects, and
   their order has been slightly adjusted.
