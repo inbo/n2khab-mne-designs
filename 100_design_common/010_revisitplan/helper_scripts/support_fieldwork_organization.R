@@ -1291,7 +1291,8 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # specifically which schemes x panel sets x targetpanels are served by the
   # specific fieldwork at a specific date interval. Note that we substitute the
   # targetpanel with the OLD targetpanel if the targetpanel is missing, i.e. for
-  # sampling units missing from the current FAG calendar.
+  # sampling units missing from the current FAG calendar. This is done to avoid
+  # missing values in derived objects or overviews.
   mutate(scheme_ps_targetpanel = ifelse(
     is.na(targetpanel),
     as.character(scheme_ps_oldtargetpanel),
