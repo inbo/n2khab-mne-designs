@@ -16,6 +16,15 @@ Changes to results
   duplicate rows by accident. As a consequence of fixing this, some population
   sizes (resulting from counts in the sampling frames) have received tiny
   adjustments. However these changes did not affect the resulting samples.
+- Short-term planned sampling from both REP 0.13.1 and REP 0.14.0 has been
+  picked up in `fag_stratum_grts_calendar` more extensively than was the case in
+  REP 0.15.0:
+  - Not only including REP 0.14.0 as before, but also REP 0.13.1.
+  - Spatial sampling units present in REP 0.14.0 but absent from the FAG 
+    calendar for the current spatiotemporal samples, are allowed as well.
+  - From REP 0.13.1, only the extra spatial sampling units are
+    admitted that are missing both from REP 0.14.0 and from current
+    spatiotemporal samples.
 - A few more REP objects are included in the RData file. The most important 
   objects from the RData file are now documented by the
   {[mnedesigndata](https://inbo.github.io/mnedesigndata)} package.
@@ -60,6 +69,12 @@ In the helper script that supports data creation to organize fieldwork:
   update specifically affects `fieldwork_shortterm_prioritization_by_stratum`
   and a few derived (summarizing) objects.
 - Update code with regard to VBI overlaps, in accordance with the REP updates.
+- Replace previous `scheme_ps_oldtargetpanel` column by
+  `scheme_ps_oldtargetpanels` (plural). It collapses values of the old column
+  (by string concatenation) that belong to the same FAG occasion in the
+  short-term fieldwork calendar, effectively removing duplicates.
+- Update code with regard to the uptake of extra sampling units of multiple old
+  FAG calendars, in accordance with the REP updates.
   
 # REP 0.15.0 (2026-03-12)
 
