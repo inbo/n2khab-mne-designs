@@ -1420,6 +1420,19 @@ fieldwork_shortterm_prioritization_by_stratum <-
     wait_7220 = str_detect(stratum, "^7220"),
     wait_floating = stratum == "7140_mrd",
     wait_mhq = str_detect(scheme_ps_targetpanels, "^HQ.*?(?!\\|)"),
+    wait_obsolete_types = stratum %in% c("6410_ve", "6510_hus") &
+      (
+        # don't pursue locations (including LOCEVAL FAGs) that only belong to
+        # panel set 2, except for planned READDIVER, CLEAN & SHALLSAMP FAGs
+        # (i.e. applicable to already installed locations)
+        (
+          !str_detect(scheme_ps_targetpanels, ":PS1") &
+            !str_detect(field_activity_group, "^GW.*(LEVREADDIVER|SHALL)")
+          ) |
+          # for panel set 1, don't perform new installations in these types, but
+          # other activities including LOCEVAL can still be planned
+          str_detect(field_activity_group, "INST")
+      ),
     wait_any = if_any(starts_with("wait"))
   ) %>%
   select(-matches("priority_.+")) %>%
@@ -1432,6 +1445,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
     wait_7220,
     wait_floating,
     wait_mhq,
+    wait_obsolete_types,
     wait_any,
     stratum,
     grts_address,
@@ -1457,6 +1471,7 @@ fieldwork_shortterm_prioritization_shorter <-
     wait_7220 = all(wait_7220),
     wait_floating = all(wait_floating),
     wait_mhq = all(wait_mhq),
+    wait_obsolete_types = all(wait_obsolete_types),
     wait_any = all(wait_any),
     .by = !c(
       stratum_scheme_ps_targetpanels,
