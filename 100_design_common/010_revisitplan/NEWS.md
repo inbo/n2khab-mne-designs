@@ -5,8 +5,11 @@ tag `xxxxxxxxx`
 Since this version, a REP changelog has been established as a new file `NEWS.md`.
 The tag messages contain the version-specific section of this changelog.
 
-This version introduces almost no changes to results. Spatial samples,
-spatiotemporal samples and FAG calendar are unaffected.
+This version introduces few changes to results. Spatial samples and
+spatiotemporal samples are unaffected. The FAG calendar is unaffected for the 
+part that is designed by this REP version (i.e. that part is the same as in REP
+0.15.0), while the appended (and included) occasions from older REP versions
+have been extended.
 
 Changes to results
 ------------------
