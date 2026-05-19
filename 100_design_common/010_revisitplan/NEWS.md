@@ -55,7 +55,7 @@ In the helper script that supports data creation to organize fieldwork:
 
 - Fix the `schemes_served_all` column of the object
   `fag_stratum_grts_calendar_shortterm_attribs` and derived objects.
-- Add a `wait_mhq` column in the shortterm field prioritization object to
+- Add a `wait_mhq` column in the short-term fieldwork calendar to
   hold the MHQ-only FAG occasions.
 - Column order of `scheme_moco_ps_stratum_targetpanel_spsamples` was
   slightly adjusted.
