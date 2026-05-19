@@ -25,6 +25,8 @@ Changes to results
   - From REP 0.13.1, only the extra spatial sampling units are
     admitted that are missing both from REP 0.14.0 and from current
     spatiotemporal samples.
+  - Note that the appended older FAG occasions can be seen in
+    `cal_old_continuation`.
 - A few more REP objects are included in the RData file. The most important 
   objects from the RData file are now documented by the
   {[mnedesigndata](https://inbo.github.io/mnedesigndata)} package.
