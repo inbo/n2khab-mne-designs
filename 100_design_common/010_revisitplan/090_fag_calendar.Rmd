@@ -1,0 +1,876 @@
+# Generating an overall plan of field activity groups in space and time (FAG calendar) {#fag-calendar}
+
+The above calendar objects contain the structure needed for statistical inference, by considering spatiotemporal field activity groups (FAGs) in relation to scheme, module combo, panel set, stratum and spatial poststratum.
+
+However this does not mean that executing each row at the designated time and location makes sense in reality:
+
+- schemes x module combos can have overlapping FAGs in space and time. It is best to remove these overlaps within limits and as long as this does not lead to data loss;
+- ADHOC FAGs (if they were kept in this workflow), while theoretically given a pure panel design, will only be carried out during other scheduled (non-biotic) FAGs and only with a low probability.
+
+In this section we will generate a sensible field activity calendar in terms of FAGs, location (GRTS address) x stratum and date interval.
+We still keep the scheme x moco x panel set information as nested tibbles (with unique rows) in the resulting tibbles of the FAG occasions, and we merge these nested tibbles as overlapping FAGs (rows) are merged (but not dropped).
+
+To determine a FAG overlap, not only identical FAGs are considered but also FAGs that overlap in the activities or activity specifics that they represent.
+In the latter case, the most 'sophisticated' FAG will be retained and the other overlapping ones are replaced by that one if they occur in the same FAG cycle in the same place and stratum.
+
+- This is only done for so-called 'auxiliary' FAGs, i.e. FAGs that are _not_ linked one-to-one to the collection of data that apply to a specific point in time (sampling, measuring), but that potentially apply to a time series of data.
+The concept of a 'simplified FAG' is a helper to group these overlapping FAGs using a more general name.
+- In FAGs that are not grouped with other FAGs in this way, the simplified FAG is named as the FAG itself.
+
+Spatially, FAGs only 'overlap' if they occur at the same location in the same stratum.
+'Stratum' is used because the sample size is controlled per stratum; only for specific types it is possible to have more than one type linked to the same GRTS address = location.
+This means that new sampling units will be added from a list of spare sampling units, when a stratum on terrain is not the expected stratum, in order to maintain the sample size.
+This specifically applies to the (many) types where the cell center in the field must be the type, so that only one 'cell_center' type can correspond to a GRTS address, contrary to the theoretical information from the sampling frame.
+
+For the temporal component of a FAG overlap (i.e. identical simplified FAG), in case of **auxiliary** FAGs:
+
+- We determine the duration of the FAG-specific cycle (`fag_cycle`), which represents the major regular time interval of revisiting the same location for that FAG.
+Within one FAG cycle, it is still possible that the FAG happens more than once (`n_locvisits_per_fagcycle`), but not regularly spaced during the FAG cycle.
+For pure panel designs, the FAG cycle duration is the value of the 'main panel period' in the `scheme_moco_ps_spsubset_fas_paneldesign` object, while in serially alternating designs it is the cycle duration already defined.
+Furthermore, for FAGs that contain a LOCEVALxxx activity, the FAG cycle duration is set as the stratum-specific cycle duration for LOCEVAL FAGs (see \@ref(type-cycle)), which affects the removal of LOCEVAL occasions in below steps.
+- For each auxiliary FAG, we require that it has the highest average yearly number of visits, and subsequently, the shortest cycle, that has been attributed to this FAG in the calendar, for the given location x stratum.
+FAG occasions that don't meet this condition are dropped.
+- To resolve the cases that have 'more auxiliary FAG occasions than needed', we first allocate all date intervals (FAG occasions) to cycle IDs, the numbering of which occurs separately for each simplified FAG x `fag_cycle` x `n_locvisits_per_fagcycle`.
+For the LOCEVAL FAGs, we require that an occasion is not planned too soon after an already available assessment date.
+The stratum-specific cycle duration is used to determine this.
+Then, for each cycle ID, we demand that auxiliary FAGs (using their simplified name) occur no more than the expected `n_locvisits_per_fagcycle`.
+If needed, the first `n_locvisits_per_fagcycle` with different start dates are kept in the considered cycle ID.
+- If still 'more auxiliary FAG occasions occur than needed', then this is because overlapping FAGs at a location occur in the same cycle with the same start date but with a different end date.
+In this case, the shortest (i.e. most demanding) date interval is kept.
+
+
+**Missing functionality**: create an object that links the calendar with the result, so that the designed calendar of auxiliary FAGs can still be linked to the eventual field work. This may also be the logical place to store population sizes (and potential other sample attributes) needed to derive the sampling weights in inference, in a module combo x scheme (x panel set) x spatial poststratum x temporal poststratum.
+
+## Dropping low-frequency auxiliary FAGs if high-frequency occurs; calculate cycle ID
+
+```{r}
+fag_stratum_grts_calendar_cycleid <-
+  scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar %>%
+  # adding year_first, panel_dateshift, fag_cycle & n_locvisits_per_fagcycle
+  inner_join(
+    scheme_moco_ps_spsubset_fas_panelcount %>%
+      select(
+        scheme,
+        module_combo_code,
+        panel_set,
+        in_aquatic_subset,
+        spsubset_needed_for_panel,
+        year_first,
+        panel_dateshift,
+        fag_cycle,
+        n_locvisits_per_fagcycle,
+        notation_paneldesign,
+      ),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_set,
+      in_aquatic_subset,
+      spsubset_needed_for_panel,
+      notation_paneldesign
+    ),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>%
+  # adjust 'year_first' by taking into account panel_dateshift. This will be the
+  # basis to number the cycles from 1. Maybe this approach needs to be
+  # refined as it does not respect the module cycle limits: should year_first
+  # define the fag_cycle limits endlessly if it was not aligned with
+  # year_origin?
+  mutate(
+    year_first = year(
+      make_date(year_first, 1, 1) +
+        if_else(!is.na(panel_dateshift), panel_dateshift, months(0))
+    ) %>%
+      as.integer()
+  ) %>%
+  unnest(fags) %>%
+  # add the default loceval_cycle of strata
+  left_join(
+    locevalfag_spsubset_type_cycle %>%
+      inner_join(
+        n2khab_strata,
+        join_by(type),
+        relationship = "many-to-many",
+        unmatched = c("error", "drop")
+      ) %>%
+      select(-type),
+    join_by(field_activity_group, in_aquatic_subset, stratum),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  # update the fag_cycle for LOCEVAL FAGs depending on type (without touching
+  # notation_paneldesign, panel etc). Note that n_locvisits_per_fagcycle is
+  # already 1 for this type of FAGs.
+  mutate(
+    fag_cycle = if_else(
+      is.na(loceval_cycle),
+      fag_cycle,
+      loceval_cycle
+    )
+  ) %>%
+  select(-loceval_cycle) %>%
+  mutate(
+    # we will only consider auxiliary FAGs in dropping planned FAGs across
+    # scheme x moco x panel set
+    fag_is_auxiliary = str_detect(
+      field_activity_group,
+      "LOCEVAL|INST|SPATPOSIT|LEVREADDIVER"
+    ),
+    # some auxiliary FAGs are clustered as a common 'simplified FAG'; they are
+    # deemed sufficiently compatible to consider them 'equal'; a single FAG will
+    # be selected later if more than one remains for the same visit, i.e. the
+    # more superior one
+    fag_simplifiable =
+      fag_is_auxiliary &
+        !(field_activity_group %in% c("SURFLEVREADDIVER", "GWLEVREADDIVERDEEP")) &
+        str_detect(field_activity_group, "LEVREAD|LOCEVALAQ|LOCEVALSAMPLPOINT"),
+    fag_simplified = case_when(
+      fag_simplifiable & str_detect(field_activity_group, "LEVREAD") ~ "GWLEVREAD",
+      # we don't group the different GWINST occasions, since these are
+      # effectively complementary, not overlapping (diver goes into well vs.
+      # into piezometer)!
+      # str_detect(field_activity_group, "GWINST") ~ "GWINST",
+      fag_simplifiable & str_detect(field_activity_group, "LEVREAD") ~
+        "GWLEVREAD",
+      fag_simplifiable &
+        str_detect(field_activity_group, "LENTLOCEVAL|LOCEVALAQ") &
+        !(str_detect(stratum, "3260|7220")) ~
+        "LOCEVALAQLENT",
+      fag_simplifiable &
+        str_detect(field_activity_group, "LOTLOCEVAL|LOCEVALAQ") &
+        str_detect(stratum, "3260|7220") ~
+        "LOCEVALAQLOT",
+      .default = as.character(field_activity_group)
+    ) %>%
+      factor(levels = c(
+        levels(field_activity_sequences$field_activity_group),
+        "GWLEVREAD",
+        "LOCEVALAQLENT",
+        "LOCEVALAQLOT"
+      ))
+  ) %>%
+  # below step drops identical planned FAGs; the scheme x moco x panel set
+  # level is collapsed
+  nest(
+    year_first = year_first,
+    scheme_moco_ps = c(scheme, module_combo_code, panel_set),
+    .by = c(
+      stratum,
+      grts_address,
+      field_activity_group,
+      fag_is_auxiliary,
+      fag_simplifiable,
+      fag_simplified,
+      fag_cycle,
+      n_locvisits_per_fagcycle,
+      rank,
+      date_start,
+      date_end,
+      date_interval
+    )
+  ) %>%
+  relocate(scheme_moco_ps) %>%
+  mutate(
+    # use a single year_first if needed
+    year_first = map_int(year_first, \(x) min(x$year_first)),
+    # make unique rows in each scheme_moco_ps tibble
+    scheme_moco_ps = map(scheme_moco_ps, distinct),
+    # FAG cycle duration expressed as number of months
+    fag_cycle_months = as.integer(year(fag_cycle) * 12 + month(fag_cycle)),
+    # average yearly number of times a FAG happens at a single location during a
+    # single FAG cycle
+    avg_visitfrequency_per_y = n_locvisits_per_fagcycle / fag_cycle_months * 12
+  ) %>%
+  relocate(fag_cycle_months, .after = fag_cycle) %>%
+  # drop planned auxiliary FAGs that have a lower avg_visitfrequency_per_y than
+  # the maximum one for that stratum x location x FAG. Currently, this does not
+  # remove further cases.
+  filter(
+    !fag_is_auxiliary |
+      avg_visitfrequency_per_y == max(avg_visitfrequency_per_y),
+    .by = c(stratum, grts_address, field_activity_group)
+  ) %>%
+  # drop planned auxiliary FAGs that have a longer FAG cycle duration than the
+  # shortest one for that stratum x location x FAG. At the time of coding,
+  # this does not remove further cases.
+  filter(
+    !fag_is_auxiliary |
+      fag_cycle_months == min(fag_cycle_months),
+    .by = c(stratum, grts_address, field_activity_group)
+  ) %>%
+  select(-avg_visitfrequency_per_y) %>%
+  # derive an incremental FAG cycle ID
+  mutate(
+    cycle_id = as.integer(floor(
+      # elapsed months divided by fag_cycle_months
+      ((year(date_start) - min(year_first)) * 12 + month(date_start) - 1) /
+        fag_cycle_months +
+        1
+    )),
+    # calculate it across FAGs from the same fag_simplified and across visits
+    # (per location, stratum)
+    .by = c(
+      stratum,
+      grts_address,
+      contains("fag"),
+      rank
+    )
+  ) %>%
+  select(-year_first)
+```
+
+**Missing functionality**: Maybe the approach to define the cycle_id in time needs to be refined as it does not respect the module cycle limits: should `year_first` define the fag_cycle limits endlessly if it was not aligned with `year_origin`?
+
+```{r eval=FALSE, include=FALSE}
+# use below code to explore the respective FAG cycles:
+fag_stratum_grts_calendar_cycleid %>%
+  summarize(
+    date_start = min(date_start),
+    .by = c(fag_cycle, cycle_id)
+  ) %>%
+  arrange(desc(fag_cycle), cycle_id)
+# code to explore occurring FAG groups per simplified FAG, at
+# location basis:
+fag_stratum_grts_calendar_cycleid %>%
+  distinct(
+    stratum,
+    grts_address,
+    fag_cycle_months,
+    cycle_id,
+    fag_is_auxiliary,
+    fag_simplified,
+    field_activity_group
+  ) %>%
+  filter(
+    n() > 1,
+    .by = c(stratum, grts_address, fag_cycle_months, cycle_id, fag_simplified)
+  ) %>%
+  arrange(pick(everything())) %>%
+  nest(fag_grouping = c(fag_simplified, field_activity_group)) %>%
+  distinct(fag_grouping) %>%
+  pull(fag_grouping)
+```
+
+## Deduplicating simplified FAGs in the same cycle ID; keep the superior FAG
+
+We define an object that determines the rank of FAGs within the same simplified FAG.
+A lower rank will receive higher priority; it will be used to replace other FAGs in the same cycle ID at the same location x stratum.
+
+```{r}
+simplified_fag_ranks <-
+  tribble(
+    ~fag_simplified, ~field_activity_group, ~simplification_rank,
+    "GWLEVREAD", "GWSURFLEVREADDIVERMAN", 1L,
+    "GWLEVREAD", "GWLEVREADDIVERMAN", 2L,
+    "GWLEVREAD", "GWLEVREADDIVER", 3L,
+    "LOCEVALAQLENT", "SURFLENTLOCEVALSAMPLPOINT", 1L,
+    "LOCEVALAQLENT", "LOCEVALAQ", 2L,
+    "LOCEVALAQLOT", "SURFLOTLOCEVALSAMPLPOINT", 1L,
+    "LOCEVALAQLOT", "LOCEVALAQ", 2L
+  ) %>%
+  mutate(
+    fag_simplified = factor(
+      fag_simplified,
+      levels = levels(fag_stratum_grts_calendar_cycleid$fag_simplified)
+    ),
+    field_activity_group = factor(
+      field_activity_group,
+      levels = levels(fag_stratum_grts_calendar_cycleid$field_activity_group)
+    )
+  )
+```
+
+Checking that `fag_stratum_grts_calendar_cycleid` has no FAGs grouped into simplified FAGs that are missed by `simplified_fag_ranks`.
+
+```{r}
+fag_stratum_grts_calendar_cycleid %>%
+  filter(
+    fag_simplifiable,
+    n() > 1,
+    .by = c(stratum, grts_address, fag_cycle_months, cycle_id, fag_simplified)
+  ) %>%
+  distinct(fag_simplified, field_activity_group) %>%
+  inner_join(
+    simplified_fag_ranks,
+    join_by(fag_simplified, field_activity_group),
+    relationship = "one-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  invisible()
+```
+
+Replacing FAG with most superior one if more than one FAG is present for a simplified FAG, at each location x stratum and per FAG cycle ID.
+At the same time, we gather the schemes for which each auxiliary FAG (as represented by the simplified FAG) is serving, either at the occasion itself (planned for this scheme), or also for a later occasion in the same FAG cycle ID.
+The latter distinction is given by the `is_current_occasion` column in the `scheme_moco_ps` tibbles.
+The (upcoming) start and end dates of the linked planned occasions are also added in these tibbles for each of these involved schemes.
+
+```{r}
+fag_stratum_grts_calendar_cycleid <-
+  fag_stratum_grts_calendar_cycleid %>%
+  left_join(
+    simplified_fag_ranks,
+    join_by(fag_simplified, field_activity_group),
+    relationship = "many-to-one"
+  ) %>%
+  mutate(
+    field_activity_group = case_when(
+      fag_simplifiable & !is.na(simplification_rank) ~
+        first(
+          field_activity_group[simplification_rank == min(simplification_rank)]
+        ),
+      .default = field_activity_group
+    ),
+    # following code is to replace scheme_moco_ps by the aggregation of all
+    # involved scheme_moco_ps tibbles per auxiliary fag_simplified in order to
+    # track all served schemes after later FAG removals (next section). This is
+    # done in several steps.
+    #
+    # 1. add the start and end dates to scheme_moco_ps (for auxiliary &
+    # non-auxiliary FAGs)
+    scheme_moco_ps_dates = pmap(
+      list(
+        scheme_moco_ps,
+        date_start,
+        date_end
+      ),
+      function(smp, ds, de) {
+        bind_cols(
+          smp,
+          tibble(
+            date_start_upcoming = ds,
+            date_end_upcoming = de
+          )
+        )
+      }
+    ),
+    # 2. combine the scheme_moco_ps tibbles per group as one tibble, for
+    # auxiliary FAGs
+    scheme_moco_ps_lump = if_else(
+      fag_is_auxiliary,
+      list(scheme_moco_ps_dates),
+      list(NULL)
+    ),
+    scheme_moco_ps_lump = map(scheme_moco_ps_lump, function(df_list) {
+      if (is.null(df_list)) {
+        return(NULL)
+      }
+      list_rbind(df_list)
+    }),
+    # 3. for the auxiliary FAGs, add the start date of the current FAG occasion;
+    # drop older linked dates & keep only the first date for each scheme;
+    # determine whether it matches the current FAG occasion
+    scheme_moco_ps_lump_2 = map2(
+      scheme_moco_ps_lump,
+      date_start,
+      function(smpl, ds) {
+        if (is.null(smpl)) {
+          return(NULL)
+        }
+        bind_cols(smpl, tibble(date_start_current_occasion = ds)) %>%
+          filter(date_start_upcoming >= date_start_current_occasion) %>%
+          filter(
+            date_start_upcoming == min(date_start_upcoming),
+            .by = c(scheme, module_combo_code, panel_set)
+          ) %>%
+          mutate(
+            is_current_occasion =
+              date_start_current_occasion == date_start_upcoming
+          ) %>%
+          select(-date_start_current_occasion)
+      }
+    ),
+    # 4. directly add is_current_occasion = TRUE for non-auxiliary FAGs
+    scheme_moco_ps = map2(
+      scheme_moco_ps_lump_2,
+      scheme_moco_ps_dates,
+      function(smpl, smpd) {
+        if (is.null(smpl)) {
+          smpd %>% mutate(is_current_occasion = TRUE)
+        } else {
+          smpl
+        }
+      }
+    ),
+    .by = c(
+      stratum,
+      grts_address,
+      starts_with("fag_"),
+      n_locvisits_per_fagcycle,
+      cycle_id
+    )
+  ) %>%
+  select(
+    -simplification_rank,
+    -scheme_moco_ps_dates,
+    -scheme_moco_ps_lump,
+    -scheme_moco_ps_lump_2
+  ) %>%
+  # deduplicate FAG occasions due to the simplification. Since we aligned
+  # scheme_moco_ps, these cannot differ within a group where FAG simplification
+  # has been done
+  distinct()
+```
+
+Checking that dropping `fag_simplifiable` and `fag_simplified` does not generate duplicates, meaning that each occasion of `fag_simplified` corresponds to exactly one FAG.
+
+```{r}
+stopifnot(
+  fag_stratum_grts_calendar_cycleid %>%
+    select(-fag_simplifiable, -fag_simplified) %>%
+    distinct() %>%
+    nrow() == nrow(fag_stratum_grts_calendar_cycleid)
+)
+```
+
+## Dropping superfluous revisits for the same (simplified) auxiliary FAG and cycle ID
+
+Specifically for FAGs with a LOCEVAL activity, we first require that an occasion is not planned too soon after an already available assessment date, if one exists.
+If the year difference between assessment date and the FAG occasion is not larger than the cycle duration, then the FAG occasion can be dropped.
+
+UPDATE: we currently only drop such LOCEVAL activities in the case of LOCEVALAQ activities.
+That is because in LOCEVALTERR (except for 7220) we currently also consider the work to do the habitat mapping in the cell unit, which is new.
+
+<!-- XXXX To be updated once we consider the cell mapping as a separate activity, if chosen so. -->
+
+```{r}
+loceval_fags <- unique(locevalfag_spsubset_type_cycle$field_activity_group)
+fag_stratum_grts_calendar_result <-
+  fag_stratum_grts_calendar_cycleid %>%
+  select(-fag_simplifiable, -fag_simplified) %>%
+  add_assessment_data() %>%
+  filter(
+    !(field_activity_group %in% loceval_fags) |
+      # REVISE following condition as needed - see above! XXXXXXXXXXXXXXX
+      field_activity_group == "LOCEVALTERR" |
+      is.na(assessment_date) |
+      year(date_start) >= year(assessment_date) + year(fag_cycle)
+  ) %>%
+  drop_assessment_data()
+```
+
+Now, for each cycle ID, we demand that (simplified) FAGs occur no more than the expected `n_locvisits_per_fagcycle`.
+Note that we also drop subsequently orphaned ADHOC FAGs, once more, if they were kept in this workflow.
+
+```{r}
+fag_stratum_grts_calendar_result <-
+  fag_stratum_grts_calendar_result %>%
+  filter(
+    !fag_is_auxiliary |
+      n() <= n_locvisits_per_fagcycle |
+      # we retain the first unique date_start values, notably the number of
+      # expected location visits in the FAG cycle, when more visits remain than
+      # expected. Exploration showed that this can apply to a wide range of
+      # FAGs.
+      date_start %in% head(sort(unique(date_start)), first(n_locvisits_per_fagcycle)),
+    .by = c(
+      stratum,
+      grts_address,
+      field_activity_group,
+      fag_cycle,
+      n_locvisits_per_fagcycle,
+      cycle_id
+    )
+  ) %>%
+  filter(
+    !fag_is_auxiliary |
+      # resolve duplicate values of date_start, i.e. where only date_end
+      # differs. Note that grouping here also includes date_start. Exploration
+      # showed that this potentially applies to SURFINSTGAUGE and
+      # SPATPOSITGAUGE, probably due to overlap between groundwater and surface
+      # water schemes.
+      date_end == min(date_end),
+    .by = c(
+      stratum,
+      grts_address,
+      field_activity_group,
+      fag_cycle,
+      n_locvisits_per_fagcycle,
+      cycle_id,
+      date_start
+    )
+  ) %>%
+  {
+    if (params$keep_adhoc_acts) {
+      # once more filter out orphaned ADHOC activities
+      filter(
+        .,
+        !str_detect(field_activity_group, "ADHOC") |
+          date_start %in%
+            date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
+        .by = c(
+          stratum,
+          grts_address
+        )
+      )
+    } else {
+      .
+    }
+  } %>%
+  # drop unneeded columns
+  select(-starts_with("fag_"), -n_locvisits_per_fagcycle, -cycle_id) %>%
+  # dropping cycle_id leads to some more duplicates (wrt GW sampling), so
+  # deduplicating. We need to integrate scheme_moco_ps tibbles where needed.
+  summarize(
+    scheme_moco_ps_nested = list(scheme_moco_ps),
+    .by = !scheme_moco_ps
+  ) %>%
+  mutate(scheme_moco_ps = map(scheme_moco_ps_nested, function(df_list) {
+    list_rbind(df_list) %>% distinct()
+  })) %>%
+  relocate(scheme_moco_ps) %>%
+  select(-scheme_moco_ps_nested) %>%
+  relocate(field_activity_group, rank, .after = last_col()) %>%
+  arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
+```
+
+
+## Adding specific FAG occasions from previous versions
+
+In some cases, the choice has been made to not let changes of the revisit design lead to dropping some of the previously planned FAG occasions, in order to maintain the pace of data collection and interim reporting.
+
+As a convenience for fieldwork planning, we will add the concerned occasions from a specific older version of the FAG calendar to the new FAG calendar, as-is.
+This is done in a very targeted way and it may have the assumption that some needed auxiliary FAGs were already executed that do not occur in this filtered old object (they can still be part of the new calendar at a later time).
+Taking the latter complication into account is considered part of the fieldwork planning itself, as this workflow concentrates on the current design.
+
+Loading specific objects from older REP versions in the global environment.
+Their names have the version number as a suffix.
+
+```{r}
+load_needed_objects <- function(
+  env_to = parent.env(environment()),
+  rep_version
+) {
+  env_from <- paste0("rep_", rep_version) %>%
+    str2lang() %>%
+    eval()
+  assign(
+    paste0("cal_", rep_version),
+    get("fag_stratum_grts_calendar", envir = env_from),
+    env_to
+  )
+  assign(
+    paste0("sts_", rep_version),
+    get(
+      "scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar",
+      envir = env_from
+    ) %>%
+      mutate(targetpanel = str_c("OLD", targetpanel)),
+    env_to
+  )
+}
+if (curl::has_internet()) {
+  with_drive_quiet({
+    rep_0.14.0_path <- file.path(tempdir(), "objects_panflpan5_0.14.0.RData")
+    rep_0.13.1_path <- file.path(tempdir(), "objects_panflpan5_0.13.1.RData")
+    drive_download(
+      as_id("10-QEVZfVfGyXNyDtI4qZQiB1_2fXcFvt"),
+      path = rep_0.14.0_path
+    )
+    drive_download(
+      as_id("1EB6cDPr5MX9v9uuJMXEtEkP0p2rI_QMH"),
+      path = rep_0.13.1_path
+    )
+  })
+  prepare_lazy_get(rep_0.14.0_path, "rep_0.14.0")
+  prepare_lazy_get(rep_0.13.1_path, "rep_0.13.1")
+  load_needed_objects(rep_version = "0.14.0")
+  load_needed_objects(rep_version = "0.13.1")
+  invisible(file.remove(rep_0.14.0_path))
+  invisible(file.remove(rep_0.13.1_path))
+} else {
+  # Clumsy approach; needs maintenance. In the longer term, the management of
+  # all this needs more centralization and rigidity.
+  rep_0.14.0_path <- file.path(
+    datapath,
+    "binary/results/objects_panflpan5_poc_0.14.0.RData"
+  )
+  rep_0.13.1_path <- file.path(
+    datapath,
+    "binary/results/objects_panflpan5_poc_0.13.1.RData"
+  )
+  stopifnot(file.exists(rep_0.14.0_path), file.exists(rep_0.13.1_path))
+  prepare_lazy_get(rep_0.14.0_path, "rep_0.14.0")
+  prepare_lazy_get(rep_0.13.1_path, "rep_0.13.1")
+  load_needed_objects(rep_version = "0.14.0")
+  load_needed_objects(rep_version = "0.13.1")
+}
+```
+
+The targetpanels of the old spatiotemporal samples are prefixed with `"OLD"` so that a clear distinction is made between:
+
+- these old targetpanels, which will only apply to 'imported' FAG occasions and the composition of which remains frozen;
+- the current targetpanels, which are directly linked to the location regardless of the location.
+Their composition can change in time due to the use of spare units, a change of spatial sampling frame and so on.
+
+First creating  some helper objects.
+
+```{r}
+# units from rep_0.14.0 with the "OLD" targetpanel column
+units_0.14.0 <-
+  sts_0.14.0 %>%
+  distinct(
+    scheme,
+    module_combo_code,
+    panel_set,
+    targetpanel,
+    stratum,
+    grts_address
+  )
+# EXTRA units from rep_0.13.1
+units_extra_0.13.1 <-
+  sts_0.13.1 %>%
+  distinct(
+    scheme,
+    module_combo_code,
+    panel_set,
+    targetpanel,
+    stratum,
+    grts_address
+  ) %>%
+  anti_join(
+    bind_rows(
+      sts_0.14.0,
+      scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar
+    ),
+    join_by(scheme, stratum, grts_address)
+  )
+
+# create helper object with first READDIVER occasion in new calendar
+first_diverreads_new <-
+  fag_stratum_grts_calendar_result %>%
+  filter(str_detect(field_activity_group, "READDIVER")) %>%
+  summarize(
+    first_date_start = min(date_start),
+    .by = c(stratum, grts_address, field_activity_group)
+  )
+```
+
+Filtering the old FAG calendars and adding the old targetpanel label.
+
+```{r}
+filter_old_cal <- function(df) {
+  df %>%
+    select(
+      scheme_moco_ps,
+      stratum,
+      grts_address,
+      date_start,
+      date_end,
+      date_interval,
+      field_activity_group,
+      rank
+    ) %>%
+    filter(
+      str_detect(field_activity_group, "^GW.*(LEVREADDIVERMAN|SHALL)"),
+      between(year(date_start), 2025, 2030)
+    ) %>%
+    unnest(scheme_moco_ps) %>%
+    filter(scheme == "GW_03.3")
+}
+cal_0.14.0_shrinked <-
+  cal_0.14.0 %>%
+  filter_old_cal() %>%
+  # adding the targetpanel. We need the targetpanel for easy subsetting,
+  # but we will drop it afterwards since those labels will become outdated over
+  # time compared to the new calendar.
+  inner_join(
+    units_0.14.0,
+    join_by(scheme, module_combo_code, panel_set, stratum, grts_address),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
+cal_0.13.1_shrinked <-
+  cal_0.13.1 %>%
+  filter_old_cal() %>%
+  # adding the targetpanel and dropping irrelevant units. We need the
+  # targetpanel for easy subsetting, but we will drop it afterwards since those
+  # labels will become outdated over time compared to the new calendar.
+  inner_join(
+    units_extra_0.13.1,
+    join_by(scheme, module_combo_code, panel_set, stratum, grts_address),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  )
+```
+
+Combining into a single old FAG calendar and further subsetting it to keep the occasions that we want to adopt.
+
+```{r}
+cal_old_continuation <-
+  bind_rows(cal_0.13.1_shrinked, cal_0.14.0_shrinked) %>%
+  filter(
+    str_c("PS", panel_set, targetpanel) %in% c(
+      str_c("PS1OLDPANEL", str_pad(5:12, width = 2, pad = "0")),
+      str_c("PS2OLDPANEL", str_pad(3:6, width = 2, pad = "0"))
+    ),
+    (
+      # filter all relevant sampling occasions
+      str_detect(field_activity_group, "GW.*SHALL") & (
+        (panel_set == 1 & between(year(date_start), 2025, 2027)) |
+          (
+            panel_set == 2 &
+              date_start >= make_date(2025, 1, 1) &
+              date_start < make_date(2027, 7, 1)
+          )
+      )
+    ) |
+      # still keep all READDIVER occasions, but still needs subsetting
+      str_detect(field_activity_group, "READDIVER")
+  ) %>%
+  left_join(
+    first_diverreads_new,
+    join_by(stratum, grts_address, field_activity_group),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  # only keep READDIVER occasions earlier than those in the new calendar, if the
+  # units are common
+  filter(
+    date_start < first_date_start |
+      str_detect(field_activity_group, "READDIVER") & is.na(first_date_start) |
+      !str_detect(field_activity_group, "READDIVER")
+  ) %>%
+  select(-first_date_start) %>%
+  # add extra columns for scheme_moco_ps:
+  mutate(
+    date_start_upcoming = date_start,
+    date_end_upcoming = date_end,
+    is_current_occasion = TRUE
+  ) %>%
+  nest(scheme_moco_ps = c(
+    scheme,
+    module_combo_code,
+    panel_set,
+    date_start_upcoming,
+    date_end_upcoming,
+    is_current_occasion
+  )) %>%
+  relocate(scheme_moco_ps, targetpanel)
+```
+
+Stitching the old and current FAG calendar.
+
+```{r}
+fag_stratum_grts_calendar_result <-
+  bind_rows(
+    cal_old_continuation %>% select(-targetpanel),
+    fag_stratum_grts_calendar_result
+  ) %>%
+  arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group)
+```
+
+
+## FAG calendar (subsampling and relaxing ADHOC FAGs; adding assessment data) {#fag-cal-completion}
+
+We implement the preset proportions to subsample ADHOC FAGs, if they were kept in this workflow.
+Note that a maximum yearly frequency at stratum x location is enforced for each ADHOC FAG before subsampling, since that was the assumption of the subsampling proportions.
+
+Further (and again: if applicable), we relax the date intervals of the remaining ADHOC FAGs to take _one of the existing_ date intervals of non-ADHOC, non-biotic FAGs that have the same start date (in the same stratum x location).
+This is done in order to not limit ADHOC FAGs to their initial date interval of one month, but align them with existing date intervals.
+
+Also, we add assessment data including the replacement locations substituted in `grts_address_final`.
+
+```{r}
+set.seed(20250127)
+fag_stratum_grts_calendar <-
+  fag_stratum_grts_calendar_result %>%
+  {
+    if (params$keep_adhoc_acts) {
+      filter(., !str_detect(field_activity_group, "ADHOC")) %>%
+        bind_rows(
+          fag_stratum_grts_calendar_result %>%
+            subsample_and_relax_adhocfag(
+              adhoc_fag = "ADHOCPIPEREPLACE",
+              local_max_per_year = 1,
+              proportion = samplingprop_adhocpipereplace
+            )
+        ) %>%
+        bind_rows(
+          fag_stratum_grts_calendar_result %>%
+            subsample_and_relax_adhocfag(
+              adhoc_fag = "ADHOCDIVERREPLACE",
+              local_max_per_year = 1,
+              proportion = samplingprop_adhocdiverreplace
+            )
+        ) %>%
+        bind_rows(
+          fag_stratum_grts_calendar_result %>%
+            subsample_and_relax_adhocfag(
+              adhoc_fag = "SURFADHOCGAUGEREPLACE",
+              local_max_per_year = 1,
+              proportion = samplingprop_surfadhocgaugereplace
+            )
+        )
+    } else {
+      .
+    }
+  } %>%
+  arrange(stratum, grts_address, date_start, rank, date_end, field_activity_group) %>%
+  add_assessment_data()
+```
+
+Keeping ADHOC FAGs in the calendar (if they were kept in this workflow) is only done to not overlook this substantial investment.
+Of course, their actual occurrence in space and time will be different, so that when implementing this calendar the ADHOC FAGs will be dropped.
+
+Uncertainties in the sampling frame cause duplication of GRTS addresses in the (generated) sample because multiple strata can be connected to the same GRTS address.
+Below object makes abstraction of this and only keeps unique, final GRTS addresses.
+However, except for some types that can be combined at the same GRTS address, this reduction by GRTS address will not happen in reality since the sample sizes must be maintained!
+
+```{r}
+fag_grts_calendar <-
+  fag_stratum_grts_calendar %>%
+  distinct(
+    grts_address_final,
+    date_start,
+    date_end,
+    date_interval,
+    field_activity_group,
+    rank
+  ) %>%
+  arrange(grts_address_final, date_start, rank, date_end, field_activity_group)
+```
+
+### Displaying an aggregation of the FAG calendar
+
+We display an aggregation of the FAG calendar in a googlesheet for visual exploration and checking.
+For the code, see `helper_scripts/writing_to_googlesheet.R`, and it can optionally be triggered while compiling this report by setting the parameter `update_spatiotemp_gsheet`, in which case the name of the worksheet will be made specific according to the active modules.
+
+```{r include = FALSE, message = FALSE}
+if (params$update_spatiotemp_gsheet) {
+  gs_id <- "1vqxRmWVuc39HCF15K6xZhJEa5ls7Z7uF_xsEr_swQdk"
+  ws_name_prefix <- str_c(str_flatten(modules$code_short), " | ")
+
+  fag_stratum_grts_calendar %>%
+    count(date_interval, rank, field_activity_group) %>%
+    pivot_wider(
+      names_from = field_activity_group,
+      values_from = n,
+      names_sort = TRUE
+    ) %>%
+    arrange(date_interval, rank) %>%
+    mutate(date_interval = as.character(date_interval)) %>%
+    write_sheet(
+      ss = gs_id,
+      sheet = str_c(ws_name_prefix, "FAG_calendar")
+    )
+}
+```
+
+
+## Overview of most relevant objects in this chapter
+
+```{r echo = FALSE}
+for (name in c(
+  "fag_stratum_grts_calendar_cycleid",
+  "cal_old_continuation",
+  "fag_stratum_grts_calendar_result",
+  "fag_stratum_grts_calendar",
+  "fag_stratum_grts_calendar$scheme_moco_ps[[1]]",
+  "fag_grts_calendar"
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```

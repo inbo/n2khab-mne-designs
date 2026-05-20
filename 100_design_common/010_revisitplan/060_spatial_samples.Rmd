@@ -1,0 +1,1018 @@
+# Generating spatial samples {#spatial-sampling}
+
+## Set GRTS address thresholds per domain and stratum for cross-scheme synergies
+
+Determining fixed GRTS address thresholds per domain and stratum to assign to module combos and panel sets, applicable across schemes, in order to maintain maximum synergy across schemes.
+
+While below code was generalized to any number of GRTS partitions, we currently require that no more than two GRTS partitions exist for each domain and stratum:
+
+- these allow the possibility of a split panel design;
+- this strategy allows for a large number of spare units, which also supports potential future sample size increases, e.g. due to new modules in specific SACs, without running the risk of location spillovers between revisit designs (as long as the population is large enough and enough spare units were defined that drive the gap between GRTS partitions);
+- consequently, this means that within each scheme, domain and stratum only two different revisit designs can coexist (typically as panel sets; optionally module combos).
+
+The threshold is the GRTS address start where a series should start.
+For this, also the relationship of module combos between schemes must be investigated and aligned.
+
+Note that this should in general solve the following challenge:
+
+- within one module (say module 1), strata of a non-core scheme (say scheme A) received no explicit sample size when they are present in another core scheme (say scheme B) of the same module where they got an explicit sample size;
+- in another module (say module 2), that non-core scheme (A) may be present as a core scheme, where such strata do have an explicit sample size;
+- consequently, for the scheme at hand (A), not all involved modules cover their part in the sample size of that stratum.
+
+As long as the involved modules sit together in one module combo (!), in both involved schemes (A and B), we can expect these module combos to have the same rank between both schemes (insofar they don't just match), so that the GRTS partition thresholds for the involved strata will be determined by the core scheme.
+
+**Missing functionality**: still, the number of explicit sample locations in scheme A for those strata will be solely determined by the module where A is a core-scheme; hence these locations will not take into account the coverage of sample locations by scheme B.
+It actually depends on whether, within module 1, FAGs are still missing in _non-core_ scheme A and _core_ scheme B to fully cover the needs of scheme A as if it were a core module.
+If these needs are indeed covered, then the missing functionality is about taking into account a GRTS offset in sampling locations for module 2 (or alternatively always be explicit about sample sizes, including non-core schemes).
+**This is to be solved whenever two modules are effectively combined where this indeed happens**.
+If the needs are not covered, then overlapping locations between module 1 and 2 for the same scheme makes sense; then we only need to deduplicate overlapping FAGs in the revisit design, something to be addressed anyway across schemes.
+
+Spatial sampling frame 0 is the most common one and also the unrestricted one, so we use that one to choose GRTS thresholds.
+
+```{r paged.print=FALSE}
+module_domain_scheme_ps_stratum_sample_size %>%
+  count(sampling_frame_id, sort = TRUE)
+```
+
+We can see that sampling frame 0 is not used in groundwater schemes though, where restrictions always apply:
+
+```{r paged.print=FALSE}
+scheme_sampling_frame %>%
+  mutate(
+    compartment = str_extract(scheme, "^[A-Z]+") %>%
+      factor() %>%
+      fct_relevel("HQ", after = Inf)
+  ) %>%
+  count(compartment, sampling_frame_id)
+```
+
+However for synergy with schemes from other compartments, we will still use it in all situations, also taking into account that the sample sizes for schemes in the SOIL compartment are currently the largest, and based on sampling frame 0.
+This choice is also because it's better to generate thresholds further apart than too close together for certain schemes.
+
+### Define and allocate GRTS partition numbers
+
+Defining the GRTS partition number, based on the module combo **rank** and panel set, for each domain and stratum, hence across schemes.
+We only take into account sample sizes larger than zero.
+
+```{r}
+moco_ps_dom_stratum_grtspart <-
+  module_domain_scheme_ps_stratum_sample_size %>%
+  select(
+    module,
+    domain,
+    scheme,
+    panel_set,
+    sampling_frame_id,
+    stratum,
+    sp_sample_size_all_panels_stratum,
+    nunits
+  ) %>%
+  # drop sample sizes of zero
+  filter(sp_sample_size_all_panels_stratum > 0) %>%
+  # for MNE, non-core schemes are dropped, except for specifically added types
+  # for those non-core-schemes.
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
+  # joining module combos
+  inner_join(
+    scheme_ps_target_paneldesign %>%
+      select(scheme, panel_set, module_combo_code, module_combo) %>%
+      unnest(module_combo),
+    join_by(module, scheme, panel_set),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # sum the module sample sizes for common scheme, panel set, module combo,
+  # domain and stratum, as these sizes are going to be drawn as one GRTS address
+  # series; however limit this result to the maximum module-specific population
+  # size:
+  summarize(
+    total_sample_size_all_panels = min(
+      sum(sp_sample_size_all_panels_stratum),
+      max(nunits)
+    ),
+    .by = c(scheme, module_combo_code, panel_set, domain, stratum, nunits)
+  ) %>%
+  # use maximum sample sizes across schemes for common panel set, module combo,
+  # domain and stratum, since these should drive GRTS series partitioning:
+  summarize(
+    max_sample_size_all_panels = max(total_sample_size_all_panels),
+    .by = c(module_combo_code, panel_set, domain, stratum)
+  ) %>%
+  # add module combo rank:
+  inner_join(
+    moco_order,
+    join_by(module_combo_code),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # Determine rank number of the GRTS partition. We choose to keep different
+  # panel set numbers with the same module combo closer together than identical
+  # panel set numbers with a different module combo
+  mutate(
+    grts_part = dense_rank(moco_rank * 1000 + panel_set),
+    .by = c(domain, stratum)
+  )
+```
+
+Given the earlier requirement of maximum number of different revisit designs, we give an error if `grts_part` > 2 exists:
+
+```{r}
+if (max(moco_ps_dom_stratum_grtspart$grts_part) > 2) {
+  stop(
+    "We have chosen to not support more than two GRTS partitions. ",
+    "Please integrate (revise) revisit designs as needed."
+  )
+}
+```
+
+### Set GRTS thresholds per domain x stratum
+
+Now setting the GRTS threshold (variable `grts_address_start`) for each GRTS partition in a domain x stratum.
+
+To do this, we use the maximum required spatial sample size for a GRTS partition in a domain x stratum, and extend with a number of spare units by applying the applicable coefficient to this sample size.
+For smaller GRTS address series (smaller populations), it is tried to optimally distribute the partitions but overlaps between GRTS partitions that belong to different module combos may be unavoidable as spatial sample sizes are necessarily only limited by the total population size (in domain x stratum), not by the size of partitions thereof.
+
+Also, note that the actual spatial sample size and number of spare units in a GRTS partition x domain x stratum **for a specific scheme** may be lower.
+So the below GRTS-partition-level spatial sample sizes and number of spare units only help in setting the thresholds, but will not be used in drawing spatial samples.
+
+Currently the GRTS thresholds have been made static, so that partitions don't move around unsupervised.
+This helps in stabilizing spatial samples.
+If needed, they can still be extended with extra domains and strata.
+
+The original code to create the GRTS thresholds (below) has been made optional, as it would reset them.
+
+```{r reset-grtspart-thresholds}
+if (params$reset_grtspart_thresholds) {
+  dom_stratum_grtspart_threshold <-
+    moco_ps_dom_stratum_grtspart %>%
+    # determine max sample size for each GRTS partition rank per domain x stratum,
+    # which will ultimately drive the GRTS partitioning for the same revisit
+    # design and across module combos with the same rank (note that different
+    # panel sets always trigger another rank)
+    summarize(
+      max_sample_size_all_panels = max(max_sample_size_all_panels),
+      .by = c(domain, stratum, grts_part)
+    ) %>%
+    # characterize strata with 'is_strictly_aquatic' to determine number of
+    # spare units
+    add_col_is_strictly_aquatic(
+      strata = n2khab_strata,
+      type_properties = n2khab_types_expanded_properties
+    ) %>%
+    arrange(domain, stratum, grts_part) %>%
+    nest(splits = -c(domain, stratum, is_strictly_aquatic)) %>%
+    inner_join(
+      sp_samplingframe_domain %>%
+        filter(sampling_frame_id == 0L) %>%
+        pluck("sampling_frame_domain", 1) %>%
+        # dropping extra attributes; to be joined afterwards for fieldwork
+        # planning
+        select(domain, stratum, grts_address),
+      join_by(domain, stratum),
+      relationship = "one-to-many",
+      unmatched = c("error", "drop")
+    ) %>%
+    nest(grts_addresses = grts_address) %>%
+    # now determine threshold for each domain x stratum combination
+    mutate(
+      splits = pmap(
+        list(splits, grts_addresses),
+        function(spl, grts) {
+          spl %>%
+            mutate(
+              # TEMPORARY HACK to fix two cases of 3260 (domains BE2100024 and
+              # BE2200039) where more than one unit is linked to the same GRTS
+              # address. TO BE SOLVED XXXXXXX
+              # ################################
+              max_sample_size_all_panels = ifelse(
+                max_sample_size_all_panels > length(grts$grts_address),
+                length(grts$grts_address),
+                max_sample_size_all_panels
+              ),
+              ##################################
+              n_spare_units_theoretical = round(
+                max_sample_size_all_panels * spare_coef_default
+              ) %>%
+                as.integer(),
+              # first GRTS address of a GRTS partition
+              grts_address_start = pick_grts_thresholds(
+                max_sample_size_all_panels,
+                n_spare_units_theoretical,
+                grts$grts_address
+              ),
+              # index of the first GRTS address of a GRTS partition
+              grts_index_start = match(
+                grts_address_start,
+                sort(grts$grts_address)
+              ),
+              # index of the last GRTS address of the max sample size per GRTS
+              # partition. Note that this may exceed the index_start of the next
+              # GRTS partitions if the partitions overlap.
+              grts_index_end = grts_index_start + max_sample_size_all_panels - 1L,
+              # GRTS address corresponding to grts_index_end
+              grts_address_end = sort(grts$grts_address)[grts_index_end],
+              # index of the last GRTS address of the GRTS partition if we define
+              # it using the index_start of the next partition minus 1. This may
+              # be smaller than grts_index_end in overlap cases
+              grts_index_gap_end = dplyr::lead(
+                grts_index_start - 1L,
+                default = length(grts$grts_address)
+              ) %>%
+                # not accepting the index 0:
+                pmax(1L),
+              # GRTS address corresponding to grts_index_gap_end
+              grts_address_gap_end = sort(grts$grts_address)[grts_index_gap_end],
+              # maximum number of spare units that we will select in a GRTS
+              # partition
+              n_spare_units = pmin(
+                n_spare_units_theoretical,
+                grts_index_gap_end - grts_index_end
+              ) %>%
+                # not accepting negative values (overlap cases):
+                pmax(0L)
+            )
+        }
+      )
+    ) %>%
+    select(-grts_addresses, -is_strictly_aquatic) %>%
+    unnest(splits) %>%
+    arrange(domain, stratum, grts_part)
+
+  write_vc(
+    dom_stratum_grtspart_threshold,
+    "dom_stratum_grtspart_threshold",
+    root = file.path(datapath, "text/intermediate"),
+    sorting = c("domain", "stratum", "grts_part"),
+    strict = FALSE
+  )
+}
+```
+
+Reading the GRTS thresholds.
+
+```{r}
+dom_stratum_grtspart_threshold <- read_vc(
+  "dom_stratum_grtspart_threshold",
+  root = file.path(datapath, "text/intermediate")
+) %>%
+  as_tibble()
+```
+
+```{r include=FALSE}
+# Optional code to amend the dom_stratum_grtspart_threshold file. '.chain'
+# refers to the code to reset the object, without actually overwriting it.
+if (FALSE) {
+  bind_rows(
+    dom_stratum_grtspart_threshold,
+    .chain %>%
+      anti_join(
+        dom_stratum_grtspart_threshold,
+        join_by(domain, stratum, grts_part)
+      )
+  ) %>%
+    write_vc(
+      "dom_stratum_grtspart_threshold",
+      root = file.path(datapath, "text/intermediate"),
+      sorting = c("domain", "stratum", "grts_part"),
+      strict = FALSE
+    )
+}
+```
+
+
+Beware that several columns merely reflect settings and the state of sampling frames at the time of creation, and should be considered unstable: `max_sample_size_all_panels`, `n_spare_units_theoretical`, `n_spare_units`, all indices and even `grts_address_end` and `grts_address_gap_end`.
+Only `grts_address_start`, for a combination of `domain`, `stratum` and `grts_part`, is to be used in defining GRTS partitions in the long term.
+
+Still, when the base sampling frame of a stratum has changed dramatically in a smaller domain, it is worth looking at the results of resetting the GRTS thresholds for this specific case, see if samples based on these would cause conflicts with current samples (there should at least be overlap), and consider (some) adjustment of specific thresholds.
+
+### Investigate GRTS thresholds
+
+Some characteristics of `dom_stratum_grtspart_threshold`, especially with relation to number of spare units.
+
+```{r}
+nrow(dom_stratum_grtspart_threshold)
+dom_stratum_grtspart_threshold %>%
+  filter(n_spare_units == 0) %>%
+  nrow()
+dom_stratum_grtspart_threshold %>%
+  filter(n_spare_units == 0) %>%
+  pull(stratum) %>%
+  n_distinct()
+dom_stratum_grtspart_threshold %>%
+  filter(n_spare_units < n_spare_units_theoretical) %>%
+  nrow()
+```
+
+Cases may exist where GRTS partitions overlap:
+
+```{r paged.print = FALSE}
+dom_stratum_grtspart_threshold %>%
+  filter(grts_index_end > grts_index_gap_end) %>%
+  count(domain, grts_part, name = "number_of_strata")
+```
+
+It must be kept in mind that, in overlapping domains, the same GRTS partition number for the same stratum does not necessarily (and often does not) represent overlapping GRTS series between these domains.
+
+Before further investigating this, we first determine the applicable domain relations.
+
+```{r}
+domain_relations_spsamples <-
+  domain_overlaps %>%
+  semi_join(
+    module_domain_scheme_ps_stratum_sample_size %>%
+      distinct(module, domain),
+    join_by(domain)
+  ) %>%
+  semi_join(
+    module_domain_scheme_ps_stratum_sample_size %>%
+      distinct(module, domain),
+    join_by(included_by == domain)
+  )
+including_domain <- unique(domain_relations_spsamples$included_by)
+```
+
+Below, the number of domain x stratum cases in included domains is shown where this overlap with the including domain does not occur, for each combination of GRTS partition number and applied sample size in the included domain.
+
+```{r paged.print = FALSE}
+grtspart_relations <-
+  dom_stratum_grtspart_threshold %>%
+  filter(domain != including_domain) %>%
+  inner_join(
+    dom_stratum_grtspart_threshold %>%
+      filter(domain == including_domain) %>%
+      select(
+        stratum,
+        grts_part,
+        grts_start_largedom = grts_address_start,
+        grts_end_largedom = grts_address_end
+      ),
+    join_by(stratum, grts_part),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  select(-matches("spare|index|gap"))
+grtspart_relations %>%
+  filter(
+    !between(grts_address_start, grts_start_largedom, grts_end_largedom)
+  ) %>%
+  count(grts_part, max_sample_size_all_panels) %>%
+  arrange(grts_part, desc(max_sample_size_all_panels))
+```
+
+Sample size, number and proportion of cases:
+
+```{r}
+grtspart_relations %>%
+  summarize(
+    max_sample_size_no_overlap = max(
+      max_sample_size_all_panels[!between(
+        grts_address_start,
+        grts_start_largedom,
+        grts_end_largedom
+      )]
+    ),
+    max_sample_size_all = max(max_sample_size_all_panels),
+    n_no_overlap = sum(!between(
+      grts_address_start,
+      grts_start_largedom,
+      grts_end_largedom
+    )),
+    n_all = n(),
+    .by = grts_part
+  ) %>%
+  mutate(ratio_n = round(n_no_overlap / n_all, 2))
+```
+
+This result is because the GRTS partition's address range depends on the available addresses of a stratum in an included domain, and these do not necessarily overlap with those of the including domain.
+In the first partition we can safely conclude that in the non-overlapping cases the included domain is simply beyond the including domain's sample and spare units, so there's no conflict in combining both after spatial poststratification (since there exists no 'both' within the included domain).
+However the mismatch happens more in the second panel set than in the first, as the start address of the second panel set is also determined by the first partition's sample size, which differs between the including and the included domain.
+
+In the second partition we often have that the including domain still selected a sampling unit inside the included domain which is outside of the included domain's second partition, effectively generating a non-consecutive GRTS-series for the combined second panel set in the included domain.
+
+Note that beside the non-consecutive GRTS-series, this also affects the selection of spare units of a scheme's second panel set in spatial poststrata further on.
+This is because the spare units are selected from all remaining available GRTS addresses in GRTS partition 2, from the including and the included domain.
+So there's room for improvement here.
+
+We might prevent this by creating the GRTS partitions only after spatial stratification using the included domains, but once monitoring starts it cannot be done for new modules that define new included domains without dropping locations of the including domain in favour of using new locations as one GRTS series.
+Also, when the module of the included domains would be halted, the stratification would still need to be kept.
+Hence, using the included domains as cross-module stratification would be a burden rather than a bless in terms of flexibility, and so would shifting the locations of GRTS partition 2 of the including domain that lie within the including domain.
+One might argue to approach these compound GRTS series as two panel sets within the included domain, but this makes for extra complication.
+
+One alternative might be to actually shift GRTS partition 2 of a stratum in an included domain in order to follow on the existing addresses of the same partition from the including domain that lie in the included domain.
+However this would neglect an optimal position of the partition in the whole available GRTS series within the included domain.
+
+- This solution calls for more investigation of its effects on the (relative) number of spare units in each partition, per stratum and domain.
+- On the other hand, we should realize this is typically about very small sample sizes in an included domain: 1, 2 or sometimes 3.
+We might as well ignore the use of the GRTS estimator here; see also section \@ref(investigate-sample-sizes).
+- Furthermore, such connection between both partitions 2 would not be stable over time.
+
+Counting, for the second partition, whether in the included domain the GRTS addresses are higher than for the including domain (overshooting) or not.
+
+```{r}
+grtspart_relations %>%
+  filter(
+    !between(grts_address_start, grts_start_largedom, grts_end_largedom),
+    grts_part == 2,
+  ) %>%
+  mutate(overshooting = grts_address_start > grts_end_largedom) %>%
+  count(overshooting)
+```
+
+In conclusion, and after experimenting with different spare unit coefficients between including and included domain, we decide to not further address this since there is no immediate solution to it.
+
+**Missing functionality**: detect and flag non-consecutive GRTS partitions from different modules having the same partition number in a common spatial poststratum (included domain).
+Non-consecutive means that GRTS addresses exist for the stratum (type) in the spatial poststratum which lie between both GRTS partitions.
+This situation leads to spatial poststratum sampling units not representing a consecutive GRTS series, and this must be respected at the inference stage.
+
+## Apply the GRTS address threshold to the module combos and panel sets
+
+Expanding the GRTS-partition-level GRTS-threshold to the level of module combos and panel sets (per domain and stratum).
+
+```{r}
+moco_ps_dom_stratum_grtspart_threshold <-
+  moco_ps_dom_stratum_grtspart %>%
+  select(-max_sample_size_all_panels, -moco_rank) %>%
+  inner_join(
+    dom_stratum_grtspart_threshold %>%
+      select(domain, stratum, grts_part, grts_address_start),
+    join_by(grts_part, domain, stratum),
+    relationship = "many-to-one",
+    # it it possible that some stored thresholds are unneeded for the currently
+    # selected module combo x panel set x domain x stratum combinations, so they
+    # can be dropped
+    unmatched = c("error", "drop")
+  )
+```
+
+## Draw spatial samples
+
+Determining the sample sizes at module combo instead of module level.
+Since this object is going to be used to draw actual samples and spare units, sample sizes of zero are dropped.
+
+```{r}
+scheme_moco_ps_dom_stratum_sample_size <-
+  module_domain_scheme_ps_stratum_sample_size %>%
+  select(
+    module,
+    domain,
+    scheme,
+    panel_set,
+    sampling_frame_id,
+    cycle_duration_y,
+    stratum,
+    sp_sample_size_all_panels_stratum
+  ) %>%
+  # For non-core-schemes, only specifically added types with explicit sample
+  # size are kept, i.e. below filter step (the other sampling units are covered
+  # already by the data collection of core types). This is the logical approach
+  # for spatial sampling and data collection plans, however for inference we
+  # also need to compile an expanded object with all applicable combinations of
+  # sampling unit and scheme.
+  filter(!is.na(sp_sample_size_all_panels_stratum)) %>%
+  # joining module combos
+  inner_join(
+    scheme_ps_target_paneldesign %>%
+      select(scheme, module_combo_code, module_combo, panel_set) %>%
+      unnest(module_combo),
+    join_by(module, scheme, panel_set),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # Domains that are the same between different modules are integrated within
+  # module combos by summing the sample sizes; no need to limit here by
+  # population size since the sampling is done on the available units. Modules
+  # are collapsed to their combinations:
+  summarize(
+    sp_sample_size_all_panels_stratum = sum(sp_sample_size_all_panels_stratum),
+    .by = c(
+      scheme,
+      module_combo_code,
+      panel_set,
+      sampling_frame_id,
+      cycle_duration_y,
+      domain,
+      stratum
+    )
+  ) %>%
+  filter(sp_sample_size_all_panels_stratum > 0)
+```
+
+Inspecting the obtained sample sizes once more, by aggregating.
+
+```{r paged.print = FALSE}
+aggregate_sample_size(
+  scheme_moco_ps_dom_stratum_sample_size,
+  "sp_sample_size_all_panels_stratum",
+  mhq_scheme_category,
+  by_module_combo = TRUE
+) %>%
+  print(n = Inf)
+```
+
+Drawing spatial samples per scheme and GRTS partition (hence for module combos x panel sets), for each stratum x domain.
+This includes the step to redraw the sample for domains included by another domain (typically because of module combinations), to ensure that no units are drawn more than once and the GRTS series in the domain is one series if possible (this requires that the GRTS partitions of a stratum have enough overlap in their 'start' regions, between an including and an included domain).
+
+Note that the term 'domain' causes some confusion when considered across modules:
+
+- Each module targets one or multiple (geographically defined) domains with a predetermined sample size.
+- While domains may overlap between modules, the domain name is kept as foreseen by a module, since the sample size must be maintained at that level for the module.
+Sample sizes of two modules are summed only when domains are identical.
+- Next, the specified number of sampling units is drawn for each domain.
+- In a separate step, it is taken care of to have no common sampling units between modules where domains overlap.
+In this step, the membership of each unit with respect to a smaller, included domain is taken into account, in order to maximize the possibility for all sampling units that belong to that domain, across modules, have contiguous GRTS addresses for the common GRTS partition number.
+Nevertheless, their original (module-bound) domain attribute is still kept.
+Sampling units from smaller domains that have a shifted GRTS address to avoid overlap with sampling units from a larger, including domain, have a value `TRUE` in the `extends_on_larger_domain` column of below created `scheme_moco_ps_stratum_dom_spsamples`.
+- Consequently, which units belong to an overlapped domain across modules will not yet be apparent from the resulting object.
+We will need this though in order to add spare units and apply the revisit design.
+Preparing for this will be the topic of section \@ref(sppoststrata) (spatial poststrata).
+
+```{r}
+scheme_moco_ps_stratum_dom_spsamples_nested <-
+  scheme_moco_ps_dom_stratum_sample_size %>%
+  select(-cycle_duration_y) %>%
+  # set first GRTS address of the GRTS partition (GRTS threshold)
+  inner_join(
+    moco_ps_dom_stratum_grtspart_threshold %>%
+      select(-grts_part),
+    join_by(module_combo_code, panel_set, domain, stratum),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>%
+  nest(moco_ps_domain_stratum_spsamplesize = c(
+    module_combo_code,
+    panel_set,
+    domain,
+    stratum,
+    sp_sample_size_all_panels_stratum,
+    grts_address_start
+  )) %>%
+  inner_join(
+    sp_samplingframe_domain,
+    join_by(sampling_frame_id),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # drawing an independent sample per scheme, domain, stratum and module combo & panel set:
+  mutate(
+    spsample = map2(moco_ps_domain_stratum_spsamplesize, sampling_frame_domain, function(dss, sfd) {
+      dss %>%
+        inner_join(
+          sfd %>%
+            # dropping extra attributes; to be joined afterwards for fieldwork
+            # planning
+            select(domain, stratum, grts_address) %>%
+            nest(grts_addresses = grts_address),
+          join_by(domain, stratum),
+          relationship = "many-to-one",
+          unmatched = c("error", "drop")
+        ) %>%
+        # the grts_addresses_subset implements the GRTS threshold restriction
+        mutate(
+          grts_addresses_subset = map2(
+            grts_address_start,
+            grts_addresses,
+            function(grts_start, grts) {
+              grts %>% filter(grts_address >= grts_start)
+            }
+          ),
+          sample =
+            map2(
+              sp_sample_size_all_panels_stratum,
+              grts_addresses_subset,
+              function(sss, grts_sub) {
+                grts_sub %>%
+                  slice_min(grts_address, n = sss)
+              }
+            )
+        ) %>%
+        select(-c(grts_addresses, grts_address_start)) %>%
+        nest(domain_spsample = c(
+          domain,
+          sp_sample_size_all_panels_stratum,
+          grts_addresses_subset,
+          sample
+        ))
+    })
+  ) %>%
+  select(scheme, spsample) %>%
+  unnest(spsample) %>%
+  # handling the overlap between domains within module combo x panel set:
+  # above, the samples have been drawn independently so now this has to be
+  # corrected!
+  mutate(
+    domain_spsample = map(domain_spsample, function(ds) {
+      ds <- left_join(
+        ds,
+        domain_relations_spsamples,
+        join_by(domain),
+        relationship = "one-to-one",
+        unmatched = "drop"
+      )
+      # vector of including domains:
+      including_domains <- unique(ds$included_by)
+      # drop NAs:
+      including_domains <- including_domains[!is.na(including_domains)]
+      # only keep an including domain if it is effectively present as domain:
+      including_domains <- including_domains[including_domains %in% ds$domain]
+      if (length(including_domains) > 1) {
+        stop(
+          "Multiple including domains in one module combo x panel set",
+          " x stratum are not supported."
+        )
+      }
+      ds %>%
+        mutate(
+          including = domain %in% including_domains | length(including_domains) == 0,
+          # put the sample of the including domain next to the included domains:
+          grts_sampled = ifelse(
+            including,
+            tibble(),
+            sample[including]
+          ),
+          # determine the available unsampled units per domain:
+          grts_addresses_unsampled = map2(
+            grts_addresses_subset,
+            grts_sampled,
+            function(ga, gs) {
+              if (is.null(gs)) {
+                return(NULL)
+              }
+              anti_join(ga, gs, join_by(grts_address))
+            }
+          ),
+          # redraw samples for included domains:
+          sample_2 = pmap(
+            list(including, sample, grts_addresses_unsampled, sp_sample_size_all_panels_stratum),
+            function(inc, sam, grts, sss) {
+              if (inc) {
+                sam
+              } else {
+                grts %>% slice_min(grts_address, n = sss)
+              }
+            }
+          ),
+          # flag sampling units of included domains, as they should never be
+          # considered apart from the including domain:
+          extends_on_larger_domain = !including & length(including_domains) == 1
+        ) %>%
+        select(
+          domain,
+          including,
+          grts_addresses_subset,
+          sample = sample_2,
+          extends_on_larger_domain
+        )
+    })
+  )
+
+scheme_moco_ps_stratum_dom_spsamples <-
+  scheme_moco_ps_stratum_dom_spsamples_nested %>%
+  mutate(
+    domain_spsample = map(domain_spsample, function(ds) {
+      ds %>%
+        select(domain, sample = sample, extends_on_larger_domain) %>%
+        # next step will also drop domains where no sampling units were
+        # available (i.e. the whole population was sampled by the larger domain):
+        unnest(sample)
+    })
+  ) %>%
+  unnest(domain_spsample)
+```
+
+Checking that no sampling units overlap between domains within the combination of module combo, scheme, panel set and stratum.
+
+```{r}
+stopifnot(
+  scheme_moco_ps_stratum_dom_spsamples %>%
+    count(scheme, module_combo_code, panel_set, stratum, grts_address) %>%
+    filter(n > 1) %>%
+    nrow() == 0
+)
+```
+
+**Missing functionality**: generate object that reflects relationship between all sampling units and schemes, including non-core schemes, needed for the inference stage.
+Currently, we only consider the needs for sampling and data collection, hence not the exact duplications between (parts of) core-schemes and (parts of) non-core schemes.
+See also the above code comment about non-core schemes.
+In essence this means duplicating existing sampling units using applicable rows from `module_domain_scheme_ps_stratum_sample_size`, `mod_scheme_ps_target_paneldesign` or `scheme_ps_target_paneldesign` with relation to non-core schemes.
+This object then also contains the spatial poststrata, needed for inference, and we also need to add the sampling weights at that level.
+
+
+## Reclassify by spatial poststratum and add spare units {#sppoststrata}
+
+The `scheme_moco_ps_stratum_dom_spsamples` object distinguishes domains which can spatially overlap.
+This is caused by the domains envisaged by specific modules, and the sampling units attributed to the different domains are mutually exclusive.
+It is also a consequence of the fact that sample sizes are typically set at the module x domain x scheme level, so it reflects this module-wise sampling approach.
+Hence in this object it is clear which sampling units are added surplus in specific (included) domains in order to increase coverage of those domains.
+
+However, given samples that belong to different and potentially overlapping domains, we must take into account several aspects:
+
+- **Panel memberships** will be based on the GRTS series for each revisit design of a stratum in a scheme, hence for a module combo x panel set that applies to this scheme (this has already been prepared by implementing the GRTS partition thresholds).
+This is done in order to maintain long-term spatial balance per revisit design and to minimize the possibility that sampling units jump from one revisit design to another as a consequence of changes in the spatial sampling frame.
+Furthermore, the panel membership design is created separately for each included (or multiple non-overlapping) domain and for the remainder of the including domain -- if sampling has indeed taken place both at the level of an including and an included domain.
+Otherwise the units of an included domain would not be well spread over the panels when specifically looking at an included domain (for which a module is obviously present, hence an inference requested).
+- We will refer to these mutually exclusive domains / domain remainders as _**spatial poststrata**_, as they will effectively be used for poststratification in the inference about the overall (including) domain.
+We regard them as poststrata rather than strata, since their spatial sample size is not predetermined.
+(But note that one could counterargue that the panel membership is controlled by the poststrata, hence they do affect the spatiotemporal sample.)
+- Consequently, a separate set of **spare units** is needed for each revisit design of a stratum in a scheme, hence they must be generated at the level of spatial poststrata in a revisit design.
+The _number_ of spare units will be determined based on the stratum sample size of each spatial poststratum, for a given revisit design (~ module combo x panel set) in a scheme.
+
+Now generating the spatial poststrata (which replace the domain level) and adding spare units.
+
+```{r}
+scheme_moco_ps_stratum_sppost_spsamples_spares <-
+  scheme_moco_ps_stratum_dom_spsamples_nested %>%
+  # set the coefficient to calculate the theoretical number of spare units
+  mutate(spare_coef = spare_coef_default) %>%
+  # add list columns for scheme x module combo x panel set x stratum:
+  mutate(
+    # 1. vector that defines relevant spatial poststrata
+    sp_poststrata = map(domain_spsample, function(ds) {
+      n_included_doms <- sum(!ds$including)
+      ds %>%
+        mutate(
+          sp_poststratum = ifelse(
+            including & n_included_doms > 0,
+            str_c(domain, "_remainder"),
+            as.character(domain)
+          )
+        ) %>%
+        pull(sp_poststratum) %>%
+        unique()
+    }),
+    # 2. tibble with the GRTS addresses available for sampling (i.e. sampling
+    # frame limited by applicable domains and by the GRTS partition),
+    # integrated over all domains
+    overall_grts_addresses_subset = map(domain_spsample, function(ds) {
+      ds %>%
+        pull(grts_addresses_subset) %>%
+        reduce(dplyr::union)
+    }),
+    # 3. tibble with the sampled GRTS addresses, integrated over all domains
+    overall_sample = map(domain_spsample, function(ds) {
+      ds %>%
+        pull(sample) %>%
+        reduce(dplyr::union)
+    }),
+    # 4. tibble with: spatial poststrata, corresponding sampling units and
+    # spare units
+    sp_poststr_samples_spareunits = pmap(
+      list(
+        spare_coef,
+        domain_spsample,
+        sp_poststrata,
+        overall_grts_addresses_subset,
+        overall_sample
+      ),
+      function(coef, ds, poststr, grts, sam) {
+        smaller_domains <-
+          ds %>%
+          # if the general including domain (Flanders) is not present, smaller
+          # domains are marked as including
+          filter(!including | !(domain %in% including_domain)) %>%
+          pull(domain)
+        poststr_remainder <- poststr[!poststr %in% smaller_domains]
+        if (length(poststr_remainder) > 1 && length(smaller_domains) > 0) {
+          stop("Mismatch between spatial poststrata and domains!")
+        }
+        # create the relation between spatial poststrata and all available GRTS
+        # addresses, and mark the sampling units
+        sp_poststr_all <-
+          grts %>%
+          left_join(
+            domain_grts_n2khab %>%
+              {
+                if (length(smaller_domains) > 0) {
+                  filter(., domain %in% smaller_domains)
+                } else {
+                  if (length(including_domain) != 1L) {
+                    stop("The left_join approach needs to be revised.")
+                  }
+                  filter(., domain %in% including_domain)
+                }
+              },
+            join_by(grts_address),
+            relationship = "one-to-one",
+            unmatched = "drop"
+          ) %>%
+          rename(sp_poststratum = domain) %>%
+          relocate(sp_poststratum) %>%
+          mutate(
+            sp_poststratum = ifelse(
+              is.na(sp_poststratum),
+              poststr_remainder,
+              as.character(sp_poststratum)
+            ) %>%
+              factor(),
+            sample_status = ifelse(
+              grts_address %in% sam$grts_address,
+              "in_sample",
+              NA_character_
+            )
+          ) %>%
+          arrange(sp_poststratum, grts_address)
+        # generate the spare units per spatial poststratum
+        sp_poststr_spareunits <-
+          sp_poststr_all %>%
+          generate_spare_units(coef_spare = coef)
+        # combine sample and spare units per spatial poststratum
+        sp_poststr_all %>%
+          filter(sample_status == "in_sample") %>%
+          bind_rows(sp_poststr_spareunits) %>%
+          mutate(sample_status = factor(sample_status)) %>%
+          arrange(sp_poststratum, grts_address)
+      }
+    )
+  ) %>%
+  select(
+    scheme,
+    module_combo_code,
+    panel_set,
+    stratum,
+    sp_poststr_samples_spareunits
+  ) %>%
+  arrange(scheme, module_combo_code, panel_set, stratum)
+```
+
+Total size of `scheme_moco_ps_stratum_sppost_spsamples_spares` after unnesting.
+
+```{r}
+scheme_moco_ps_stratum_sppost_spsamples_spares %>%
+  unnest(sp_poststr_samples_spareunits) %>%
+  nrow()
+```
+
+Overall representation of spatial poststrata in the spatial samples (of all modules, schemes and strata):
+
+```{r paged.print=FALSE}
+scheme_moco_ps_stratum_sppost_spsamples_spares %>%
+  unnest(sp_poststr_samples_spareunits) %>%
+  mutate(sp_poststratum = factor(as.character(sp_poststratum))) %>%
+  count(sp_poststratum)
+```
+
+In general, note that the above spatial poststrata are to be interpreted within a scheme x module combo x panel set x stratum; this holds especially for the 'remainder' poststratum which is defined relative to the smaller poststrata (domains).
+This is stratum dependent since not each stratum is represented in the smaller poststrata (domains), or has been subjected to domain-specific sampling in a particular scheme x module combo x panel set (e.g. due to a sample size of zero; section \@ref(investigate-sample-sizes)).
+
+As a consequence, it can occur that spatial poststratum membership is not the same between different levels of scheme x module combo x panel set for a common location x stratum that is situated inside a smaller domain: if for some reason this included domain has not been separately sampled in a scheme x module combo x panel set, the location can still be present in the sample of the _including_ domain and at the same time be sampled for the _included_ domain in another scheme x module combo x panel set.
+In this case, multiple values of `sp_poststratum` will co-occur for the same site in R objects.
+Also, this makes clear that the _value_ of `sp_poststratum` is only set as the smaller domain _if_ specific sampling effectively took place at that level; otherwise the larger domain remains set.
+
+This co-occurrence does not cause problems for the panel memberships since the latter are created for each scheme x module combo x panel set x poststratum, but it must be taken into account when doing inferences for a smaller domain or to derive its achieved sample sizes.
+To do that, the geographical membership to this small domain must still be derived directly by joining with `domainpart_grts_n2khab`.
+
+More generally, for _domain-specific inferences_, re-introduction of domains is needed, where the same units in overlapped domains will be reused in the inference of each domain in turn but with another sampling weight.
+In order to avoid the complexity of multi-domain membership, we can instead use the domain partitions that are unique to each population unit, as defined in `domainpart_grts_n2khab`.
+The domain partitions are the smallest domains plus the remainders of sequentially including domains.
+For the domain partitions, we neglect that some are not being used to predetermine sample size; we just use all defined ones.
+
+- To make inferences for a _larger (including) domain_ that includes smaller ones, i.e. where both including and included domains were independently sampled in the same scheme x module combo x panel set, we should:
+  - first combine the different domain partitions as needed to assemble the sampling units belonging to the larger domain;
+  - then use the spatial poststrata to apply appropriate sampling weights to sampling units.
+- To make inferences for an _(innermost) included domain_, we must also use the matching domain partition to assemble the sampling units -- not the spatial poststratum, as explained above.
+
+
+**Missing functionality**: directly include the domain partition in sample objects.
+
+Overall distribution of sample status (across all modules, schemes and strata):
+
+```{r paged.print=FALSE}
+scheme_moco_ps_stratum_sppost_spsamples_spares %>%
+  unnest(sp_poststr_samples_spareunits) %>%
+  count(sample_status)
+```
+
+
+`scheme_moco_ps_stratum_sppost_spsamples` is like `scheme_moco_ps_stratum_sppost_spsamples_spares` without the spare units.
+
+```{r}
+scheme_moco_ps_stratum_sppost_spsamples <-
+  scheme_moco_ps_stratum_sppost_spsamples_spares %>%
+  mutate(
+    sp_poststr_samples_spareunits = map(sp_poststr_samples_spareunits, function(df) {
+      filter(df, sample_status == "in_sample")
+    })
+  ) %>%
+  rename(sp_poststr_samples = sp_poststr_samples_spareunits)
+```
+
+## Writing the spatial samples as file (without spare units)
+
+Writing the spatial samples as a (git-ignored) file, in order to manage its versions in central places such as the 'n2khab-sample-admin' repository.
+
+```{r}
+scheme_moco_ps_stratum_sppost_spsamples %>%
+  unnest(sp_poststr_samples) %>%
+  select(-sample_status) %>%
+  write_vc(
+    file = "spatial_samples",
+    root = samplespath,
+    sorting = c(
+      "scheme",
+      "module_combo_code",
+      "panel_set",
+      "stratum",
+      "sp_poststratum",
+      "grts_address"
+    ),
+    strict = FALSE,
+    optimize = FALSE
+  )
+```
+
+
+## Deriving spatial layers of spatial samples (without spare units)
+
+Deriving spatial layers for use and visualization.
+We also include extra attributes from `stratum_grts_n2khab_phabcorrected_no_replacements`.
+
+```{r}
+scheme_moco_ps_stratum_sppost_spsamples_sf <-
+  scheme_moco_ps_stratum_sppost_spsamples %>%
+  unnest(sp_poststr_samples) %>%
+  select(-sample_status) %>%
+  add_assessment_data() %>%
+  add_point_coords_grts(grts_var = "grts_address_final")
+```
+
+```{r}
+samplinglocations_sf <-
+  scheme_moco_ps_stratum_sppost_spsamples %>%
+  unnest(sp_poststr_samples) %>%
+  add_assessment_data() %>%
+  distinct(grts_address_final) %>%
+  add_point_coords_grts(grts_var = "grts_address_final")
+```
+
+```{r}
+scheme_moco_ps_stratum_sppost_spsamples_spares_sf <-
+  scheme_moco_ps_stratum_sppost_spsamples_spares %>%
+  unnest(sp_poststr_samples_spareunits) %>%
+  add_assessment_data() %>%
+  add_point_coords_grts(grts_var = "grts_address_final")
+```
+
+
+## Updating overlap with VBI plots
+
+[VBI](https://natuurenbos.be/dossiers/bosinventaris#toc-hoe-gebeuren-de-metingen) plots are circular (radius 18 m) and permanent equipment is forbidden in these plots.
+
+```{r message = FALSE}
+if (params$update_vbi_overlaps) {
+  source(file.path(projroot, "R/update_vbi_overlaps.R"))
+}
+```
+
+The resulting `vbi_overlaps` data source represents the center coordinates of VBI plots that overlap MNE sampling units, together with the GRTS address of the latter.
+
+Reading and inspecting overlapped VBI plots.
+
+```{r}
+vbi_overlaps <-
+  read_vc("vbi_overlaps", root = file.path(datapath, "text/raw")) %>%
+  as_tibble()
+vbi_overlaps %>%
+  inner_join(
+    scheme_moco_ps_stratum_sppost_spsamples %>%
+      unnest(sp_poststr_samples) %>%
+      select(-sample_status) %>%
+      add_assessment_data() %>%
+      distinct(
+        scheme,
+        panel_set,
+        stratum,
+        grts_address_final
+      ),
+    join_by(grts_address_overlapped_cell == grts_address_final),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  pivot_wider(
+    names_from = scheme,
+    values_from = panel_set,
+    names_prefix = "panel_set_"
+  )
+```
+
+
+## Overview of most relevant objects in this chapter
+
+Objects subsetted with `[[1]]` mean that they (may) contain more, similarly structured elements.
+
+```{r echo = FALSE}
+for (name in c(
+  "scheme_moco_ps_dom_stratum_sample_size",
+  "moco_ps_dom_stratum_grtspart_threshold",
+  "scheme_moco_ps_stratum_dom_spsamples",
+  "scheme_moco_ps_stratum_sppost_spsamples_spares",
+  "scheme_moco_ps_stratum_sppost_spsamples_spares$sp_poststr_samples_spareunits[[1]]",
+  "scheme_moco_ps_stratum_sppost_spsamples",
+  "scheme_moco_ps_stratum_sppost_spsamples$sp_poststr_samples[[1]]",
+  "scheme_moco_ps_stratum_sppost_spsamples_sf",
+  "samplinglocations_sf",
+  "scheme_moco_ps_stratum_sppost_spsamples_spares_sf"
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```

@@ -1,0 +1,1322 @@
+# Implementing the revisit design: panel design & panel membership {#revisit}
+
+<!-- --------------------------- -->
+Some ideas that were noted before writing the code (some are not completely implemented; see missing functionalities):
+
+- organize the membership design for the combination of field activity supergroups, i.e. with the same panel design across FAGs, and same sample size. Still within module combo x scheme since sample sizes may otherwise differ, but across schemes where they don't.
+- also make membership design linked between such different supergroups of the same sample size, where these have a compatible number of panels, e.g. if one panel in one supergroup can be the sum of 4 panels of another supergroup.
+- start with the supergroups that coincide with the panel designs of the _main_ field activity of _target_ variables, as we plan to optimize the spatial samples in order to deal with the representation of those panel designs across modules, schemes and domains.
+- apply non-core FAG panels only to locations not covered by a corresponding core FAG
+- select a single winning FAG for competition in time (for the same FAG) or between interlinked FAGs (take the superior one and schedule it as the first one). However don't do this for the FAG with the main field activity of each scheme: the data collection design must not be harmed!
+- for MNE, the LOCEVAL activity must take place one year beforehand!
+- SPATPOSITxxx: inflate the panel periods by 3 months at the end (so they will overlap)
+- ADHOCxxx: reduce the number of occasions by sampling them
+- in the first year of each compartment, start on 1 Jan and wind up to month_first
+<!-- --------------------------- -->
+
+## Preparations
+
+### Checking the spatial samples
+
+Checking that all schemes x module combos x panel sets x strata are still in the running.
+Listing the cases where the planned sample size is different than the one after GRTS series partitioning and reclassification (smaller: possible because of phab-corrections applied in the planned sample size but not (yet) in the samples; smaller or larger: possible because of the difference between domain 'Flanders' & spatial poststratum 'Flanders_remainder' (many; not shown), and sometimes also due to minor misfits in 3260 (popsize vs available GRTS addresses per domain)).
+
+<!-- Perhaps look into this 3260 difference; not looked in to further now since it's very limited (2 SACs where the sample has 1 location less). Also, this may depend on the active modules. -->
+
+```{r}
+scheme_moco_ps_dom_stratum_sample_size_2 <-
+  scheme_moco_ps_dom_stratum_sample_size %>%
+  select(-cycle_duration_y)
+scheme_moco_ps_sppost_stratum_sample_size_obtained <-
+  scheme_moco_ps_stratum_sppost_spsamples %>%
+  mutate(
+    ss_by_sppost = map(sp_poststr_samples, ~ count(., sp_poststratum, name = "total_sample_size_after_partitioning")),
+    .keep = "unused"
+  ) %>%
+  unnest(ss_by_sppost)
+scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned <-
+  scheme_moco_ps_dom_stratum_sample_size_2 %>%
+  rename(total_sample_size_planned = sp_sample_size_all_panels_stratum) %>%
+  inner_join(
+    scheme_moco_ps_sppost_stratum_sample_size_obtained,
+    join_by(scheme, module_combo_code, panel_set, stratum),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
+  filter(
+    as.character(domain) == as.character(sp_poststratum) |
+      (sp_poststratum == "Flanders_remainder" & domain == "Flanders")
+  )
+stopifnot(
+  # We have added some degree of difference in the following equality test. The
+  # reason is that in panel set 2 of a specific smaller domain in GW_03.3 we got
+  # for 6510_hu that GRTS partition 2 had no population units available: the
+  # sampling frame for this scheme x type combination is much smaller in this
+  # domain (limited to shallow groundwater) than the sampling frame in this
+  # domain for all schemes, on which the GRTS partitions are based; this caused
+  # a mismatch. (A few more cases have been found later on, leading to some
+  # further relaxing.)
+  abs(
+    nrow(scheme_moco_ps_dom_stratum_sample_size_2) -
+      nrow(scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned)
+  ) <= 2
+)
+scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned %>%
+  filter(
+    total_sample_size_planned != total_sample_size_after_partitioning,
+    sp_poststratum != "Flanders_remainder"
+  ) %>%
+  relocate(stratum) %>%
+  arrange(stratum, scheme, module_combo_code, panel_set)
+```
+
+We can see that identical spatial samples ('identical' includes the sample size) across schemes, panel sets and module combos only occur for smaller strata:
+
+```{r paged.print=FALSE}
+scheme_moco_ps_stratum_sppost_spsamples %>%
+  count(stratum, sp_poststr_samples, name = "number_of_scheme_ps_moco") %>%
+  filter(number_of_scheme_ps_moco > 1) %>%
+  print(n = Inf)
+```
+
+Consequently we cannot generalize spatial samples above the level of scheme, panel set and module combo in the revisit design.
+
+However several measures can be taken to maximize the synergy in panel memberships and revisit dates:
+
+- Within a scheme we will combine multiple FAGs that have the same revisit design, called field activity supergroups (FASs).
+- For the above strata where spatial samples do match across schemes, panel membership is to be aligned.
+- Also, we will maximize the chance for cross-scheme and cross-compartment spatial alignment of sampling units by starting all panel designs on the same virtual date, and drop non-applicable (too early) parts afterwards.
+However do note that this introduces some instability with relation to selected sampling units in the first cycle, as further noted in section \@ref(cal-cleaning).
+
+Also checking the aggregated sizes of the obtained samples.
+
+```{r paged.print = FALSE}
+scheme_moco_ps_sppost_stratum_sample_size_obtained %>%
+  inner_join(
+    scheme_ps_target_paneldesign %>%
+      select(scheme, module_combo_code, panel_set, cycle_duration_y),
+    join_by(scheme, module_combo_code, panel_set),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  aggregate_sample_size(
+    "total_sample_size_after_partitioning",
+    mhq_scheme_category,
+    by_module_combo = TRUE
+  ) %>%
+  print(n = Inf)
+```
+
+
+### Lifting mod_scheme_ps_fag_paneldesign to the module combo & FA supergroup level
+
+The module combos (of a scheme x panel set) reflect a common revisit design of the main field activity of the target variable, across modules.
+We use this entity to populate all the different FAG panel designs (grouped into field activity supergroups) with the same corresponding sampling units (from `scheme_moco_ps_stratum_sppost_spsamples`).
+So this means that the spatial sample of a module combo in a scheme x panel set will be used for all field activity revisit designs of this scheme x panel set, including that of the main field activity of the target variable.
+
+A field activity supergroup (FAS) combines multiple FAGs with the same revisit design, in the same scheme x module combo x panel set x spatial subset.
+Membership designs should be implemented at the FAS level.
+FASs of different spatial subsets can share their revisit design, scheme, module combo and panel set, but they can contain a different (or only partially overlapping) set of FAGs.
+
+<!-- Check whether the combination of modules in a module combo where the same scheme is a core and a non-core scheme because of the different modules, causes a clash for the involved FAGs since all FAGs are applied to all sampling units of the module combo. -->
+
+<!-- One solution may be to still lump those different incompatible FAGs of a FA supergroup across modules (as we currently do), and indeed apply the panel membership at this level, but afterwards filter the FAGs per sampling unit according to the module membership of each sampling unit, which assumes module labelling of sampling units! Module membership then may need to be an interspersion of the modules in the GRTS address series, since otherwise this conflicts with spread over panels for each module (but then we do sacrifice the spatial balance at module level!) -->
+
+<!-- The other solution may be to work at the module level right away, hence respecting different sets of FAGs per module; this as well assumes module labelling of sampling units! -->
+
+<!-- For now I prefer to ignore this on condition that no modules are effectively combined that pose this problem, hence we always need to verify the existence of clashes, for main field activities (which directly relate to target environmental vars) and for activity sequences (which trigger the FAGs). -->
+
+<!-- Note that the following is wrong, since the spatial samples and spatial subsets already cover 'stratum': ~Since different modules can have different target populations for the same scheme, hence different applicable spatial subsets, we must do this at the stratum level.~ -->
+
+#### Checks beforehand
+
+Before we execute this plan, we must verify the degree to which:
+
+- main field activities are repeated _in all modules_ in the same scheme x module combo x panel set.
+Where this is not the case, it must be verified whether the combination of modules poses problems at the level of the interpretation of the involved (target) environmental variable, and it should be decided whether this combination of modules can be held.
+
+  Main field activities not represented across all modules in the same scheme x module combo x panel set:
+
+```{r}
+moco_mod_scheme_ps_conflicting_mainfieldactivities <-
+  mod_scheme_mainfieldactivity %>%
+  # join module combos:
+  inner_join(
+    scheme_ps_target_paneldesign %>%
+      select(scheme, module_combo_code, module_combo, panel_set) %>%
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
+  # determine number of different modules per scheme x module combo x panel
+  # set:
+  mutate(
+    n_mod = n_distinct(module),
+    .by = c(scheme, module_combo_code, panel_set)
+  ) %>%
+  # differentiate number of different modules for each main field activity
+  mutate(
+    n_mod_mainfieldactivity = n_distinct(module),
+    .by = c(scheme, module_combo_code, panel_set, main_field_activity)
+  ) %>%
+  # we like both of these numbers to be the same, but which ones are different?
+  filter(n_mod != n_mod_mainfieldactivity)
+moco_mod_scheme_ps_conflicting_mainfieldactivities
+```
+
+<!-- A potential conflict is observed between the PAN effectmonitoring vs the MBAA modules, for reading surfacewater levels in GW_05.1_aq. -->
+<!-- However the involved environmental variables are temporally aggregated variables, and these modules will normally not clash as they will rather apply upgrades to the field methods of each other's locations (but sample sizes will not always be equal) rather than add new locations on top of each other (this is not taken into account; their activity sequences have been chosen to represent the individual modules, not their combination). -->
+
+  Target variables of the associated modules and schemes:
+
+```{r}
+mod_scheme_vars %>%
+  filter(target) %>%
+  semi_join(
+    moco_mod_scheme_ps_conflicting_mainfieldactivities,
+    join_by(module, scheme)
+  ) %>%
+  distinct(variable, var_abbrev, target, main_datacollection_method)
+```
+
+- activity sequences are repeated _in all modules_ in the same scheme x module combo x panel set.
+Similarly we have to decide potential consequences (restrictions) in the combination of modules if this is not the case.
+
+```{r}
+mod_scheme_mainfieldactivity_actseq %>%
+  distinct(module, scheme, in_aquatic_subset, activity_sequence) %>%
+  # join module combos:
+  inner_join(
+    scheme_ps_target_paneldesign %>%
+      select(scheme, module_combo_code, module_combo, panel_set) %>%
+      unnest(module_combo),
+    join_by(module, scheme),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
+  # determine number of different modules per scheme x module combo x panel
+  # split:
+  mutate(
+    n_mod = n_distinct(module),
+    .by = c(scheme, module_combo_code, panel_set, in_aquatic_subset)
+  ) %>%
+  # differentiate number of different modules for each activity sequence
+  mutate(
+    n_mod_actseq = n_distinct(module),
+    .by = c(
+      scheme,
+      module_combo_code,
+      panel_set,
+      in_aquatic_subset,
+      activity_sequence
+    )
+  ) %>%
+  # we like both of these numbers to be the same, but which ones are different?
+  filter(n_mod != n_mod_actseq)
+```
+
+<!-- We only have a conflict between the PAN effectmonitoring vs the MBAA modules, for the activity sequence for groundwater (and surfacewater) levels. -->
+<!-- We see no actual clashes for this combination, see reasoning above, provided that only one (the superior) activity sequence is actually applied to a single location. -->
+
+We must bear in mind that mixing and applying such conflicting field activity / activity sequence combinations to each module of the module combo (all sampling units) does not make sense, except when the  different field activity / activity sequence is divided between different sampling units according to the module.
+We currently don't handle a clash like this; for now we still expect the modules in a module combo to use only common methods.
+
+**Missing functionality**: combinations of modules might in some cases (specific module combinations!) apply to the _same_ sampling units (or at least maximize the common sampling unit set), and only differ in the applicable field activities, so that a choice is to be made between the latter.
+Our code currently does not handle this case; we just sum the module sample sizes in all cases and apply the overall set of FAGs to all involved sampling units.
+When the above code chunks output a result, this will normally indicate such an unsupported module combination.
+
+#### Execution
+
+Lifting `mod_scheme_ps_fag_paneldesign` to the module combo & FAS level.
+
+```{r}
+# object with revisit design for each scheme x moco x panel set x [FAS x
+# spatial subset]
+scheme_moco_ps_spsubset_fas_paneldesign <-
+  mod_scheme_ps_fag_paneldesign %>%
+  select(-actseqs) %>%
+  # join module combos:
+  inner_join(
+    scheme_ps_target_paneldesign %>%
+      select(scheme, module_combo_code, module_combo, panel_set) %>%
+      unnest(module_combo),
+    join_by(module, scheme, panel_set),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>%
+  relocate(module_combo_code, .after = scheme) %>%
+  arrange(module, scheme, field_activity_group, in_aquatic_subset) %>%
+  # adding applicable activity sequences
+  inner_join(
+    mod_scheme_actseq_fag %>%
+      select(
+        module,
+        scheme,
+        is_core_scheme,
+        field_activity_group,
+        in_aquatic_subset,
+        activity_sequence
+      ),
+    join_by(module, scheme, is_core_scheme, field_activity_group, in_aquatic_subset),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
+  # prepare for collapsing
+  mutate(
+    actseqs = str_c(sort(unique(activity_sequence)), collapse = ", "),
+    actseqs_vec = list(sort(unique(activity_sequence))),
+    .by = !c(module, is_core_scheme, activity_sequence)
+  ) %>%
+  summarize(
+    fas_spsubset = list(
+      tibble(
+        field_activity_group = field_activity_group,
+        in_aquatic_subset = in_aquatic_subset,
+        rank = rank,
+        max_rank = max_rank,
+        actseqs = actseqs,
+        actseqs_vec = actseqs_vec
+      ) %>%
+        distinct()
+    ),
+    .by = !c(
+      module,
+      is_core_scheme,
+      field_activity_group,
+      rank,
+      max_rank,
+      in_aquatic_subset,
+      activity_sequence,
+      actseqs,
+      actseqs_vec
+    )
+  ) %>%
+  # create a flag that says if the spatial subset should be used in defining
+  # (naming) panel series. Each row has its own FAS x spatial subset tibble. If
+  # the included FAGs are indifferent wrt spatial subset, then we set this flag
+  # as FALSE.
+  mutate(
+    spsubset_needed_for_panel = map_lgl(fas_spsubset, function(fs) {
+      n_distinct(fs$in_aquatic_subset) > 1 &
+        !identical(
+          sort(fs$field_activity_group[fs$in_aquatic_subset]),
+          sort(fs$field_activity_group[!fs$in_aquatic_subset])
+        )
+    })
+  ) %>%
+  relocate(fas_spsubset, spsubset_needed_for_panel, .after = panel_set) %>%
+  arrange(scheme, module_combo_code) %>%
+  unnest(fas_spsubset) %>%
+  mutate(actseqs = factor(actseqs)) %>%
+  nest(fas = c(field_activity_group, rank, max_rank, actseqs, actseqs_vec)) %>%
+  relocate(fas, .after = spsubset_needed_for_panel)
+```
+
+We added a logical variable `spsubset_needed_for_panel` in order to determine whether the naming system of panel series (which distinguishes different panel series) should include the spatial subset.
+If, for a given revisit design in a scheme x module combo x panel set, the corresponding list of FAGs is indifferent with regard to the spatial subset, then the panel series should combine both spatial subsets if more than one exists, hence not include it in its name.
+
+Let's verify that no FAGs have been duplicated because `rank` or `max_rank` were not unique.
+
+```{r}
+stopifnot(
+  scheme_moco_ps_spsubset_fas_paneldesign %>%
+    mutate(
+      fas_nrow = map_int(fas, ~ nrow(.)),
+      fas_simple_nrow = map_int(fas, function(df) {
+        df %>%
+          distinct(field_activity_group) %>%
+          nrow()
+      })
+    ) %>%
+    filter(fas_nrow != fas_simple_nrow) %>%
+    nrow() == 0
+)
+```
+
+## Number of panels {#nrpanels}
+
+Determining the _number_ of panels for each scheme x module combo x panel set x spatial subset x 'field activity supergroup' (FAS).
+We also generate (or keep) revisit design attributes needed to set date intervals in later steps.
+Panel grouping as reflected by `panel_group_size` and `panel_group_repetitions` refers to the subgroup structure in nested serially alternated patterns.
+
+Note, while below object does not distinguish between spatial poststrata, we will effectively populate the panels taking into account the spatial poststrata.
+Also the spare units are considered per spatial poststratum, so that replacements with spare units cause a shift in the panel membership _within_ the spatial poststratum.
+
+<!-- We decide that panels don't need to be named differently between spatial poststrata, even while the allocation of sampling units to these panels happens independently for each spatial poststratum. -->
+<!-- No different names are needed because the spatial poststratum is already an attribute of the sampling (or spare) unit, but it is not to be excluded that this decision poses problems at some stage. -->
+
+```{r}
+scheme_moco_ps_spsubset_fas_panelcount_full <-
+  mod_scheme_yrs_moco_ps %>%
+  # year_first and month_first have been set module and scheme specific, while
+  # year_last is just module specific. However for year_first and month_first do
+  # note that we currently don't correct the spatial sampling unit calendar for
+  # mismatches between modules in the same module combo. See the earlier objects
+  # 'mod_scheme_ps_different_1styr' and 'mod_scheme_ps_different_1stm' and
+  # associated missing functionality!
+  summarize(
+    year_first = min(year_first),
+    year_last = max(year_last),
+    month_first = min(month_first),
+    .by = c(scheme, module_combo_code, panel_set)
+  ) %>%
+  # Add revisit designs by FAS x spatial subset. The origins of
+  # 'scheme_moco_ps_spsubset_fas_paneldesign' lie in objects
+  # 'mod_scheme_variableset_mainfieldactivity' and 'activity_sequence', which
+  # don't distinguish between schemes that got a sample size or not. So we
+  # expect some cases to be dropped.
+  inner_join(
+    scheme_moco_ps_spsubset_fas_paneldesign,
+    join_by(scheme, module_combo_code, panel_set),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  # integrating main panel design and subpanel design to a single panel design
+  mutate(
+    panel_count = case_when(
+      revisit_pattern == "pure_panel" ~ 1L,
+      .default = as.integer(cycle_duration_y * years(1) / panel_period_main)
+    ) *
+      case_when(
+        is.na(revisit_subpattern) ~ 1L,
+        revisit_subpattern == "pure_panel" ~ 1L,
+        !is.na(limit_n_subpanels_per_panel) ~ limit_n_subpanels_per_panel,
+        .default = as.integer(panel_period_main / panel_subperiod)
+      ),
+    panel_period = case_when(
+      is.na(panel_subperiod) ~ panel_period_main,
+      .default = panel_subperiod
+    ),
+    # number of panels in a panel group, to be taken together in repetitions
+    # (below)
+    panel_group_size = case_when(
+      revisit_pattern == "periodic_rotational" ~
+        as.integer(panel_count / cycle_duration_y),
+      !is.na(limit_n_subpanels_per_panel) ~ limit_n_subpanels_per_panel,
+      .default = 1L
+    ),
+    # number of times a panel group must be repeated during a cycle
+    panel_group_repetitions = case_when(
+      revisit_pattern == "periodic_rotational" ~ 2L,
+      !is.na(limit_n_subpanels_per_panel) ~ as.integer(
+        (panel_period_main / panel_subperiod) / limit_n_subpanels_per_panel
+      ),
+      revisit_subpattern == "pure_panel" ~ pmin(
+        as.integer(panel_period_main / panel_subperiod),
+        limit_n_subperiods,
+        na.rm = TRUE
+      ),
+      .default = 1L
+    ),
+    # number of subperiods per main period
+    n_subperiods_per_main_period = ifelse(
+      is.na(panel_subperiod),
+      1L,
+      as.integer(panel_period_main / panel_subperiod)
+    ),
+    # duration of the FAG specific cycle
+    fag_cycle = case_when(
+      revisit_pattern == "pure_panel" ~ panel_period_main,
+      .default = years(cycle_duration_y)
+    ),
+    # number of times a FAG happens at a single location during a single FAG
+    # cycle
+    n_locvisits_per_fagcycle = case_when(
+      revisit_pattern == "periodic_rotational" ~ panel_group_repetitions,
+      revisit_pattern == "pure_panel" ~ 1L,
+      .default = as.integer(
+        fag_cycle / (panel_count * panel_period) /
+          if_else(
+            is.na(limit_n_subperiods),
+            1L,
+            n_subperiods_per_main_period / limit_n_subperiods
+          )
+      )
+    ),
+    panel_period_main_chr = simplify_period(panel_period_main),
+    panel_period_chr = simplify_period(panel_period),
+    panel_enddate_addition_chr = simplify_period(panel_enddate_addition),
+    panel_dateshift_chr = simplify_period(panel_dateshift),
+    revisit_pattern_abbrev = case_when(
+      revisit_pattern == "periodic_rotational" ~ "ROT",
+      .default = str_sub(revisit_pattern, 1, 3) %>% str_to_upper()
+    ),
+    revisit_subpattern_abbrev = ifelse(
+      !is.na(revisit_subpattern),
+      str_sub(revisit_subpattern, 1, 3),
+      ""
+    ) %>%
+      str_to_upper(),
+    # notation_pattern summarises the panel design
+    notation_pattern = case_when(
+      revisit_pattern_abbrev == "ROT" ~
+        str_c(
+          revisit_pattern_abbrev,
+          ifelse(
+            panel_group_size > 1L | panel_group_repetitions > 1L,
+            str_c("by", panel_group_size, "repeat", panel_group_repetitions),
+            ""
+          )
+        ),
+      revisit_pattern_abbrev == "SER" &
+        revisit_subpattern_abbrev %in% c("SER", "PUR") ~
+        str_c(
+          revisit_pattern_abbrev,
+          panel_period_main_chr,
+          "-",
+          revisit_subpattern_abbrev,
+          ifelse(
+            panel_group_size > 1L | panel_group_repetitions > 1L,
+            str_c("by", panel_group_size, "repeat", panel_group_repetitions),
+            ""
+          )
+        ),
+      revisit_pattern_abbrev == "PUR" & revisit_subpattern_abbrev == "SER" ~
+        "SER",
+      .default = str_c(
+        revisit_pattern_abbrev,
+        ifelse(
+          revisit_subpattern_abbrev != "",
+          str_c("-", revisit_subpattern_abbrev),
+          ""
+        )
+      )
+    ),
+    # notation_paneldesign combines notation_pattern & panel design attributes
+    notation_paneldesign = str_c(
+      panel_count,
+      ifelse(panel_count == 1L, "panelof", "panelsof"),
+      ifelse(
+        is.na(panel_enddate_addition),
+        panel_period_chr,
+        str_c(panel_period_chr, "[", "+", panel_enddate_addition_chr, "]")
+      ),
+      ifelse(
+        str_detect(notation_pattern, "-") | revisit_pattern_abbrev == "ROT",
+        (str_c("for", cycle_duration_y, "y")),
+        ""
+      ),
+      "(",
+      ifelse(auto_continuous_meas_ps2, "auto2|", ""),
+      ifelse(memship_alignfastest, "fastalign|", ""),
+      notation_pattern,
+      ")",
+      ifelse(
+        !is.na(panel_dateshift),
+        str_c("[shift(", panel_dateshift_chr, ")]"),
+        ""
+      ),
+      ifelse(
+        !is.na(limit_n_subperiods),
+        str_c(limit_n_subperiods, "subperiod"),
+        ""
+      )
+    ) %>%
+      fct()
+    # PURE PANELS (main or sub) do not meet following check:
+    # check = panel_count * panel_period * panel_group_repetitions ==
+    #   cycle_duration_y * years(1)
+  )
+# scheme_moco_ps_spsubset_fas_panelcount_full %>% distinct(notation_paneldesign)
+# scheme_moco_ps_spsubset_fas_panelcount_full %>% filter(!check)
+scheme_moco_ps_spsubset_fas_panelcount <-
+  scheme_moco_ps_spsubset_fas_panelcount_full %>%
+  select(
+    scheme,
+    module_combo_code,
+    panel_set,
+    in_aquatic_subset,
+    spsubset_needed_for_panel,
+    fas,
+    starts_with("year"),
+    month_first,
+    panel_period,
+    panel_enddate_addition,
+    panel_dateshift,
+    panel_count,
+    fag_cycle,
+    n_locvisits_per_fagcycle,
+    n_subperiods_per_main_period,
+    limit_n_subperiods,
+    panel_group_size,
+    panel_group_repetitions,
+    auto_continuous_meas_ps2,
+    memship_alignfastest,
+    notation_paneldesign
+  )
+scheme_moco_ps_spsubset_fas_panelcount %>%
+  glimpse()
+```
+
+Performing several checks on the result.
+
+```{r}
+# The notation_paneldesign column must effectively distinguish all occurring
+# different revisit designs
+stopifnot(
+  scheme_moco_ps_spsubset_fas_panelcount_full %>%
+    # for pure panels the cycle_duration_y does not determine the number of
+    # panels, hence is not part of the panel design notation
+    mutate(
+      cycle_duration_y = ifelse(
+        revisit_pattern == "pure_panel",
+        NA,
+        cycle_duration_y
+      )
+    ) %>%
+    distinct(pick(revisit_pattern:last_col(), -enforced_cycle_duration)) %>%
+    nrow() ==
+    n_distinct(scheme_moco_ps_spsubset_fas_panelcount$notation_paneldesign)
+)
+# The rows of scheme_moco_ps_spsubset_fas_panelcount are still unique if you
+# drop fas and notation* columns
+stopifnot(
+  scheme_moco_ps_spsubset_fas_panelcount %>%
+    distinct(pick(-fas, -starts_with("notation"))) %>%
+    nrow() == nrow(scheme_moco_ps_spsubset_fas_panelcount)
+)
+# The uniqueness of the rows of scheme_moco_ps_spsubset_fas_panelcount is
+# completely captured by scheme x module_combo_code x in_aquatic_subset x
+# notation_paneldesign
+stopifnot(
+  scheme_moco_ps_spsubset_fas_panelcount %>%
+    distinct(
+      scheme,
+      module_combo_code,
+      panel_set,
+      in_aquatic_subset,
+      notation_paneldesign
+    ) %>%
+    nrow() == nrow(scheme_moco_ps_spsubset_fas_panelcount)
+)
+```
+
+Note that the uniqueness of the rows of `scheme_moco_ps_spsubset_fas_panelcount` is completely captured by scheme x module combo x panel set x spatial subset x `notation_paneldesign`.
+
+Different occurring patterns at the compartment level, with 'HQ' referring to the MHQ 'compartment', for information and thought:
+
+```{r}
+compartment_paneldesign_fags <-
+  scheme_moco_ps_spsubset_fas_panelcount %>%
+  mutate(
+    compartment = str_extract(scheme, "^[A-Z]+") %>%
+      factor() %>%
+      fct_relevel("SOIL", "HQ", after = Inf),
+    fags = map(fas, ~ .$field_activity_group),
+    cycle_nlocvisits = str_glue(
+      "{simplify_period(fag_cycle)} ({n_locvisits_per_fagcycle} ",
+      "visit{ifelse(n_locvisits_per_fagcycle > 1, 's', '')} per loc)"
+    )
+    # actseqs_vec = map(fas, ~unique(unlist(.$actseqs_vec)))
+  ) %>%
+  mutate(
+    scheme_moco = str_c(
+      scheme,
+      ": ",
+      str_c(sort(unique(module_combo_code)), collapse = ", ")
+    ),
+    .by = c(scheme, notation_paneldesign)
+  ) %>%
+  summarize(
+    cycle_nlocvisits = str_c(unique(cycle_nlocvisits), collapse = ", "),
+    fags = str_c(sort(unique(unlist(fags))), collapse = ", "),
+    # actseqs = str_c(sort(unique(unlist(actseqs_vec))), collapse = ", "),
+    scheme_moco = str_c(sort(unique(scheme_moco)), collapse = " | "),
+    .by = c(compartment, notation_paneldesign)
+  ) %>%
+  arrange(compartment, notation_paneldesign)
+compartment_paneldesign_fags %>%
+  kable()
+```
+
+## Panels
+
+Defining panels.
+
+```{r}
+scheme_moco_ps_spsubset_fas_panels <-
+  scheme_moco_ps_spsubset_fas_panelcount %>%
+  # spatial_subset_abbr is a temporary string used in the panel labels
+  mutate(
+    spatial_subset_abbr = case_when(
+      !spsubset_needed_for_panel ~ "",
+      in_aquatic_subset ~ "AQ",
+      !in_aquatic_subset ~ "TERR"
+    ),
+    scheme_moco_has_multiple_panel_sets = n_distinct(panel_set) > 1,
+    .by = c(scheme, module_combo_code)
+  ) %>%
+  uncount(panel_count) %>%
+  # 'panel' is essentially a label of an individual panel
+  mutate(
+    panel = str_c(
+      if_else(
+        spatial_subset_abbr != "",
+        str_c(scheme, "_", spatial_subset_abbr),
+        scheme
+      ),
+      ifelse(scheme_moco_has_multiple_panel_sets,
+        str_c(
+          str_remove_all(module_combo_code, "_"),
+          "_",
+          "PS",
+          panel_set
+        ),
+        str_remove_all(module_combo_code, "_")
+      ),
+      notation_paneldesign,
+      str_c("PANEL", str_pad(seq_len(n()), 2, pad = "0")),
+      sep = "_"
+    ),
+    .by = c(
+      scheme,
+      module_combo_code,
+      panel_set,
+      in_aquatic_subset,
+      notation_paneldesign
+    )
+  ) %>%
+  mutate(panel = factor(panel)) %>%
+  select(-spatial_subset_abbr, -scheme_moco_has_multiple_panel_sets)
+```
+
+## Panel calendar
+
+Defining date intervals and assigning panels to these intervals.
+
+The concept of the 'target cycle' (monitoring cycle of the target variable) of a scheme x module combo x panel set is used to define the time where the first panel begins.
+
+- In the first target cycle, `year_first` is used to position the first panel (hence, all panels).
+This is done in order to realize the spatial samples starting from the lowest GRTS address for each stratum.
+It is a protection against sample size changes during the first target cycle.
+- In all later target cycles, `year_origin` is used as the reference year to build up the revisit design (including the membership design) in order to align panel numbering with the monitoring and reporting cycle.
+While `year_first` can differ between modules and schemes, using the common reference `year_origin` maximizes chances for matching locations between schemes x module combo.
+
+As a result, overlaps can occur between the first and second target cycle.
+This should not normally pose a conceptual problem.
+How these overlaps are to be dealt with (leave as-is or not), is still to be looked at.
+
+**Missing functionality**: consider whether the overlaps between first and second target cycle need further handling.
+
+```{r}
+scheme_moco_ps_spsubset_panel_calendar <-
+  scheme_moco_ps_spsubset_fas_panels %>%
+  nest(
+    revisit = c(
+      matches("^year|^month|^limit_"),
+      n_subperiods_per_main_period,
+      fag_cycle,
+      n_locvisits_per_fagcycle,
+      panel_period,
+      panel_enddate_addition,
+      panel_dateshift,
+      panel_group_size,
+      panel_group_repetitions,
+      auto_continuous_meas_ps2,
+      memship_alignfastest,
+      notation_paneldesign
+    ),
+    panels = panel
+  ) %>%
+  # join the target cycle duration of scheme x moco x ps (this normally matches
+  # the cycle durations in module_scheme_props). scheme_ps_target_paneldesign
+  # can still contain non-core schemes that can be dropped because they lack
+  # (non-core) panels (non-core FAG panels only apply to locations not covered
+  # by a corresponding core FAG)
+  inner_join(
+    scheme_ps_target_paneldesign %>%
+      select(
+        scheme,
+        module_combo_code,
+        panel_set,
+        target_cycle_duration_y = cycle_duration_y
+      ),
+    join_by(module_combo_code, scheme, panel_set),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # define date intervals from year_origin to year_last, by panel_period
+  mutate(
+    revisit = map2(revisit, target_cycle_duration_y, function(df, tc) {
+      df %>%
+        distinct() %>%
+        mutate(
+          # we always define panels from the first month of year_origin; if a
+          # module or scheme starts later, then this part is dropped from the
+          # first cycle
+          nr_periods =
+            years(year_last - year_origin + 1) / panel_period
+        ) %>%
+        uncount(nr_periods) %>%
+        mutate(
+          panel_periodmonths = as.period(panel_period, "months") %>%
+            month() %>%
+            as.integer(),
+          panel_cum_months = cumsum(panel_periodmonths),
+          panel_cum_months_lag = lag(panel_cum_months, default = 0L),
+          target_cycle = panel_cum_months_lag %/% (tc * 12L) + 1L,
+          date_start = make_date(
+            # shift the dates of the first target cycle backward using
+            # year_first. This creates overlap between first and second target
+            # cycle.
+            if_else(target_cycle == 1, year_first, year_origin),
+            1,
+            1
+          ) +
+            months(panel_cum_months_lag) +
+            if_else(!is.na(panel_dateshift), panel_dateshift, months(0)),
+          date_end = make_date(
+            # shift the dates of the first target cycle backward using
+            # year_first. This creates overlap between first and second target
+            # cycle.
+            if_else(target_cycle == 1, year_first, year_origin),
+            1,
+            1
+          ) +
+            months(panel_cum_months) +
+            if_else(
+              !is.na(panel_enddate_addition),
+              panel_enddate_addition,
+              months(0)
+            ) +
+            if_else(!is.na(panel_dateshift), panel_dateshift, months(0)) -
+            days(1),
+          date_interval = interval(
+            force_tz(date_start, "Europe/Brussels"),
+            force_tz(date_end, "Europe/Brussels")
+          )
+        ) %>%
+        select(-c(panel_periodmonths, starts_with("panel_cum_months")))
+    }),
+    # assign panels to the date intervals, taking into account the revisit
+    # design
+    panel_date_assignment = map2(revisit, panels, function(revis, pan) {
+      group_size <- revis$panel_group_size[1]
+      group_repetitions <- revis$panel_group_repetitions[1]
+      n_subperiods <- revis$n_subperiods_per_main_period[1]
+      n_subperiods_limit <- revis$limit_n_subperiods[1]
+      rotational <- str_detect(revis$notation_paneldesign[1], "ROT")
+      # set the panel order of one cycle according to group_size &
+      # group_repetitions
+      if (group_size == 1 && group_repetitions == 1) {
+        pan2 <- pan
+      } else {
+        indexes_pan <- seq_len(nrow(pan))
+        indexgrouping_pan <- rep(seq_len(nrow(pan) / group_size), each = group_size)
+        indexes_grouped <- split(indexes_pan, indexgrouping_pan) %>%
+          rep(each = group_repetitions) %>%
+          {
+            if (rotational) {
+              # move last panel group repetition to the front; in the calendar
+              # it must be combined with the first panel group
+              c(.[length(.)], .[-length(.)])
+            } else {
+              .
+            }
+          } %>%
+          unlist() %>%
+          unname()
+        pan2 <- pan[indexes_grouped, ]
+      }
+      # subset revis periodically to meet the n_subperiods_limit requirement
+      if (is.na(n_subperiods_limit)) {
+        revis2 <- revis
+      } else {
+        indexes_limitsubperiod <-
+          seq_len(nrow(revis)) %>%
+          # split the periods according to the number of subperiods in one main
+          # period of the cycle
+          split(rep(
+            seq_len(ceiling(nrow(revis) / (n_subperiods))),
+            each = n_subperiods
+          )) %>%
+          map_int(~ .[n_subperiods_limit]) %>%
+          unname()
+        revis2 <- revis[indexes_limitsubperiod, ]
+      }
+      # duplicate revis2 rows to align panel group repetitions in rotational
+      # designs
+      if (rotational) {
+        indexes_revis <- seq_len(nrow(revis2))
+        indexgrouping_rot_revis <- rep(
+          seq_len(nrow(revis2) / group_size),
+          each = group_size
+        )
+        indexes_grouped_rot_revis <-
+          split(indexes_revis, indexgrouping_rot_revis) %>%
+          rep(each = group_repetitions) %>%
+          unlist() %>%
+          unname()
+        revis2 <- revis2[indexes_grouped_rot_revis, ]
+      }
+      # determine indexes to recycle rows of pan2
+      indexes <- rep(seq_len(nrow(pan2)), nrow(revis2) %/% nrow(pan2) + 1) %>%
+        head(nrow(revis2))
+      # combine the dates in revis2 with the panels in (recycled) pan2
+      bind_cols(
+        revis2 %>% select(date_start, date_end, date_interval),
+        pan2[indexes, ]
+      )
+    })
+  ) %>%
+  select(-fas, -panels, -revisit, -target_cycle_duration_y) %>%
+  unnest(panel_date_assignment) %>%
+  relocate(panel, .after = spsubset_needed_for_panel)
+```
+
+**Missing functionality**: ability to undo the dateshift of a backward shifted panel design in the first panel of the first cycle only, in combination with setting this panel's enddate earlier (i.e. making the panel duration shorter).
+Not clear yet whether we'll need this, but it's relevant when there's a need to speed up implementation.
+
+
+```{r eval=FALSE, echo=FALSE}
+# For calendar inspection only
+scheme_moco_ps_spsubset_panel_calendar %>%
+  inner_join(
+    scheme_moco_ps_spsubset_fas_panels %>%
+      select(scheme:fas, panel),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_set,
+      in_aquatic_subset,
+      spsubset_needed_for_panel,
+      panel
+    ),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>%
+  mutate(
+    fags = map_chr(fas, ~ str_c(.$field_activity_group, collapse = ", "))
+  ) %>%
+  relocate(fags, .after = in_aquatic_subset) %>%
+  relocate(fas, .after = last_col()) %>%
+  View("calendar")
+```
+
+## Panel membership of spatial sampling units {#panel-memship}
+
+General note: the spatial samples are to be considered dynamic, i.e. dependent on new versions of the spatial sampling frames.
+Consequently, panel membership must also be considered dynamic in time.
+
+Panel membership is randomized by following the GRTS address sequence at the stratum level.
+
+To determine the number of sampling units per panel, it must be taken into account that the stratum sample size is not equal to, or a multiple of, the number of panels, so panels usually cannot have an equal number of units.
+1D GRTS sampling of panels is applied to get an even load of all panels while maintaining maximum temporal spread in the membership.
+One wants to avoid a systematic effect that the first panels always have more units than those further in line, or the last panel.
+This becomes even more important for strata with few sampling units; sometimes this number is smaller than the theoretical number of panels!
+
+First, we generate and populate **generic panels** for each scheme x module combo x panel set x stratum x spatial poststratum.
+A generic panel only takes into account the number of panels of a revisit design, not the specific revisit design.
+We use generic panel sets to allow for maximum synergy among different field activity groups with different revisit designs.
+To achieve this, the panel memberships for panel designs with different panel counts are made interdependent: e.g. if both 3-panel-designs and 12-panel-designs occur, then membership design is first done for the 12-panel-designs, and the panel members are then lumped into 3 consecutive groups to define the membership for the 3-panel-designs.
+This avoids repeating 1D GRTS sampling more than necessary, which would lead to unneeded mismatches.
+
+Next, this is translated to the actual panels created before.
+
+### Membership of generic panels
+
+Generating generic panels.
+
+```{r}
+scheme_moco_ps_stratum_sppost_genericpanelrelations <-
+  scheme_moco_ps_stratum_sppost_spsamples %>%
+  unnest(sp_poststr_samples) %>%
+  select(-sample_status) %>%
+  nest(spsample = grts_address) %>%
+  inner_join(
+    scheme_moco_ps_spsubset_fas_panelcount %>%
+      distinct(
+        scheme,
+        module_combo_code,
+        panel_set,
+        panel_group_repetitions,
+        auto_continuous_meas_ps2,
+        memship_alignfastest,
+        panel_count
+      ) %>%
+      # guessing the grouping pattern to use in the revisit design for
+      # FAGs with automated measurements
+      mutate(
+        compartment = str_extract(scheme, "^[A-Z]+") %>%
+          factor() %>%
+          fct_relevel("SOIL", "HQ", after = Inf)
+      ) %>%
+      mutate(
+        max_panel_group_repetitions = max(panel_group_repetitions),
+        # XXXXXXXXXXXXXXXX disabling grouping by scheme x moco x ps here and
+        # replacing it with grouping by compartment is an
+        # attempt to increase synergy across schemes in the revisit design for
+        # FAGs with automated measurements. It poses some risks for flexibility
+        # and may need revisiting.
+        # .by = c(scheme, module_combo_code, panel_set),
+        .by = compartment,
+      ) %>%
+      select(-panel_group_repetitions, -compartment) %>%
+      distinct() %>%
+      # using auto_continuous_meas_ps2 and memship_alignfastest as attributes
+      # next to panel count, since they trigger a different panel membership
+      # approach
+      nest(panel_counts = c(
+        panel_count,
+        auto_continuous_meas_ps2,
+        memship_alignfastest
+      )),
+    join_by(scheme, module_combo_code, panel_set),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>%
+  mutate(
+    # generate data frame with the relation between generic panel numbers of
+    # different panel setup (panel count & ps2 automated measurements) in a
+    # scheme x moco x panel set. The rows of this data frame will be used for
+    # partitioning spatial samples in GRTS order.
+    generic_panels = map2(panel_counts, max_panel_group_repetitions, function(pc, mpgr) {
+      pcs <- pc$panel_count
+      max_panel_count <- max(pcs)
+      # currently only panel counts are supported that are a divisor of the maximum
+      divisors_cond <- all(pcs %in% numbers::divisors(max_panel_count))
+      if (!divisors_cond) {
+        stop("A number of panels occurs that is not a divisor of ", max_panel_count)
+      }
+      mat <- matrix(0L, nrow = max_panel_count, ncol = length(pcs))
+      pclabels <- str_c(
+        pc$panel_count,
+        case_when(
+          pc$auto_continuous_meas_ps2 ~ "auto2",
+          pc$memship_alignfastest ~ "fastalign",
+          .default = ""
+        )
+      )
+      colnames(mat) <- str_c("generic", pclabels, ifelse(pcs == 1, "panel", "panels"))
+      df <- as_tibble(mat)
+      for (i in seq_along(pcs)) {
+        nr <- pcs[i]
+        auto2 <- pc$auto_continuous_meas_ps2[i]
+        fastalign <- pc$memship_alignfastest[i]
+        df[, i] <- if (auto2) {
+          # automated measurements in panel set 2 get a special pattern
+          rep(seq_len(nr), each = mpgr) %>%
+            rep(max_panel_count / (nr * mpgr))
+        } else if (fastalign) {
+          # fast-aligned memberships
+          rep(seq_len(nr), max_panel_count / nr)
+        } else {
+          # usual FAGs get a monotonically increasing panel number attribution
+          rep(seq_len(nr), each = max_panel_count / nr)
+        }
+      }
+      df %>%
+        mutate(id = row_number()) %>%
+        relocate(id)
+    })
+  )
+```
+
+Before populating the generic panels with spatial sampling units, we generate and write one-dimensional (temporal) GRTS samples of size  `r nrvirtpanels`, each representing a full set of `r nrvirtpanels` virtual panels with their GRTS address.
+We create a different sample for each stratum x spatial poststratum x panel set.
+These will be used in the procedure to distribute a spatial sample over an actual set of generic panels.
+The size of `r nrvirtpanels` is chosen because it is expected that `r nrvirtpanels` will (usually?) be a multiple of the maximum panel count, and this is needed for the procedure to work.
+Although making it larger (e.g. 144) would allow for even more flexibility (in terms of different panel counts), the sample size evenness for a smaller number of panels gets worse with a higher number of virtual panels, so that we have settled for `r nrvirtpanels` as a compromise.
+Hence, storing this result for every stratum x spatial poststratum x panel set and reusing it will help in stabilizing panel memberships when sampling frames change.
+
+Also, sharing it among schemes for the same stratum x spatial poststratum x panel set combination ensures maximum synergy among schemes.
+This is especially relevant for the rarer stratum x spatial poststratum combinations, where exact matches of the spatial sample occur _across schemes_.
+
+Note that the addresses will be in the range (0, 63) since a power of 2 is needed in 1D GRTS that has enough resolution.
+
+Checking whether `r nrvirtpanels` is a multiple of all needed panel counts.
+
+```{r}
+stopifnot(
+  all(unique(scheme_moco_ps_spsubset_fas_panelcount$panel_count) %in%
+    numbers::divisors(nrvirtpanels))
+)
+```
+
+Optionally (re)generating 1D (temporal) GRTS addresses for `r nrvirtpanels` virtual panels per stratum x spatial poststratum x panel set.
+This code should normally not be rerun for the already available combinations.
+
+```{r}
+if (params$reset_virtualpanel_addresses) {
+  set.seed(20250620)
+  stratum_sppost_ps_virtpaneladdr <-
+    scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
+    distinct(stratum, sp_poststratum, panel_set) %>%
+    arrange(stratum, sp_poststratum, panel_set) %>%
+    mutate(
+      panel_addresses = list(create_1d_grts_sample(nrvirtpanels)),
+      .by = c(stratum, sp_poststratum, panel_set)
+    ) %>%
+    unnest(panel_addresses) %>%
+    rename(panel_address = address, panel_id = id) %>%
+    arrange(stratum, sp_poststratum, panel_set, panel_address)
+  write_vc(
+    stratum_sppost_ps_virtpaneladdr,
+    "stratum_sppost_ps_virtpaneladdr",
+    root = file.path(datapath, "text/intermediate"),
+    sorting = c("stratum", "sp_poststratum", "panel_set", "panel_address"),
+    strict = FALSE
+  )
+}
+```
+
+Reading the virtual panel addresses.
+
+```{r}
+stratum_sppost_ps_virtpaneladdr <-
+  read_vc(
+    "stratum_sppost_ps_virtpaneladdr",
+    root = file.path(datapath, "text/intermediate")
+  ) %>%
+  as_tibble()
+```
+
+Automatically amending `stratum_sppost_ps_virtpaneladdr` with missing combinations of stratum x spatial poststratum x panel set, as needed.
+
+```{r}
+stratum_sppost_ps_missing <-
+  scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
+  distinct(stratum, sp_poststratum, panel_set) %>%
+  arrange(stratum, sp_poststratum, panel_set) %>%
+  anti_join(
+    stratum_sppost_ps_virtpaneladdr,
+    join_by(stratum, sp_poststratum, panel_set)
+  )
+nrnew <- nrow(stratum_sppost_ps_missing)
+if (nrnew > 0) {
+  message(
+    "Updating stratum_sppost_ps_virtpaneladdr with ",
+    nrnew,
+    " new combinations of stratum x spatial poststratum x panel set."
+  )
+  set.seed(20250626)
+  stratum_sppost_ps_missing %>%
+    mutate(
+      panel_addresses = list(create_1d_grts_sample(nrvirtpanels)),
+      .by = c(stratum, sp_poststratum, panel_set)
+    ) %>%
+    unnest(panel_addresses) %>%
+    rename(panel_address = address, panel_id = id) %>%
+    bind_rows(stratum_sppost_ps_virtpaneladdr) %>%
+    arrange(stratum, sp_poststratum, panel_set, panel_address) %>%
+    write_vc(
+      "stratum_sppost_ps_virtpaneladdr",
+      root = file.path(datapath, "text/intermediate"),
+      sorting = c("stratum", "sp_poststratum", "panel_set", "panel_address"),
+      strict = FALSE
+    )
+  stratum_sppost_ps_virtpaneladdr <-
+    read_vc(
+      "stratum_sppost_ps_virtpaneladdr",
+      root = file.path(datapath, "text/intermediate")
+    ) %>%
+    as_tibble()
+}
+```
+
+Code to verify the temporal spread of virtual panels in the case of all, 24, 12, 6 and 3 panels (not run).
+
+```{r}
+if (FALSE) {
+  plot_panel_spread <- function(nrpanels, sample_size, seed = 123456) {
+    set.seed(seed)
+    stratum_sppost_ps_virtpaneladdr %>%
+      mutate(
+        panel_id_rescaled = ceiling(
+          panel_id / (nrvirtpanels / nrpanels)
+        ) %>%
+          as.integer()
+      ) %>%
+      nest(panels = c(panel_address, panel_id, panel_id_rescaled)) %>%
+      mutate(samples = map(panels, function(pan) {
+        pan %>%
+          arrange(panel_address) %>%
+          slice_head(n = sample_size) %>%
+          select(-panel_id)
+      })) %>%
+      select(-panels) %>%
+      mutate(case = row_number()) %>%
+      slice_sample(n = 20) %>%
+      unnest(samples) %>%
+      count(case, panel_id_rescaled, name = "sampled") %>%
+      mutate(case = factor(case)) %>%
+      ggplot(aes(x = case, y = panel_id_rescaled, fill = sampled)) +
+      geom_tile() +
+      facet_wrap(~case, nrow = 1, scales = "free_x")
+  }
+  # plot_panel_spread(nrvirtpanels, 6)
+  plot_panel_spread(24, 12)
+  plot_panel_spread(24, 6)
+  plot_panel_spread(24, 2)
+  # plot_panel_spread(12, 6)
+  # plot_panel_spread(6, 3)
+  plot_panel_spread(3, 2)
+}
+```
+
+Now populating the generic panels.
+
+```{r}
+scheme_moco_ps_stratum_sppost_genericpanelmemship <-
+  scheme_moco_ps_stratum_sppost_genericpanelrelations %>%
+  inner_join(
+    stratum_sppost_ps_virtpaneladdr %>%
+      nest(panel_addresses = c(panel_address, panel_id)),
+    join_by(stratum, sp_poststratum, panel_set),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  mutate(
+    # distribute the spatial samples over the rows of foregoing data frame,
+    # and rearrange the data so it will be possible to join with
+    # scheme_moco_ps_spsubset_fas_panels
+    panel_membership = pmap(
+      list(spsample, generic_panels, panel_addresses),
+      function(sps, gen, pa) {
+        distribute_sample_over_panels(sps, gen, pa) %>%
+          inner_join(
+            gen,
+            join_by(genericpanels_row == id),
+            relationship = "many-to-one",
+            # "drop" is relevant when nrow(sps) < nrow(gen)
+            unmatched = c("error", "drop")
+          ) %>%
+          select(-genericpanels_row) %>%
+          pivot_longer(
+            cols = !grts_address,
+            names_to = "panel_count",
+            values_to = "panel_id",
+            cols_vary = "slowest"
+          ) %>%
+          mutate(
+            auto_continuous_meas_ps2 = str_detect(panel_count, "auto2"),
+            memship_alignfastest = str_detect(panel_count, "fastalign"),
+            panel_count = str_extract(panel_count, "\\d+") %>% as.integer()
+          ) %>%
+          relocate(auto_continuous_meas_ps2, memship_alignfastest, .after = panel_count)
+      }
+    )
+  ) %>%
+  select(
+    scheme,
+    module_combo_code,
+    panel_set,
+    stratum,
+    sp_poststratum,
+    panel_membership
+  ) %>%
+  # we still need to handle 7220 better here!
+  add_col_in_aquatic_subset(
+    strata = n2khab_strata,
+    type_properties = n2khab_types_expanded_properties
+  ) %>%
+  relocate(in_aquatic_subset, .after = panel_set) %>%
+  arrange(scheme, module_combo_code, panel_set, in_aquatic_subset)
+```
+
+**Missing functionality**: split the 7220 locations in an aquatic and terrestrial spatial subset (which overlap).
+This actually boils down to distinguishing rivulets and mires as two different strata within type 7220, for which independent sampling must take place.
+This has been applied at the scheme level already, in preparing the scheme-specific spatial sampling frames; however we also need it within schemes where both subsets are present, in order to apply the appropriate field activity group per location.
+Currently we just duplicate the samples for these two spatial subsets...
+The 7220 strata can also be used to delineate the target population of `GW_05.1_{aq,terr}` and of `SURF_*` schemes (much like the code to generate `mod_scheme_mainfieldactivity`).
+
+**Missing functionality**: modules (like pan2124) with shorter cycle duration for data collection in groundwater schemes than the cycle applied to (re)install groundwater level devices, may need special attention which we didn't give it yet.
+Notably the implemented approach for 'auto2' and 'fastalign' doesn't work out well here.
+This is further complicated after the implementation of `year_origin`, which triggered erroneous postponing of groundwater activities to 2026.
+
+### Panel membership
+
+Translating the generic panel memberships to panel memberships for each FAS (hence revisit design).
+
+```{r}
+scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship <-
+  scheme_moco_ps_spsubset_fas_panels %>%
+  select(
+    scheme,
+    module_combo_code,
+    panel_set,
+    in_aquatic_subset,
+    spsubset_needed_for_panel,
+    fas,
+    auto_continuous_meas_ps2,
+    memship_alignfastest,
+    notation_paneldesign,
+    panel
+  ) %>%
+  nest(panels = panel) %>%
+  mutate(
+    panels = map(panels, ~ mutate(., panel_id = row_number())),
+    panel_count = map_int(panels, nrow)
+  ) %>%
+  # join the generic panel memberships to the panels based on panel count, on
+  # whether the panel design is for automated continuous measurements in panel
+  # set 2, and on whether the panel membership uses fast alignment:
+  inner_join(
+    scheme_moco_ps_stratum_sppost_genericpanelmemship %>%
+      rename(stratum_in_aquatic_subset = in_aquatic_subset) %>%
+      unnest(panel_membership) %>%
+      nest(panel_membership = c(grts_address, panel_id)),
+    join_by(
+      scheme,
+      module_combo_code,
+      panel_set,
+      panel_count,
+      auto_continuous_meas_ps2,
+      memship_alignfastest
+    ),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
+  # where a FAS applies to a spatial subset, the corresponding strata must be
+  # limited as such:
+  filter(
+    in_aquatic_subset == stratum_in_aquatic_subset | is.na(in_aquatic_subset)
+  ) %>%
+  select(
+    -panel_count,
+    -auto_continuous_meas_ps2,
+    -memship_alignfastest,
+    -stratum_in_aquatic_subset
+  ) %>%
+  # XXXXXXXXXXXX
+  # following distinct() only matters for 7220, as long as it isn't divided into
+  # strata (the sample duplication will only remain for FASs that distinguish
+  # spatial subsets):
+  distinct() %>%
+  mutate(
+    panel_membership = map2(panels, panel_membership, function(pan, mem) {
+      pan %>%
+        inner_join(
+          mem,
+          join_by(panel_id),
+          relationship = "one-to-many",
+          unmatched = c("drop", "error")
+        ) %>%
+        select(-panel_id)
+    })
+  ) %>%
+  select(-panels)
+```
+
+Note that (in a scheme x panel set x module combo) only the combination of stratum x spatial poststratum stands for a consecutive GRTS series, equally distributed over panels, and that replacement with spare units of the stratum must happen within spatial poststrata.
+
+## Overview of most relevant objects in this chapter
+
+Objects subsetted with `[[1]]` mean that they (may) contain more, similarly structured elements.
+
+```{r echo = FALSE}
+for (name in c(
+  "scheme_moco_ps_spsubset_fas_paneldesign",
+  "scheme_moco_ps_spsubset_fas_paneldesign$fas[[1]]",
+  "scheme_moco_ps_spsubset_fas_panelcount",
+  "scheme_moco_ps_spsubset_fas_panels",
+  "scheme_moco_ps_spsubset_panel_calendar",
+  "scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship",
+  "scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship$panel_membership[[1]]"
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```

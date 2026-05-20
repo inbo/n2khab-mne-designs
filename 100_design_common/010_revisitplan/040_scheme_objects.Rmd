@@ -1,0 +1,1656 @@
+# Generating scheme-specific objects in preparation of generating samples {#scheme-objects}
+
+These data objects are restricted to the schemes and types defined by the target populations in `scheme_targetpop_sets$targetpops`.
+
+## Defining the target populations using strata
+
+This is needed to extract scheme- or stratum-specific sampling frames.
+
+Add target populations using strata for each set of schemes + target populations, in `scheme_targetpop_sets`.
+
+```{r}
+scheme_targetpop_sets <-
+  scheme_targetpop_sets %>%
+  mutate(
+    targetpops_strata = map(targetpops, function(tp) {
+      inner_join(
+        tp,
+        n2khab_strata,
+        join_by(type),
+        relationship = "many-to-many",
+        unmatched = c("error", "drop")
+      ) %>%
+        select(-type)
+    })
+  )
+```
+
+Flattening the target populations per submodule, using strata.
+
+```{r paged.print=FALSE}
+submodule_targetpops_strata <-
+  submodules %>%
+  inner_join(
+    scheme_targetpop_sets %>%
+      select(stset, targetpops_strata),
+    join_by(stset),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  select(-stset) %>%
+  unnest(targetpops_strata)
+```
+
+Creating unioned set of target populations using strata.
+
+```{r}
+targetpops_strata <-
+  targetpops %>%
+  inner_join(
+    n2khab_strata,
+    join_by(type),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  select(-type)
+```
+
+Beware that the target populations in `targetpops_strata` may be too wide for application to a scheme in a specific module.
+
+## Generating spatial sampling frames per scheme
+
+### Applying scheme-specific spatial restrictions to certain types
+
+By default, the spatial sampling frame of a scheme is the collapsed & phab-corrected base sampling frame, subsetted by the scheme's target population.
+This is a restriction that can easily be applied on the fly while defining the sample for each scheme.
+
+However **some scheme x stratum combinations** apply a further spatial restriction of the spatial sampling frame.
+
+To this end, we shrink the collapsed & phab-corrected base sampling frame in different ways, in order to replace the sampling frames for these schemes.
+
+```{r paged.print=FALSE}
+schemes %>%
+  filter(!is.na(spatial_restriction)) %>%
+  select(scheme, spatial_restriction)
+```
+
+```{r}
+schemes %>%
+  distinct(spatial_restriction) %>%
+  filter(!is.na(spatial_restriction)) %>%
+  pull(spatial_restriction)
+```
+
+- **Restriction 1**: _For terrestrial types: restrict to zones with shallow groundwater (in reach of vegetation). Don't exclude locations with types that are '(almost) everywhere groundwater dependent' (GD2)_
+
+Masking `grts_mh_n2khab` according to the `shallowgroundwater` layer.
+To be conservative, we don't require cell centers to intersect the polygons.
+
+```{r}
+sg <-
+  locate_n2khab_data() %>%
+  file.path("10_raw/shallowgroundwater/shallowgroundwater.gpkg") %>%
+  vect()
+sg_grts_n2khab <-
+  mask(grts_mh_n2khab, sg) %>%
+  values(na.rm = TRUE) %>%
+  as.vector()
+```
+
+Preparing restricted result `stratum_grts_n2khab_phabc_1`.
+
+```{r}
+strata_for_restriction_1 <-
+  n2khab_types_expanded_properties %>%
+  filter(groundw_dep != "GD2", hydr_class != "HC3") %>%
+  semi_join(n2khab_strata_expanded, ., join_by(type)) %>%
+  pull(stratum)
+strata_gd2 <-
+  n2khab_types_expanded_properties %>%
+  filter(groundw_dep == "GD2") %>%
+  semi_join(n2khab_strata_expanded, ., join_by(type)) %>%
+  pull(stratum)
+stratum_grts_n2khab_phabc_1 <-
+  stratum_grts_n2khab_phabcorrected_no_replacements %>%
+  group_by(grts_address) %>%
+  mutate(
+    to_restrict = stratum %in% strata_for_restriction_1,
+    gd2 = stratum %in% strata_gd2,
+    gd2_in_cell = any(gd2)
+  ) %>%
+  ungroup() %>%
+  filter(
+    !to_restrict |
+      gd2_in_cell |
+      grts_address %in% sg_grts_n2khab
+  ) %>%
+  select(!c(to_restrict, gd2, gd2_in_cell))
+```
+
+- **Restriction 2**: _Restrict to zones with shallow groundwater (in reach of vegetation). Exclude aquatic (i.e. rivulet) forms of type 7220. Don't exclude locations with types that are '(almost) everywhere groundwater dependent' (GD2)_
+
+Preparing restricted result `stratum_grts_n2khab_phabc_2`.
+
+```{r}
+grts_7220_allowed_2 <-
+  extract(
+    grts_mh_n2khab,
+    habspring_units %>%
+      filter(system_type != "rivulet") %>%
+      st_coordinates()
+  ) %>%
+  filter(!is.na(GRTSmaster_habitats)) %>%
+  pull(GRTSmaster_habitats)
+stratum_grts_n2khab_phabc_2 <-
+  stratum_grts_n2khab_phabcorrected_no_replacements %>%
+  filter(stratum != "7220" | grts_address %in% grts_7220_allowed_2) %>%
+  group_by(grts_address) %>%
+  mutate(
+    gd2 = stratum %in% strata_gd2,
+    gd2_in_cell = any(gd2)
+  ) %>%
+  ungroup() %>%
+  filter(gd2_in_cell | grts_address %in% sg_grts_n2khab) %>%
+  select(!c(gd2, gd2_in_cell))
+```
+
+- **Restriction 3**: _Exclude terrestrial (i.e. mire) forms of type 7220, if applicable. Exclude locations where the surface water is not connected with (nor affected by) the phreatic aquifer_
+- **Restriction 4**: _Exclude terrestrial (i.e. mire) forms of type 7220, if applicable_
+
+We combine both restrictions since the condition relating to surface water - groundwater interaction is to be assessed in situ.
+
+Preparing restricted result `stratum_grts_n2khab_phabc_3`.
+
+```{r}
+grts_7220_allowed_3 <-
+  extract(
+    grts_mh_n2khab,
+    habspring_units %>%
+      filter(system_type != "mire") %>%
+      st_coordinates()
+  ) %>%
+  filter(!is.na(GRTSmaster_habitats)) %>%
+  pull(GRTSmaster_habitats)
+stratum_grts_n2khab_phabc_3 <-
+  stratum_grts_n2khab_phabcorrected_no_replacements %>%
+  filter(stratum != "7220" | grts_address %in% grts_7220_allowed_3)
+```
+
+- **Restriction 5**: _Restrict to 8310 marl quarries that are directly connected with (intersected by) a groundwater aquifer_
+
+**Missing data**: new data source needed to apply this spatial restriction.
+
+```{r}
+# dummy steps
+grts_8310_allowed_5 <-
+  extract(
+    grts_mh_n2khab,
+    st_coordinates(points_8310)
+  ) %>%
+  filter(!is.na(GRTSmaster_habitats)) %>%
+  pull(GRTSmaster_habitats)
+stratum_grts_n2khab_phabc_5 <-
+  stratum_grts_n2khab_phabcorrected_no_replacements %>%
+  filter(stratum != "8310" | grts_address %in% grts_8310_allowed_5)
+```
+
+
+### Defining spatial sampling frames
+
+```{r}
+sp_samplingframes <-
+  tribble(
+    ~sampling_frame_id, ~sampling_frame,
+    0L, stratum_grts_n2khab_phabcorrected_no_replacements,
+    1L, stratum_grts_n2khab_phabc_1,
+    2L, stratum_grts_n2khab_phabc_2,
+    3L, stratum_grts_n2khab_phabc_3,
+    5L, stratum_grts_n2khab_phabc_5,
+  )
+```
+
+Deriving the domain-wise sampling frames.
+
+```{r}
+sp_samplingframe_domain <-
+  sp_samplingframes %>%
+  mutate(
+    sampling_frame_domain = map(
+      sampling_frame,
+      ~ inner_join(
+        .,
+        domain_grts_n2khab,
+        join_by(grts_address),
+        relationship = "many-to-many",
+        # XXXX SAME PROBLEM HERE AS IN 'domain_stratum_non_cell_nunits' CHUNK
+        unmatched = c("drop", "drop")
+      ) %>%
+        relocate(domain)
+    ),
+    .keep = "unused"
+  )
+```
+
+
+### Setting spatial sampling frames per scheme
+
+Note that these spatial sampling frames generally still contain strata that don't belong to the scheme's target population, nor belong to the types that exist in a specific domain with preset sample size.
+
+This means we must always join with the scheme's target population (in `scheme_targetpop_sets$targetpops_strata`) _and_ with a domain-specific set of units (`domain_grts_n2khab`).
+Furthermore, module-specific restrictions of the MHQ target populations may be in place, as seen in paragraph \@ref(dom-scheme-popsize).  
+
+```{r}
+scheme_sampling_frame <-
+  schemes %>%
+  select(scheme) %>%
+  mutate(
+    sampling_frame_id = recode_values(
+      scheme,
+      c("GW_03.3", "GW_04.2", "GW_05.2", "GW_07.1") ~ 1L,
+      "GW_05.1_terr" ~ 2L,
+      "GW_05.1_quarries" ~ 5L,
+      c("GW_05.1_aq", "SURF_03.4_lotic") ~ 3L,
+      default = 0L
+    )
+  )
+```
+
+
+## Calculating scheme-specific population sizes per domain {#dom-scheme-popsize}
+
+### Precalculations at the sampling frame level
+
+Determining the sampling frame specific population size per domain for strata with non-cell-based units.
+
+```{r}
+ssf_domain_stratum_non_cell_nunits <-
+  stratum_units_non_cell_n2khab %>%
+  inner_join(
+    units_non_cell_n2khab_grts,
+    join_by(sample_support_code, unit_id),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>%
+  inner_join(
+    sp_samplingframe_domain %>% unnest(sampling_frame_domain),
+    join_by(stratum, grts_address),
+    relationship = "many-to-many",
+    # XXXX SAME PROBLEM HERE AS IN 'domain_stratum_non_cell_nunits' CHUNK
+    unmatched = c("drop", "drop")
+  ) %>%
+  count(sampling_frame_id, domain, stratum, name = "nunits")
+```
+
+Determining the sampling frame specific population size per domain for strata with cell-center-based units.
+
+```{r}
+ssf_domain_stratum_cellcenter_nunits <-
+  sp_samplingframe_domain %>%
+  unnest(sampling_frame_domain) %>%
+  semi_join(
+    n2khab_types_expanded_properties %>%
+      filter(sample_support_code == "cell_conditioned_on_center"),
+    join_by(stratum == type)
+  ) %>%
+  count(sampling_frame_id, domain, stratum, name = "nunits") %>%
+  arrange(pick(-nunits))
+```
+
+Determining the sampling frame specific population size per domain for strata with cell-based units.
+
+```{r}
+ssf_domain_stratum_cell_nunits <-
+  sp_samplingframe_domain %>%
+  unnest(sampling_frame_domain) %>%
+  semi_join(stratum_grts_cell_n2khab, join_by(stratum, grts_address)) %>%
+  count(sampling_frame_id, domain, stratum, name = "nunits")
+```
+
+Integrating these 3 different types of strata.
+
+```{r}
+ssf_domain_stratum_nunits <-
+  bind_rows(
+    ssf_domain_stratum_non_cell_nunits,
+    ssf_domain_stratum_cellcenter_nunits,
+    ssf_domain_stratum_cell_nunits
+  ) %>%
+  arrange(pick(-nunits)) %>%
+  mutate(nunits = round(nunits) %>% as.integer())
+```
+
+Some cases may with less than 0.5 units, which comes down to 0 units.
+
+```{r paged.print = FALSE}
+ssf_domain_stratum_nunits %>%
+  filter(nunits == 0) %>%
+  arrange(stratum, domain)
+```
+
+We still keep such cases for reference, since future states of these strata may become larger.
+
+### Applying result at the scheme level
+
+```{r}
+scheme_ssf_domain_stratum_nunits <-
+  scheme_sampling_frame %>%
+  inner_join(
+    ssf_domain_stratum_nunits,
+    join_by(sampling_frame_id),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
+  semi_join(targetpops_strata, join_by(scheme, stratum))
+```
+
+
+### Filtering result per submodule
+
+Each submodule has a restricted set of schemes, associated target populations, and domains.
+
+```{r}
+submod_dom_scheme_ssf_stratum_nunits <-
+  scheme_ssf_domain_stratum_nunits %>%
+  inner_join(
+    module_domains %>% select(module, domain),
+    .,
+    join_by(domain),
+    relationship = "many-to-many",
+    unmatched = "error"
+  ) %>%
+  # Restricting to target populations per submodule; adding the latter. Also,
+  # the target populations themselves are restricted by the domain-stratum
+  # relation.
+  inner_join(
+    submodule_targetpops_strata,
+    join_by(module, scheme, stratum),
+    relationship = "many-to-many",
+    unmatched = "drop"
+  ) %>%
+  relocate(submodule, .after = module) %>%
+  # adding the is_core_scheme variable, which is module x scheme specific
+  inner_join(
+    submodules %>%
+      select(module, stset) %>%
+      inner_join(
+        scheme_targetpop_sets %>%
+          select(stset, scheme_set) %>%
+          unnest(scheme_set) %>%
+          select(stset, scheme, is_core_scheme),
+        join_by(stset),
+        relationship = "many-to-many",
+        unmatched = c("error", "drop")
+      ) %>%
+      select(-stset) %>%
+      distinct(),
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    # some schemes were already dropped drom specific domains where the target
+    # population is absent, so we must use "drop" for the RHS
+    unmatched = c("error", "drop")
+  ) %>%
+  relocate(is_core_scheme, .after = scheme)
+```
+
+Note that we will update `submod_dom_scheme_ssf_stratum_nunits` once again after the restriction of MHQ schemes below.
+
+### Restriction of MHQ schemes and associated types per domain based on required surface area
+
+Module-specific rules can apply to exclude some types or schemes from the MHQ programme in a domain, based on the surface area in such a domain.
+
+In fact, those excluded types (see objects below) are measured in other ways, but we don't consider them in the sampling and revisit design.
+This choice is also made because for several of such types this rule had already been applied at the Flemish level in MHQ which makes them not even appear in `read_scheme_types()`, hence they were already absent from objects like `targetpops` and `scheme_targetpop_sets`.
+
+Creating some helper objects that add types and categories to `submod_dom_scheme_ssf_stratum_nunits` partim MHQ.
+
+```{r}
+mhq_mod_dom_scheme_ssf_stratum_nunits_type <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  distinct(pick(-submodule)) %>%
+  semi_join(
+    module_domains %>% filter(sample_size_predetermined),
+    join_by(module, domain)
+  ) %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  filter(str_detect(scheme, "^HQ"))
+
+mhq_mod_dom_scheme_ssf_stratum_nunits_type_category <-
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>%
+  inner_join(
+    read_types() %>%
+      mutate(category = case_when(
+        type %in% c("3260", "7220") ~ "lotic",
+        str_detect(hydr_class, "3$") ~ "lentic",
+        str_detect(type, forest_types_regex) ~ "terrestrial_forest",
+        .default = "terrestrial_open"
+      )) %>%
+      select(type, category),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
+
+mhq_scheme_category <-
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type_category %>%
+  distinct(scheme, category) %>%
+  arrange(scheme, category)
+```
+
+The `mhq_sampled_types_per_domain` object below reflects which types are being sampled in the considered MHQ schemes according to a minimum surface area condition at the domain level.
+Hence this is a subset of the target population of these schemes at the Flemish level.
+The complement of this (non-sampled types in MHQ) is created in chunks that follow.
+For these non-sampled types in MHQ (except RIBs) the whole target population is to be measured (a census).
+
+```{r}
+mhq_sampled_types_per_domain <-
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type_category %>%
+  summarize(
+    # summing is wrt combining strata per type
+    nunits = sum(nunits),
+    .by = c(module, domain, scheme, type, category)
+  ) %>%
+  summarize(
+    # consider the largest population size (if different between modules: not at
+    # the time of coding)
+    nunits = max(nunits),
+    .by = c(domain, scheme, type, category)
+  ) %>%
+  # don't sample terrestrial units when area is smaller than 10 ha
+  filter(nunits >= 10e4 / 32^2 | !str_detect(category, "terrestrial")) %>%
+  select(-nunits)
+```
+
+Determining the types, resp strata, for each module x domain x  MHQ scheme, that are _not_ measured with a sample in the considered MHQ schemes (i.e. in the modules that do have MHQ schemes).
+Note that this object is restricted to types that are sampled in MHQ schemes at the Flemish level.
+
+```{r}
+mhq_mod_dom_scheme_mhqsampletype_no_sample <-
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>%
+  summarize(
+    # summing is wrt combining strata per type
+    nunits = sum(nunits),
+    .by = c(module, domain, scheme, type)
+  ) %>%
+  anti_join(mhq_sampled_types_per_domain, join_by(domain, scheme, type))
+mhq_mod_dom_scheme_mhqsamplestratum_no_sample <-
+  mhq_mod_dom_scheme_ssf_stratum_nunits_type %>%
+  anti_join(mhq_sampled_types_per_domain, join_by(domain, scheme, type)) %>%
+  select(module, domain, scheme, stratum, nunits)
+```
+
+Both above objects are equal except for the column name and associated factor levels, since these types are not further divided as strata:
+
+```{r}
+stopifnot(
+  all.equal(
+    mhq_mod_dom_scheme_mhqsampletype_no_sample,
+    mhq_mod_dom_scheme_mhqsamplestratum_no_sample %>%
+      rename(type = stratum),
+    check.attributes = FALSE
+  )
+)
+```
+
+Determining the types, _for each module x domain_, that are _not_ measured with a sample in the considered MHQ schemes.
+This also includes the types that are not defined as part of any MHQ scheme, but that are part of MNE schemes.
+Note that, for clarity, we don't exclude RIBs in the below object (but we do exclude them for some specific modules).
+The scheme is also added and is a mere attribute; it does not cause duplication: MHQ schemes have mutually exclusive target populations.
+
+```{r}
+mhq_mod_dom_type_no_sample <-
+  # using the complete object, not restricted to MHQ:
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  filter(str_detect(scheme, "^HQ")) %>%
+  distinct(module, domain) %>%
+  inner_join(
+    domain_type_nunits,
+    join_by(domain),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  anti_join(
+    mhq_sampled_types_per_domain %>%
+      distinct(domain, type),
+    join_by(domain, type)
+  ) %>%
+  left_join(
+    targetpops %>%
+      filter(str_detect(scheme, "^HQ")),
+    join_by(type),
+    relationship = "many-to-one",
+    # targetpops does not take into account restrictions due to domain:
+    unmatched = "drop"
+  ) %>%
+  filter(!(str_detect(module, "pan_effectmon_") & str_detect(type, "^rbb")))
+```
+
+### Applying the MHQ restriction for module x domain x scheme x stratum to the complete set
+
+Updating `submod_dom_scheme_ssf_stratum_nunits`.
+
+```{r}
+submod_dom_scheme_ssf_stratum_nunits <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  anti_join(
+    mhq_mod_dom_scheme_mhqsamplestratum_no_sample,
+    join_by(module, domain, scheme, stratum)
+  )
+```
+
+## Determining schemes and population sizes per domain for each (sub)module
+
+We restrict all schemes based on the presence of strata in domains.
+Some of the domains also play a role in scheme implementation (see \@ref(domains-per-module)).
+
+Determining the schemes that apply to each domain in each module, according to the _current_ (!) presence of strata in domains.
+This already includes the MHQ restriction of schemes and _sampled_ types that has been obtained above.
+Hence from here on, we only consider sampling approaches.
+
+```{r}
+module_domain_schemes <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  distinct(module, domain, scheme, is_core_scheme)
+```
+
+Using this result to shrink earlier module x scheme objects.
+
+```{r}
+for (objectname in c(
+  "module_schemes",
+  "module_targetpops",
+  "module_scheme_props",
+  "module_schemes_mne",
+  "mod_scheme_datacoll_nofield",
+  "mod_scheme_variableset_mainfieldactivity",
+  "mod_scheme_mainfieldactivity",
+  "mod_scheme_mainfieldactivity_subsets",
+  "mod_scheme_mainfieldactivity_actseq",
+  "mod_scheme_field_activity",
+  "mod_scheme_actseq_fag",
+  "mod_scheme_fag",
+  "mod_scheme_ps_fag_paneldesign"
+)) {
+  result <- eval(as.name(objectname)) %>%
+    semi_join(module_domain_schemes, join_by(module, scheme))
+  assign(objectname, result, envir = .GlobalEnv)
+}
+```
+
+Calculating statistics of the population size per **stratum**, per submodule x domain x scheme.
+
+```{r}
+submodule_domain_scheme_stratumstats <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  summarize(
+    stratum_count = n(),
+    stratum_nunits_min = min(nunits),
+    stratum_nunits_q1 = quantile(nunits, 0.25),
+    stratum_nunits_q2 = quantile(nunits, 0.5),
+    stratum_nunits_q3 = quantile(nunits, 0.75),
+    stratum_nunits_max = max(nunits),
+    .by = c(module, submodule, domain, scheme)
+  ) %>%
+  arrange(module, submodule, domain, scheme)
+```
+
+Calculating statistics of the population size per **type**, per submodule x domain x scheme.
+
+```{r}
+submodule_domain_scheme_typestats <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  summarize(
+    nunits = sum(nunits),
+    .by = c(module, submodule, domain, scheme, type)
+  ) %>%
+  summarize(
+    type_count = n(),
+    type_nunits_min = min(nunits),
+    type_nunits_q1 = quantile(nunits, 0.25),
+    type_nunits_q2 = quantile(nunits, 0.5),
+    type_nunits_q3 = quantile(nunits, 0.75),
+    type_nunits_max = max(nunits),
+    .by = c(module, submodule, domain, scheme)
+  ) %>%
+  arrange(module, submodule, domain, scheme)
+```
+
+<!-- XXXXX Note that quite some polygons have been dropped in domain_hmt_pol_grts after the join with hmt_pol_grts_cellcenter was added, leading to a clearly lower number of units; this may be because of the clipping effect of grts_mh (which is too small) and also because of dropping small polygons (small=FALSE), i.e. that didn't intersect any cell center. -->
+<!-- This effect should be scrutinized further, but this effect may be want we want for now. -->
+<!-- XXXXX Above result is to be confronted to the ncells result after PHAB correction has been applied -->
+
+
+## Check the type overlap between core and non-core MNE schemes, by environmental compartment
+
+Determining which types in a module x compartment (GW, SURF, SOIL) are covered by a non-core scheme and _not_ by a core scheme.
+Currently this is only investigated for domain "Flanders", for simplicity.
+
+```{r}
+non_core_types_per_module_and_compartment <-
+  modules %>%
+  select(module) %>%
+  semi_join(
+    module_domains %>% filter(domain == "Flanders"),
+    join_by(module)
+  ) %>%
+  inner_join(
+    submodules,
+    join_by(module),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    scheme_targetpop_sets %>%
+      select(stset, scheme_set, targetpops_strata) %>%
+      mutate(
+        scheme_targetpop = map2(
+          scheme_set, targetpops_strata, function(ss, tp) {
+            inner_join(
+              ss,
+              tp,
+              join_by(scheme),
+              relationship = "one-to-many",
+              unmatched = "error"
+            )
+          }
+        ),
+        .keep = "unused"
+      ) %>%
+      unnest(cols = scheme_targetpop),
+    join_by(stset),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  distinct(pick(-submodule, -stset)) %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  filter(programme == "MNE") %>%
+  select(
+    module,
+    scheme,
+    is_core_scheme,
+    compartment = attribute_1,
+    type
+  ) %>%
+  arrange(module, compartment, type) %>%
+  mutate(
+    compartment_has_core_scheme = any(is_core_scheme),
+    .by = c(module, compartment, type)
+  ) %>%
+  mutate(
+    all_compartments_have_core_scheme = all(compartment_has_core_scheme),
+    .by = c(module, type)
+  ) %>%
+  filter(!all_compartments_have_core_scheme) %>%
+  select(module, compartment, scheme, is_core_scheme, type)
+non_core_types_per_module_and_compartment
+```
+
+The occurrence of types with non-predetermined sample size is very limited.
+
+## Set and collect the module x domain specific design attributes of schemes x panel sets x strata (x variable-sets)
+
+The objects that will be created in this paragraph represent the design attributes of schemes x panel sets x strata (and if needed variable sets) for each module x domain combination.
+Together with `scheme_sampling_frame` and `sp_samplingframe_domain`, we will have the necessary and sufficient information to draw spatial samples and allocate locations to panels and date-time intervals (chapters \@ref(spatial-sampling) and \@ref(revisit)).
+
+### Helper objects in distributing or setting sample sizes
+
+Preparing objects that will distribute sample sizes that have been set at a level higher than (sub)module x domain x scheme:
+
+- distribution in each submodule of module `pan_effectmon_sac5_custommeas` is over domains within schemes (MNE), or over domains x schemes within type categories terrestrial_open, terrestrial_forest (if existing), lentic and lotic (MHQ)
+- a specific distribution is done in module `pan_transmon_be2100024` over aquatic schemes (MHQ).
+
+```{r}
+mhq_proportion_aquatic_per_submodule <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  semi_join(
+    module_domains %>% filter(sample_size_predetermined) %>% select(module, domain),
+    join_by(module, domain)
+  ) %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  semi_join(
+    read_types() %>% filter(str_detect(hydr_class, "3$")),
+    join_by(type)
+  ) %>%
+  filter(str_detect(scheme, "^HQ")) %>%
+  distinct(module, submodule, scheme, type) %>%
+  # give each scheme x type equal weight per submodule; sum to one per submodule
+  mutate(
+    prop_aq_in_submodule = 1 / n(),
+    .by = c(module, submodule)
+  ) %>%
+  # aggregate weights per submodule x scheme, in order to allocate sample sizes
+  # over schemes
+  summarize(
+    prop_aq_in_submodule = sum(prop_aq_in_submodule),
+    .by = c(module, submodule, scheme)
+  ) %>%
+  arrange(module, submodule, scheme)
+
+mhq_proportions_sac_subset5_per_submodule <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  filter(str_detect(scheme, "^HQ")) %>%
+  inner_join(
+    mhq_sampled_types_per_domain,
+    join_by(domain, scheme, type),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  distinct(module, submodule, domain, scheme, category, type) %>%
+  semi_join(
+    module_domains %>%
+      filter(module == "pan_effectmon_sac5_custommeas", sample_size_predetermined),
+    join_by(module, domain)
+  ) %>%
+  # Count the number of types that is sampled in each scheme and per domain
+  # (within submodule). This is just an informative attribute.
+  mutate(
+    type_count_mhq_sampling = n(),
+    .by = c(module, submodule, domain, scheme)
+  ) %>%
+  # give each type x domain equal weight within the type category and per
+  # submodule (the weights sum to 1 per submodule x category)
+  mutate(
+    prop_domaintype_per_cat_submod = 1 / n(),
+    .by = c(module, submodule, category)
+  ) %>%
+  # sum the type weight per scheme, domain and category (within submodule), in
+  # order to distribute sample size over domains within a submodule x scheme x
+  # category
+  summarize(
+    prop_mhq_domainscheme_per_cat_submod = sum(prop_domaintype_per_cat_submod),
+    .by = c(module, submodule, domain, scheme, category, type_count_mhq_sampling)
+  ) %>%
+  arrange(module, submodule, domain, scheme)
+
+mne_core_proportions_sac_subset5_per_submodule <-
+  submod_dom_scheme_ssf_stratum_nunits %>%
+  semi_join(
+    module_domain_schemes %>%
+      filter(module == "pan_effectmon_sac5_custommeas", is_core_scheme),
+    join_by(module, domain, scheme)
+  ) %>%
+  filter(!str_detect(scheme, "^HQ")) %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  distinct(module, submodule, domain, scheme, type) %>%
+  # give each domain x type equal weight per submodule x scheme; sum to one per
+  # submodule x scheme
+  mutate(
+    prop_domaintype_per_mne_scheme_submod = 1 / n(),
+    .by = c(module, submodule, scheme)
+  ) %>%
+  # aggregate weights per submodule x domain x scheme, in order to distribute
+  # sample size over domains within a submodule x scheme
+  summarize(
+    prop_domain_per_mne_scheme_submod = sum(prop_domaintype_per_mne_scheme_submod),
+    .by = c(module, submodule, domain, scheme)
+  ) %>%
+  arrange(module, submodule, domain, scheme)
+```
+
+Since the sample sizes in the 'densification_mne_1' submodules of groundwater and soil schemes will be set at the type level, with a maximum budget of 8 types, we need to track the number of types that has been selected in chapter \@ref(settings), and consider the budget proportion.
+
+```{r}
+densification_max_types <- 8
+densification_type_proportion_gw <-
+  scheme_targetpop_sets %>%
+  filter(stset == "sts_pan_effectmon_mne_densification") %>%
+  pluck("targetpops_strata", 1) %>%
+  filter(str_detect(scheme, "^GW")) %>%
+  pull(stratum) %>%
+  n_distinct() / densification_max_types
+densification_type_proportion_soil <-
+  scheme_targetpop_sets %>%
+  filter(stset == "sts_pan_effectmon_mne_densification") %>%
+  pluck("targetpops_strata", 1) %>%
+  filter(str_detect(scheme, "^SOIL")) %>%
+  pull(stratum) %>%
+  n_distinct() / densification_max_types
+```
+
+
+### Collecting and setting design attributes at the submodule x domain x scheme x panel_set level
+
+Joining submodule and scheme properties to the count statistics by submodule, domain and scheme, needing those attributes to generate further attributes, and repeating them here for now.
+Also distributing the spatial sample sizes over schemes x panel sets by (sub)module x domain.
+
+Note that from here on, we only consider the domains with predetermined sample size, i.e. those that have their own design.
+
+```{r}
+submodule_domain_scheme_ps_designattr <-
+  modules %>%
+  select(-year_firstdefinition, -contains("name_"), -code_short) %>%
+  inner_join(
+    module_domains,
+    join_by(module),
+    relationship = "one-to-many",
+    unmatched = "error"
+  ) %>%
+  filter(sample_size_predetermined) %>%
+  select(-sample_size_predetermined) %>%
+  # joining schemes per module x domain, restricted to domains where sample size
+  # is controlled
+  inner_join(
+    module_domain_schemes,
+    join_by(module, domain),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  # Joining submodule, type and stratum counts.
+  # Note that, for MHQ schemes, submod_dom_scheme_ssf_stratum_nunits was already
+  # restricted to module x domain x type combinations that are approached
+  # with a sample. See the 'mhq_mod_dom_type_no_sample' object to get the
+  # remainder.
+  # Below _typestats/_stratumstats objects are based on
+  # submod_dom_scheme_ssf_stratum_nunits:
+  inner_join(
+    submodule_domain_scheme_typestats %>%
+      select(module, submodule, domain, scheme, type_count),
+    join_by(module, domain, scheme),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  relocate(submodule, .after = module) %>%
+  inner_join(
+    submodule_domain_scheme_stratumstats %>%
+      select(module, submodule, domain, scheme, stratum_count),
+    join_by(module, submodule, domain, scheme),
+    relationship = "one-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    schemes %>% select(scheme, attribute_1, tag_1),
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    scheme_sampling_frame,
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    module_scheme_props,
+    join_by(module, scheme),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  mutate(
+    year_first = recode_values(
+      attribute_1,
+      "GW" ~ year_first_default + yr_postpone_gw,
+      "SURF" ~ year_first_default + yr_postpone_surf,
+      "SOIL" ~ year_first_default + yr_postpone_soil,
+      default = year_first_default
+    ),
+    month_first = recode_values(
+      attribute_1,
+      "GW" ~ month_first_gw,
+      "SURF" ~ month_first_surf,
+      "SOIL" ~ month_first_soil,
+      default = 1L
+    )
+  ) %>%
+  left_join(
+    mhq_proportion_aquatic_per_submodule,
+    join_by(module, submodule, scheme),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>%
+  left_join(
+    mhq_proportions_sac_subset5_per_submodule,
+    join_by(module, submodule, domain, scheme),
+    relationship = "one-to-one",
+    unmatched = "error"
+  ) %>%
+  left_join(
+    mne_core_proportions_sac_subset5_per_submodule,
+    join_by(module, submodule, domain, scheme),
+    relationship = "one-to-one",
+    unmatched = "error"
+  ) %>%
+  # expand number of panel sets to individually numbered panel sets
+  mutate(panel_set = map(nr_panelsets, seq_len)) %>%
+  select(-nr_panelsets) %>%
+  unnest_longer(panel_set) %>%
+  mutate(
+    # set proportion of spatial sample size per panel set
+    ps_sps_proportion = case_when(
+      n() == 1 ~ 1,
+      n() == 2 & panel_set == 1L ~ 0.75,
+      n() == 2 & panel_set == 2L ~ 0.25
+    ),
+    .by = c(module, submodule, domain, scheme)
+  ) %>%
+  mutate(
+    sp_sample_size_all_panels = cycle_duration_y * ps_sps_proportion * case_when(
+      # NA in MNE means adopting the locations of the core scheme in the same compartment:
+      !is_core_scheme & !str_detect(scheme, "^HQ") ~ NA_real_,
+      module == "pan_effectmon_flanders" & submodule == "main" ~ case_when(
+        # the surpluses in GW & SOIL are historical budget reallocations in
+        # order to achieve the required 90% confidence level
+        scheme == "GW_03.3" ~ 167 + (133 * 5 / 8 - 0.625) + 68,
+        scheme == "SOIL_03.2" ~ 400 + (1600 / 6 * 5 / 8 - 1 / 3) + 171,
+        scheme == "SURF_03.4_lentic" ~ 106 / 2,
+        scheme == "SURF_03.4_lotic" ~ 27 / 2
+      ),
+      # pan_effectmon_sac5_custommeas partim MNE is taken as 'one sixth' of above
+      module == "pan_effectmon_sac5_custommeas" &
+        submodule == "main" &
+        !str_detect(scheme, "^HQ") ~ case_when(
+        scheme == "GW_03.3" ~ (28 + (22 * 5 / 8 - 1 / 12) + 68 / 6) * prop_domain_per_mne_scheme_submod,
+        scheme == "SOIL_03.2" ~ (67 + (44 * 5 / 8) + 171 / 6) * prop_domain_per_mne_scheme_submod,
+        scheme == "SURF_03.4_lentic" ~ 18 / 2 * prop_domain_per_mne_scheme_submod,
+        scheme == "SURF_03.4_lotic" ~ 5 / 2 * prop_domain_per_mne_scheme_submod
+      ),
+      # pan_effectmon_sac5_custommeas partim MHQ is set at category level, and
+      # taken as 'one sixth' of the yearly Flemish MHQ sample size
+      module == "pan_effectmon_sac5_custommeas" &
+        submodule == "main" &
+        str_detect(scheme, "^HQ") ~ case_when(
+        category == "terrestrial_open" ~ 43 * prop_mhq_domainscheme_per_cat_submod,
+        # we actually don't have category terrestrial_forest, so following
+        # line is just for sake of completeness:
+        category == "terrestrial_forest" ~ 13 * prop_mhq_domainscheme_per_cat_submod,
+        category == "lentic" ~ 7 * prop_mhq_domainscheme_per_cat_submod,
+        category == "lotic" ~ 3 * prop_mhq_domainscheme_per_cat_submod
+      ),
+      # sampling sizes in extra submodule of panfl
+      module == "pan_effectmon_flanders" &
+        submodule == "densification_mne_1" ~ case_when(
+        # 133 * 0.5 and 270 * 0.5 is the current budget for 8 types
+        scheme == "GW_03.3" ~ (133 * 0.5) * densification_type_proportion_gw,
+        scheme == "SOIL_03.2" ~ (270 * 0.5) * densification_type_proportion_soil
+      ),
+      # sampling sizes in extra submodule of pan5
+      module == "pan_effectmon_sac5_custommeas" &
+        submodule == "densification_mne_1" ~ case_when(
+        scheme == "GW_03.3" ~ (22 * 0.5) * densification_type_proportion_gw *
+          prop_domain_per_mne_scheme_submod,
+        scheme == "SOIL_03.2" ~ (44 * 0.5) * densification_type_proportion_soil *
+          prop_domain_per_mne_scheme_submod
+      ),
+      # pan_transmon_be2100024 is set at scheme level
+      module == "pan_transmon_be2100024" & scheme == "GW_03.3" ~ 70,
+      module == "pan_transmon_be2100024" & scheme == "SOIL_03.2" ~ 133,
+      module == "pan_transmon_be2100024" & scheme == "SURF_03.4_lentic" ~ 14,
+      module == "pan_transmon_be2100024" & scheme == "SURF_03.4_lotic" ~ 4,
+      module == "pan_transmon_be2100024" & str_detect(scheme, "^HQ3") ~ 18 * prop_aq_in_submodule,
+      module == "pan_transmon_be2100024" & str_detect(scheme, "^HQ(23|40|91(20|90))") ~ 28,
+      module == "pan_transmon_be2100024" & str_detect(scheme, "^HQ6230") ~ 84,
+      module == "pan_transmon_be2100024" & str_detect(scheme, "^HQ(7140|91E0)") ~ 56,
+      # mbaa_mne_phase_1 is set at scheme level
+      module == "mbaa_mne_phase_1" & scheme == "GW_03.3" ~ 1200 / 6,
+      module == "mbaa_mne_phase_1" & scheme == "GW_05.1_terr" ~ 1200 / 6,
+      module == "mbaa_mne_phase_1" & scheme == "GW_05.1_aq" ~ 400 / 6,
+      module == "mbaa_mne_phase_1" & scheme == "GW_05.1_quarries" ~ 25 / 6,
+      module == "mbaa_mne_phase_1" & attribute_1 == "SOIL" ~ 1400 / 6,
+      module == "mbaa_mne_phase_1" & scheme == "SURF_03.4_lentic" ~ 106,
+      module == "mbaa_mne_phase_1" & scheme == "SURF_03.4_lotic" ~ 27,
+      # NA in MHQ means a census instead of a sample (but it's not present!):
+      .default = NA_real_
+    )
+  ) %>%
+  select(
+    -attribute_1,
+    -tag_1,
+    -category,
+    -starts_with("prop"),
+    -type_count_mhq_sampling,
+    -contains("postpone_"),
+    -starts_with("month_first_"),
+    -ps_sps_proportion
+  ) %>%
+  mutate(
+    sp_sample_size_all_panels_type = ifelse(
+      is.na(sp_sample_size_all_panels),
+      NA_real_,
+      sp_sample_size_all_panels / type_count
+    )
+  ) %>%
+  relocate(
+    module,
+    submodule,
+    domain,
+    scheme,
+    is_core_scheme,
+    sampling_frame_id,
+    type_count,
+    stratum_count,
+    cycle_duration_y,
+    year_first,
+    year_last,
+    month_first
+  )
+```
+
+Recalculating yearly spatial sample sizes at an aggregated level as checks.
+
+```{r}
+sample_size_check1 <-
+  submodule_domain_scheme_ps_designattr %>%
+  mutate(yearly_sample_size = as.integer(round(sp_sample_size_all_panels / cycle_duration_y))) %>%
+  summarize(
+    yearly_sample_size = sum(yearly_sample_size, na.rm = TRUE),
+    .by = c(module, submodule, scheme)
+  ) %>%
+  filter(!is.na(yearly_sample_size), yearly_sample_size > 0) %>%
+  arrange(module, submodule, scheme)
+sample_size_check1
+```
+
+```{r paged.print = FALSE}
+aggregate_sample_size(
+  submodule_domain_scheme_ps_designattr,
+  "sp_sample_size_all_panels",
+  mhq_scheme_category
+) %>%
+  print(n = Inf)
+```
+
+### Generate non-corrected target sample sizes for strata in module x domain x scheme x panel set combinations
+
+Expanding `submodule_domain_scheme_ps_designattr` with strata, collapsing submodules (effectively summing the submodules' spatial sample sizes) and distributing spatial sample sizes over strata.
+
+For types that are subdivided into (surface area based) strata, the 4th root of the number of population units per stratum (in module x domain x scheme x type) is taken to distribute the target sample size at type level.
+This was found to be a good compromise for estimator precision at type level, between the more extreme scenarios of population size versus an area weighed distribution.
+
+Also, we implement the maximum sampling proportions at the domain x scheme x type level, as well as type specific sample size reductions (see section \@ref(ssize-limit)).
+
+Non-core MNE schemes do not adopt sample sizes from the core MNE schemes: only the locations that are common between the respective sampling frames will be adopted in the non-core schemes, hence this can be a subset and it happens at the spatial sampling stage.
+However we do attribute extra sample sizes in non-core MNE schemes, for those types not covered by core schemes -- see object `non_core_types_per_module_and_compartment`.
+
+```{r}
+module_domain_scheme_ps_stratum_target_sample_size <-
+  submodule_domain_scheme_ps_designattr %>%
+  select(-type_count, -stratum_count) %>%
+  inner_join(
+    # note that, for MHQ schemes, submod_dom_scheme_ssf_stratum_nunits was
+    # already restricted to module x domain x type combinations that are
+    # approached with a sample. See the 'mhq_mod_dom_type_no_sample' object to
+    # get the remainder.
+    submod_dom_scheme_ssf_stratum_nunits %>%
+      select(-is_core_scheme, -sampling_frame_id),
+    join_by(module, submodule, domain, scheme),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  left_join(
+    schemes %>%
+      filter(programme == "MNE") %>%
+      select(
+        scheme,
+        compartment = attribute_1
+      ),
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  left_join(
+    non_core_types_per_module_and_compartment %>%
+      select(module, compartment, scheme, type) %>%
+      mutate(add_to_sample = TRUE),
+    join_by(module, compartment, scheme, type),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  # adding a sample size to some types of non-core schemes (still within
+  # submodule to prevent inheriting a too high sample size); meanwhile setting
+  # type sample size to zero for cases with nunits = 0
+  mutate(
+    sp_sample_size_all_panels_type = case_when(
+      is.na(sp_sample_size_all_panels_type) & add_to_sample ~
+        max(sp_sample_size_all_panels_type, na.rm = TRUE),
+      nunits == 0 & !is.na(sp_sample_size_all_panels_type) ~ 0,
+      .default = sp_sample_size_all_panels_type
+    ),
+    .by = c(module, submodule, compartment, panel_set)
+  ) %>%
+  select(-compartment, -add_to_sample) %>%
+  # collapsing submodules:
+  summarize(
+    sp_sample_size_all_panels_type = ifelse(
+      all(is.na(sp_sample_size_all_panels_type)),
+      first(sp_sample_size_all_panels_type),
+      sum(sp_sample_size_all_panels_type, na.rm = TRUE)
+    ),
+    .by = !c(submodule, starts_with("sp_sample_size"))
+  ) %>%
+  # splitting type sample size over strata
+  mutate(
+    sp_sample_size_all_panels_stratum = ifelse(
+      # the TRUE case is to prevent dividing by zero (wrt the FALSE case)
+      nunits == 0 & !is.na(sp_sample_size_all_panels_type),
+      0,
+      sp_sample_size_all_panels_type * nunits^0.25 / sum(nunits^0.25)
+    ),
+    .by = c(module, domain, scheme, panel_set, type)
+  ) %>%
+  # using the grts_join_method to exclude strata from sample size truncation
+  inner_join(
+    n2khab_types_expanded_properties %>%
+      select(type, grts_join_method),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # marking schemes eligible for sample size truncation
+  left_join(
+    schemes_truncatedsampling,
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  mutate(regex_grts_join_method = replace_values(
+    regex_grts_join_method,
+    NA ~ "missing"
+  )) %>%
+  # applying sample size truncation at domain x scheme x stratum, effectively
+  # using the sum of stratum sample sizes across modules and panel sets to set
+  # conditions and drive the redistribution of the total limited sample size
+  mutate(
+    sp_sample_size_all_panels_stratum_previous =
+      sp_sample_size_all_panels_stratum,
+    sp_sample_size_all_panels_stratum = ifelse(
+      !is.na(regex_grts_join_method) &
+        str_detect(grts_join_method, regex_grts_join_method) &
+        (sum(sp_sample_size_all_panels_stratum) >
+          first(nunits) * first(sampling_max_prop)),
+      first(nunits) * first(sampling_max_prop) * sp_sample_size_all_panels_stratum /
+        sum(sp_sample_size_all_panels_stratum),
+      sp_sample_size_all_panels_stratum
+    ),
+    spss_stratum_truncated = sp_sample_size_all_panels_stratum_previous !=
+      sp_sample_size_all_panels_stratum,
+    .by = c(domain, scheme, stratum) # modules & panel_sets are taken together
+  ) %>%
+  select(-matches("grts_join_method|previous"), -sampling_max_prop) %>%
+  # marking scheme x types eligible for proportional sample size reduction
+  left_join(
+    scheme_localtype_reducedsampling,
+    join_by(scheme, type),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  # applying sample size reduction
+  mutate(sp_sample_size_all_panels_stratum = ifelse(
+    !is.na(sampling_prop),
+    sp_sample_size_all_panels_stratum * sampling_prop,
+    sp_sample_size_all_panels_stratum
+  )) %>%
+  select(-sampling_prop) %>%
+  # recalculating type-level sample sizes
+  mutate(
+    sp_sample_size_all_panels_type = ifelse(
+      all(is.na(sp_sample_size_all_panels_stratum)),
+      first(sp_sample_size_all_panels_stratum),
+      sum(sp_sample_size_all_panels_stratum, na.rm = TRUE)
+    ),
+    .by = c(module, domain, scheme, panel_set, type)
+  ) %>%
+  # recalculating total sample sizes
+  mutate(
+    sp_sample_size_all_panels = ifelse(
+      all(is.na(sp_sample_size_all_panels_stratum)),
+      first(sp_sample_size_all_panels_stratum),
+      sum(sp_sample_size_all_panels_stratum, na.rm = TRUE)
+    ),
+    .by = c(module, domain, scheme, panel_set)
+  ) %>%
+  relocate(sp_sample_size_all_panels, .after = panel_set) %>%
+  relocate(type, stratum, nunits, .before = sp_sample_size_all_panels_type)
+```
+
+Note that the above values for `sp_sample_size_all_panels_stratum` are pro-forma target sample sizes: they would apply if the populations were infinite.
+Since they are finite _and_ since unequal population sizes apply, only the target sample sizes at an aggregated level matter, in verifying the finite-population sample sizes that we calculate below.
+
+Recalculating the aggregated sample size.
+Compared to the previous result:
+
+- reductions due to sample size limitation are obvious;
+- some non-core-scheme types that are not covered by core schemes cause a limited addition of sampling in non-core schemes.
+
+```{r paged.print = FALSE}
+aggregate_sample_size(
+  module_domain_scheme_ps_stratum_target_sample_size,
+  "sp_sample_size_all_panels_stratum",
+  mhq_scheme_category
+) %>%
+  print(n = Inf)
+```
+
+### Redistributing stratum-level target sample sizes based on finite-population correction
+
+Overdimensioning spatial sample sizes to represent the infinite case and subsequently applying finite population correction in order to achieve sample sizes at a pooled level, aimed at the same size as the preset ones.
+
+The infinite sample size is to be obtained by applying a fixed coefficient per module x scheme x panel set in MNE, or per module x category (x panel set) in MHQ (MHQ doesn't have a panel set > 1) -- we call such level a 'pool' -- to the target sample sizes per stratum (in module x domain x scheme x panel set).
+This is needed to make sure the allocation for the _infinite_ population remains spread over types (within a pool) in the same way as in the above pro-forma stratum-level sample sizes.
+
+The reason to not set a separate coefficient for each domain (with 'predetermined sample size') of the same module x scheme-or-category x panel set (pool), hence include domain in the definition of a pool, is to maintain the relative (c.q. enforce equal) estimator precision across domains within such modules x scheme-or-category (pools): the ratios between type-level sample sizes for the infinite population will be maintained across domains in a pool.
+Often this means 'equal estimator precision', but this is with the exception of specific submodules having introduced differences between infinite-population sample sizes of types.
+Also in these cases this distribution is maintained.
+In the case of sample size limitation, we don't want target sample sizes to be changed due to FPC-induced sample size redistribution: they should remain fixed.
+For this reason, cases with a limited target sample size are included in a single separate pool and will not be handled by FPC.
+
+A consequence of the finite population correction may be that the budgeted sample size at the domain level is somewhat shifted among domains, but the fact that this avoids differences in degree of overdimensioning across domains can be regarded as an advantage.
+Hence the 'predetermined sample size' for domains in the same module refers specifically to:
+
+- the fact that the sample size for _infinite_ populations is preset per domain x scheme in MNE (per domain x category in MHQ), in order to serve the domains proportionally (equal, reduced or enhanced precision at domain x scheme-or-category x type level);
+- the resulting FPC-corrected sample sizes per domain x scheme, i.e. the fact that a sample size is applied ('determined') at the domain level.
+
+But as one can see, it is essentially the 'module x scheme x panel set' level (or 'module x category' level) sample size that is literally 'predetermined'.
+
+The reason to involve the panel set in the pool, hence to take control of the resulting corrected sample size of the pool, is that the distribution of a module x scheme sample size over panel sets is an a priori choice in terms of investment made to answer different questions with the first vs the second panel set, just like the investments for different schemes.
+Moreover, this will actually lead to a somewhat higher coefficient, hence extra precision enhancement (in spatial aggregations) for the largest panel set (the one with the larger sample size).
+This matches its higher importance.
+
+First determining the infinite sample sizes and some intermediate results, by redistributing budgeted (target) sample sizes within pools.
+
+```{r}
+upper_optim_bound <- 100
+module_domain_scheme_ps_stratum_sample_size_infinite <-
+  module_domain_scheme_ps_stratum_target_sample_size %>%
+  left_join(
+    mhq_scheme_category,
+    join_by(scheme),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>%
+  arrange(module, scheme) %>%
+  mutate(
+    pool_with_maintained_type_precision = case_when(
+      spss_stratum_truncated ~ "limited_strata",
+      str_detect(scheme, "^HQ") ~
+        str_c(module, "MHQ", category, str_c("PS", panel_set), sep = "_"),
+      .default = str_c(module, scheme, str_c("PS", panel_set), sep = "_")
+    )
+  ) %>%
+  mutate(
+    coef = optimize(
+      get_fpc_sample_size_difference,
+      c(1, upper_optim_bound),
+      sp_sample_size_all_panels_stratum,
+      nunits
+    )$minimum,
+    coef = ifelse(is.na(sp_sample_size_all_panels_stratum), NA_real_, coef),
+    sp_sample_size_all_panels_stratum_inf =
+      sp_sample_size_all_panels_stratum * coef,
+    .by = pool_with_maintained_type_precision
+  )
+```
+
+Cases may exist for which the pooled budgeted sample size (target sample size of a pool) is larger than the corresponding population size.
+These will need adjustment of target sample sizes for respective strata.
+Check if such cases exist:
+
+<!-- XXX In this case, type 3260 has not yet got a sufficiently reliable sampling frame, so this must be revisited. -->
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size_infinite %>%
+  filter(coef > upper_optim_bound - 1) %>%
+  summarize(
+    pooled_pop_size = sum(nunits),
+    budgeted_sp_sample_size_all_panels = sum(sp_sample_size_all_panels_stratum),
+    .by = pool_with_maintained_type_precision
+  )
+```
+
+Overview of pools, pooled budgeted (target) sample sizes, and coefficients to set the infinite population sizes of the strata contained within each pool.
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size_infinite %>%
+  filter(!is.na(coef)) %>%
+  summarize(
+    budgeted_sp_sample_size_all_panels = sum(sp_sample_size_all_panels_stratum),
+    coef = first(coef),
+    .by = pool_with_maintained_type_precision
+  )
+```
+
+Summary of coefficient values, excluding potential extremes (which relate to insufficient availability of population units).
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size_infinite %>%
+  distinct(pool_with_maintained_type_precision, coef) %>%
+  filter(coef < upper_optim_bound - 1) %>%
+  pull(coef) %>%
+  summary()
+```
+
+Applying the finite population correction, except for the `limited_strata` pool where the target sample size is taken.
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size <-
+  module_domain_scheme_ps_stratum_sample_size_infinite %>%
+  mutate(
+    sp_sample_size_all_panels_stratum = ifelse(
+      spss_stratum_truncated,
+      sp_sample_size_all_panels_stratum,
+      apply_fpc(
+        sp_sample_size_all_panels_stratum_inf,
+        nunits
+      )
+    ),
+    # recalculating type-level sample sizes (since type level did not define the
+    # pool)
+    sp_sample_size_all_panels_type = sum(sp_sample_size_all_panels_stratum),
+    .by = c(module, domain, scheme, panel_set, type)
+  ) %>%
+  mutate(
+    # recalculating total sample sizes (especially relevent wrt domain level,
+    # which did not define the pool). This also turns NAs into zeroes.
+    sp_sample_size_all_panels = sum(sp_sample_size_all_panels_stratum, na.rm = TRUE),
+    .by = c(module, domain, scheme, panel_set)
+  ) %>%
+  select(-c(
+    category,
+    pool_with_maintained_type_precision,
+    coef,
+    sp_sample_size_all_panels_stratum_inf
+  )) %>%
+  mutate(across(starts_with("sp_sample_size"), ~ as.integer(round(.)))) %>%
+  arrange(module, domain, scheme, panel_set, type, stratum)
+```
+
+### Investigate the resulting sample sizes {#investigate-sample-sizes}
+
+Rechecking the aggregated sample size, i.e. the calculations at stratum and at scheme level.
+Small differences with previous result arise because of rounding to integer values.
+
+```{r paged.print = FALSE}
+aggregate_sample_size(
+  module_domain_scheme_ps_stratum_sample_size,
+  "sp_sample_size_all_panels_stratum",
+  mhq_scheme_category
+) %>%
+  print(n = Inf)
+```
+
+Comparing with target sample sizes, which should match earlier results.
+
+```{r paged.print = FALSE}
+module_domain_scheme_ps_stratum_sample_size %>%
+  distinct(
+    module,
+    domain,
+    scheme,
+    cycle_duration_y,
+    sp_sample_size_all_panels
+  ) %>%
+  aggregate_sample_size(
+    "sp_sample_size_all_panels",
+    mhq_scheme_category
+  ) %>%
+  print(n = Inf)
+```
+
+Overview of stratum sample sizes (in module x domain x scheme x panel set):
+
+```{r warning=FALSE}
+module_domain_scheme_ps_stratum_sample_size %>%
+  mutate(is_census = sp_sample_size_all_panels_stratum == nunits) %>%
+  ggplot(aes(x = sp_sample_size_all_panels_stratum, fill = is_census)) +
+  geom_bar() +
+  facet_wrap(~module, scales = "free")
+```
+
+Listing stratum sample sizes at the level of Flanders.
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size %>%
+  filter(domain == "Flanders") %>%
+  select(domain, scheme, panel_set, stratum, sp_sample_size_all_panels_stratum)
+```
+
+Focusing on small sample sizes:
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size %>%
+  filter(sp_sample_size_all_panels_stratum <= 10) %>%
+  mutate(
+    is_census = sp_sample_size_all_panels_stratum == nunits,
+    sp_sample_size_all_panels_stratum = factor(sp_sample_size_all_panels_stratum)
+  ) %>%
+  ggplot(aes(x = sp_sample_size_all_panels_stratum, fill = is_census)) +
+  geom_bar() +
+  facet_wrap(~module, scales = "free")
+```
+
+Counting the number of domain x stratum combinations that have a sample size of zero, per module x scheme x panel set.
+
+```{r paged.print = FALSE}
+module_domain_scheme_ps_stratum_sample_size %>%
+  filter(sp_sample_size_all_panels_stratum == 0) %>%
+  count(module, scheme, panel_set)
+```
+
+We can see that more cases occur in panel set 2: this is because it received the smallest portion of sample sizes.
+This is merely a consequence of stratification of small (e.g. < 1) infinite sample sizes in combination with finite population correction:
+
+```{r paged.print = FALSE}
+module_domain_scheme_ps_stratum_sample_size_infinite %>%
+  filter(sp_sample_size_all_panels_stratum < 0.7) %>%
+  count(module, scheme, panel_set)
+```
+
+This is hard to avoid without using larger sample sizes or a census, which then increases costs.
+This may not be a big problem: these strata would have had a small share in the inference anyway.
+However, it shows that some strata are effectively being missed, most of all in panel set 2.
+
+Also, beware that the estimator variance cannot be estimated at all for sample sizes of 1 that are not a census.
+For the split panel design situation, it is not yet decided though whether sub-estimations will indeed be done separately per panel set, but it would be good to at least have a way to do that.
+
+```{r paged.print = FALSE}
+module_domain_scheme_ps_stratum_sample_size %>%
+  filter(
+    sp_sample_size_all_panels_stratum == 1,
+    nunits > 1
+  ) %>%
+  count(module, scheme, panel_set)
+```
+
+At the Flemish level, we could argue to increase sample sizes of 0 or 1 that are not a census up to 2 (or 1 if that is the population size in the zero-sample-size case), which largely concerns panel set 2 (in panel set 1, it causes a census).
+Since we also reduced sample sizes of small populations of specific schemes (see Section \@ref(ssize-limit)), we could also apply this in the included domains, but we choose to do this in panel set 1 only in order to limit the effect on sample proportions.
+In order to limit the abundant effect of the (naturally) small sample sizes of watersurface strata in that case, we consider the type level instead of the stratum level to achieve a sample size of 2 if the domain is not Flanders (hence an included domain), for watersurface types.
+
+Number of domain x scheme x panel set x stratum occasions that would be improved:
+
+```{r paged.print = FALSE}
+module_domain_scheme_ps_stratum_sample_size %>%
+  mutate(
+    is_watersurface = str_detect(stratum, "^31|^2190_a"),
+    nunits_largest = nunits == max(nunits),
+    nunits_cum = cumsum(sort(nunits, decreasing = TRUE)),
+    .by = c(module, domain, scheme, panel_set, type)
+  ) %>%
+  filter(
+    # use stratum-level for non-watersurfaces or domain Flanders
+    (
+      sp_sample_size_all_panels_stratum %in% 0:1 &
+        sp_sample_size_all_panels_stratum < nunits &
+        (domain == "Flanders" | !is_watersurface & panel_set == 1)
+    ) |
+      # use type-level for watersurfaces in included domains
+      (
+        is_watersurface &
+          domain != "Flanders" &
+          panel_set == 1 &
+          # note the use of 'type' here:
+          sp_sample_size_all_panels_type %in% 0:1 &
+          # simpler would be to use sp_sample_size_all_panels_stratum %in% 0:1
+          # for the below condition (and at the time of coding it gave the same
+          # result), but it may be that we can only achieve a sample size of 2
+          # by collapsing two strata that have nunits = 1, so below is a more
+          # general approach
+          (nunits_cum <= 2 | nunits_largest)
+      )
+  ) %>%
+  select(
+    domain,
+    scheme,
+    panel_set,
+    stratum,
+    sample_size = sp_sample_size_all_panels_stratum,
+    nunits
+  )
+```
+
+**_TO CONSIDER / TO DO_:**\
+_Maybe we can refrain from implementing the additional units in included domains for SURF and HQ schemes (cf. originally we only did it for the Flemish domain), since we only reduced the sample sizes for terrestrial types, in GW and SOIL schemes._
+_What if omitting them?_
+_In the included domains, a straightforward solution would be to not analyze these cases at stratum level, but immediately at the type level, or even at the typegroup level with sampling weights so that types get equal weights._
+_It might still be a GRTS estimator since we can consider a stratified random sample as a simple random sample with unequal inclusion probabilities -- to be sought out._
+
+### Implementing some minimal post-hoc sample size increases
+
+Implementing aforementioned increase of sample size (panel set 2 only in 'Flanders'):
+
+- at stratum level in domain 'Flanders' and for non-watersurface types;
+- at type level for watersurface types in smaller domains.
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size <-
+  module_domain_scheme_ps_stratum_sample_size %>%
+  mutate(
+    is_watersurface = str_detect(stratum, "^31|^2190_a"),
+    nunits_largest = nunits == max(nunits),
+    nunits_cum = cumsum(sort(nunits, decreasing = TRUE)),
+    sp_sample_size_all_panels_stratum = ifelse(
+      (
+        sp_sample_size_all_panels_stratum %in% 0:1 &
+          sp_sample_size_all_panels_stratum < nunits &
+          (domain == "Flanders" | !is_watersurface & panel_set == 1)
+      ) |
+        (
+          is_watersurface &
+            domain != "Flanders" &
+            panel_set == 1 &
+            sp_sample_size_all_panels_type %in% 0:1 &
+            (nunits_cum <= 2 | nunits_largest)
+        ),
+      pmin(nunits, 2L),
+      sp_sample_size_all_panels_stratum
+    ),
+    # diff =
+    #   sp_sample_size_all_panels_stratum_2 - sp_sample_size_all_panels_stratum,
+    # recalculating type-level sample sizes
+    sp_sample_size_all_panels_type =
+      sum(sp_sample_size_all_panels_stratum, na.rm = TRUE),
+    .by = c(module, domain, scheme, panel_set, type)
+  ) %>%
+  select(-is_watersurface, -nunits_largest, -nunits_cum) %>%
+  mutate(
+    # recalculating total sample sizes
+    sp_sample_size_all_panels =
+      sum(sp_sample_size_all_panels_stratum, na.rm = TRUE),
+    .by = c(module, domain, scheme, panel_set)
+  )
+```
+
+Rechecking the aggregated sample size.
+
+```{r paged.print = FALSE}
+aggregate_sample_size(
+  module_domain_scheme_ps_stratum_sample_size,
+  "sp_sample_size_all_panels_stratum",
+  mhq_scheme_category
+) %>%
+  print(n = Inf)
+```
+
+
+### Adjustments depending on variable sets
+
+Expanding with variables and field methods and adjusting sample sizes where needed.
+
+<!-- XXXX Set sample size adjustment in 010_settings -->
+
+```{r include=FALSE}
+submodule_domain_scheme_ps_designattr %>%
+  inner_join(
+    mod_scheme_variableset_mainfieldactivity,
+    join_by(module, scheme),
+    relationship = "many-to-many",
+    unmatched = "error"
+  )
+```
+
+## Overview of most relevant objects in this chapter
+
+Objects subsetted with `[[1]]` mean that they (may) contain more, similarly structured elements.
+
+Note that a whole series of `mod_scheme_xxxxx` and some other objects from chapter \@ref(settings) have been updated in this chapter; see the list in section \@ref(overview-settings).
+Below, only `module_schemes`, `module_targetpops`, `module_scheme_props` and `scheme_targetpop_sets` are being shown again.
+
+```{r echo = FALSE}
+for (name in c(
+  "scheme_targetpop_sets",
+  "scheme_targetpop_sets$scheme_set[[1]]",
+  "scheme_targetpop_sets$targetpops[[1]]",
+  "scheme_targetpop_sets$targetpops_strata[[1]]",
+  "submodule_targetpops_strata",
+  "targetpops_strata",
+  "sp_samplingframes",
+  "sp_samplingframes$sampling_frame[[1]]",
+  "sp_samplingframe_domain",
+  "sp_samplingframe_domain$sampling_frame_domain[[1]]",
+  "scheme_sampling_frame",
+  "mhq_sampled_types_per_domain",
+  "mhq_mod_dom_scheme_mhqsampletype_no_sample",
+  "mhq_mod_dom_type_no_sample",
+  "submod_dom_scheme_ssf_stratum_nunits",
+  "module_domain_schemes",
+  "module_schemes",
+  "module_targetpops",
+  "module_scheme_props",
+  "submodule_domain_scheme_typestats",
+  "submodule_domain_scheme_stratumstats",
+  "submodule_domain_scheme_ps_designattr",
+  "module_domain_scheme_ps_stratum_target_sample_size",
+  "module_domain_scheme_ps_stratum_sample_size"
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```
+
+
+

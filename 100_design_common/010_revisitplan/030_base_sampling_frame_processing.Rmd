@@ -1,0 +1,685 @@
+# Processing the base sampling frame
+
+Using the base sampling frame, objects are generated in this chapter that pertain to all schemes in MNE & MHQ.
+
+These objects are needed in preparing scheme-specific sampling frames or samples.
+
+## Raster layers that represent the base sampling frame
+
+### Subsetting `GRTSmaster_habitats` according to the base sampling frame
+
+Create SpatRaster layers that are masked with the 3 vector layers plus assessed population units that represent the base sampling frame, and integrate them.
+
+In spatial processing operations, this form (with much less integer values) has shown to be a bit faster to process than `grts_mh`.
+
+Note that we don't subtract the absences from `absent_popunits_cell_all_n2khab`, because we would have to implement it in every subdataset used below to generate a SpatRaster layer.
+
+First create some preparatory objects in order to cater for extra population units from assessments.
+
+```{r}
+valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod <-
+  valid_extra_popunits_cell_all_n2khab_tidy %>%
+  inner_join(
+    n2khab_types_expanded_properties %>%
+      select(type, grts_join_method) %>%
+      filter(str_detect(grts_join_method, "cell")),
+    join_by(stratum == type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  )
+valid_extra_popunits_cell_n2khab_grts <-
+  valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>%
+  # at the time of coding this leaves zero rows:
+  filter(grts_join_method == "cell") %>%
+  distinct(grts_address) %>%
+  pull(grts_address)
+```
+
+Now create the SpatRaster.
+
+```{r}
+if (params$regenerate_binary_files) {
+  grts_mh_non_cell <- mask(grts_mh, points_non_cell_n2khab)
+  grts_mh_cellcenter <- mask(grts_mh, hmt_pol_cellcenter, touches = FALSE)
+  grts_mh_cell <- mask(grts_mh, hmt_pol_cell)
+  grts_mh_cellcenter_extra <-
+    mask(
+      grts_mh,
+      grts_mh,
+      maskvalues =
+        valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>%
+          filter(grts_join_method == "cell_center") %>%
+          distinct(grts_address) %>%
+          pull(grts_address),
+      inverse = TRUE
+    )
+  if (length(valid_extra_popunits_cell_n2khab_grts) > 0) {
+    grts_mh_cell_extra <-
+      mask(
+        grts_mh,
+        grts_mh,
+        maskvalues = valid_extra_popunits_cell_n2khab_grts,
+        inverse = TRUE
+      )
+  } else {
+    grts_mh_cell_extra <- rast(grts_mh, vals = NA)
+  }
+  grts_mh_n2khab <- max(
+    grts_mh_non_cell,
+    grts_mh_cellcenter,
+    grts_mh_cell,
+    grts_mh_cellcenter_extra,
+    grts_mh_cell_extra,
+    na.rm = TRUE
+  ) %>%
+    as.int()
+  writeRaster(
+    grts_mh_n2khab,
+    file.path(datapath, "binary/intermediate/grts_mh_n2khab.tif"),
+    overwrite = TRUE
+  )
+}
+```
+
+```{r include=FALSE}
+if (FALSE) {
+  # compare to units_non_cell_n2khab_grts %>% distinct(grts_address) %>% nrow
+  global(grts_mh_non_cell, "notNA")
+  # compare to nrow(hmt_pol_grts_cellcenter)
+  global(grts_mh_cellcenter, "notNA")
+  # compare to hmt_pol_grts_cell %>% distinct(grts_address) %>% nrow
+  global(grts_mh_cell, "notNA")
+  # compare to valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>% filter(grts_join_method == "cell_center") %>% distinct(grts_address) %>% nrow
+  global(grts_mh_cellcenter_extra, "notNA")
+  # compare to length(valid_extra_popunits_cell_n2khab_grts)
+  global(grts_mh_cell_extra, "notNA")
+  # compare to stratum_grts_n2khab %>% distinct(grts_address) %>% nrow
+  # Note that this is no longer expected to match, since stratum_grts_n2khab has
+  # been shrinked due to assessed absences of specific population units
+  global(grts_mh_n2khab, "notNA")
+}
+```
+
+```{r}
+grts_mh_n2khab <- rast(
+  file.path(datapath, "binary/intermediate/grts_mh_n2khab.tif")
+)
+```
+
+Creating a spatial index of the GRTS values.
+
+```{r}
+grts_mh_n2khab_index <- tibble(
+  id = seq_len(ncell(grts_mh_n2khab)),
+  grts_address = values(grts_mh_n2khab)[, 1]
+) %>%
+  filter(!is.na(grts_address))
+```
+
+## Sanity check of local replacements {#bsf-sanity}
+
+Where local replacements are defined in the base sampling frame, we expect them not to be far apart.
+
+```{r}
+points_new <-
+  stratum_grts_n2khab %>%
+  filter(!is.na(replacement_for)) %>%
+  select(grts_new = grts_address) %>%
+  add_point_coords_grts(grts_var = "grts_new") %>%
+  rename(geometry_new = geometry) %>%
+  as_tibble()
+points_original <-
+  stratum_grts_n2khab %>%
+  filter(!is.na(replacement_for)) %>%
+  select(grts_original = replacement_for) %>%
+  add_point_coords_grts(grts_var = "grts_original") %>%
+  rename(geometry_original = geometry) %>%
+  as_tibble()
+far_points <-
+  bind_cols(points_original, points_new) %>%
+  mutate(
+    distance = st_distance(geometry_original, geometry_new, by_element = TRUE) %>%
+      set_units("km")
+  ) %>%
+  arrange(desc(distance)) %>%
+  filter(distance > set_units(1, "km"))
+# far_points
+# far_points$grts_original %>% sort() %>% as.numeric() %>% dput()
+stopifnot(nrow(far_points) == 0)
+```
+
+Exceptions originally existed and their corresponding value of `grts_address_drawn` has been dropped in section \@ref(mhqterr-fixes).
+
+
+## Determining the GRTS addresses per domain
+
+Determining all GRTS addresses of the base sampling frame per domain.
+
+Since this does not distinguish between strata, stratum collapsing (see further) is irrelevant.
+
+```{r}
+if (params$regenerate_binary_files) {
+  domain_grts_n2khab <-
+    extract(grts_mh_n2khab, vect(domains)) %>%
+    as_tibble() %>%
+    filter(!is.na(GRTSmaster_habitats)) %>%
+    inner_join(
+      tibble(
+        ID = seq_len(nrow(domains)),
+        domain = domains$domain
+      ),
+      .,
+      join_by(ID),
+      relationship = "one-to-many",
+      unmatched = "error"
+    ) %>%
+    select(
+      -ID,
+      grts_address = GRTSmaster_habitats
+    )
+  saveRDS(
+    domain_grts_n2khab,
+    file.path(datapath, "binary/intermediate/domain_grts_n2khab.rds")
+  )
+}
+```
+
+```{r}
+domain_grts_n2khab <-
+  readRDS(file.path(
+    datapath,
+    "binary/intermediate/domain_grts_n2khab.rds"
+  ))
+```
+
+Note that `grts_mh_n2khab` has a little more non-NA cells than if it is being restricted to domain 'Flanders'.
+This needs further thought.
+
+```{r paged.print=FALSE}
+global(grts_mh_n2khab, "notNA")
+domain_grts_n2khab %>%
+  filter(domain == "Flanders") %>%
+  nrow()
+```
+
+<!-- XXXXX ofwel voor Flanders touches=TRUE gebruiken, ofwel voor alle domeinen touches=TRUE gebruiken (maar dit geeft oververtegenwoordiging door eenheden), ofwel houden as-is. -->
+<!-- Onderzoek nodig met welke eenheden dit verschil heeft te maken (beken op de grens?). -->
+
+We also define non-overlapping domain _partitions_ to uniquely characterize each GRTS address.
+Some domain partitions hence represent the remaining part of an including domain, not the complete one, and use the suffix `_remainder`.
+
+```{r}
+domainpart_grts_n2khab <-
+  domain_grts_n2khab %>%
+  # adding inclusion level
+  inner_join(
+    domains %>%
+      st_drop_geometry() %>%
+      select(domain, inclusion_level),
+    join_by(domain),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>%
+  # for each GRTS address, only keep the domain with the smallest inclusion
+  # level
+  filter(
+    inclusion_level == min(inclusion_level),
+    .by = grts_address
+  ) %>%
+  # label remainders using '_remainder'
+  mutate(
+    domain_part = if_else(
+      inclusion_level == min(inclusion_level),
+      domain,
+      str_c(domain, "_remainder")
+    ) %>%
+      fct_reorder(as.numeric(domain))
+  ) %>%
+  select(domain_part, grts_address)
+```
+
+
+## Processing the base sampling frame in preparation of scheme-specific sampling frames
+
+### Collapse the base sampling frame to match the strata in `n2khab_strata` {#collapse-bsf}
+
+We 'unexpand' the base sampling frame in order to match it properly with the target populations in `scheme_targetpop_sets$targetpops`.
+We don't include this step _inside_ the base sampling frame so that the latter better reflects the information from the spatial data sources on which it is based.
+
+This collapsing comprises two aspects:
+
+- replacing subtype codes by their main type code (where the target population is defined by the latter)
+- adding units, associated with a main type, to each corresponding subtype layer that triggered the expansion to the main type.
+
+**Missing functionality**: including the second aspect in an attribute that reflects uncertainty about the stated type.
+
+In effect, 'collapsing' means less stratum levels, but _more_ rows.
+
+Note that collapsing only affects cell-based units.
+
+<!-- Note that below hasn't been coded in a generic way; it is specified based upon the observed expansion. -->
+<!-- However it is clear that no other expansions occur in MNE + MHQ when comparing `n2khab_types` with `n2khab_types_expanded`. -->
+
+```{r}
+stratum_grts_n2khab_collapsed <-
+  stratum_grts_n2khab %>%
+  collapse_strata() %>%
+  # subtypes and main types that are attached to the same GRTS address, i.e.
+  # were attached to the same habitatmap polygon, have induced duplicates. We
+  # need to solve that:
+  distinct() %>%
+  # duplicates may differ in extra attributes compared to just stratum &
+  # grts_address, so we should pick one row:
+  filter(
+    assessed_in_field == max(assessed_in_field, na.rm = TRUE),
+    .by = c(stratum, grts_address)
+  )
+```
+
+Checking that GRTS addresses occur only once in each stratum.
+
+```{r}
+stopifnot(
+  !any(duplicated(
+    stratum_grts_n2khab_collapsed %>%
+      select(stratum, grts_address)
+  ))
+)
+```
+
+Checking that no empty GRTS addresses occur.
+
+```{r}
+stopifnot(
+  !anyNA(stratum_grts_n2khab_collapsed$grts_address)
+)
+```
+
+Checking that no strata exist that don't occur in `n2khab_strata`.
+
+```{r}
+stopifnot(
+  stratum_grts_n2khab_collapsed %>%
+    distinct(stratum) %>%
+    anti_join(n2khab_strata, join_by(stratum)) %>%
+    nrow() == 0
+)
+```
+
+
+
+### Apply bernouilli sampling to the collapsed base sampling frame, depending on phab value {#phab-correction}
+
+#### Extend collapsed base sampling frame for cell-centered strata with phab column
+
+`phab` values of `cell_conditioned_on_center` types in each polygon (no collapsing).
+
+```{r}
+hmt_pol_phab_cellcenter_n2khab <-
+  hmt_occ %>%
+  summarize(phab = sum(phab), .by = c(polygon_id, type)) %>%
+  semi_join(
+    n2khab_types_expanded_properties %>%
+      filter(sample_support_code == "cell_conditioned_on_center"),
+    join_by(type)
+  )
+```
+
+**Missing functionality**:
+dissolving polygons _per type_ based on a similar value:
+
+- aimed 21 interval levels are [0, 2.5], (2.5, 7.5], (7.5, 12.5], …, (97.5, 100].
+(`cut(c(0, 100), c(0, seq(2.5, 97.5, 5), 100), include.lowest = TRUE)`).
+- the resulting polygons are only needed for the replacement protocol.
+Filtering in order to create spatial sampling frames can just be done at the cell level.
+
+`phab` values of `cell_conditioned_on_center` types (strata) per GRTS address, including stratum collapsing.
+
+```{r}
+stratum_grts_phab_cellcenter_n2khab_collapsed <-
+  hmt_pol_grts_cellcenter %>%
+  inner_join(
+    hmt_pol_phab_cellcenter_n2khab,
+    join_by(polygon_id),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  rename(stratum = type) %>%
+  collapse_strata() %>%
+  select(-polygon_id) %>%
+  relocate(stratum) %>%
+  # due to the collapsing, we need to sum cases where types were translated into
+  # the same code
+  summarize(
+    phab = sum(phab),
+    .by = c(stratum, grts_address)
+  )
+```
+
+
+#### Substitute with assessed cell-centered population units (phab = 100)
+
+Updating the 'phab' data frame `stratum_grts_phab_cellcenter_n2khab_collapsed` by substituting with cell-centered cells from `valid_extra_popunits_cell_all_n2khab_tidy`, collapsing strata and setting those to phab = 100.
+We don't yet include drawn GRTS-addresses that were replaced, since MHQ did not apply a phab-correction in composing samples.
+The latter is also true for the drawn GRTS-addresses that were not replaced, but since these represent true matches with the type at that location, no bias is introduced by setting phab = 100, only improvement of this phab data set.
+Below object is needed for bernouilli sampling.
+
+```{r}
+stratum_grts_phab_cellcenter_n2khab_collapsed <-
+  bind_rows(
+    valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>%
+      filter(
+        grts_join_method == "cell_center",
+        is.na(replaced_by)
+      ) %>%
+      mutate(phab = 100) %>%
+      collapse_strata() %>%
+      select(stratum, grts_address, phab),
+    stratum_grts_phab_cellcenter_n2khab_collapsed %>%
+      anti_join(
+        valid_extra_popunits_cell_all_n2khab_tidy_grtsjoinmethod %>%
+          filter(
+            grts_join_method == "cell_center",
+            is.na(replaced_by)
+          ) %>%
+          collapse_strata(),
+        join_by(stratum, grts_address)
+      )
+  )
+```
+
+Also note that this object does not take into account the assessed absences of specific population units.
+This is not needed since this object, after applying bernouilli sampling, will only be used to _drop_ more population units from the collapsed base sampling frame, which already takes into account assessed absences.
+
+
+#### Apply bernouilli sampling
+
+Determining for each stratum which GRTS addresses are dropped by bernouilli sampling, based on the `raster_runif` data source.
+
+```{r}
+stratum_grts_phab_cellcenter_n2khab_collapsed_phabll <-
+  tibble(
+    grts_address = values(grts_mh_n2khab, na.rm = TRUE)[, 1],
+    # lower limit (minimum threshold) for phab:
+    phab_ll = read_raster_runif() %>%
+      crop(grts_mh_n2khab, mask = TRUE) %>%
+      values(na.rm = TRUE) %>%
+      .[, 1] * 100
+  ) %>%
+  inner_join(
+    stratum_grts_phab_cellcenter_n2khab_collapsed,
+    join_by(grts_address),
+    relationship = "one-to-many",
+    unmatched = c("drop", "error")
+  )
+# cell-center locations retained based on phab:
+stratum_grts_n2khab_collapsed_phabincluded <-
+  stratum_grts_phab_cellcenter_n2khab_collapsed_phabll %>%
+  filter(phab >= phab_ll) %>%
+  select(grts_address, stratum)
+# cell-center locations dropped based on phab:
+stratum_grts_n2khab_collapsed_phabexcluded <-
+  stratum_grts_phab_cellcenter_n2khab_collapsed_phabll %>%
+  filter(phab < phab_ll) %>%
+  select(grts_address, stratum)
+```
+
+Constructing the phab-corrected collapsed base sampling frame.
+We don't include originally drawn locations of cell-center types if these were replaced but don't occur in the retained locations after bernouilli sampling.
+This is because those originally drawn locations from MHQ were not necessarily drawn with phab-correction, introducing bias.
+
+```{r}
+stratum_grts_n2khab_phabcorrected <-
+  stratum_grts_n2khab_collapsed %>%
+  # add the grts_join attribute
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
+    n2khab_types_expanded_properties %>%
+      select(type, grts_join_method),
+    join_by(type),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  filter(
+    # only include replaced drawn GRTS addresses if they match GRTS addresses
+    # retained in stratum_grts_n2khab_collapsed_phabincluded
+    (
+      !is.na(replaced_by) &
+        grts_join_method == "cell_center" &
+        str_c(stratum, grts_address) %in% str_c(
+          stratum_grts_n2khab_collapsed_phabincluded$stratum,
+          stratum_grts_n2khab_collapsed_phabincluded$grts_address
+        )
+    ) | (
+      # include all replaced drawn GRTS addresses for non-cell-center types
+      !is.na(replaced_by) &
+        grts_join_method != "cell_center"
+      # include all non-replaced drawn GRTS addresses
+    ) | is.na(replaced_by)
+  ) %>%
+  select(-type, -grts_join_method) %>%
+  # exclude all cases that have been dropped in the bernouilli sampling
+  anti_join(
+    stratum_grts_n2khab_collapsed_phabexcluded,
+    join_by(stratum, grts_address)
+  ) %>%
+  mutate(
+    # don't refer elsewhere to replaced drawn GRTS addresses if the latter
+    # have been dropped
+    replacement_for = ifelse(
+      !is.na(replacement_for) & !(replacement_for %in% grts_address),
+      NA_integer_,
+      replacement_for
+    ),
+    .by = stratum
+  )
+```
+
+
+### Drop replacing GRTS addresses
+
+In spatial sampling and in population size determination by counting, we need to avoid that both a drawn GRTS-address and its replacing address can be selected as independent sampling units.
+To that aim, we restrict the collapsed & phab-corrected base sampling frame by omitting the GRTS addresses that replace an originally drawn address within a stratum.
+We need the originally drawn GRTS addresses rather than the final ones to construct samples, since the procedure depends on the (original) GRTS address.
+
+```{r}
+stratum_grts_n2khab_phabcorrected_no_replacements <-
+  stratum_grts_n2khab_phabcorrected %>%
+  filter(is.na(replacement_for)) %>%
+  select(-replacement_for)
+```
+
+
+
+## Calculating the spatial population size of strata in each domain
+
+Note: this is not useful for every scheme, since some schemes need further spatial restriction of the base sampling frame (see chapter \@ref(scheme-objects)).
+Hence it will need scheme-specific recalculation anyway (chapter \@ref(scheme-objects)).
+
+Determining the population size per domain for strata with non-cell-based units.
+
+```{r}
+domain_stratum_non_cell_nunits <-
+  stratum_units_non_cell_n2khab %>%
+  inner_join(
+    units_non_cell_n2khab_grts,
+    join_by(sample_support_code, unit_id),
+    relationship = "many-to-one",
+    unmatched = "error"
+  ) %>%
+  inner_join(
+    domain_grts_n2khab,
+    join_by(grts_address),
+    relationship = "many-to-many",
+    # XXXX DEBUGGING NEEDED: unmatched = c("error", "drop") should be used but
+    # does not work; units are effectively dropped. Two potential sources of
+    # mismatch are 1) the loss of GRTS cells in grts_mh_n2khab when intersecting
+    # with domain Flanders (see domain_grts_n2khab); 2) the fact that cells from
+    # grts_mh_non_cell are missing in grts_mh_n2khab, which has been made with
+    # max() (at least true for address 63023401)
+    unmatched = c("drop", "drop")
+  ) %>%
+  count(domain, stratum, name = "nunits")
+```
+
+Determining the population size per domain for strata with cell-center-based units.
+We also determine population sizes by phab-based calculation from the collapsed base sampling frame, in order to compare both approaches.
+
+<!-- Below simplification in domain_stratum_cellcenter_nunits_calculated (representing domains and polygons + their intersection as cells and then summing phab) can be slightly improved by actually intersecting polygons by domains, then calculating phab-corrected areas (see git history for such an approach but still lacking st_intersection()). -->
+
+```{r}
+domain_stratum_cellcenter_nunits_calculated <-
+  domain_grts_n2khab %>%
+  inner_join(
+    stratum_grts_phab_cellcenter_n2khab_collapsed,
+    join_by(grts_address),
+    relationship = "many-to-many",
+    # XXXX SAME PROBLEM HERE AS IN PREVIOUS CHUNK
+    unmatched = c("drop", "drop")
+  ) %>%
+  summarize(
+    nunits = sum(phab) / 100,
+    .by = c(domain, stratum)
+  ) %>%
+  arrange(domain, stratum)
+
+domain_stratum_cellcenter_nunits <-
+  domain_grts_n2khab %>%
+  inner_join(
+    stratum_grts_n2khab_phabcorrected_no_replacements,
+    join_by(grts_address),
+    relationship = "many-to-many",
+    # XXXX SAME PROBLEM HERE AS IN PREVIOUS CHUNK
+    unmatched = c("drop", "drop")
+  ) %>%
+  semi_join(
+    n2khab_types_expanded_properties %>%
+      filter(sample_support_code == "cell_conditioned_on_center"),
+    join_by(stratum == type)
+  ) %>%
+  count(domain, stratum, name = "nunits") %>%
+  arrange(domain, stratum)
+```
+
+Listing largest relative and absolute differences between `domain_stratum_cellcenter_nunits` and `domain_stratum_cellcenter_nunits_calculated`:
+
+```{r paged.print = FALSE}
+domain_stratum_cellcenter_nunits_diffs <-
+  domain_stratum_cellcenter_nunits_calculated %>%
+  rename(nunits_calc = nunits) %>%
+  left_join(
+    domain_stratum_cellcenter_nunits,
+    join_by(domain, stratum),
+    relationship = "one-to-one",
+    unmatched = "error"
+  ) %>%
+  mutate(
+    nunits = replace_na(nunits, 0),
+    diff = nunits - nunits_calc,
+    reldiff = diff / nunits_calc
+  )
+
+domain_stratum_cellcenter_nunits_diffs %>%
+  filter(abs(reldiff) > 0.25) %>%
+  arrange(desc(abs(reldiff)))
+
+domain_stratum_cellcenter_nunits_diffs %>%
+  arrange(desc(abs(diff)))
+```
+
+Notes:
+
+- The more accurate and fine-grained the base sampling frame (for the `cell_conditioned_on_center` strata) is, i.e. the more cells with phab = 100 occur, the less differences will emerge between both approaches.
+- Large relative differences emerge only for (very) small populations.
+- The bernouilli sampling uses a raster with numbers from a random uniform distribution, to apply a bernouilli sampling with cell-specific probability `phab / 100`.
+This naturally results in deviations from the expected (calculated) population size, but at the same time there is no straightforward way to adjust this while maintaining these bernouilli-based inclusion probabilities.
+Furthermore, post-hoc adjustments would not hold for every possible current or future domain at the same time.
+That ultimately requires a perfect base sampling frame for the `cell_conditioned_on_center` strata, having phab = 100 in all cells.
+- Spatially using a simple random approach within this bernouilli sampling indeed makes most sense: there is no reason to assume that cells to be selected (and that are assumed to represent phab = 100) should be spatially well spread or systematically distributed within a phab tier of the considered stratum.
+- Consequently, we accept this inaccuracy when reducing the sampling frame for `cell_conditioned_on_center` strata based on phab.
+- It is not possible to both apply the phab-based reduction and still use the calculated population size for finite population correction of sample sizes, because of the mismatch between the number of population units in the obtained base sampling frame (and which are available for sampling), and this calculated population size.
+  - If the latter is larger than in the corrected base sampling frame, then for smaller populations the required sample size (as obtained from the calculated population size) may or will not be available in the sampling frame.
+  - If the calculated population size is smaller than in the corrected base sampling frame, then we could choose to neglect this difference and use the calculated population size for finite population correction, but unwanted side-effects (of more units available than expected) may then still occur, e.g. total spatial sample sizes would still arise in module combos or split panel designs (chapter \@ref(spatial-sampling)) that are larger than the calculated population size.
+
+Determining the population size per domain for strata with cell-based units.
+
+```{r}
+domain_stratum_cell_nunits <-
+  stratum_grts_cell_n2khab %>%
+  inner_join(
+    domain_grts_n2khab,
+    join_by(grts_address),
+    relationship = "many-to-many",
+    # XXXX SAME PROBLEM HERE AS IN 'domain_stratum_non_cell_nunits' CHUNK
+    unmatched = c("drop", "drop")
+  ) %>%
+  count(domain, stratum, name = "nunits")
+```
+
+<!-- Inserting check that there are indeed no cell-based extra pop units, since these haven't been added here currently. -->
+
+```{r include = FALSE}
+if (length(valid_extra_popunits_cell_n2khab_grts) > 0L) {
+  stop(
+    "You need to implement the adoption of extra population ",
+    "units of cell-based strata."
+  )
+}
+```
+
+Integrating these 3 different types of strata.
+
+```{r}
+domain_stratum_nunits <-
+  bind_rows(
+    domain_stratum_non_cell_nunits,
+    domain_stratum_cellcenter_nunits,
+    domain_stratum_cell_nunits
+  ) %>%
+  arrange(pick(-nunits)) %>%
+  mutate(nunits = round(nunits) %>% as.integer())
+```
+
+Also deriving the population size at type level.
+
+```{r}
+domain_type_nunits <-
+  domain_stratum_nunits %>%
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  summarize(nunits = sum(nunits), .by = c(domain, type))
+```
+
+## Overview of most relevant objects in this chapter
+
+```{r echo = FALSE}
+cat("grts_mh_n2khab\n")
+grts_mh_n2khab
+cat("\n")
+
+for (name in c(
+  "grts_mh_n2khab_index",
+  "domain_grts_n2khab",
+  "domainpart_grts_n2khab",
+  "stratum_grts_n2khab_collapsed",
+  "hmt_pol_phab_cellcenter_n2khab",
+  "stratum_grts_phab_cellcenter_n2khab_collapsed",
+  "stratum_grts_n2khab_phabcorrected",
+  "stratum_grts_n2khab_phabcorrected_no_replacements",
+  "domain_stratum_nunits",
+  "domain_type_nunits"
+)) {
+  cat(name, "\n")
+  glimpse(eval(str2lang(name)))
+  cat("\n")
+}
+```

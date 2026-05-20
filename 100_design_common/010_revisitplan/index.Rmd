@@ -1,0 +1,135 @@
+---
+title: "Monitoring Programme for the Natural Environment: computational implementation of creating a sampling and revisit design"
+subtitle: "Proof of concept of the technical workflow"
+date: "`r lubridate::now()`"
+link-citations: true
+linkcolor: link.colour
+citecolor: link.colour
+urlcolor: link.colour
+geometry: margin=1in
+mainfont: "Calibri"
+fontsize: 11pt
+documentclass: "article"
+csl: "`r if (curl::has_internet()) 'https://raw.githubusercontent.com/citation-style-language/styles/master/research-institute-for-nature-and-forest.csl' else system.file('research-institute-for-nature-and-forest.csl', package = 'INBOmd')`"
+bibliography: ../../refs_mne_design.yaml
+lang: en
+site: bookdown::bookdown_site
+params:
+  lang: nl
+  regenerate_binary_files: FALSE
+  active_modules: !r c(
+    "pan_effectmon_flanders", 
+    "pan_effectmon_sac5_custommeas"
+    )
+  main_submodules_only: FALSE
+  keep_adhoc_acts: FALSE
+  save_rdata: FALSE
+  reproduce_r_package_versions: FALSE
+  update_reference_checksums: FALSE
+  update_raw_textdata: FALSE
+  update_vbi_overlaps: TRUE
+  reset_grtspart_thresholds: FALSE
+  reset_virtualpanel_addresses: FALSE
+  access_database: FALSE
+  update_spatiotemp_gsheet: FALSE
+output:
+  bookdown::html_document2:
+    keep_md: TRUE
+    number_sections: yes
+    code_folding: show
+    code_download: yes
+    fig_width: 10
+    fig_height: 5
+    fig_caption: yes
+    df_print: paged
+    toc: TRUE
+    toc_float:
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    includes:
+        in_header: ../../header.html
+---
+
+```{r setup, include=FALSE}
+# see script R/renv_snapshotting.R to execute the manual steps needed to UPDATE
+# the file 'renv.lock' with the currently used R and package versions
+if (params$reproduce_r_package_versions) {
+  source("renv/activate.R") # activate renv on demand
+  renv::restore() # restore package versions from renv.lock
+  # we only proceed if project library is in sync with renv.lock:
+  status <- renv::status()
+  if (!status$synchronized) {
+    stop(
+      "Restoring package versions went wrong. ",
+      "Please run renv::status() manually, solve problems and try again."
+    )
+  }
+}
+options(scipen = 999)
+conflictRules("n2khab", exclude = c("read_schemes", "read_scheme_types"))
+conflictRules("git2rdata", exclude = c("pull", "meta"))
+conflictRules("lubridate", exclude = c("intersect", "union"))
+conflictRules("tidyr", exclude = "extract")
+conflictRules("googlesheets4", exclude = c("request_generate", "request_make"))
+conflictRules("knitr", exclude = "spin")
+conflictRules("kableExtra", exclude = "group_rows")
+# Setup for googledrive authentication. Set the appropriate env vars in
+# .Renviron and make sure you ran drive_auth() interactively with these settings
+# for the first run (or to renew an expired Oauth token)
+# See ?gargle::gargle_options for more information.
+if (Sys.getenv("GARGLE_OAUTH_EMAIL") != "") {
+  options(gargle_oauth_email = Sys.getenv("GARGLE_OAUTH_EMAIL"))
+}
+if (Sys.getenv("GARGLE_OAUTH_CACHE") != "") {
+  options(gargle_oauth_cache = Sys.getenv("GARGLE_OAUTH_CACHE"))
+}
+lang <- params$lang
+library(rprojroot)
+projroot <- find_root(is_rstudio_project)
+gitroot <- find_root(is_git_root)
+source(file.path(projroot, "R/functions.R"))
+datapath <- file.path(projroot, "data")
+for (subdir in c(
+  "text/results/samples",
+  "binary/intermediate",
+  "binary/results/base_sampling_frame",
+  "text/raw/mhq_assessments",
+  "text/raw/mhq_samples",
+  "text/intermediate",
+  "text/temp"
+)) {
+  path <- file.path(datapath, subdir)
+  if (!dir.exists(path)) dir.create(path, recursive = TRUE)
+}
+plotpath <- file.path(projroot, "plots")
+mappath <- file.path(projroot, "maps")
+samplespath <- file.path(datapath, "text/results/samples")
+if (!dir.exists(plotpath)) dir.create(plotpath, recursive = TRUE)
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(forcats)
+library(purrr)
+library(sf)
+library(units)
+library(lubridate)
+library(terra)
+library(git2rdata)
+library(n2khab)
+library(n2khabmon)
+library(readr)
+library(googledrive)
+library(googlesheets4)
+library(ggplot2)
+opts_chunk$set(
+  echo = TRUE,
+  dpi = 300
+)
+```
+
+
+
+
+
