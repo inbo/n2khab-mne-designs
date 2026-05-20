@@ -1403,6 +1403,10 @@ fieldwork_shortterm_prioritization_by_stratum <-
       # READDIVER, CLEAN & SHALLSAMP FAGs can be done as it suits, in the
       # locations where LOCEVAL is already executed)
       !is.na(scheme_ps_oldtargetpanels) ~ NA_integer_,
+      # no priority is given to FAG occasions for types that will be obsoleted,
+      # if the panel set is panel set 2 accross the targeted schemes
+      stratum %in% c("6410_ve", "6510_hus") &
+        !str_detect(scheme_ps_targetpanels, ":PS1") ~ NA_integer_,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL03|PS2PANEL01)") ~ 1L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL02|PS2PANEL02)") ~ 2L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL04)") ~ 3L,
@@ -1417,12 +1421,20 @@ fieldwork_shortterm_prioritization_by_stratum <-
       str_detect(scheme_ps_targetpanels, "SURF_03\\.4_[a-z]+:PS\\dPANEL01") ~ 4L
     ),
     priority_soil = case_when(
+      # no priority is given to FAG occasions for types that will be obsoleted,
+      # if the panel set is panel set 2 accross the targeted schemes
+      stratum %in% c("6410_ve", "6510_hus") &
+        !str_detect(scheme_ps_targetpanels, ":PS1") ~ NA_integer_,
       str_detect(scheme_ps_targetpanels, "SOIL_03\\.2:PS\\dPANEL02") ~ 7L,
       str_detect(scheme_ps_targetpanels, "SOIL_03\\.2:PS\\dPANEL01") ~ 8L,
       str_detect(scheme_ps_targetpanels, "SOIL_03\\.2:PS\\dPANEL03") ~ 9L,
       str_detect(scheme_ps_targetpanels, "SOIL_03\\.2:PS\\dPANEL04") ~ 10L
     ),
     priority_mhq = case_when(
+      # no priority is given to FAG occasions for types that will be obsoleted,
+      # if the panel set is panel set 2 accross the targeted schemes
+      stratum %in% c("6410_ve", "6510_hus") &
+        !str_detect(scheme_ps_targetpanels, ":PS1") ~ NA_integer_,
       str_detect(scheme_ps_targetpanels, "HQ.+:PS\\dPANEL01") ~ 3L
     ),
     priority = pmin(
