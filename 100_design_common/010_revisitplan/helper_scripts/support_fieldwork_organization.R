@@ -1218,7 +1218,12 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # are not present in the sample objects (this can e.g. be checked using
   # count(., is.na(targetpanel)), count(., is.na(is_forest)) etc on the
   # intermediate result). Please note that this also means that those locations
-  # (outside current sample) have missing values for several location attributes
+  # (outside current sample) have missing values for several location
+  # attributes. Note that this also adds the targetpanel attribute of the
+  # current spatiotemporal sample to appended old FAG occasions that apply to
+  # sampling units still present in the current spatial sample. This will be
+  # reverted after joining the old targetpanel attribute (as
+  # scheme_ps_oldtargetpanel) from cal_old_continuation, further below.
   left_join(
     scheme_moco_ps_stratum_targetpanel_spsamples %>%
       select(-is_aquatic) %>%
@@ -1267,7 +1272,19 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     relationship = "one-to-one",
     unmatched = "drop"
   ) %>%
-  mutate(scheme_ps_oldtargetpanel = factor(scheme_ps_oldtargetpanel)) %>%
+  mutate(
+    scheme_ps_oldtargetpanel = factor(scheme_ps_oldtargetpanel),
+    # always set targetpanel values missing if the occasion is appended from an
+    # older REP version (since for spatial units common with the current REP,
+    # the targetpanel has been inherited from the the current REP, but this
+    # should not be the case). Note that this ASSUMES that no FAG occasions are
+    # common between the FAG calendar designed by the current REP, and the FAG
+    # occasions that were appended from older REP versions!
+    targetpanel = replace_when(
+      targetpanel,
+      !is.na(scheme_ps_oldtargetpanel) ~ NA
+    )
+  ) %>%
   relocate(targetpanel, .after = panel_set) %>%
   relocate(grts_join_method, sample_support_code, .after = stratum) %>%
   relocate(
