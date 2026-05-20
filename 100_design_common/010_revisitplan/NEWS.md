@@ -78,11 +78,18 @@ In the helper script that supports data creation to organize fieldwork:
   `scheme_ps_oldtargetpanels` (plural). It collapses values of the old column
   (by string concatenation) that belong to the same FAG occasion in the
   short-term fieldwork calendar, effectively removing duplicates.
+- Fix the `scheme_ps_targetpanels` column of the short-term fieldwork calendar
+  for FAG occasions adopted from older REP versions: it now always adopts the
+  value of `scheme_ps_oldtargetpanels` in those cases (before, it was still the
+  value from the current spatiotemporal samples if the involved sampling unit
+  was a member of it).
 - Update code with regard to the uptake of extra sampling units of multiple old
   FAG calendars, in accordance with the REP updates.
 - Add a `wait_obsolete_types` column in the short-term fieldwork calendar to
   hold specific combinations of field activity group and panel set for types
-  '6410_ve' and '6510_hus', which will be obsoleted.
+  '6410_ve' and '6510_hus', which will be obsoleted. Also, drop the priorities
+  of the involved FAG occasions if these exclusively apply to panel set 2 across
+  schemes.
   
 # REP 0.15.0 (2026-03-12)
 
