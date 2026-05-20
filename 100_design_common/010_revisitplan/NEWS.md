@@ -1,6 +1,6 @@
-# REP (development version)
+# REP 0.16.0 (2026-05-20)
 
-tag `xxxxxxxxx`
+tag `rep_0.16.0`
 
 Since this version, a REP changelog has been established as a new file `NEWS.md`.
 The tag messages contain the version-specific section of this changelog.
