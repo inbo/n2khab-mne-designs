@@ -231,7 +231,7 @@ wsh_pol_area_class <-
     unmatched = "error"
   ) %>%
   rename(unit_id = polygon_id)
-wsh_strata <-
+wsh_strata_expanded <-
   wsh_pol_area_class %>%
   extract_interval_limits() %>%
   distinct(type, lower, upper) %>%
@@ -261,7 +261,7 @@ habquarries_strata <-
 n2khab_strata_expanded <-
   n2khab_types_expanded %>%
   left_join(
-    bind_rows(wsh_strata, habquarries_strata),
+    bind_rows(wsh_strata_expanded, habquarries_strata),
     join_by(type),
     relationship = "one-to-many",
     unmatched = "error"
@@ -274,7 +274,12 @@ n2khab_strata_expanded <-
 n2khab_strata <-
   n2khab_types %>%
   left_join(
-    bind_rows(wsh_strata, habquarries_strata),
+    bind_rows(
+      wsh_strata_expanded %>% 
+        collapse_strata(types = TRUE) %>% 
+        distinct(),
+      habquarries_strata
+    ),
     join_by(type),
     relationship = "one-to-many",
     unmatched = "error"
@@ -492,10 +497,13 @@ stratum_units_non_cell_n2khab <-
   bind_cols(
     tibble(sample_support_code = "watersurface"),
     wsh_pol_area_class %>%
-      distinct() %>%
       extract_interval_limits() %>%
       unite(stratum, c(type, lower, upper), remove = FALSE, na.rm = TRUE) %>%
-      select(stratum, unit_id)
+      select(stratum, unit_id) %>% 
+      # collapsing strata since wsh_pol_area_class still contained main type
+      # 3130
+      collapse_strata() %>% 
+      distinct()
   ) %>%
   bind_rows(
     bind_cols(
