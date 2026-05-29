@@ -131,12 +131,53 @@ apply_activity_sequence_filters <- function(df) {
 #' - adding units, associated with a main type, to each corresponding subtype
 #' layer that triggered the expansion to the main type.
 #'
-#' In effect, 'collapsing' leads to less stratum or type levels, but _more_ rows.
+#' In effect, 'collapsing' leads to less stratum or type levels, but _more_
+#' rows.
 #'
 #' @param df A data frame with a column specified by `stratumvar`.
+#' @param types Are we collapsing _type_ levels? If `FALSE` (the default), it is
+#'   assumed we are dealing with _stratum_ levels instead.
 #' @param stratumvar String. Name of the column in `df` that is to be collapsed.
-#'   Default is `"stratum"`.
-collapse_strata <- function(df, stratumvar = "stratum") {
+#'   Default is `"stratum"` unless types is TRUE, in which case the default is
+#'   `"type"`.
+collapse_strata <- function(
+  df,
+  types = FALSE,
+  stratumvar = ifelse(isTRUE(types), "type", "stratum")
+) {
+  maintype_collapse <-
+    tribble(
+      ~main_type, ~subtype,
+      "2330", "2330_bu",
+      "2330", "2330_dw",
+      "6230", "6230_ha",
+      "6230", "6230_hmo",
+      "6230", "6230_hn",
+      "91E0", "91E0_va",
+      "91E0", "91E0_vm",
+      "91E0", "91E0_vn"
+    ) %>%
+    bind_rows(
+      if (types) {
+        tribble(
+          ~main_type, ~subtype,
+          "3130", "3130_aom",
+          "3130", "3130_na"
+        )
+      } else {
+        tribble(
+          ~main_type, ~subtype,
+          "3130_0_1", "3130_aom_0_1",
+          "3130_0_1", "3130_na_0_1",
+          "3130_1_5", "3130_aom_1_5",
+          "3130_1_5", "3130_na_1_5",
+          "3130_5_50", "3130_aom_5_50",
+          "3130_5_50", "3130_na_5_50",
+          "3130_50_150", "3130_aom_50_150",
+          "3130_50_150", "3130_na_50_150"
+        )
+      }
+    )
   df %>%
     mutate(
       "{stratumvar}" := recode_values(
@@ -150,25 +191,7 @@ collapse_strata <- function(df, stratumvar = "stratum") {
       )
     ) %>%
     left_join(
-      tribble(
-        ~main_type, ~subtype,
-        "2330", "2330_bu",
-        "2330", "2330_dw",
-        "3130_0_1", "3130_aom_0_1",
-        "3130_0_1", "3130_na_0_1",
-        "3130_1_5", "3130_aom_1_5",
-        "3130_1_5", "3130_na_1_5",
-        "3130_5_50", "3130_aom_5_50",
-        "3130_5_50", "3130_na_5_50",
-        "3130_50_150", "3130_aom_50_150",
-        "3130_50_150", "3130_na_50_150",
-        "6230", "6230_ha",
-        "6230", "6230_hmo",
-        "6230", "6230_hn",
-        "91E0", "91E0_va",
-        "91E0", "91E0_vm",
-        "91E0", "91E0_vn"
-      ),
+      maintype_collapse,
       join_by({{stratumvar}} == main_type),
       relationship = "many-to-many",
       unmatched = "drop"
