@@ -119,7 +119,7 @@ apply_activity_sequence_filters <- function(df) {
 }
 
 
-#' Collapse (unexpand) a data frame with a `stratum` column
+#' Collapse (unexpand) a data frame with a stratum or type column
 #'
 #' Collapses a data frame that has been the result of a n2khab::expand_types()
 #' operation.
@@ -131,20 +131,22 @@ apply_activity_sequence_filters <- function(df) {
 #' - adding units, associated with a main type, to each corresponding subtype
 #' layer that triggered the expansion to the main type.
 #'
-#' In effect, 'collapsing' leads to less stratum levels, but _more_ rows.
+#' In effect, 'collapsing' leads to less stratum or type levels, but _more_ rows.
 #'
-#' @param df A data frame with a `stratum` column.
-collapse_strata <- function(df) {
+#' @param df A data frame with a column specified by `stratumvar`.
+#' @param stratumvar String. Name of the column in `df` that is to be collapsed.
+#'   Default is `"stratum"`.
+collapse_strata <- function(df, stratumvar = "stratum") {
   df %>%
     mutate(
-      stratum = recode_values(
-        stratum,
+      "{stratumvar}" := recode_values(
+        .data[[stratumvar]],
         "5130_hei" ~ "5130",
         "5130_kalk" ~ "5130",
         "rbbkam+" ~ "rbbkam",
         "rbbzil+" ~ "rbbzil",
         "9120_qb" ~ "9120",
-        default = stratum
+        default = .data[[stratumvar]]
       )
     ) %>%
     left_join(
@@ -167,14 +169,14 @@ collapse_strata <- function(df) {
         "91E0", "91E0_vm",
         "91E0", "91E0_vn"
       ),
-      join_by(stratum == main_type),
+      join_by({{stratumvar}} == main_type),
       relationship = "many-to-many",
       unmatched = "drop"
     ) %>%
     mutate(
-      stratum = ifelse(is.na(subtype), stratum, subtype) %>%
+      "{stratumvar}" := ifelse(is.na(subtype), .data[[stratumvar]], subtype) %>%
         as.character() %>%
-        factor(levels = levels(n2khab_strata_expanded$stratum))
+        factor(levels = levels(n2khab_strata_expanded %>% pull({{stratumvar}})))
     ) %>%
     select(-subtype)
 }
