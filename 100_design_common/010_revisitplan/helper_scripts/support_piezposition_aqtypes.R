@@ -4,7 +4,7 @@
 # - scheme_moco_ps_stratum_sppost_spsamples_spares_sf
 # - stratum_units_non_cell_n2khab
 # - units_non_cell_n2khab_grts
-# - n2khab_types_expanded
+# - n2khab_types
 
 # This code serves as a warmup for similar code in the n2khab-mne-monitoring
 # repo, which then only needs the small RData file saved at the end (those
@@ -27,10 +27,12 @@ n2khab_types <-
 wsh <- read_watersurfaces_hab()
 wsh_occ <-
   wsh$watersurfaces_types %>%
-  # in general we restrict types using an expanded type list tailored to the
-  # type levels present in data sources, but for the aquatic types expansion and
-  # subsequent collapse of types are redundant steps
-  semi_join(n2khab_types_expanded, join_by(type))
+  # collapsing 3130 type levels to subtypes-only:
+  collapse_strata(types = TRUE) %>%
+  # some polygons can theoretically have had the main type and the subtype, so
+  # we need to deduplicate
+  distinct() %>%
+  semi_join(n2khab_types, join_by(type))
 wsh_pol <-
   wsh$watersurfaces_polygons %>%
   semi_join(wsh_occ, join_by(polygon_id)) %>%
