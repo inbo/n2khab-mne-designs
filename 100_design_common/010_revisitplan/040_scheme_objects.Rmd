@@ -1612,6 +1612,115 @@ submodule_domain_scheme_ps_designattr %>%
   )
 ```
 
+### Temporary, partial replacement by sample sizes from REP 0.16.0
+
+<!-- XXXXX Drop this section once freeze of quarter assignment has been done !!!! XXXXXXXX -->
+
+In the process of updating sampling frames, we need to freeze a part of the spatial samples since we did not yet implement a freeze of quarter assignment in GW schemes, needed to protect against quarter changes of sampling units as a consequence of updating the sampling frame.
+
+This step comes down to replacing specific stratum sample sizes (and associated population sizes) by the ones obtained in REP 0.16.0.
+
+Assigning the object `module_domain_scheme_ps_stratum_sample_size` from REP 0.16.0 as `sample_sizes_0.16.0`.
+
+```{r}
+if (curl::has_internet()) {
+  with_drive_quiet({
+    rep_0.16.0_path <- file.path(tempdir(), "objects_panflpan5_0.16.0.RData")
+    drive_download(
+      as_id("1Mc3Gc737zgwT6ys2gHpGmGHR7clr6tFT"),
+      path = rep_0.16.0_path
+    )
+  })
+  prepare_lazy_get(rep_0.16.0_path, "rep_0.16.0")
+  sample_sizes_0.16.0 <- 
+    get("module_domain_scheme_ps_stratum_sample_size", envir = rep_0.16.0)
+  invisible(file.remove(rep_0.16.0_path))
+} else {
+  # Clumsy approach; needs maintenance. In the longer term, the management of
+  # all this needs more centralization and rigidity.
+  rep_0.16.0_path <- file.path(
+    datapath,
+    "binary/results/objects_panflpan5_rep_0.16.0.RData"
+  )
+  stopifnot(file.exists(rep_0.16.0_path))
+  prepare_lazy_get(rep_0.16.0_path, "rep_0.16.0")
+  sample_sizes_0.16.0 <- 
+    get("module_domain_scheme_ps_stratum_sample_size", envir = rep_0.16.0)
+}
+```
+
+Filtering the object to obtain the stratum sample sizes and population sizes that we will reset to REP 0.16.0.
+
+```{r}
+preferred_sample_sizes_0.16.0 <- 
+  sample_sizes_0.16.0 %>% 
+  filter_out(str_detect(stratum, "^31|^2190_a|^3260|^7220|^7140_mrd")) %>% 
+  select(
+    module,
+    domain,
+    scheme,
+    panel_set,
+    stratum,
+    nunits_0.16.0 = nunits,
+    spss_stratum_0.16.0 = sp_sample_size_all_panels_stratum
+  ) %>% 
+  mutate(mark_0.16.0 = TRUE)
+```
+
+Overwrite the applicable stratum sample sizes + population sizes and recalculate type & panel_set sample sizes.
+
+```{r}
+module_domain_scheme_ps_stratum_sample_size <- 
+  module_domain_scheme_ps_stratum_sample_size %>% 
+  left_join(
+    preferred_sample_sizes_0.16.0,
+    join_by(module, domain, scheme, panel_set, stratum),
+    relationship = "one-to-one",
+    unmatched = "error"
+  ) %>% 
+  mutate(
+    sp_sample_size_all_panels_stratum = ifelse(
+      !is.na(mark_0.16.0),
+      spss_stratum_0.16.0,
+      sp_sample_size_all_panels_stratum
+    ),
+    nunits = ifelse(
+      !is.na(mark_0.16.0),
+      nunits_0.16.0,
+      nunits
+    )
+  ) %>% 
+  select(-ends_with("0.16.0")) %>% 
+  mutate(
+    # recalculating type-level sample sizes
+    sp_sample_size_all_panels_type =
+      sum(sp_sample_size_all_panels_stratum, na.rm = TRUE),
+    .by = c(module, domain, scheme, panel_set, type)
+  ) %>%
+  mutate(
+    # recalculating total sample sizes
+    sp_sample_size_all_panels =
+      sum(sp_sample_size_all_panels_stratum, na.rm = TRUE),
+    .by = c(module, domain, scheme, panel_set)
+  )
+```
+
+```{r include=FALSE}
+rm(sample_sizes_0.16.0, preferred_sample_sizes_0.16.0)
+```
+
+Rechecking the aggregated sample size.
+
+```{r paged.print = FALSE}
+aggregate_sample_size(
+  module_domain_scheme_ps_stratum_sample_size,
+  "sp_sample_size_all_panels_stratum",
+  mhq_scheme_category
+) %>%
+  print(n = Inf)
+```
+
+
 ## Overview of most relevant objects in this chapter
 
 Objects subsetted with `[[1]]` mean that they (may) contain more, similarly structured elements.
