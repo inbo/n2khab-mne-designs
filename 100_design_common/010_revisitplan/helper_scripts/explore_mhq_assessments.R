@@ -4,7 +4,7 @@
 
 load(file.path(datapath, "binary/results/objects_panflpan5.RData"))
 hmt <- read_habitatmap_terr(keep_aq_types = FALSE, drop_7220 = TRUE)
-wsh <- read_watersurfaces_hab(interpreted = TRUE)
+wsh <- read_watersurfaces_hab()
 grts_mh <- read_GRTSmh()
 
 
