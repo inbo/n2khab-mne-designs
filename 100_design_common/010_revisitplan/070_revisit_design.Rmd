@@ -487,10 +487,15 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
           panel_period_main_chr,
           "-",
           revisit_subpattern_abbrev,
-          ifelse(
-            panel_group_size > 1L | panel_group_repetitions > 1L,
-            str_c("by", panel_group_size, "repeat", panel_group_repetitions),
-            ""
+          case_when(
+            is.na(limit_n_subperiods) & 
+              (panel_group_size > 1L | panel_group_repetitions > 1L) |
+              !is.na(limit_n_subperiods) & 
+              (panel_group_size > 1L | panel_group_repetitions > limit_n_subperiods) ~
+              str_c("by", panel_group_size, "repeat", panel_group_repetitions),
+            !is.na(limit_n_subperiods) ~
+              str_c(limit_n_subperiods, "sub", ifelse(limit_n_subperiods > 1, "s", "")),
+            .default = ""
           )
         ),
       revisit_pattern_abbrev == "PUR" & revisit_subpattern_abbrev == "SER" ~
@@ -532,11 +537,6 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
       ifelse(
         !is.na(panel_dateshift),
         str_c("[shift(", panel_dateshift_chr, ")]"),
-        ""
-      ),
-      ifelse(
-        !is.na(limit_n_subperiods),
-        str_c(limit_n_subperiods, "subperiod"),
         ""
       )
     ) %>%
