@@ -3,7 +3,7 @@
 We will join panel memberships with the date intervals per panel to generate the planning of FAGs (field activity groups) and the spatiotemporal samples.
 At the same time, each FAS is replaced by its constituting FAGs, which have a common revisit design.
 
-Also, the date intervals are updated at the level of the spatial sampling unit in case of a biotic FAG (containing LOCEVALxxx or LSVIxxx activity), depending on the stratum (see \@ref(type-dates)).
+Also, the date intervals are updated at the level of the spatial sampling unit in case of a biotic FAG (containing LOCEVALxxx, LSVIxxx or xxxSAMPLPOINT activity), depending on the stratum (see \@ref(type-dates)).
 
 ## Calendar per scheme, FAG, stratum and spatial sampling unit
 
@@ -262,7 +262,7 @@ Cleaning is required with regard to the startup period:
     - We also apply this to INST & SPATPOSIT FAGs, even though this puts much more work into the period where this is moved into.
     In practice, it is expected that this work can be organized during a somewhat longer period than the one in the calendar.
     This may need reconsideration depending on evolving circumstances.
-  - Also, for now neglect LOCEVAL FAGs as they will need more special consideration, e.g. they may need to be postponed a whole year, but only in the first year.
+  - Also, for now neglect LOCEVAL & SAMPLPOINT FAGs as they will need more special consideration, e.g. they may need to be postponed a whole year, but only in the first year.
   - Note that we currently don't correct '`year_first` mismatches' between modules in the same module combo (see `mod_scheme_ps_different_1styr` object).
 It requires calculation of module-level spatial sample sizes in poststrata.
 See the _missing functionality_ in section \@ref(moco).
@@ -350,19 +350,19 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   ) %>%
   select(-delay) %>%
   # drop inapplicable panels in the startup period based on month_first,
-  # except for LOCEVAL
+  # except for LOCEVAL & SAMPLPOINT
   filter(
     month(date_end) >= month_first |
       year(date_end) > year_first |
-      str_detect(field_activity_group, "LOCEVAL")
+      str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT")
   ) %>%
   # if a panel period overlaps month_first in the first year but starts earlier,
-  # then wind up the start date, but not for LOCEVAL and HQ schemes
+  # then wind up the start date, but not for LOCEVAL & SAMPLPOINT and HQ schemes
   mutate(
     delay = if_else(
       month(date_start) < month_first &
         year(date_start) == year_first &
-        !str_detect(field_activity_group, "LOCEVAL") &
+        !str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT") &
         !str_detect(scheme, "^HQ"),
       months(month_first - month(date_start)),
       months(0)
@@ -441,7 +441,10 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
         .,
         !str_detect(field_activity_group, "ADHOC") |
           date_start %in%
-            date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
+            date_start[!str_detect(
+              field_activity_group,
+              "ADHOC|LOCEVAL|LSVI|SAMPLPOINT"
+            )],
         .by = c(
           scheme,
           module_combo_code,
@@ -549,7 +552,10 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
         .,
         !str_detect(field_activity_group, "ADHOC") |
           date_start %in%
-            date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
+            date_start[!str_detect(
+              field_activity_group,
+              "ADHOC|LOCEVAL|LSVI|SAMPLPOINT"
+            )],
         .by = c(
           scheme,
           module_combo_code,

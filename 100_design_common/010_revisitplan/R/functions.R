@@ -1026,7 +1026,10 @@ subsample_and_relax_adhocfag <- function(fag_cal,
     # relax the ADHOC date intervals
     inner_join(
       fag_cal %>%
-        filter(!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")) %>%
+        filter(!str_detect(
+          field_activity_group,
+          "ADHOC|LOCEVAL|LSVI|SAMPLPOINT"
+        )) %>%
         select(-field_activity_group, -rank, -scheme_moco_ps) %>%
         rename(
           date_end_new = date_end,

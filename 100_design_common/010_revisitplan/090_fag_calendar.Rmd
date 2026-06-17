@@ -27,11 +27,11 @@ For the temporal component of a FAG overlap (i.e. identical simplified FAG), in 
 - We determine the duration of the FAG-specific cycle (`fag_cycle`), which represents the major regular time interval of revisiting the same location for that FAG.
 Within one FAG cycle, it is still possible that the FAG happens more than once (`n_locvisits_per_fagcycle`), but not regularly spaced during the FAG cycle.
 For pure panel designs, the FAG cycle duration is the value of the 'main panel period' in the `scheme_moco_ps_spsubset_fas_paneldesign` object, while in serially alternating designs it is the cycle duration already defined.
-Furthermore, for FAGs that contain a LOCEVALxxx activity, the FAG cycle duration is set as the stratum-specific cycle duration for LOCEVAL FAGs (see \@ref(type-cycle)), which affects the removal of LOCEVAL occasions in below steps.
+Furthermore, for FAGs that contain a LOCEVALxxx or xxxSAMPLPOINT activity, the FAG cycle duration is set as the stratum-specific cycle duration for LOCEVAL and SAMPLPOINT FAGs (see \@ref(type-cycle)), which affects the removal of LOCEVAL and SAMPLPOINT occasions in below steps.
 - For each auxiliary FAG, we require that it has the highest average yearly number of visits, and subsequently, the shortest cycle, that has been attributed to this FAG in the calendar, for the given location x stratum.
 FAG occasions that don't meet this condition are dropped.
 - To resolve the cases that have 'more auxiliary FAG occasions than needed', we first allocate all date intervals (FAG occasions) to cycle IDs, the numbering of which occurs separately for each simplified FAG x `fag_cycle` x `n_locvisits_per_fagcycle`.
-For the LOCEVAL FAGs, we require that an occasion is not planned too soon after an already available assessment date.
+For the LOCEVAL and SAMPLPOINT FAGs, we require that an occasion is not planned too soon after an already available assessment date.
 The stratum-specific cycle duration is used to determine this.
 Then, for each cycle ID, we demand that auxiliary FAGs (using their simplified name) occur no more than the expected `n_locvisits_per_fagcycle`.
 If needed, the first `n_locvisits_per_fagcycle` with different start dates are kept in the considered cycle ID.
@@ -99,9 +99,9 @@ fag_stratum_grts_calendar_cycleid <-
     relationship = "many-to-one",
     unmatched = "drop"
   ) %>%
-  # update the fag_cycle for LOCEVAL FAGs depending on type (without touching
-  # notation_paneldesign, panel etc). Note that n_locvisits_per_fagcycle is
-  # already 1 for this type of FAGs.
+  # update the fag_cycle for LOCEVAL & SAMPLPOINT FAGs depending on type
+  # (without touching notation_paneldesign, panel etc). Note that
+  # n_locvisits_per_fagcycle is already 1 for this type of FAGs.
   mutate(
     fag_cycle = if_else(
       is.na(loceval_cycle),
@@ -420,7 +420,11 @@ That is because in LOCEVALTERR (except for 7220) we currently also consider the 
 <!-- XXXX To be updated once we consider the cell mapping as a separate activity, if chosen so. -->
 
 ```{r}
-loceval_fags <- unique(locevalfag_spsubset_type_cycle$field_activity_group)
+loceval_fags <- 
+  locevalfag_spsubset_type_cycle %>% 
+  filter(str_detect(field_activity_group, "LOCEVAL")) %>% 
+  pull(field_activity_group) %>% 
+  unique()
 fag_stratum_grts_calendar_result <-
   fag_stratum_grts_calendar_cycleid %>%
   select(-fag_simplifiable, -fag_simplified) %>%
@@ -483,7 +487,10 @@ fag_stratum_grts_calendar_result <-
         .,
         !str_detect(field_activity_group, "ADHOC") |
           date_start %in%
-            date_start[!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")],
+            date_start[!str_detect(
+              field_activity_group,
+              "ADHOC|LOCEVAL|LSVI|SAMPLPOINT"
+            )],
         .by = c(
           stratum,
           grts_address

@@ -1421,24 +1421,24 @@ This will mostly be avoided by generating spatiotemporal samples for non-core sc
 
 #### Overview
 
-##### Cycle duration of FAGs with LOCEVAL {#type-cycle}
+##### Cycle duration of FAGs with LOCEVAL or SAMPLPOINT {#type-cycle}
 
-FAGs with a LOCEVALxxx activity need a cycle duration that depends on the type:
+FAGs with a LOCEVALxxx or xxxSAMPLPOINT activity need a cycle duration that depends on the type:
 
 - for aquatic types (lentic and lotic): every 3 years, even while in several modules the collection of their target variables gets a cycle duration of 6 years;
 - for terrestrial types, partim open: every 6 years;
 - for terrestrial types, partim forest: every 12 years.
 
-However, since the LOCEVAL activities are auxiliary FAGs (with regard to the target variables), this frequency should only be used in _dropping_ already planned LOCEVAL activities, not for scheduling them:
+However, since the LOCEVAL and SAMPLPOINT activities are auxiliary FAGs (with regard to the target variables), this frequency should only be used in _dropping_ already planned LOCEVAL and SAMPLPOINT activities, not for scheduling them:
 
 - the integration of multiple modules, schemes and panel sets can lead to unneeded higher frequencies than the above, so dropping will be needed;
-- in scheduling the LOCEVAL activities, the module x scheme x panel set's cycle duration prevails and the above defaults are not used.
-Indeed, if the module x scheme x panel set's cycle duration is longer than an above cycle duration, then this means (in a serially alternating pattern) that for each location the target variable is determined in only one year of that longer cycle, so that one LOCEVAL activity is indeed sufficient during one cycle;
-- still, the decision whether two different LOCEVAL occasions from two different schemes with the same cycle duration and during the same cycle should be kept, is to be decided using the above type-specific cycle durations: if they are less separated than the type-specific cycle duration, then only the first is kept, otherwise both are kept.
+- in scheduling the LOCEVAL and SAMPLPOINT activities, the module x scheme x panel set's cycle duration prevails and the above defaults are not used.
+Indeed, if the module x scheme x panel set's cycle duration is longer than an above cycle duration, then this means (in a serially alternating pattern) that for each location the target variable is determined in only one year of that longer cycle, so that one LOCEVAL (and possibly SAMPLPOINT) activity is indeed sufficient during one cycle;
+- still, the decision whether two different LOCEVAL or SAMPLPOINT occasions from two different schemes with the same cycle duration and during the same cycle should be kept, is to be decided using the above type-specific cycle durations: if they are less separated than the type-specific cycle duration, then only the first is kept, otherwise both are kept.
 
-##### Start and end dates of FAGs with LOCEVAL or LSVI activities {#type-dates}
+##### Start and end dates of FAGs with LOCEVAL, LSVI or SAMPLPOINT activities {#type-dates}
 
-The FAGs with a LOCEVALxxx or LSVIxxx activity have a panel period of one year, since repetitions within the year make no sense, but they should subsequently have their start and end dates amended (relative to 1 Jan and 31 Dec) depending on the type at a location.
+The FAGs with a LOCEVALxxx, LSVIxxx or xxxSAMPLPOINT activity have a panel period of one year, since repetitions within the year make no sense, but they should subsequently have their start and end dates amended (relative to 1 Jan and 31 Dec) depending on the type at a location.
 This is because different types have different optimal or suboptimal months within the year to perform this fieldwork; outside these months these field activities cannot be undertaken.
 
 Both the fact that they cannot be done anytime during the year, and the fact that this depends on the type, distinguish these field activities from all other activities.
@@ -1446,20 +1446,20 @@ Both the fact that they cannot be done anytime during the year, and the fact tha
 #### Options to proceed
 
 The FAG panel design in section \@ref(fag-panel-design), and all subsequent derivations in chapters \@ref(spatiotemp-sampling-prep) and \@ref(revisit) do not consider the type level.
-While we could integrate all different start and end dates for LOCEVALxxx or LSVIxxx and the different LOCEVALxxx cycle durations in these panel design objects, we don't consider these type-level differences as enough to actually distinguish different panel designs depending on the type, each with their own notation, panel labels and so on, as it would cause way more complexity in an already crowded list of different FAG panel designs.
+While we could integrate all different start and end dates for LOCEVALxxx, LSVIxxx and xxxSAMPLPOINT and the different LOCEVALxxx and xxxSAMPLPOINT cycle durations in these panel design objects, we don't consider these type-level differences as enough to actually distinguish different panel designs depending on the type, each with their own notation, panel labels and so on, as it would cause way more complexity in an already crowded list of different FAG panel designs.
 
 So what we want is that different date intervals and cycle durations are applied within the same panels (considered for the same revisit design), so that date intervals and cycle durations also depend on the stratum (the location) instead of just the revisit design and the panel.
 
 This still leaves multiple options to proceed:
 
 - either integrating the type-dependent adjustments in the panel design objects (as done for other FAGs, though these have just one possible value), but without creating different panel design notations, and filtering them according to the involved type when the panel membership is generated (chapter \@ref(revisit));
-- or leaving the default generated cycle durations, start and end dates for LOCEVALxxx or LSVIxxx as-is (1 Jan & 31 Dec), and updating:
+- or leaving the default generated cycle durations, start and end dates for LOCEVALxxx, LSVIxxx and xxxSAMPLPOINT as-is (1 Jan & 31 Dec), and updating:
   - the date intervals only in the initial stages of the FAG calendar (at the level of spatial sampling units), i.e. when the panel calendar and the panel memberships have already been joined (chapter \@ref(spatiotemp-sampling));
   - the cycle durations only in preparation of dropping superfluous revisits in the FAG calendar (chapter \@ref(fag-calendar)).
 
 Since the first option proved to be more complex ^[We actually did start doing this, see branch `poc_bioticfag_paneldesign`, but after a while we thought of the other alternative.], we have chosen the second path.
 
-#### Setting default cycle durations per type for LOCEVAL
+#### Setting default cycle durations per type for LOCEVAL and SAMPLPOINT
 
 Setting default cycle durations.
 
@@ -1477,13 +1477,13 @@ type_spsubset_locevalcycle_default <-
   )
 ```
 
-To prepare for updating the FAG calendar at the level of spatial sampling units, we join `type_spsubset_locevalcycle_default` to the FAGs with a LOCEVALxxx activity by the applicable spatial subset.
+To prepare for updating the FAG calendar at the level of spatial sampling units, we join `type_spsubset_locevalcycle_default` to the FAGs with a LOCEVALxxx or xxxSAMPLPOINT activity by the applicable spatial subset.
 
 ```{r}
 locevalfag_spsubset_type_cycle <-
   field_activity_sequences %>%
-  filter(str_detect(field_activity, "LOCEVAL")) %>%
-  mutate(in_aquatic_subset = str_detect(field_activity, "AQ")) %>%
+  filter(str_detect(field_activity, "LOCEVAL|SAMPLPOINT")) %>%
+  mutate(in_aquatic_subset = str_detect(field_activity, "AQ|SAMPLPOINT")) %>%
   distinct(field_activity_group, in_aquatic_subset) %>%
   inner_join(
     type_spsubset_locevalcycle_default,
@@ -1501,7 +1501,7 @@ locevalfag_spsubset_type_cycle <-
 
 
 
-#### Setting start and end dates per type for LOCEVAL and LSVI
+#### Setting start and end dates per type for LOCEVAL, LSVI and SAMPLPOINT
 
 Reading and further processing the dataset with start and end dates per type, for biotic field activities.
 
@@ -1650,8 +1650,8 @@ To prepare for updating the FAG calendar at the level of spatial sampling units,
 ```{r}
 bioticfag_spsubset_type_timing <-
   field_activity_sequences %>%
-  filter(str_detect(field_activity, "LOCEVAL|LSVI")) %>%
-  mutate(in_aquatic_subset = str_detect(field_activity, "AQ")) %>%
+  filter(str_detect(field_activity, "LOCEVAL|LSVI|SAMPLPOINT")) %>%
+  mutate(in_aquatic_subset = str_detect(field_activity, "AQ|SAMPLPOINT")) %>%
   distinct(field_activity_group, in_aquatic_subset) %>%
   inner_join(
     biotic_timing %>%
