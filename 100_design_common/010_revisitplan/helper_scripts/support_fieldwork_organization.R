@@ -1413,11 +1413,12 @@ fieldwork_shortterm_prioritization_by_stratum <-
       stratum %in% c("6410_ve", "6510_hus") &
         !str_detect(scheme_ps_targetpanels, ":PS1") ~ NA_integer_,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL03|PS2PANEL01)") ~ 1L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL02|PS2PANEL02)") ~ 2L,
+      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS2PANEL02)") ~ 2L,
+      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL02)") ~ 9L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL04)") ~ 3L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL0[56]|PS2PANEL03)") ~ 4L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL07)") ~ 6L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL01)") ~ 7L,
+      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL01)") ~ 10L,
       str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL08|PS2PANEL04)") ~ 8L,
       str_detect(scheme_ps_targetpanels, "GW_05\\.") ~ 11L
     ),
