@@ -48,6 +48,8 @@ The target variables limit the main field activities of a module x scheme to a g
 
 First create an object with the 'target' panel designs per module x scheme x panel set (target referring to the target variables restriction).
 
+Multiple (target) panel designs can still be linked to a single module x scheme x panel set combination, given that multiple target variables & target FAGs can be present and because some target FAGs may involve an integration of panel designs assigned to virtual FAGs.
+
 ```{r}
 mod_scheme_targetfieldactivity <-
   mod_scheme_mainfieldactivity %>%
@@ -85,6 +87,7 @@ mod_scheme_ps_targetfieldactivity_paneldesign <-
         scheme,
         panel_set,
         field_activity_group,
+        fag_virtual,
         revisit_pattern:last_col()
       )),
     join_by(module, scheme, field_activity_group),
@@ -98,12 +101,6 @@ mod_scheme_ps_targetfieldactivity_paneldesign <-
     main_field_activity,
     revisit_pattern:last_col()
   ))
-if (
-  nrow(mod_scheme_ps_targetfieldactivity_paneldesign %>% filter(panel_set == 1L)) !=
-    nrow(mod_scheme_targetfieldactivity)
-) {
-  stop("The number of rows changed unexpectedly.")
-}
 mod_scheme_ps_target_paneldesign <-
   mod_scheme_ps_targetfieldactivity_paneldesign %>%
   distinct(pick(-main_field_activity, -enforced_cycle_duration))
@@ -177,7 +174,7 @@ mod_scheme_yrs_moco_ps <-
   # join module combos:
   inner_join(
     scheme_ps_target_paneldesign %>%
-      select(scheme, module_combo_code, module_combo, panel_set) %>%
+      distinct(scheme, module_combo_code, module_combo, panel_set) %>%
       unnest(module_combo),
     join_by(module, scheme, panel_set),
     relationship = "one-to-one",

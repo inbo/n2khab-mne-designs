@@ -110,6 +110,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
       in_aquatic_subset,
       spsubset_needed_for_panel,
       field_activity_group,
+      fag_virtual,
       rank,
       max_rank,
       actseqs,
@@ -142,6 +143,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
       spsubset_needed_for_panel,
       notation_paneldesign,
       field_activity_group,
+      fag_virtual,
       rank,
       max_rank,
       actseqs,
@@ -179,7 +181,7 @@ scheme_moco_ps_spsubset_targetfag <-
   # join module combos:
   inner_join(
     scheme_ps_target_paneldesign %>%
-      select(scheme, module_combo_code, module_combo, panel_set) %>%
+      distinct(scheme, module_combo_code, module_combo, panel_set) %>%
       unnest(module_combo),
     join_by(module, scheme),
     relationship = "many-to-many",
@@ -565,7 +567,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   # to dropping FAGs while cleaning, we just call these sets 'fags' so that
   # 'fas' can keep its time-independent but revisit-design
   # (notation_paneldesign) dependent meaning
-  nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>%
+  nest(fags = c(field_activity_group, fag_virtual, rank, max_rank, actseqs)) %>%
   relocate(fags, .after = spsubset_needed_for_panel) %>%
   relocate(
     sp_poststratum,
@@ -948,7 +950,7 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar <-
     scheme_moco_ps_spsubset_targetfag,
     join_by(scheme, module_combo_code, panel_set, in_aquatic_subset, field_activity_group)
   ) %>%
-  nest(fags = c(field_activity_group, rank, max_rank, actseqs)) %>%
+  nest(fags = c(field_activity_group, fag_virtual, rank, max_rank, actseqs)) %>%
   relocate(fags, .after = spsubset_needed_for_panel) %>%
   (
     # check that spatial subset can be sensibly ignored in the targetpanel label

@@ -94,7 +94,7 @@ Also checking the aggregated sizes of the obtained samples.
 scheme_moco_ps_sppost_stratum_sample_size_obtained %>%
   inner_join(
     scheme_ps_target_paneldesign %>%
-      select(scheme, module_combo_code, panel_set, cycle_duration_y),
+      distinct(scheme, module_combo_code, panel_set, cycle_duration_y),
     join_by(scheme, module_combo_code, panel_set),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
@@ -143,7 +143,7 @@ moco_mod_scheme_ps_conflicting_mainfieldactivities <-
   # join module combos:
   inner_join(
     scheme_ps_target_paneldesign %>%
-      select(scheme, module_combo_code, module_combo, panel_set) %>%
+      distinct(scheme, module_combo_code, module_combo, panel_set) %>%
       unnest(module_combo),
     join_by(module, scheme),
     relationship = "many-to-many",
@@ -189,7 +189,7 @@ mod_scheme_mainfieldactivity_actseq %>%
   # join module combos:
   inner_join(
     scheme_ps_target_paneldesign %>%
-      select(scheme, module_combo_code, module_combo, panel_set) %>%
+      distinct(scheme, module_combo_code, module_combo, panel_set) %>%
       unnest(module_combo),
     join_by(module, scheme),
     relationship = "many-to-many",
@@ -239,14 +239,14 @@ scheme_moco_ps_spsubset_fas_paneldesign <-
   # join module combos:
   inner_join(
     scheme_ps_target_paneldesign %>%
-      select(scheme, module_combo_code, module_combo, panel_set) %>%
+      distinct(scheme, module_combo_code, module_combo, panel_set) %>%
       unnest(module_combo),
     join_by(module, scheme, panel_set),
     relationship = "many-to-one",
     unmatched = "error"
   ) %>%
   relocate(module_combo_code, .after = scheme) %>%
-  arrange(module, scheme, field_activity_group, in_aquatic_subset) %>%
+  arrange(module, scheme, field_activity_group, fag_virtual, in_aquatic_subset) %>%
   # adding applicable activity sequences
   inner_join(
     mod_scheme_actseq_fag %>%
@@ -272,6 +272,7 @@ scheme_moco_ps_spsubset_fas_paneldesign <-
     fas_spsubset = list(
       tibble(
         field_activity_group = field_activity_group,
+        fag_virtual = fag_virtual,
         in_aquatic_subset = in_aquatic_subset,
         rank = rank,
         max_rank = max_rank,
@@ -284,6 +285,7 @@ scheme_moco_ps_spsubset_fas_paneldesign <-
       module,
       is_core_scheme,
       field_activity_group,
+      fag_virtual,
       rank,
       max_rank,
       in_aquatic_subset,
@@ -309,7 +311,14 @@ scheme_moco_ps_spsubset_fas_paneldesign <-
   arrange(scheme, module_combo_code) %>%
   unnest(fas_spsubset) %>%
   mutate(actseqs = factor(actseqs)) %>%
-  nest(fas = c(field_activity_group, rank, max_rank, actseqs, actseqs_vec)) %>%
+  nest(fas = c(
+    field_activity_group,
+    fag_virtual,
+    rank,
+    max_rank,
+    actseqs,
+    actseqs_vec
+  )) %>%
   relocate(fas, .after = spsubset_needed_for_panel)
 ```
 
@@ -603,7 +612,15 @@ compartment_paneldesign_fags <-
     compartment = str_extract(scheme, "^[A-Z]+") %>%
       factor() %>%
       fct_relevel("SOIL", "HQ", after = Inf),
-    fags = map(fas, ~ .$field_activity_group),
+    fags = map(fas, \(df) {
+      df %>% 
+        mutate(fag_fagv = ifelse(
+          !is.na(fag_virtual),
+          str_glue("{field_activity_group} ({fag_virtual})"),
+          as.character(field_activity_group)
+        )) %>% 
+        pull(fag_fagv)
+    }),
     cycle_nlocvisits = str_glue(
       "{simplify_period(fag_cycle)} ({n_locvisits_per_fagcycle} ",
       "visit{ifelse(n_locvisits_per_fagcycle > 1, 's', '')} per loc)"
@@ -726,7 +743,7 @@ scheme_moco_ps_spsubset_panel_calendar <-
   # by a corresponding core FAG)
   inner_join(
     scheme_ps_target_paneldesign %>%
-      select(
+      distinct(
         scheme,
         module_combo_code,
         panel_set,
