@@ -1488,7 +1488,6 @@ module_domain_scheme_ps_stratum_sample_size %>%
 
 At the Flemish level, we could argue to increase sample sizes of 0 or 1 that are not a census up to 2 (or 1 if that is the population size in the zero-sample-size case), which largely concerns panel set 2 (in panel set 1, it causes a census).
 Since we also reduced sample sizes of small populations of specific schemes (see Section \@ref(ssize-limit)), we could also apply this in the included domains, but we choose to do this in panel set 1 only in order to limit the effect on sample proportions.
-In order to limit the abundant effect of the (naturally) small sample sizes of watersurface strata in that case, we consider the type level instead of the stratum level to achieve a sample size of 2 if the domain is not Flanders (hence an included domain), for watersurface types.
 
 Number of domain x scheme x panel set x stratum occasions that would be improved:
 
@@ -1501,26 +1500,9 @@ module_domain_scheme_ps_stratum_sample_size %>%
     .by = c(module, domain, scheme, panel_set, type)
   ) %>%
   filter(
-    # use stratum-level for non-watersurfaces or domain Flanders
-    (
-      sp_sample_size_all_panels_stratum %in% 0:1 &
-        sp_sample_size_all_panels_stratum < nunits &
-        (domain == "Flanders" | !is_watersurface & panel_set == 1)
-    ) |
-      # use type-level for watersurfaces in included domains
-      (
-        is_watersurface &
-          domain != "Flanders" &
-          panel_set == 1 &
-          # note the use of 'type' here:
-          sp_sample_size_all_panels_type %in% 0:1 &
-          # simpler would be to use sp_sample_size_all_panels_stratum %in% 0:1
-          # for the below condition (and at the time of coding it gave the same
-          # result), but it may be that we can only achieve a sample size of 2
-          # by collapsing two strata that have nunits = 1, so below is a more
-          # general approach
-          (nunits_cum <= 2 | nunits_largest)
-      )
+    sp_sample_size_all_panels_stratum %in% 0:1 &
+      sp_sample_size_all_panels_stratum < nunits &
+      (domain == "Flanders" | panel_set == 1)
   ) %>%
   select(
     domain,
@@ -1541,29 +1523,14 @@ _So, this approach is not preferable, but to be looked at if needed._
 
 Implementing aforementioned increase of sample size (panel set 2 only in 'Flanders'):
 
-- at stratum level in domain 'Flanders' (all types & both panel sets) and for non-watersurface types in panel set 1 of all domains;
-- at type level for watersurface types in panel set 1 in smaller domains.
-
 ```{r}
 module_domain_scheme_ps_stratum_sample_size <-
   module_domain_scheme_ps_stratum_sample_size %>%
   mutate(
-    is_watersurface = str_detect(stratum, "^31|^2190_a"),
-    nunits_largest = nunits == max(nunits),
-    nunits_cum = cumsum(sort(nunits, decreasing = TRUE)),
     sp_sample_size_all_panels_stratum = ifelse(
-      (
-        sp_sample_size_all_panels_stratum %in% 0:1 &
-          sp_sample_size_all_panels_stratum < nunits &
-          (domain == "Flanders" | !is_watersurface & panel_set == 1)
-      ) |
-        (
-          is_watersurface &
-            domain != "Flanders" &
-            panel_set == 1 &
-            sp_sample_size_all_panels_type %in% 0:1 &
-            (nunits_cum <= 2 | nunits_largest)
-        ),
+      sp_sample_size_all_panels_stratum %in% 0:1 &
+        sp_sample_size_all_panels_stratum < nunits &
+        (domain == "Flanders" | panel_set == 1),
       pmin(nunits, 2L),
       sp_sample_size_all_panels_stratum
     ),
@@ -1574,7 +1541,6 @@ module_domain_scheme_ps_stratum_sample_size <-
       sum(sp_sample_size_all_panels_stratum, na.rm = TRUE),
     .by = c(module, domain, scheme, panel_set, type)
   ) %>%
-  select(-is_watersurface, -nunits_largest, -nunits_cum) %>%
   mutate(
     # recalculating total sample sizes
     sp_sample_size_all_panels =
