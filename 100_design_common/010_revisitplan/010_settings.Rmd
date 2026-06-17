@@ -1671,14 +1671,44 @@ bioticfag_spsubset_type_timing <-
 
 ### Panel design of FAGs in (spatial subsets of) schemes per module {#fag-panel-design}
 
-`mod_scheme_ps_fag_paneldesign` is the panel design of field activity groups per module, scheme and panel set.
+`mod_scheme_ps_fag_paneldesign`, created below, is the panel design of field activity groups per module, scheme and panel set.
 This will matter most for data collection plans.
 
 The value of `panel_set` (see \@ref(mod-scheme-attrib)) is an incremental number within module x scheme; if no split panel design is defined, it has value 1.
 
+Some target variables share the same main data collection method, hence the same target FAG, but have a different panel design.
+In the fieldwork calendar (FAG calendar; chapter \@ref(fag-calendar)) we will integrate these panel designs.
+However normally the panel designs are uniquely defined for the combination of module x scheme x panel set x FAG.
+In order to define multiple panel designs for such a combination, we use an extra column `fag_virtual`, standing for '**virtual FAG**'.
+Its value is missing when the distinction is not needed; otherwise it provides a subspecification for the FAG referring to a specific target variable.
+It is called 'virtual' because in reality the involved FAGs do not differ; they merely serve as a trick to combine more than one panel design.
+
 ```{r}
+virtual_fags <- 
+  tribble(
+    ~field_activity_group, ~fag_virtual,
+    "SURFLENTDATACOLL", "SURFLENTDATACOLL_N",
+    "SURFLENTDATACOLL", "SURFLENTDATACOLL_P",
+  ) %>% 
+  mutate(
+    field_activity_group = factor(
+      field_activity_group,
+      levels = levels(mod_scheme_fag$field_activity_group)
+    ),
+    fag_virtual = factor(fag_virtual)
+  )
 mod_scheme_ps_fag_paneldesign <-
   mod_scheme_fag %>%
+  # add virtual FAGs to be able to combine multiple panel designs for a single
+  # FAG in a module x scheme x panel set
+  left_join(
+    virtual_fags,
+    join_by(field_activity_group),
+    relationship = "many-to-many",
+    unmatched = "drop"
+  ) %>% 
+  relocate(fag_virtual, .after = field_activity_group) %>% 
+  # add cycle_duration_y & nr_panelsets
   inner_join(
     module_scheme_props,
     join_by(module, scheme),
@@ -1693,7 +1723,10 @@ mod_scheme_ps_fag_paneldesign <-
     # revisit pattern of main periodicity
     revisit_pattern = case_when(
       str_detect(field_activity_group, "READDIVER|ADHOC") ~ "pure_panel",
-      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") &
+      str_detect(
+        field_activity_group,
+        "GW(SURF)?SHALL(CLEAN|SAMP)|SURF(LENT|LOT)DATACOLL"
+      ) &
         cycle_duration_y >= 6L &
         panel_set == 1L ~
         "periodic_rotational",
@@ -1748,10 +1781,13 @@ mod_scheme_ps_fag_paneldesign <-
       factor(levels = levels(revisit_pattern)),
     # subperiodicity, if applicable
     panel_subperiod = case_when(
-      str_detect(field_activity_group, "SURF.*DATACOLL") ~ months(1),
       str_detect(scheme, "^SURF") &
         field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ months(1),
-      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)|LEVREAD") ~ months(3)
+      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)|LEVREAD") ~ months(3),
+      # note that for SURFLENTDATACOLL we need a mix of 1 and 2 months
+      fag_virtual == "SURFLENTDATACOLL_N" ~ months(1),
+      fag_virtual == "SURFLENTDATACOLL_P" ~ months(2),
+      field_activity_group == "SURFLOTDATACOLL" ~ months(2)
     ),
     # do measurements take place in an automated, continuous manner within panel
     # set 2? It means that data are collected more frequently at a location than
@@ -1787,13 +1823,17 @@ mod_scheme_ps_fag_paneldesign <-
     # and end dates that would normally emerge
     panel_dateshift = case_when(
       # evaluate locations one year beforehand:
-      str_detect(field_activity_group, "LOCEVAL") &
+      str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT") &
         !str_detect(scheme, "^HQ") ~ years(-1),
       # postpone the start of groundwater sampling & diver reading (to align
       # location visits)
       str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") &
         (panel_set == 2L | cycle_duration_y < 6L) ~ months(6),
-      str_detect(field_activity_group, "READDIVER") ~ months(6)
+      str_detect(field_activity_group, "READDIVER") ~ months(6),
+      # SURF_03.4 data collection starts in Q2 in lotic, and the same goes for P
+      # in lentic
+      fag_virtual == "SURFLENTDATACOLL_P" ~ months(3),
+      field_activity_group == "SURFLOTDATACOLL" ~ months(3)
     ),
     # optionally limit the number of subperiods in a main period; this causes
     # uneven coverage of the main period since only the first subperiod(s)
@@ -1801,6 +1841,7 @@ mod_scheme_ps_fag_paneldesign <-
     limit_n_subperiods = case_when(
       str_detect(scheme, "^SURF") &
         field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ 1L,
+      str_detect(field_activity_group, "SURF.*DATACOLL") ~ 3L,
       .default = NA_integer_
     ),
     # optionally set a fixed number of subpanels in a main panel, which enforces
@@ -1814,8 +1855,8 @@ mod_scheme_ps_fag_paneldesign <-
   ) %>%
   select(-enforced_cycle_duration_y) %>%
   relocate(cycle_duration_y, .before = enforced_cycle_duration) %>%
-  relocate(panel_set, .after = field_activity_group) %>%
-  arrange(field_activity_group)
+  relocate(panel_set, .after = fag_virtual) %>%
+  arrange(field_activity_group, fag_virtual)
 ```
 
 **Still undecided**: should panel dateshift also apply to MHQ schemes?
