@@ -2,6 +2,40 @@
 
 tag `rep_xxxxxxxxxxxx`
 
+Changes to results
+------------------
+
+- Limit types in cal_old_continuation to those that may have been sampled
+  (8e4bb5b1).
+- Deal differently with code '3130' in watersurfaces_hab following updates
+  in {n2khab} 0.15.0, especially `read_watersurfaces_hab()` and
+  `expand_types()`. All main type 3130 occasions in watersurfaces_hab
+  have now been expanded to both 3130_aom and 3130_na (before: only 3130_aom).
+  As a consequence, the base sampling frame is updated.
+- Stabilize row sorting of some non-cell precursors of the base sampling frame
+  (cdcebe77).
+
+Additions
+---------
+
+Maintenance
+-----------
+
+- Temporarily freeze sample sizes of most terrestrial types according to REP
+  0.16.0; this is a temporary protection against quarter changes of GW_03.3
+  sampling units as a consequence of updating the sampling frame. This situation
+  remains in place until quarter assignment has been done to GW_03.3 sampling
+  units.
+- Make code compliant with updates in {n2khab} 0.15.0.
+- Extend extract_spatiotempsam.csv with more examples.
+
+Helper script supporting fieldwork organization
+-----------------------------------------------
+
+- Apply a quarterly update of fieldwork priorities. As time passes, planned 
+  quarterly panel visits become the past, hence associated priorities should
+  change as well.
+
 # REP 0.16.0 (2026-05-20)
 
 tag `rep_0.16.0`
