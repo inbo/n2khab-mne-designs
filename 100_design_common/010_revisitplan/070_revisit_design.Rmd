@@ -405,24 +405,27 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
       !is.na(limit_n_subpanels_per_panel) ~ limit_n_subpanels_per_panel,
       .default = 1L
     ),
-    # number of times a panel group must be repeated during a cycle
-    panel_group_repetitions = case_when(
-      revisit_pattern == "periodic_rotational" ~ 2L,
-      !is.na(limit_n_subpanels_per_panel) ~ as.integer(
-        (panel_period_main / panel_subperiod) / limit_n_subpanels_per_panel
-      ),
-      revisit_subpattern == "pure_panel" ~ pmin(
-        as.integer(panel_period_main / panel_subperiod),
-        limit_n_subperiods,
-        na.rm = TRUE
-      ),
-      .default = 1L
-    ),
     # number of subperiods per main period
     n_subperiods_per_main_period = ifelse(
       is.na(panel_subperiod),
       1L,
       as.integer(panel_period_main / panel_subperiod)
+    ),
+    # number of times a panel group must be repeated during a cycle
+    panel_group_repetitions = case_when(
+      revisit_pattern == "periodic_rotational" ~ 2L,
+      !is.na(limit_n_subpanels_per_panel) ~ as.integer(
+        n_subperiods_per_main_period / limit_n_subpanels_per_panel
+      ),
+      .default = 1L
+    ),
+    # number of times a panel must be repeated within a single repeat step of
+    # the group; only relevant if subpattern is pure panel
+    panel_repetitions = if_else(
+      revisit_subpattern == "pure_panel",
+      pmin(n_subperiods_per_main_period, limit_n_subperiods, na.rm = TRUE),
+      1L,
+      1L
     ),
     # duration of the FAG specific cycle
     fag_cycle = case_when(
@@ -432,7 +435,8 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
     # number of times a FAG happens at a single location during a single FAG
     # cycle
     n_locvisits_per_fagcycle = case_when(
-      revisit_pattern == "periodic_rotational" ~ panel_group_repetitions,
+      revisit_pattern == "periodic_rotational" ~ 
+        panel_group_repetitions * panel_repetitions,
       revisit_pattern == "pure_panel" ~ 1L,
       .default = as.integer(
         fag_cycle / (panel_count * panel_period) /
@@ -459,7 +463,7 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
       str_to_upper(),
     # notation_pattern summarises the panel design
     notation_pattern = case_when(
-      revisit_pattern_abbrev == "ROT" ~
+      revisit_pattern_abbrev == "ROT" & panel_repetitions == 1L ~
         str_c(
           revisit_pattern_abbrev,
           ifelse(
@@ -467,6 +471,14 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
             str_c("by", panel_group_size, "repeat", panel_group_repetitions),
             ""
           )
+        ),
+      revisit_pattern_abbrev == "ROT" & panel_repetitions > 1L ~
+        str_c(
+          revisit_pattern_abbrev,
+          "repeat",
+          panel_repetitions,
+          "x",
+          panel_group_repetitions
         ),
       revisit_pattern_abbrev == "SER" &
         revisit_subpattern_abbrev %in% c("SER", "PUR") ~
@@ -495,11 +507,17 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
     # notation_paneldesign combines notation_pattern & panel design attributes
     notation_paneldesign = str_c(
       panel_count,
-      ifelse(panel_count == 1L, "panelof", "panelsof"),
+      ifelse(panel_count == 1L, "panel", "panels"),
+      ifelse(panel_repetitions == 1L, "of", ""),
       ifelse(
-        is.na(panel_enddate_addition),
-        panel_period_chr,
-        str_c(panel_period_chr, "[", "+", panel_enddate_addition_chr, "]")
+        panel_repetitions > 1L,
+        str_c(panel_period_chr, "subperiods"),
+        panel_period_chr
+      ),
+      ifelse(
+        !is.na(panel_enddate_addition),
+        str_c("[", "+", panel_enddate_addition_chr, "]"),
+        ""
       ),
       ifelse(
         str_detect(notation_pattern, "-") | revisit_pattern_abbrev == "ROT",
@@ -526,7 +544,8 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
     # PURE PANELS (main or sub) do not meet following check:
     # check = panel_count * panel_period * panel_group_repetitions ==
     #   cycle_duration_y * years(1)
-  )
+  ) %>% 
+  relocate(n_subperiods_per_main_period, .after = panel_repetitions)
 # scheme_moco_ps_spsubset_fas_panelcount_full %>% distinct(notation_paneldesign)
 # scheme_moco_ps_spsubset_fas_panelcount_full %>% filter(!check)
 scheme_moco_ps_spsubset_fas_panelcount <-
@@ -550,6 +569,7 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     limit_n_subperiods,
     panel_group_size,
     panel_group_repetitions,
+    panel_repetitions,
     auto_continuous_meas_ps2,
     memship_alignfastest,
     notation_paneldesign
@@ -730,6 +750,7 @@ scheme_moco_ps_spsubset_panel_calendar <-
       panel_dateshift,
       panel_group_size,
       panel_group_repetitions,
+      panel_repetitions,
       auto_continuous_meas_ps2,
       memship_alignfastest,
       notation_paneldesign
@@ -811,16 +832,26 @@ scheme_moco_ps_spsubset_panel_calendar <-
     panel_date_assignment = map2(revisit, panels, function(revis, pan) {
       group_size <- revis$panel_group_size[1]
       group_repetitions <- revis$panel_group_repetitions[1]
+      repetitions <- revis$panel_repetitions[1]
       n_subperiods <- revis$n_subperiods_per_main_period[1]
       n_subperiods_limit <- revis$limit_n_subperiods[1]
       rotational <- str_detect(revis$notation_paneldesign[1], "ROT")
-      # set the panel order of one cycle according to group_size &
-      # group_repetitions
-      if (group_size == 1 && group_repetitions == 1) {
+      # set the panel order of one cycle according to group_size,
+      # group_repetitions and repetitions
+      if (group_size == 1 && group_repetitions == 1 && repetitions == 1) {
         pan2 <- pan
       } else {
-        indexes_pan <- seq_len(nrow(pan))
-        indexgrouping_pan <- rep(seq_len(nrow(pan) / group_size), each = group_size)
+        indexes_pan <- rep(seq_len(nrow(pan)), each = repetitions)
+        if (group_size > 1 & repetitions > 1) {
+          stop(
+            "A repeated panel group with individual panel repetitions ",
+            "in each repeat step is not (yet) supported."
+            )
+        }
+        indexgrouping_pan <- rep(
+          seq_len(nrow(pan) / group_size),
+          each = max(group_size, repetitions)
+        )
         indexes_grouped <- split(indexes_pan, indexgrouping_pan) %>%
           rep(each = group_repetitions) %>%
           {
@@ -854,13 +885,13 @@ scheme_moco_ps_spsubset_panel_calendar <-
         revis2 <- revis[indexes_limitsubperiod, ]
       }
       # duplicate revis2 rows to align panel group repetitions in rotational
-      # designs
+      # designs, including those with a pure-panel subpattern
       if (rotational) {
         indexes_revis <- seq_len(nrow(revis2))
         indexgrouping_rot_revis <- rep(
           seq_len(nrow(revis2) / group_size),
-          each = group_size
-        )
+          each = max(group_size, repetitions)
+        )[seq_len(length(indexes_revis))]
         indexes_grouped_rot_revis <-
           split(indexes_revis, indexgrouping_rot_revis) %>%
           rep(each = group_repetitions) %>%
