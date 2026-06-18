@@ -1171,13 +1171,13 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   ) %>%
   select(-has_gw) %>%
   # count(date_start, date_end, date_interval) %>%
-  # move the LOCEVAL fieldwork that was kept for main_year - 1, to main_year,
-  # since that is indeed its meaning
+  # move the LOCEVAL & SAMPLPOINT fieldwork that was kept for main_year - 1, to
+  # main_year, since that is indeed its meaning
   mutate(
     across(c(date_start, date_end), \(x) {
       if_else(
         year(date_start) == main_year - 1 &
-          str_detect(field_activity_group, "LOCEVAL"),
+          str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT"),
         x + years(1),
         x
       )
