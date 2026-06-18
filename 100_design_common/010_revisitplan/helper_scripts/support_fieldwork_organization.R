@@ -139,6 +139,27 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
 # - for terrestrial types, these are cells; see code provided below
 
 
+
+# helper object to add watersurface polygon_ids in a geopackage (this may be
+# dropped when properly adding the geometries here)
+# ////////////////////////////////////////////////////////////////////////////
+
+set.seed(20260618)
+watersurface_polygon_ids <-
+  stratum_units_non_cell_n2khab %>%
+  filter(sample_support_code == "watersurface") %>%
+  inner_join(
+    units_non_cell_n2khab_grts,
+    join_by(sample_support_code, unit_id),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  select(stratum, grts_address, polygon_id = unit_id) %>%
+  # following step needs extra attention to store choices (MNE+MHQ), preferably
+  # a ranking
+  slice_sample(n = 1, by = c(stratum, grts_address))
+
+
 # geometries of 7220 units are represented by points, labelled with their GRTS
 # address
 # ////////////////////////////////////////////////////////////////////////////
@@ -1524,6 +1545,18 @@ fieldwork_shortterm_prioritization_shorter <-
 # stratum), filtered in several ways
 if (FALSE) {
   gpkg_path <- file.path(datapath, "binary/results/fieldwork_shortterm.gpkg")
+  filter_watersurface_add_pols <- function(df) {
+    df %>%
+      filter(sample_support_code == "watersurface") %>%
+      inner_join(
+        watersurface_polygon_ids,
+        join_by(stratum, grts_address),
+        relationship = "many-to-one",
+        unmatched = c("error", "drop")
+      ) %>%
+      select(-rank, -scheme_ps_oldtargetpanels) %>%
+      relocate(polygon_id, .after = grts_address_final)
+  }
   fieldwork_shortterm_prioritization_points <-
     fieldwork_shortterm_prioritization_by_stratum %>%
     add_point_coords_grts(
@@ -1539,11 +1572,26 @@ if (FALSE) {
       delete_dsn = TRUE
     )
   fieldwork_shortterm_prioritization_points %>%
+    filter_watersurface_add_pols() %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_watersurface",
+      delete_layer = TRUE
+    )
+  fieldwork_shortterm_prioritization_points %>%
     filter(str_detect(field_activity_group, "LOCEVAL")) %>%
     select(-rank, -scheme_ps_oldtargetpanels) %>%
     write_sf(
       gpkg_path,
       layer = "fieldwork_shortterm_LOCEVAL",
+      delete_layer = TRUE
+    )
+  fieldwork_shortterm_prioritization_points %>%
+    filter(str_detect(field_activity_group, "LOCEVAL")) %>%
+    filter_watersurface_add_pols() %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_LOCEVAL_watersurface",
       delete_layer = TRUE
     )
   fieldwork_shortterm_prioritization_points %>%
