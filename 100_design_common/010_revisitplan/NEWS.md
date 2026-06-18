@@ -14,9 +14,21 @@ Changes to results
   As a consequence, the base sampling frame is updated.
 - Stabilize row sorting of some non-cell precursors of the base sampling frame
   (cdcebe77).
+- Multiple updates with regard to schemes SURF_03.4_lentic and SURF_03.4_lotic:
+  - Update activities, activity sequences and their link with variables.
+  - Update spatial sample sizes (based on
+    `210_design_surfacewater/010_surf_design_simple` project in `main` and
+    `surfsize_rotational` branches).
+  - Implement panel design of the respective FAGs (split panel design, using
+    periodic rotational + serially alternating patterns for the target FAG).
 
 Additions
 ---------
+
+- Implement the 'virtual FAG' concept to be able to combine multiple panel
+  designs for a single FAG, but relating to different environmental variables.
+- Add helper script to aid with sample size choices for small strata in included
+  domains.
 
 Maintenance
 -----------

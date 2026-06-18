@@ -102,17 +102,17 @@ apply_activity_sequence_filters <- function(df) {
           main_field_activity == "GWLEVREADDIVER" &
           activity_sequence != "gw_lev_well"
       ),
-      # for SURF_03.4_lentic x SURFLEVREADGAUGE, use the surf_lent_samp
+      # for SURF_03.4_lentic x SURFLEVREADGNSS, use the surf_lent_samp
       # sequence:
       !(
         scheme == "SURF_03.4_lentic"  &
-          main_field_activity == "SURFLEVREADGAUGE" &
+          main_field_activity == "SURFLEVREADGNSS" &
           activity_sequence != "surf_lent_samp"
       ),
-      # for SURF_03.4_lotic x SURFLEVREADGAUGE, use the surf_lent_samp sequence:
+      # for SURF_03.4_lotic x SURFLEVREADGNSS, use the surf_lent_samp sequence:
       !(
         scheme == "SURF_03.4_lotic"  &
-          main_field_activity == "SURFLEVREADGAUGE" &
+          main_field_activity == "SURFLEVREADGNSS" &
           activity_sequence != "surf_lot_samp"
       )
     )
@@ -1026,7 +1026,10 @@ subsample_and_relax_adhocfag <- function(fag_cal,
     # relax the ADHOC date intervals
     inner_join(
       fag_cal %>%
-        filter(!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")) %>%
+        filter(!str_detect(
+          field_activity_group,
+          "ADHOC|LOCEVAL|LSVI|SAMPLPOINT"
+        )) %>%
         select(-field_activity_group, -rank, -scheme_moco_ps) %>%
         rename(
           date_end_new = date_end,
