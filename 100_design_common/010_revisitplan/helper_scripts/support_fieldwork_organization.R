@@ -1584,10 +1584,10 @@ fieldwork_shortterm_targetpanels_prioritization_count <-
   count(
     scheme_ps_targetpanels,
     priority,
-    pick(starts_with("wait"), -wait_any),
+    pick(starts_with("wait")),
     field_activity_group
   ) %>%
-  arrange(priority, pick(starts_with("wait"))) %>%
+  arrange(priority, pick(starts_with("wait"), -wait_any)) %>%
   pivot_wider(
     names_from = field_activity_group,
     names_sort = TRUE,
@@ -1613,10 +1613,10 @@ fieldwork_shortterm_dates_prioritization_count <-
     date_interval,
     date_end,
     priority,
-    pick(starts_with("wait"), -wait_any),
+    pick(starts_with("wait")),
     field_activity_group
   ) %>%
-  arrange(date_end, priority, pick(starts_with("wait"))) %>%
+  arrange(date_end, priority, pick(starts_with("wait"), -wait_any)) %>%
   select(-date_end) %>%
   pivot_wider(
     names_from = field_activity_group,
