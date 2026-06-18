@@ -1545,8 +1545,6 @@ if (FALSE) {
   fieldwork_shortterm_prioritization_points %>%
     filter(
       str_detect(field_activity_group, "LOCEVAL"),
-      # only keep cell-based types (aquatic & 7220 will be more reliable or
-      # simply not possible to evaluate on orthophoto)
       str_detect(grts_join_method, "cell")
     ) %>%
     select(-rank, -scheme_ps_oldtargetpanels) %>%
@@ -1560,8 +1558,6 @@ if (FALSE) {
       fieldwork_shortterm_prioritization_by_stratum %>%
         filter(
           str_detect(field_activity_group, "LOCEVAL"),
-          # only keep cell-based types (aquatic & 7220 will be more reliable or
-          # simply not possible to evaluate on orthophoto)
           str_detect(grts_join_method, "cell")
         ) %>%
         select(-rank, -scheme_ps_oldtargetpanels),
