@@ -1449,7 +1449,11 @@ fieldwork_shortterm_prioritization_by_stratum <-
       priority_mhq,
       na.rm = TRUE
     ),
-    wait_watersurface = str_detect(stratum, "^31|^2190_a"),
+    wait_watersurface = str_detect(stratum, "^2190_a") |
+      (
+        str_detect(stratum, "^31|^2190_a") &
+          !str_detect(schemes_served_all, "SURF_03\\.4")
+      ),
     wait_3260 = stratum == "3260",
     wait_7220 = str_detect(stratum, "^7220"),
     wait_floating = stratum == "7140_mrd",
