@@ -1361,11 +1361,58 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     }) %>%
       factor()
   ) %>%
+  # In lentic types, multiple strata can effectively occur at the same GRTS
+  # address. Such rows represent duplicated FAG occasions. In some of these
+  # cases (LOCEVALAQ) data must still be collected with reference to the
+  # specific stratum, but the actual fieldwork is just a single occasion. Since
+  # we need the distinction between strata for the terrestrial FAG occasions and
+  # because the sampling units always remain defined by grts_address x stratum,
+  # we don't change the object structure to reflect unique fieldwork events.
+  # However we do mark some FAG occasions as 'matching occasions' using a common
+  # string: these FAG occasions occur more than once across strata (and for some
+  # FAGs also across time) and can be executed as a single FAG occasion.
+  #
+  # matching occasions across strata
+  mutate(
+    matching_occasion = ifelse(
+      str_detect(stratum, "^2190_a|^31") &
+        # not using n() because that still includes terrestrial types:
+        sum(str_detect(stratum, "^2190_a|^31")) > 1,
+      str_c(
+        first(field_activity_group),
+        first(grts_address_final),
+        str_c(
+          "[",
+          format(first(date_start), "%Y%m%d"),
+          "-",
+          format(first(date_end), "%Y%m%d"),
+          "]"
+        ),
+        sep = "_"
+      ),
+      NA_character_
+    ),
+    .by = c(grts_address, starts_with("date"), field_activity_group)
+  ) %>%
+  # matching occasions across strata and date intervals
+  mutate(
+    matching_occasion = ifelse(
+      str_detect(stratum, "^2190_a|^31") &
+        # not using n() because that still includes terrestrial types:
+        sum(str_detect(stratum, "^2190_a|^31")) > 1 &
+        str_detect(field_activity_group, "INST|LEVREAD|SPATPOSIT"),
+      str_c(first(field_activity_group), first(grts_address_final), sep = "_"),
+      matching_occasion
+    ),
+    .by = c(grts_address, field_activity_group)
+  ) %>%
+  mutate(matching_occasion = factor(matching_occasion)) %>%
   relocate(
     scheme_ps_targetpanels,
     schemes_served_all,
     starts_with("nr_schemes")
-  )
+  ) %>%
+  relocate(matching_occasion, .after = rank)
 
 # Derive an object where stratum x scheme_ps_targetpanels is flattened per
 # location x FAG occasion. Beware that in reality, more locations will emerge
