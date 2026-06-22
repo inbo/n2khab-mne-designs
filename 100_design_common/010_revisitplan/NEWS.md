@@ -47,6 +47,9 @@ Helper script supporting fieldwork organization
 - Apply a quarterly update of fieldwork priorities. As time passes, planned 
   quarterly panel visits become the past, hence associated priorities should
   change as well.
+- Mark matching FAG occasions that actually represent a single FAG occasion in
+  the field but are linked to multiple strata. The data collection may be still
+  be stratum-specific.
 
 # REP 0.16.0 (2026-05-20)
 
