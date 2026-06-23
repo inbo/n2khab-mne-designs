@@ -397,6 +397,8 @@ However in its full meaning the base sampling frame also comprises various linke
 
 ### For the non-cell units
 
+#### Keeping only points within target populations
+
 From `points_non_cell`, we need to filter those that fall within the target populations of MNE and MHQ.
 This is already fine for types 7220 and 8310.
 
@@ -424,33 +426,200 @@ points_non_cell_n2khab <-
   )
 ```
 
+#### Assigning unique GRTS addresses to points
+
+Linking the GRTS address from `GRTSmaster_habitats` to the points (with unit ID) in `points_non_cell_n2khab`.
+
+```{r}
+points_non_cell_n2khab_grts <- 
+  points_non_cell_n2khab %>%
+  mutate(
+    x = st_coordinates(.)[, "X"],
+    y = st_coordinates(.)[, "Y"],
+    grts_address = extract(grts_mh, st_coordinates(points_non_cell_n2khab)) %>%
+      pull(GRTSmaster_habitats)
+  ) %>% 
+  st_drop_geometry()
+```
+
+We can see that different points (with unit ID) share a common (non-NA) GRTS address.
+
+```{r paged.print = FALSE}
+points_non_cell_n2khab_grts %>% 
+  filter(!is.na(grts_address)) %>% 
+  count(sample_support_code, grts_address, name = "n_points_per_grtsaddress") %>% 
+  count(sample_support_code, n_points_per_grtsaddress, name = "n_units")
+```
+
+Essentially, this means that for at least one sample support code the resolution of the applied `GRTSmaster_habitats` was too large.
+Since `GRTSmaster_habitats` has been applied for these types in MHQ, we need to continue using it in order to match MHQ sampling units.
+
+We will solve the issue by applying a refined GRTS address in a way that resembles one or two deeper GRTS-levels, i.e. by prepending unique digits to the reversed decimal GRTS address for the duplicated cases.
+For each GRTS address, the points with a common GRTS address are first sorted randomly.
+Then, the first point keeps its GRTS address, for the second one a number `extra_term_base` is added to its GRTS address, for the third one `extra_term_base * 2` is added and so on.
+The value of `extra_term_base` is `r extra_term_base` and this is an order of magnitude higher than the maximum value of `GRTSmaster_habitats`.
+
+This way:
+
+- the original value of the GRTS address can be easily derived again, e.g. in order to spatially locate the corresponding GRTS cell;
+- sampling by using the updated `grts_address` column aligns with GRTS sampling according to a finer grid: a second unit in the same GRTS cell will only be sampled after all other GRTS cells from the population have been sampled, a third unit can only be sampled after all other second units in other cells have been sampled, and so on.
+
+Optionally resetting the dataset of masked GRTS addresses per point, for the points that share their GRTS address.
+
+```{r}
+grtsmh_max <- global(grts_mh, "max", na.rm = TRUE)$max
+extra_term_base <- as.integer(10^(floor(log10(grtsmh_max)) + 1))
+if (params$reset_masked_addresses) {
+  set.seed(20260623)
+  points_non_cell_n2khab_grts %>% 
+    select(-unit_id) %>% 
+    # several watercourse_segment units still have a missing GRTS address;
+    # dropping them for now XXXXXXXXXXXX
+    filter(!is.na(grts_address)) %>% 
+    # there are two watercourse segments that have a common endpoint; to be solved
+    # XXXXXXXXX
+    distinct() %>% 
+    # only keeping the duplicates
+    filter(
+      n() > 1,
+      .by = c(sample_support_code, grts_address)
+    ) %>% 
+    arrange(sample_support_code, grts_address) %>% 
+    mutate(
+      rank_nr = as.integer(rank(runif(n = n())) - 1),
+      grts_address_original = grts_address,
+      grts_address_masked = grts_address + extra_term_base * rank_nr,
+      .by = c(sample_support_code, grts_address)
+    ) %>% 
+    arrange(sample_support_code, grts_address_original, grts_address_masked) %>% 
+    select(sample_support_code, x, y, grts_address_original, grts_address_masked) %>% 
+    write_vc(
+      file = "points_grts_masked",
+      root = file.path(datapath, "text/raw"),
+      digits = 10,
+      optimize = FALSE,
+      strict = FALSE,
+      sorting = c(
+        "sample_support_code",
+        "grts_address_original",
+        "grts_address_masked"
+      )
+    )
+}
+```
+
+**Missing functionality**: the file with masked GRTS addresses per point should be auto-updated once new versions of the spatial data sources and reference points become available.
+
+Reading the dataset of masked GRTS addresses per point, for the points that share their GRTS address.
+In this object, both address flavours are still called `grts_address_original` and `grts_address_masked`, but in other objects we will continue using the single column `grts_address` and it will _contain_ some masked values.
+
+```{r}
+points_grts_masked <- 
+  read_vc(
+    file = "points_grts_masked",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble()
+```
+
+The reason that we store the point coordinates rather than a unit ID to link to a GRTS address, is that unit IDs may be unstable over time.
+In `watersurfaces_refpoints`, care was taken to use a single reference point for one unit, even if it is represented by different IDs.
+
+Replacing GRTS addresses with masked GRTS addresses for the points where this is applicable.
+
+```{r}
+points_non_cell_n2khab_grts <- 
+  points_non_cell_n2khab_grts %>% 
+  # using an overlap join for the coordinates within [-0.001, 0.001] (i.e. 1
+  # mm), because the numeric precision of numbers read from files hinders exact
+  # matches (no better solution was found to obtain the same result)
+  left_join(
+    points_grts_masked %>% 
+      mutate(
+        x_l = x - 0.001,
+        x_u = x + 0.001,
+        y_l = y - 0.001,
+        y_u = y + 0.001
+      ),
+    join_by(
+      sample_support_code,
+      between(x, x_l, x_u),
+      between(y, y_l, y_u)
+    ),
+    # XXXXXXXXXX following should be "one-to-one", but because one endpoint of
+    # watercourse_segments is shared between two units (see above), we still
+    # need to use "many-to-one"
+    relationship = "many-to-one",
+    unmatched = "drop"
+  )
+# checking that grts_address_original (where available) equals grts_address
+stopifnot(
+  points_non_cell_n2khab_grts %>% 
+  filter(grts_address_original != grts_address) %>% 
+  {nrow(.) == 0}
+)
+points_non_cell_n2khab_grts <- 
+  points_non_cell_n2khab_grts %>% 
+  mutate(grts_address = ifelse(
+    !is.na(grts_address_masked),
+    grts_address_masked,
+    grts_address
+  )) %>% 
+  select(-grts_address_original, -grts_address_masked)
+```
+
+Checking that each point (with non-missing GRTS address) has a unique GRTS address within a sample support code.
+
+```{r}
+stopifnot(
+  points_non_cell_n2khab_grts %>% 
+    distinct(sample_support_code, grts_address) %>% 
+    filter(!is.na(grts_address)) %>% 
+    {
+      nrow(.) == 
+        points_non_cell_n2khab_grts %>% 
+        filter(!is.na(grts_address)) %>% 
+        distinct(pick(-unit_id)) %>% 
+        nrow()
+    }
+)
+```
+
+
+#### Deriving unique GRTS addresses of unit geometries
+
 Determining the GRTS address of the units represented by `points_non_cell_n2khab`.
 
 ```{r}
 units_non_cell_n2khab_grts <-
-  points_non_cell_n2khab %>%
-  mutate(
-    grts_address = extract(grts_mh, st_coordinates(points_non_cell_n2khab)) %>%
-      pull(GRTSmaster_habitats)
-  ) %>%
-  st_drop_geometry() %>%
+  points_non_cell_n2khab_grts %>% 
+  distinct(sample_support_code, unit_id, grts_address) %>%
   arrange(sample_support_code, unit_id, grts_address)
 ```
 
-<!-- Er zijn gevallen met hetzelfde GRTS-adres; een oplossing is hiervoor uit te werken: -->
-<!-- > units_non_cell_n2khab_grts %>% count(sample_support_code, grts_address) %>% filter(n > 1) %>% count(sample_support_code, n) -->
-<!-- Storing counts in `nn`, as `n` already present in input -->
-<!-- ℹ Use `name = "new_name"` to pick a new name. -->
-<!-- # A tibble: 7 × 3 -->
-<!--   sample_support_code     n    nn -->
-<!--   <fct>               <int> <int> -->
-<!-- 1 watercourse_segment     2    21 -->
-<!-- 2 watercourse_segment     3     1 -->
-<!-- 3 watercourse_segment   122     1 -->
-<!-- 4 watersurface            2    54 -->
-<!-- 5 watersurface            3    13 -->
-<!-- 6 watersurface            4     8 -->
-<!-- 7 watersurface            5     2 -->
+<!-- As stated above in code comments, there are two watercourse segments that share their endpoint -->
+<!-- and therefore their GRTS address. It remains to be seen how we deal with this: -->
+<!-- > units_non_cell_n2khab_grts %>% -->
+<!--     filter(!is.na(grts_address)) %>%  -->
+<!--     count(sample_support_code, grts_address) %>% -->
+<!--     filter(n > 1) -->
+<!-- # A tibble: 1 × 3 -->
+<!--   sample_support_code grts_address     n -->
+<!--   <fct>                      <int> <int> -->
+<!-- 1 watercourse_segment      4405142     2 -->
+
+
+<!-- Some cases have a missing GRTS address (probably from the border region): -->
+<!-- > units_non_cell_n2khab_grts %>% -->
+<!--     count(sample_support_code, grts_address) %>% -->
+<!--     filter(n > 10) -->
+<!-- # A tibble: 1 × 3 -->
+<!--   sample_support_code grts_address     n -->
+<!--   <fct>                      <int> <int> -->
+<!-- 1 watercourse_segment           NA   122 -->
+
+
+#### Defining population units as stratum x grts_address
 
 Listing the non-cell units per stratum (within the target populations of MNE and MHQ), needed in order to connect the GRTS addresses with strata.
 
@@ -523,7 +692,8 @@ stratum_grts_non_cell_n2khab <-
     unmatched = "error"
   ) %>%
   select(-sample_support_code, -unit_id) %>%
-  # distinct() leads to less rows because of units with same GRTS address.
+  # distinct() leads to less rows because of units with same GRTS address (1
+  # remaining case for 3260; see above), and because of missing GRTS addresses.
   distinct()
 ```
 
