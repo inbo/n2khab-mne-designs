@@ -456,6 +456,7 @@ Since `GRTSmaster_habitats` has been applied for these types in MHQ, we need to 
 
 We will solve the issue by applying a refined GRTS address in a way that resembles one or two deeper GRTS-levels, i.e. by prepending unique digits to the reversed decimal GRTS address for the duplicated cases.
 For each GRTS address, the points with a common GRTS address are first sorted randomly.
+If one of the points corresponds to a MHQ sampling unit, it is put first in order to favour the match with existing MHQ sampling units (matches with the MHQ _sample_ are very rare though).
 Then, the first point keeps its GRTS address, for the second one a number `extra_term_base` is added to its GRTS address, for the third one `extra_term_base * 2` is added and so on.
 The value of `extra_term_base` is `r extra_term_base` and this is an order of magnitude higher than the maximum value of `GRTSmaster_habitats`.
 
@@ -470,28 +471,58 @@ Optionally resetting the dataset of masked GRTS addresses per point, for the poi
 grtsmh_max <- global(grts_mh, "max", na.rm = TRUE)$max
 extra_term_base <- as.integer(10^(floor(log10(grtsmh_max)) + 1))
 if (params$reset_masked_addresses) {
+  # see R/generate_mhq_samples_watersurfaces_spatialunits.R to generate the following file from
+  # a raw GeoPackage:
+  mhq_samples_watersurfaces_spatialunits <- 
+    read_vc(
+      "mhq_samples_watersurfaces_spatialunits",
+      root = file.path(datapath, "text/intermediate")
+    ) %>%
+    as_tibble()
   set.seed(20260623)
-  points_non_cell_n2khab_grts %>% 
-    select(-unit_id) %>% 
+  points_grts_masked <- 
+    points_non_cell_n2khab_grts %>% 
     # several watercourse_segment units still have a missing GRTS address;
     # dropping them for now XXXXXXXXXXXX
     filter(!is.na(grts_address)) %>% 
-    # there are two watercourse segments that have a common endpoint; to be solved
-    # XXXXXXXXX
-    distinct() %>% 
     # only keeping the duplicates
     filter(
-      n() > 1,
+      n_distinct(x, y) > 1,
       .by = c(sample_support_code, grts_address)
     ) %>% 
+    # flagging with 'in_mhq'
+    left_join(
+      mhq_watersurfaces %>% 
+        mutate(in_mhq = TRUE),
+      join_by(sample_support_code, unit_id, grts_address),
+      relationship = "many-to-one",
+      unmatched = "drop"
+    ) %>% 
+    # there are two watercourse segments that have a common endpoint; to be
+    # solved XXXXXXXXX
+    distinct(pick(-unit_id)) %>% 
     arrange(sample_support_code, grts_address) %>% 
+    # assign ranks and compute masked addresses
     mutate(
-      rank_nr = as.integer(rank(runif(n = n())) - 1),
+      rank_mhq = if_else(in_mhq, -2, 100, 100),
+      rank_nr = as.integer(rank(pmin(rank_mhq, runif(n = n()))) - 1),
       grts_address_original = grts_address,
       grts_address_masked = grts_address + extra_term_base * rank_nr,
       .by = c(sample_support_code, grts_address)
     ) %>% 
-    arrange(sample_support_code, grts_address_original, grts_address_masked) %>% 
+    arrange(sample_support_code, grts_address_original, grts_address_masked)
+  # Check that no ties have been introduced. This would happen if multiple
+  # in_mhq candidates per GRTS address would be present (not currently
+  # supported)
+  stopifnot(
+    points_grts_masked %>% 
+      filter(rank_nr == 0) %>% 
+      count(sample_support_code, grts_address_original) %>% 
+      filter(n > 1) %>% 
+      {nrow(.) == 0}
+  )
+  # write selected columns to file
+  points_grts_masked %>% 
     select(sample_support_code, x, y, grts_address_original, grts_address_masked) %>% 
     write_vc(
       file = "points_grts_masked",

@@ -1,4 +1,6 @@
-# This script writes a vc-formatted file, derived from a GeoPackage with the MHQ watersurfaces sample
+# This script writes a vc-formatted file, derived from a GeoPackage with the MHQ
+# watersurfaces sample. See also
+# R/generate_mhq_samples_watersurfaces_spatialunits.R.
 
 mhq_samples_binarydatapath <- file.path(datapath, "binary/0_raw/mhq_samples")
 
