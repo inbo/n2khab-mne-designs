@@ -600,7 +600,8 @@ points_non_cell_n2khab_grts <-
     grts_address_masked,
     grts_address
   )) %>% 
-  select(-grts_address_original, -grts_address_masked)
+  select(-grts_address_original, -grts_address_masked) %>%
+  arrange(sample_support_code, unit_id, grts_address)
 ```
 
 Checking that each point (with non-missing GRTS address) has a unique GRTS address within a sample support code.
@@ -623,13 +624,12 @@ stopifnot(
 
 #### Deriving unique GRTS addresses of unit geometries
 
-Determining the GRTS address of the units represented by `points_non_cell_n2khab`.
+An object with the GRTS address of the units represented by `points_non_cell_n2khab` is obtained by simply dropping the point coordinates.
 
 ```{r}
 units_non_cell_n2khab_grts <-
   points_non_cell_n2khab_grts %>% 
-  distinct(sample_support_code, unit_id, grts_address) %>%
-  arrange(sample_support_code, unit_id, grts_address)
+  select(sample_support_code, unit_id, grts_address)
 ```
 
 <!-- As stated above in code comments, there are two watercourse segments that share their endpoint -->
@@ -652,6 +652,12 @@ units_non_cell_n2khab_grts <-
 <!--   sample_support_code grts_address     n -->
 <!--   <fct>                      <int> <int> -->
 <!-- 1 watercourse_segment           NA   122 -->
+
+Checking that no duplicate rows exist.
+
+```{r}
+stopifnot(anyDuplicated(units_non_cell_n2khab_grts) == 0)
+```
 
 
 #### Defining population units as stratum x grts_address
