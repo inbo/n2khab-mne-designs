@@ -1325,16 +1325,17 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   relocate(scheme_ps_oldtargetpanel, .before = date_start) %>%
   select(-module_combo_code) %>%
   # flatten scheme x panel set x targetpanel to unique strings per stratum x
-  # location x FAG occasion. Note that the scheme_ps_targetpanels attribute is a
-  # shrinked version of the one at the level of the whole sample (see sampling
-  # unit attributes in the beginning), since we limited the activities to those
-  # planned before main_year + 1 (sometimes later), and then generate
-  # stratum_scheme_ps_targetpanels as a location attribute. So it says
-  # specifically which schemes x panel sets x targetpanels are served by the
-  # specific fieldwork at a specific date interval. Note that we substitute the
-  # targetpanel with the OLD targetpanel if the targetpanel is missing, i.e. for
-  # sampling units missing from the current FAG calendar. This is done to avoid
-  # missing values in derived objects or overviews.
+  # location x FAG occasion. Note that the scheme_ps_targetpanels_served
+  # attribute is a shrinked version of scheme_ps_targetpanels at the level of
+  # the whole sample (see sampling unit attributes in the beginning), since it
+  # is specific to the FAG occasion and since we limited the activities to those
+  # planned before main_year + 1 (sometimes later), before generating
+  # scheme_ps_targetpanels_served. So it says specifically which schemes x panel
+  # sets x targetpanels are served by the specific fieldwork at a specific date
+  # interval. Note that we substitute the targetpanel with the OLD targetpanel
+  # if the targetpanel is missing, i.e. for sampling units missing from the
+  # current FAG calendar. This is done to avoid missing values in derived
+  # objects or overviews.
   mutate(scheme_ps_targetpanel = ifelse(
     is.na(targetpanel),
     as.character(scheme_ps_oldtargetpanel),
@@ -1342,18 +1343,18 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   )) %>%
   select(-scheme, -panel_set, -targetpanel) %>%
   nest(
-    scheme_ps_targetpanels = scheme_ps_targetpanel,
-    scheme_ps_oldtargetpanels = scheme_ps_oldtargetpanel
+    scheme_ps_targetpanels_served = scheme_ps_targetpanel,
+    scheme_ps_oldtargetpanels_served = scheme_ps_oldtargetpanel
   ) %>%
   mutate(
-    scheme_ps_targetpanels = map_chr(scheme_ps_targetpanels, \(df) {
+    scheme_ps_targetpanels_served = map_chr(scheme_ps_targetpanels_served, \(df) {
       str_flatten(
         unique(df$scheme_ps_targetpanel),
         collapse = " | "
       )
     }) %>%
       factor(),
-    scheme_ps_oldtargetpanels = map_chr(scheme_ps_oldtargetpanels, \(df) {
+    scheme_ps_oldtargetpanels_served = map_chr(scheme_ps_oldtargetpanels_served, \(df) {
       str_flatten(
         unique(df$scheme_ps_oldtargetpanel),
         collapse = " | "
@@ -1408,13 +1409,13 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   ) %>%
   mutate(matching_occasion = factor(matching_occasion)) %>%
   relocate(
-    scheme_ps_targetpanels,
+    scheme_ps_targetpanels_served,
     schemes_served_all,
     starts_with("nr_schemes")
   ) %>%
   relocate(matching_occasion, .after = rank)
 
-# Derive an object where stratum x scheme_ps_targetpanels is flattened per
+# Derive an object where stratum x scheme_ps_targetpanels_served is flattened per
 # location x FAG occasion. Beware that in reality, more locations will emerge
 # due to local replacement, so this is misleading for counting & planning (but
 # useful in spatial visualization).
@@ -1422,15 +1423,15 @@ fag_stratum_grts_calendar_shortterm_attribs <-
 # First defining a reusable function before creating the object
 unite_stratum_and_schemepstargetpanels <- function(df) {
   df %>%
-    select(-scheme_ps_oldtargetpanels) %>%
+    select(-scheme_ps_oldtargetpanels_served) %>%
     mutate(
-      stratum_scheme_ps_targetpanels = str_c(
+      stratum_scheme_ps_targetpanels_served = str_c(
         stratum,
         " (",
         sample_support_code,
         ") ",
         " [",
-        scheme_ps_targetpanels,
+        scheme_ps_targetpanels_served,
         "]"
       ),
       .keep = "unused"
@@ -1444,15 +1445,15 @@ fag_grts_calendar_shortterm_attribs <-
   ) %>%
   unite_stratum_and_schemepstargetpanels() %>%
   summarize(
-    stratum_scheme_ps_targetpanels =
+    stratum_scheme_ps_targetpanels_served =
       str_flatten(
-        unique(stratum_scheme_ps_targetpanels),
+        unique(stratum_scheme_ps_targetpanels_served),
         collapse = " \u2588 "
       ) %>%
       factor(),
-    .by = !stratum_scheme_ps_targetpanels
+    .by = !stratum_scheme_ps_targetpanels_served
   ) %>%
-  relocate(stratum_scheme_ps_targetpanels)
+  relocate(stratum_scheme_ps_targetpanels_served)
 
 # A simple derived spatial object (as points; see earlier for the actual unit
 # geometries). Points are still repeated because of different date_interval &
@@ -1474,41 +1475,41 @@ fieldwork_shortterm_prioritization_by_stratum <-
       # no priority is given to imported FAGs from old versions (these
       # READDIVER, CLEAN & SHALLSAMP FAGs can be done as it suits, in the
       # locations where LOCEVAL is already executed)
-      !is.na(scheme_ps_oldtargetpanels) ~ NA_integer_,
+      !is.na(scheme_ps_oldtargetpanels_served) ~ NA_integer_,
       # no priority is given to FAG occasions for types that will be obsoleted,
       # if the panel set is panel set 2 accross the targeted schemes
       stratum %in% c("6410_ve", "6510_hus") &
-        !str_detect(scheme_ps_targetpanels, ":PS1") ~ NA_integer_,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL03|PS2PANEL01)") ~ 1L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:PS2PANEL02") ~ 2L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:PS1PANEL02") ~ 9L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:PS1PANEL04") ~ 3L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL0[56]|PS2PANEL03)") ~ 4L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:PS1PANEL07") ~ 6L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:PS1PANEL01") ~ 10L,
-      str_detect(scheme_ps_targetpanels, "GW_03\\.3:(PS1PANEL08|PS2PANEL04)") ~ 8L,
-      str_detect(scheme_ps_targetpanels, "GW_05\\.") ~ 11L
+        !str_detect(scheme_ps_targetpanels_served, ":PS1") ~ NA_integer_,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL03|PS2PANEL01)") ~ 1L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS2PANEL02") ~ 2L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL02") ~ 9L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL04") ~ 3L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL0[56]|PS2PANEL03)") ~ 4L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL07") ~ 6L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL01") ~ 10L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL08|PS2PANEL04)") ~ 8L,
+      str_detect(scheme_ps_targetpanels_served, "GW_05\\.") ~ 11L
     ),
     priority_surf = case_when(
-      str_detect(scheme_ps_targetpanels, "SURF_03\\.4_[a-z]+:PS\\dPANEL02") ~ 2L,
-      str_detect(scheme_ps_targetpanels, "SURF_03\\.4_[a-z]+:PS\\dPANEL01") ~ 4L
+      str_detect(scheme_ps_targetpanels_served, "SURF_03\\.4_[a-z]+:PS\\dPANEL02") ~ 2L,
+      str_detect(scheme_ps_targetpanels_served, "SURF_03\\.4_[a-z]+:PS\\dPANEL01") ~ 4L
     ),
     priority_soil = case_when(
       # no priority is given to FAG occasions for types that will be obsoleted,
       # if the panel set is panel set 2 accross the targeted schemes
       stratum %in% c("6410_ve", "6510_hus") &
-        !str_detect(scheme_ps_targetpanels, ":PS1") ~ NA_integer_,
-      str_detect(scheme_ps_targetpanels, "SOIL_03\\.2:PS\\dPANEL02") ~ 7L,
-      str_detect(scheme_ps_targetpanels, "SOIL_03\\.2:PS\\dPANEL01") ~ 8L,
-      str_detect(scheme_ps_targetpanels, "SOIL_03\\.2:PS\\dPANEL03") ~ 9L,
-      str_detect(scheme_ps_targetpanels, "SOIL_03\\.2:PS\\dPANEL04") ~ 10L
+        !str_detect(scheme_ps_targetpanels_served, ":PS1") ~ NA_integer_,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS\\dPANEL02") ~ 7L,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS\\dPANEL01") ~ 8L,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS\\dPANEL03") ~ 9L,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS\\dPANEL04") ~ 10L
     ),
     priority_mhq = case_when(
       # no priority is given to FAG occasions for types that will be obsoleted,
       # if the panel set is panel set 2 accross the targeted schemes
       stratum %in% c("6410_ve", "6510_hus") &
-        !str_detect(scheme_ps_targetpanels, ":PS1") ~ NA_integer_,
-      str_detect(scheme_ps_targetpanels, "HQ.+:PS\\dPANEL01") ~ 3L
+        !str_detect(scheme_ps_targetpanels_served, ":PS1") ~ NA_integer_,
+      str_detect(scheme_ps_targetpanels_served, "HQ.+:PS\\dPANEL01") ~ 3L
     ),
     priority = pmin(
       priority_gw,
@@ -1525,14 +1526,14 @@ fieldwork_shortterm_prioritization_by_stratum <-
     wait_3260 = stratum == "3260",
     wait_7220 = str_detect(stratum, "^7220"),
     wait_floating = stratum == "7140_mrd",
-    wait_mhq = str_detect(scheme_ps_targetpanels, "^HQ.*?(?!\\|)"),
+    wait_mhq = str_detect(scheme_ps_targetpanels_served, "^HQ.*?(?!\\|)"),
     wait_obsolete_types = stratum %in% c("6410_ve", "6510_hus") &
       (
         # don't pursue locations (including LOCEVAL FAGs) that only belong to
         # panel set 2, except for planned READDIVER, CLEAN & SHALLSAMP FAGs
         # (i.e. applicable to already installed locations)
         (
-          !str_detect(scheme_ps_targetpanels, ":PS1") &
+          !str_detect(scheme_ps_targetpanels_served, ":PS1") &
             !str_detect(field_activity_group, "^GW.*(LEVREADDIVER|SHALL)")
           ) |
           # for panel set 1, don't perform new installations in these types, but
@@ -1565,9 +1566,9 @@ fieldwork_shortterm_prioritization_shorter <-
   fieldwork_shortterm_prioritization_by_stratum %>%
   unite_stratum_and_schemepstargetpanels() %>%
   summarize(
-    stratum_scheme_ps_targetpanels =
+    stratum_scheme_ps_targetpanels_served =
       str_flatten(
-        unique(stratum_scheme_ps_targetpanels),
+        unique(stratum_scheme_ps_targetpanels_served),
         collapse = " \u2588 "
       ) %>%
       factor(),
@@ -1580,12 +1581,12 @@ fieldwork_shortterm_prioritization_shorter <-
     wait_obsolete_types = all(wait_obsolete_types),
     wait_any = all(wait_any),
     .by = !c(
-      stratum_scheme_ps_targetpanels,
+      stratum_scheme_ps_targetpanels_served,
       priority,
       starts_with("wait")
     )
   ) %>%
-  relocate(stratum_scheme_ps_targetpanels)
+  relocate(stratum_scheme_ps_targetpanels_served)
 
 
 # write GeoPackage point layers of the first object (shortterm fieldwork by
@@ -1601,7 +1602,7 @@ if (FALSE) {
         relationship = "many-to-one",
         unmatched = c("error", "drop")
       ) %>%
-      select(-rank, -scheme_ps_oldtargetpanels) %>%
+      select(-rank, -scheme_ps_oldtargetpanels_served) %>%
       relocate(polygon_id, .after = grts_address_final)
   }
   fieldwork_shortterm_prioritization_points <-
@@ -1627,7 +1628,7 @@ if (FALSE) {
     )
   fieldwork_shortterm_prioritization_points %>%
     filter(str_detect(field_activity_group, "LOCEVAL")) %>%
-    select(-rank, -scheme_ps_oldtargetpanels) %>%
+    select(-rank, -scheme_ps_oldtargetpanels_served) %>%
     write_sf(
       gpkg_path,
       layer = "fieldwork_shortterm_LOCEVAL",
@@ -1646,7 +1647,7 @@ if (FALSE) {
       str_detect(field_activity_group, "LOCEVAL"),
       str_detect(grts_join_method, "cell")
     ) %>%
-    select(-rank, -scheme_ps_oldtargetpanels) %>%
+    select(-rank, -scheme_ps_oldtargetpanels_served) %>%
     write_sf(
       gpkg_path,
       layer = "fieldwork_shortterm_LOCEVAL_cellbased_CELLCENTERS",
@@ -1659,7 +1660,7 @@ if (FALSE) {
           str_detect(field_activity_group, "LOCEVAL"),
           str_detect(grts_join_method, "cell")
         ) %>%
-        select(-rank, -scheme_ps_oldtargetpanels),
+        select(-rank, -scheme_ps_oldtargetpanels_served),
       join_by(grts_address_final),
       relationship = "one-to-many",
       unmatched = c("drop", "error")
@@ -1677,7 +1678,7 @@ if (FALSE) {
 fieldwork_shortterm_targetpanels_prioritization_count <-
   fieldwork_shortterm_prioritization_by_stratum %>%
   count(
-    scheme_ps_targetpanels,
+    scheme_ps_targetpanels_served,
     priority,
     pick(starts_with("wait")),
     field_activity_group
@@ -1803,7 +1804,7 @@ orthophoto_shortterm_type_grts <-
     unmatched = c("error", "drop")
   ) %>%
   relocate(type, .after = stratum) %>%
-  select(-stratum, -rank, -scheme_ps_oldtargetpanels) %>%
+  select(-stratum, -rank, -scheme_ps_oldtargetpanels_served) %>%
   arrange(
     priority,
     type,
