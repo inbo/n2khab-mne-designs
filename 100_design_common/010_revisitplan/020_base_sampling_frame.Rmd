@@ -349,6 +349,102 @@ points_8310 <-
   st_point_on_surface()
 ```
 
+
+### Importing data from existing field assessments {#importing-assessments}
+
+With regard to retrieving point data, this is going to be used to get extra watersurfaces and watercourse segments that belong to the target population.
+
+Updating the base sampling frame using these assessments, including terrestrial, is situated in section \@ref(update-bsf).
+
+Optionally updating the local copies of these data from the source repository.
+
+```{r}
+# Updating local data files by copying them from another repository. Better
+# convert this to using the remote! XXXXXXXXXXXXXXXXXXXX (however, at times
+# a specific branch may need to be used)
+if (params$update_raw_textdata) {
+  mhq_terr_datapath <- file.path(
+    dirname(gitroot),
+    "n2khab-sample-admin/data/mhq_terr/rapportage2025"
+  )
+  mhq_watersurfaces_datapath <- file.path(
+    dirname(gitroot),
+    "n2khab-sample-admin/data/mhq_watersurfaces/rapportage2025"
+  )
+  mhq_data_available <-
+    dir.exists(mhq_terr_datapath) && dir.exists(mhq_watersurfaces_datapath)
+  if (!mhq_data_available) {
+    stop(
+      "Cannot update MHQ field assessment data: ",
+      "source directories are missing."
+    )
+  } else {
+    files <- c(
+      list.files(
+        mhq_terr_datapath,
+        "assessments|popunits|refpoints",
+        full.names = TRUE
+      ),
+      list.files(
+        mhq_watersurfaces_datapath,
+        "assessments|populationunits",
+        full.names = TRUE
+      )
+    )
+    file.copy(
+      files,
+      file.path(datapath, "text/raw/mhq_assessments"),
+      overwrite = TRUE
+    ) %>%
+      invisible()
+  }
+}
+```
+
+Reading and preprocessing the local files.
+
+```{r}
+mhq_assessments_datapath <- file.path(datapath, "text/raw/mhq_assessments")
+mhq_terr_popunits <-
+  read_vc("mhq_terr_popunits", root = mhq_assessments_datapath) %>%
+  as_tibble() %>%
+  mutate(
+    type = factor(type, levels = levels(n2khab_types$type)),
+    source = factor(source),
+    across(where(is.numeric), as.integer)
+  ) %>%
+  select(-sac, -phab, -polygon_id) %>%
+  rename(
+    grts_address = grts_ranking,
+    grts_address_drawn = grts_ranking_draw
+  )
+mhq_terr_refpoints <-
+  read_vc("mhq_terr_refpoints", root = mhq_assessments_datapath) %>%
+  as_tibble() %>%
+  distinct() %>%
+  select(
+    point_code,
+    grts_address = grts_ranking,
+    is_cell_center = is_centroid
+  )
+mhq_terr_assessments <-
+  read_vc("mhq_terr_assessments", root = mhq_assessments_datapath) %>%
+  as_tibble() %>%
+  filter(assessment_date == max(assessment_date), .by = point_code) %>%
+  select(point_code, assessment_date, type, is_present, inaccessible) %>%
+  mutate(
+    inaccessible = factor(inaccessible, levels = c("short term", "long term"))
+  )
+mhq_watersurfaces_assessments <-
+  read_vc("mhq_watersurfaces_assessments", root = mhq_assessments_datapath) %>%
+  as_tibble()
+mhq_watersurfaces_populationunits <-
+  read_vc("mhq_watersurfaces_populationunits", root = mhq_assessments_datapath) %>%
+  as_tibble()
+```
+
+### Combining all points of non-cell units
+
 Combining all points that refer to non-cell units into one object.
 
 ```{r}
@@ -965,92 +1061,8 @@ stratum_grts_n2khab <-
 
 The aim is to add existing field assessments to the base sampling frame.
 
-Optionally updating the local copies of these data from the source repository.
+The import steps are located in section \@ref(importing-assessments).
 
-```{r}
-# Updating local data files by copying them from another repository. Better
-# convert this to using the remote! XXXXXXXXXXXXXXXXXXXX (however, at times
-# a specific branch may need to be used)
-if (params$update_raw_textdata) {
-  mhq_terr_datapath <- file.path(
-    dirname(gitroot),
-    "n2khab-sample-admin/data/mhq_terr/rapportage2025"
-  )
-  mhq_watersurfaces_datapath <- file.path(
-    dirname(gitroot),
-    "n2khab-sample-admin/data/mhq_watersurfaces/rapportage2025"
-  )
-  mhq_data_available <-
-    dir.exists(mhq_terr_datapath) && dir.exists(mhq_watersurfaces_datapath)
-  if (!mhq_data_available) {
-    stop(
-      "Cannot update MHQ field assessment data: ",
-      "source directories are missing."
-    )
-  } else {
-    files <- c(
-      list.files(
-        mhq_terr_datapath,
-        "assessments|popunits|refpoints",
-        full.names = TRUE
-      ),
-      list.files(
-        mhq_watersurfaces_datapath,
-        "assessments|populationunits",
-        full.names = TRUE
-      )
-    )
-    file.copy(
-      files,
-      file.path(datapath, "text/raw/mhq_assessments"),
-      overwrite = TRUE
-    ) %>%
-      invisible()
-  }
-}
-```
-
-Reading and preprocessing the local files.
-
-```{r}
-mhq_assessments_datapath <- file.path(datapath, "text/raw/mhq_assessments")
-mhq_terr_popunits <-
-  read_vc("mhq_terr_popunits", root = mhq_assessments_datapath) %>%
-  as_tibble() %>%
-  mutate(
-    type = factor(type, levels = levels(n2khab_types$type)),
-    source = factor(source),
-    across(where(is.numeric), as.integer)
-  ) %>%
-  select(-sac, -phab, -polygon_id) %>%
-  rename(
-    grts_address = grts_ranking,
-    grts_address_drawn = grts_ranking_draw
-  )
-mhq_terr_refpoints <-
-  read_vc("mhq_terr_refpoints", root = mhq_assessments_datapath) %>%
-  as_tibble() %>%
-  distinct() %>%
-  select(
-    point_code,
-    grts_address = grts_ranking,
-    is_cell_center = is_centroid
-  )
-mhq_terr_assessments <-
-  read_vc("mhq_terr_assessments", root = mhq_assessments_datapath) %>%
-  as_tibble() %>%
-  filter(assessment_date == max(assessment_date), .by = point_code) %>%
-  select(point_code, assessment_date, type, is_present, inaccessible) %>%
-  mutate(
-    inaccessible = factor(inaccessible, levels = c("short term", "long term"))
-  )
-mhq_watersurfaces_assessments <-
-  read_vc("mhq_watersurfaces_assessments", root = mhq_assessments_datapath) %>%
-  as_tibble()
-mhq_watersurfaces_populationunits <-
-  read_vc("mhq_watersurfaces_populationunits", root = mhq_assessments_datapath) %>%
-  as_tibble()
-```
 
 ### Terrestrial field assessments
 
