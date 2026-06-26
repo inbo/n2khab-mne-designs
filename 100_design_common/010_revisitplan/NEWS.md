@@ -50,6 +50,15 @@ Helper script supporting fieldwork organization
 - Mark matching FAG occasions that actually represent a single FAG occasion in
   the field but are linked to multiple strata. The data collection may be still
   be stratum-specific.
+- In the short-term fieldwork calendar objects, rename column
+  `scheme_ps_targetpanels` as `scheme_ps_targetpanels_served`, and
+  `scheme_ps_oldtargetpanels` as `scheme_ps_oldtargetpanels_served`.
+  These names are better related to the similar column name
+  `schemes_served_all`; all of them refer to schemes that are 'served' by a FAG
+  occasion. The renaming avoids confusion with the `scheme_ps_targetpanels`
+  column in object `stratum_schemepstargetpanel_spsamples`, where it is a
+  direct attribute of spatial sampling units.
+
 
 # REP 0.16.0 (2026-05-20)
 
