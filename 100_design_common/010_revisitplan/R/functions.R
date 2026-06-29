@@ -492,7 +492,7 @@ add_point_coords_grts <- function(
 #' @inheritParams add_point_coords_grts
 #' @param cells Vector of cell numbers to use; overrides addresses.
 #' @param drop_address Logical. Should the non-missing values of the returned
-#'   SpatRaster contain the original values, or should they be set as 1?
+#'   SpatRaster be set as 1 instead of the original address values?
 #' @param output_cell_nrs Logical. Should the function just return the cell
 #'   numbers as an integer vector?
 #'
