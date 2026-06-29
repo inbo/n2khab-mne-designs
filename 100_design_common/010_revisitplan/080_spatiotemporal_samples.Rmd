@@ -980,10 +980,11 @@ Writing a csv file with a few groundwater scheme examples of scheme x module com
 
 ```{r}
 set.seed(24586)
-scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
+extract_spatiotempsam <- 
+  scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
   filter(
     year(date_start) < year_origin + 12,
-    str_detect(scheme, "^GW")
+    str_detect(scheme, "^GW|^SURF")
   ) %>%
   unite(
     scheme_moco_ps_sppost_stratum,
@@ -1019,7 +1020,17 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
         "GW_03\\.3_panfl_pan5_1_Flanders.*_91E0_vc|",
         "GW_03\\.3_panfl_pan5_2_Flanders.*_9190|",
         "GW_05\\.1_terr_panfl_pan5_2_Flanders.*_6430_mr|",
-        "GW_05\\.2_panfl_pan5_1_Flanders.*_6430_mr"
+        "GW_05\\.2_panfl_pan5_1_Flanders.*_6430_mr|",
+        "SURF_03\\.4_lentic_panfl_pan5_1_Flanders.*_2190_a_1_5|",
+        "SURF_03\\.4_lentic_panfl_pan5_1_Flanders.*_3140_5_50|",
+        "SURF_03\\.4_lentic_panfl_pan5_1_Flanders.*_3140_50_150|",
+        "SURF_03\\.4_lentic_panfl_pan5_1_Flanders.*_3130_aom_1_5|",
+        "SURF_03\\.4_lentic_panfl_pan5_1_Flanders.*_3130_na_1_5|",
+        "SURF_03\\.4_lentic_panfl_pan5_2_Flanders.*_3130_aom_5_50|",
+        "SURF_03\\.4_lentic_panfl_pan5_1_Flanders.*_3150_5_50|",
+        "SURF_03\\.4_lentic_panfl_pan5_1_BE2100024_3130_aom_1_5|",
+        "SURF_03\\.4_lentic_panfl_pan5_1_BE2100015_3160_0_1|",
+        "SURF_03\\.4_lentic_panfl_pan5_1_BE2200028_3150_1_5"
       )
     )
   ) %>%
@@ -1031,19 +1042,28 @@ scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar %>%
     targetpanel,
     grts_address
   ) %>%
-  mutate(dummy = "X") %>%
-  pivot_wider(
-    names_from = date_start,
-    values_from = dummy,
-    names_sort = TRUE,
-    values_fill = ""
-  ) %>%
-  arrange(
-    scheme_moco_ps_sppost_stratum,
-    targetpanel,
-    grts_address
-  ) %>%
+  mutate(dummy = "X")
+pivot_revisit <- function(df, regex) {
+  df %>% 
+    filter(str_detect(scheme_moco_ps_sppost_stratum, regex)) %>%
+    pivot_wider(
+      names_from = date_start,
+      values_from = dummy,
+      names_sort = TRUE,
+      values_fill = ""
+    ) %>%
+    arrange(
+      scheme_moco_ps_sppost_stratum,
+      targetpanel,
+      grts_address
+    )
+}
+extract_spatiotempsam %>% 
+  pivot_revisit("^GW") %>% 
   write_csv(file.path(datapath, "text/results/extract_spatiotempsam_gw.csv"))
+extract_spatiotempsam %>% 
+  pivot_revisit("^SURF") %>% 
+  write_csv(file.path(datapath, "text/results/extract_spatiotempsam_surf.csv"))
 ```
 
 Writing the spatiotemporal samples as a (git-ignored) file, in order to manage its versions in central places such as the 'n2khab-sample-admin' repository.
