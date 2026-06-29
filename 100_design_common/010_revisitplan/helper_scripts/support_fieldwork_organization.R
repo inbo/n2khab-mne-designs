@@ -201,7 +201,8 @@ grts_mh_index <- tibble(
   id = seq_len(ncell(grts_mh)),
   grts_address = values(grts_mh)[, 1]
 ) %>%
-  filter(!is.na(grts_address))
+  filter(!is.na(grts_address)) %>%
+  append_masked_grts_addresses()
 
 
 # cell centers of the terrestrial sampling units (excluding 7220):
