@@ -204,6 +204,18 @@ The strata are the types, in some cases subdivided according to area class of th
 The base sampling frame layers will consist of the strata, not just the types.
 
 ```{r prepare-strata}
+add_interval_watsurf <- function(df) {
+  df %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>%
+    st_drop_geometry() %>%
+    select(polygon_id, area) %>%
+    mutate(
+      stratum =
+        area %>%
+        cut(c(0, 1, 5, 50, 150)) %>%
+        as.character()
+    )
+}
 extract_interval_limits <- function(df) {
   mutate(
     df,
@@ -213,15 +225,7 @@ extract_interval_limits <- function(df) {
 }
 wsh_pol_area_class <-
   wsh_pol %>%
-  mutate(area = st_area(.) %>% set_units("ha")) %>%
-  st_drop_geometry() %>%
-  select(polygon_id, area) %>%
-  mutate(
-    stratum =
-      area %>%
-        cut(c(0, 1, 5, 50, 150)) %>%
-        as.character()
-  ) %>%
+  add_interval_watsurf() %>%
   inner_join(
     wsh_occ %>%
       select(polygon_id, type),
@@ -454,6 +458,131 @@ mhq_watersurfaces_assessments <-
     inaccessible = factor(inaccessible, levels = c("short term", "long term"))
   )
 ```
+
+
+#### Watersurface assessments
+
+`mhq_watersurfaces_assessments` only contains the polygon ID, no point coordinates.
+
+Checking the conformity of the type levels.
+
+```{r}
+stopifnot(
+  all(mhq_watersurfaces_assessments$type %in% n2khab_types_expanded$type)
+)
+```
+
+We will assume that useful assessments are those that correspond to watersurfaces from the current `watersurfaces_hab` or `watersurfaces` data sources.
+For now we limit this to the watersurfaces that are present in a cumulative form of `watersurfaces_refpoints` (`points_watsurf_all`), dropping those that have no matching `polygon_id` in the _current_ `watersurfaces` or `watersurfaces_hab` data source (then the watersurface has probably disappeared).
+Note that `watersurfaces_hab` contains polygons that are not present in `watersurfaces`, by design.
+
+**Missing functionality**: For `polygon_id` values that have no counterpart in `points_watsurf_all` but that do occur in the current `watersurfaces` data source, points are not yet available. Ideally, these should be present in later versions of `watersurfaces_refpoints`. So, the latter should also involve polygons from assessments. At the time of writing we missed 10 assessments out of > 500 due to this, the assessments dating from 2016 till 2025.
+
+```{r}
+points_watsurf_all <- read_watersurfaces_refpoints(
+  version = versions_required["watersurfaces_refpoints"],
+  single_wsh_version = FALSE
+) %>% 
+  select(-in_polygon)
+ws <- read_watersurfaces(
+  version = versions_required["watersurfaces"],
+  fix_geom = TRUE
+) %>%
+  select(polygon_id)
+```
+
+Generating the link between polygon_id, point geometry and polygon area class.
+The area class is needed to derive the applicable strata of the assessments (section \@ref(update-bsf)).
+
+```{r}
+# old_polygon_id is from the assessments, polygon_id are all candidates with the
+# same reference point
+points_watsurf_all_polygonlinks_with_interval <- 
+  # limiting refpoints 'all' to assessment polygons
+  points_watsurf_all %>% 
+  semi_join(mhq_watersurfaces_assessments, join_by(polygon_id)) %>% 
+  select(old_polygon_id = polygon_id, geometry) %>% 
+  # joining potential extra refpoint rows of the same point but with a different
+  # polygon_id, so that we can ultimately use the 'modern' polygon_id that is
+  # linked to the reference point
+  inner_join(
+    points_watsurf_all %>% as_tibble(),
+    join_by(geometry),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # adding area interval limits from current watersurfaces_hab
+  left_join(
+    wsh_pol %>%
+      add_interval_watsurf() %>%
+      extract_interval_limits() %>% 
+      select(polygon_id, lower_wsh = lower, upper_wsh = upper),
+    join_by(polygon_id),
+    relationship = "one-to-one",
+    unmatched = "drop"
+  ) %>% 
+  # adding area interval limits from current watersurfaces data source
+  left_join(
+    ws %>%
+      add_interval_watsurf() %>%
+      extract_interval_limits() %>% 
+      select(polygon_id, lower_ws = lower, upper_ws = upper),
+    join_by(polygon_id),
+    relationship = "one-to-one",
+    unmatched = "drop"
+  ) %>%
+  # dropping watersurfaces & polygon_id values not existing in current
+  # watersurfaces or watersurfaces_hab (two at the time of writing)
+  filter(!is.na(lower_wsh) | !is.na(lower_ws)) %>% 
+  mutate(
+    lower = coalesce(lower_wsh, lower_ws),
+    upper = coalesce(upper_wsh, upper_ws),
+    .keep = "unused"
+  ) %>% 
+  relocate(geometry, .after = last_col())
+
+points_watsurf_assessed <- 
+  points_watsurf_all_polygonlinks_with_interval %>% 
+  # dropping potential multiple old polygon_id values
+  distinct(polygon_id, geometry)
+```
+
+Using the above to extend the `points_watsurf` object; this is the main reason to integrate the watersurface assessments at this stage.
+The allocation of GRTS addresses needs some extras and this works best in one step.
+
+```{r}
+points_watsurf <- 
+  points_watsurf_assessed %>% 
+  anti_join(
+    points_watsurf %>% st_drop_geometry(),
+    join_by(polygon_id)
+  ) %>% 
+  bind_rows(points_watsurf, .) %>% 
+  arrange(polygon_id)
+```
+
+We also derive the standardized assessments data frame of (current) polygon ID x stratum x assessment date.
+It is needed to define population units and to add extra attributes to the base sampling frame.
+
+```{r}
+stratum_unit_watersurface_assessments <- 
+  mhq_watersurfaces_assessments %>% 
+  rename(old_polygon_id = polygon_id) %>% 
+  inner_join(
+    points_watsurf_all_polygonlinks_with_interval %>% 
+      st_drop_geometry(),
+    join_by(old_polygon_id),
+    relationship = "many-to-one",
+    unmatched = c("drop", "error")
+  ) %>% 
+  select(-old_polygon_id) %>% 
+  unite(stratum, c(type, lower, upper), na.rm = TRUE) %>% 
+  mutate(
+    stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
+  ) %>% 
+  relocate(stratum, unit_id = polygon_id)
+```
+
 
 ### Combining all points of non-cell units
 
@@ -1591,6 +1720,7 @@ for (name in c(
   "hmt_pol_stratum_grts_cell_all_n2khab",
   "valid_extra_popunits_cell_all_n2khab_tidy",
   "absent_popunits_cell_all_n2khab",
+  "stratum_unit_watersurface_assessments",
   "stratum_grts_n2khab"
 )) {
   cat(name, "\n")
