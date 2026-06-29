@@ -1656,7 +1656,7 @@ stopifnot(present_absences_cell_all %>% nrow() == 0)
 ```
 
 
-### Substituting assessed population units in the base sampling frame
+### Substituting assessed terrestrial population units in the base sampling frame
 
 Updating the base sampling frame `stratum_grts_n2khab` by substituting with cells from `valid_extra_popunits_cell_all_n2khab_tidy`, and dropping those that have been assessed as absences in `absent_popunits_cell_all_n2khab`.
 
@@ -1684,6 +1684,70 @@ stopifnot(
 )
 ```
 
+
+### Adding watersurface field assessment attributes to the base sampling frame
+
+In importing the watersurface assessments, we only considered presences and not absences. Absences could be used to exclude units from the sampling frame, but considering the dynamical nature of these types, we want to be careful with this.
+
+**Missing functionality**: reconsider absences after taking into account the assessment dates of `watersurfaces_hab`. In this respect, the way of filtering the assessments while reading the data source should be reconsidered as well.
+
+Checking that no stratum expansion (main types to subtypes) is needed, i.e. the present stratum levels are those required in MNE & MHQ.
+
+```{r}
+stopifnot(
+  all(unique(stratum_unit_watersurface_assessments$stratum) %in% n2khab_strata$stratum)
+)
+```
+
+Joining `stratum_unit_watersurface_assessments` with `units_non_cell_n2khab_grts` in order to update the base sampling frame.
+
+```{r}
+stratum_grts_watersurface_assessments <- 
+  stratum_unit_watersurface_assessments %>% 
+  # adding GRTS address, dropping unit_id
+  inner_join(
+    units_non_cell_n2khab_grts %>% 
+      filter(sample_support_code == "watersurface") %>% 
+      select(unit_id, grts_address),
+    join_by(unit_id),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  select(-unit_id) %>% 
+  relocate(stratum, grts_address)
+```
+
+Updating attributes of the base sampling frame `stratum_grts_n2khab` for the rows that correspond to `stratum_grts_watersurface_assessments`.
+
+```{r}
+stratum_grts_n2khab <- 
+  stratum_grts_n2khab %>% 
+  left_join(
+    stratum_grts_watersurface_assessments %>% 
+      mutate(ws_assessed = TRUE) %>% 
+      rename(
+        assessment_date_new = assessment_date,
+        inaccessible_new = inaccessible
+      ),
+    join_by(stratum, grts_address),
+    relationship = "one-to-one",
+    unmatched = "error"
+  ) %>% 
+  mutate(
+    # converting NA to FALSE:
+    ws_assessed = coalesce(ws_assessed, FALSE),
+    typelevel_certain = ifelse(ws_assessed, TRUE, typelevel_certain),
+    assessed_in_field = ifelse(ws_assessed, TRUE, assessed_in_field),
+    # using if_else() in following expressions to protect the class
+    assessment_date = if_else(ws_assessed, assessment_date_new, assessment_date),
+    inaccessible = if_else(ws_assessed, inaccessible_new, inaccessible),
+  ) %>% 
+  select(
+    -ws_assessed,
+    -assessment_date_new,
+    -inaccessible_new
+  )
+```
 
 
 ## Writing the base sampling frame
