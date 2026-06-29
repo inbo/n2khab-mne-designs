@@ -444,7 +444,8 @@ append_masked_grts_addresses <- function(
 #' @param grts_var String. The column name in df that holds the GRTS addresses.
 #' @param spatrast SpatRaster object with level 0 GRTS addresses.
 #' @param spatrast_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell numbers (cell IDs) for each GRTS address in `spatrast`.
+#'   holding the cell numbers (cell IDs) for each GRTS address in `spatrast` and
+#'   for potential masked addresses.
 #' @param spatial Logical. Should the returned object be a sf points object? If
 #'   `FALSE`, a data frame is returned with x and y coordinates as columns.
 #'
