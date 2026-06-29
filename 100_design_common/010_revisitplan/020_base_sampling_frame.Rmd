@@ -441,10 +441,18 @@ mhq_terr_assessments <-
   )
 mhq_watersurfaces_assessments <-
   read_vc("mhq_watersurfaces_assessments", root = mhq_assessments_datapath) %>%
-  as_tibble()
-mhq_watersurfaces_populationunits <-
-  read_vc("mhq_watersurfaces_populationunits", root = mhq_assessments_datapath) %>%
-  as_tibble()
+  as_tibble() %>%
+  # for now only considering presences, assessed in the field
+  filter(
+    assessment_source == "field assessment" | is.na(assessment_source),
+    is_present
+  ) %>% 
+  filter(assessment_date == max(assessment_date), .by = c(polygon_id, type)) %>%
+  select(polygon_id, assessment_date, type, inaccessible) %>%
+  mutate(
+    type = factor(type, levels = levels(n2khab_types_expanded$type)),
+    inaccessible = factor(inaccessible, levels = c("short term", "long term"))
+  )
 ```
 
 ### Combining all points of non-cell units
