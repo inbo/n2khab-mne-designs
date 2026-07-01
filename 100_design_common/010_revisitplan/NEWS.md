@@ -14,19 +14,33 @@ Changes to results
   As a consequence, the base sampling frame is updated.
 - Stabilize row sorting of some non-cell precursors of the base sampling frame
   (cdcebe77).
-- Multiple updates with regard to schemes SURF_03.4_lentic and SURF_03.4_lotic:
+- Multiple updates with regard to schemes **SURF_03.4_lentic and SURF_03.4_lotic**:
   - Update activities, activity sequences and their link with variables.
   - Update spatial sample sizes (based on
     `210_design_surfacewater/010_surf_design_simple` project in `main` and
     `surfsize_rotational` branches).
   - Implement panel design of the respective FAGs (split panel design, using
     periodic rotational + serially alternating patterns for the target FAG).
+  - Use new versions of watersurfaces_hab and watersurfaces_refpoints to
+    construct the base sampling frame: watersurfaces_hab_v7 and
+    watersurfaces_refpoints_v7.
+  - Integrate existing MHQ assessments of watersurface types in the base
+    sampling frame.
+  - Replace (mask) duplicate GRTS addresses of population units in a randomized
+    way that works like reverse addresses of a finer GRTS master grid.
+    Consequently, with these updated addresses samples can be drawn as before,
+    where each unit has a unique GRTS address. If an existing order between
+    duplicated adresses already existed in the MHQ sample of watersurfaces, then
+    that order has been adopted (in reality, this concerns a single case only).
+  - Reset the 'panel set 2' GRTS thresholds for aquatic strata, given the new
+    sample sizes and sampling frames. This also affects other schemes such as
+    GW_03.3 (9d0978ae).
 
 Additions
 ---------
 
 - Implement the 'virtual FAG' concept to be able to combine multiple panel
-  designs for a single FAG, but relating to different environmental variables.
+  designs for a single FAG, relating to different environmental variables.
 - Add helper script to aid with sample size choices for small strata in included
   domains.
 
@@ -39,7 +53,13 @@ Maintenance
   remains in place until quarter assignment has been done to GW_03.3 sampling
   units.
 - Make code compliant with updates in {n2khab} 0.15.0.
-- Extend extract_spatiotempsam.csv with more examples.
+- Split extract_spatiotempsam.csv over two files (GW vs SURF) and extend with
+  more examples.
+- Distinguish all possible stratum levels for watersurface types, including
+  those not currently present in the sampling frames.
+- Cope with the fact that masked GRTS addresses don't exist in GRTS address
+  raster layers, especially by recognizing them in `grts_mh_n2khab_index` and
+  `domain_grts_n2khab`.
 
 Helper script supporting fieldwork organization
 -----------------------------------------------
