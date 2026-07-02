@@ -1953,6 +1953,26 @@ if (FALSE) {
       layer = "fieldwork_shortterm_LOCEVAL_othertypes_CELLCENTERS",
       delete_layer = TRUE
     )
+
+  # generating & writing layers wrt orthophoto screening
+  orthophoto_shortterm_cell_centers %>%
+    write_sf(
+      gpkg_path,
+      layer = "orthophotoscreening_shortterm_cellbasedtypes_CELLCENTERS",
+      delete_layer = TRUE
+    )
+  orthophoto_shortterm_cells %>%
+    write_sf(
+      gpkg_path,
+      layer = "orthophotoscreening_shortterm_cellbasedtypes_CELLS",
+      delete_layer = TRUE
+    )
+  orthophoto_shortterm_watersurfaces %>%
+    write_sf(
+      gpkg_path,
+      layer = "orthophotoscreening_shortterm_lentictypes_WSPOLYGONS",
+      delete_layer = TRUE
+    )
 }
 
 
