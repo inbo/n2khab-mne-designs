@@ -1874,7 +1874,8 @@ if (FALSE) {
       spatrast = grts_mh,
       spatrast_index = grts_mh_index
     ) %>%
-    mutate(date_interval = as.character(date_interval))
+    mutate(date_interval = as.character(date_interval)) %>%
+    arrange(pick(starts_with("wait"), -wait_any), date_end, priority)
 
   # spatial helper object with all FAGS in lentic types (watersurface polygons)
   fieldwork_shortterm_prioritization_watersurfaces <-
@@ -1888,7 +1889,8 @@ if (FALSE) {
       unmatched = c("error", "drop")
     ) %>%
     relocate(polygon_id, .after = grts_address_final) %>%
-    select(-scheme_ps_oldtargetpanels_served)
+    select(-scheme_ps_oldtargetpanels_served) %>%
+    arrange(pick(starts_with("wait"), -wait_any), date_end, priority)
 
   # generating & writing layers of the shortterm fieldwork calendar
   fieldwork_shortterm_prioritization_points %>%
@@ -1899,6 +1901,7 @@ if (FALSE) {
     )
   fieldwork_shortterm_prioritization_points %>%
     filter(str_detect(sample_support_code, "cell")) %>%
+    select(-matching_occasion) %>%
     write_sf(
       gpkg_path,
       layer = "fieldwork_shortterm_ALLFAGs_cellbasedtypes_CELLCENTERS",
@@ -1915,7 +1918,7 @@ if (FALSE) {
       str_detect(field_activity_group, "LOCEVAL"),
       str_detect(sample_support_code, "cell")
     ) %>%
-    select(-rank, -scheme_ps_oldtargetpanels_served) %>%
+    select(-rank, -scheme_ps_oldtargetpanels_served, -matching_occasion) %>%
     write_sf(
       gpkg_path,
       layer = "fieldwork_shortterm_LOCEVAL_cellbasedtypes_CELLCENTERS",
@@ -1928,7 +1931,7 @@ if (FALSE) {
           str_detect(field_activity_group, "LOCEVAL"),
           str_detect(sample_support_code, "cell")
         ) %>%
-        select(-rank, -scheme_ps_oldtargetpanels_served),
+        select(-rank, -scheme_ps_oldtargetpanels_served, -matching_occasion),
       join_by(grts_address_final),
       relationship = "one-to-many",
       unmatched = c("drop", "error")
@@ -1952,26 +1955,16 @@ if (FALSE) {
       str_detect(field_activity_group, "LOCEVAL"),
       !str_detect(sample_support_code, "cell|watersurface")
     ) %>%
-    select(-rank, -scheme_ps_oldtargetpanels_served) %>%
+    select(-rank, -scheme_ps_oldtargetpanels_served, -matching_occasion) %>%
     write_sf(
       gpkg_path,
       layer = "fieldwork_shortterm_LOCEVAL_othertypes_CELLCENTERS",
       delete_layer = TRUE
     )
 
-  # generating & writing layers wrt orthophoto screening
-  orthophoto_shortterm_cell_centers %>%
-    write_sf(
-      gpkg_path,
-      layer = "orthophotoscreening_shortterm_cellbasedtypes_CELLCENTERS",
-      delete_layer = TRUE
-    )
-  orthophoto_shortterm_cells %>%
-    write_sf(
-      gpkg_path,
-      layer = "orthophotoscreening_shortterm_cellbasedtypes_CELLS",
-      delete_layer = TRUE
-    )
+  # generating & writing layer wrt orthophoto screening for lentic types (for
+  # cell-based types, the above layers are quite the same as the
+  # orthophoto-objects higher, so not writing those to GPKG)
   orthophoto_shortterm_watersurfaces %>%
     write_sf(
       gpkg_path,
