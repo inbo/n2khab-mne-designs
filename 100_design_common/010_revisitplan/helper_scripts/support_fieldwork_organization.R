@@ -1889,7 +1889,52 @@ orthophoto_shortterm_cell_centers <-
 
 
 
+### Making a list of lentic locations to be assessed using orthophotos ----
 
+orthophoto_shortterm_lentictype_grts <-
+  fieldwork_shortterm_prioritization_by_stratum %>%
+  filter(str_detect(field_activity_group, "LOCEVAL")) %>%
+  # the polygons that are no member of the watersurfaces data source are the
+  # ones to be screened
+  semi_join(
+    stratum_grts_polygon_spsamples_lentic %>%
+      filter(!str_detect(polygon_id, "^(ANT|LIM|WVL|OVL|VBR)")),
+    join_by(stratum, grts_address_final)
+  ) %>%
+  # converting stratum to type (keeping stratum)
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  relocate(type, .after = stratum) %>%
+  select(-rank, -scheme_ps_oldtargetpanels_served) %>%
+  arrange(
+    priority,
+    type,
+    domain_part,
+    grts_address
+  )
+
+# unit geometries (polygons)
+orthophoto_shortterm_watersurfaces <-
+  stratum_grts_spsamples_lentic_sf %>%
+  inner_join(
+    orthophoto_shortterm_lentictype_grts,
+    join_by(stratum, grts_address_final),
+    relationship = "one-to-many",
+    unmatched = c("drop", "error")
+  ) %>%
+  relocate(type, stratum, .after = polygon_id) %>%
+  relocate(grts_address_final, .after = grts_address) %>%
+  relocate(geom, .after = last_col()) %>%
+  arrange(
+    priority,
+    type,
+    domain_part,
+    grts_address
+  )
 
 
 
@@ -1938,7 +1983,9 @@ objects <- tibble(
     "fieldwork_shortterm_dates_prioritization_count",
     "orthophoto_shortterm_terrtype_grts",
     "orthophoto_shortterm_cells",
-    "orthophoto_shortterm_cell_centers"
+    "orthophoto_shortterm_cell_centers",
+    "orthophoto_shortterm_lentictype_grts",
+    "orthophoto_shortterm_watersurfaces"
   )
 )
 objects %>%
