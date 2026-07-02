@@ -1632,91 +1632,6 @@ fieldwork_shortterm_prioritization_shorter <-
   relocate(stratum_scheme_ps_targetpanels_served)
 
 
-# write GeoPackage point layers of the first object (shortterm fieldwork by
-# stratum), filtered in several ways
-if (FALSE) {
-  gpkg_path <- file.path(datapath, "binary/results/fieldwork_shortterm.gpkg")
-  filter_watersurface_add_pols <- function(df) {
-    df %>%
-      filter(sample_support_code == "watersurface") %>%
-      inner_join(
-        watersurface_polygon_ids,
-        join_by(stratum, grts_address),
-        relationship = "many-to-one",
-        unmatched = c("error", "drop")
-      ) %>%
-      select(-rank, -scheme_ps_oldtargetpanels_served) %>%
-      relocate(polygon_id, .after = grts_address_final)
-  }
-  fieldwork_shortterm_prioritization_points <-
-    fieldwork_shortterm_prioritization_by_stratum %>%
-    add_point_coords_grts(
-      grts_var = "grts_address_final",
-      spatrast = grts_mh,
-      spatrast_index = grts_mh_index
-    ) %>%
-    mutate(date_interval = as.character(date_interval))
-  fieldwork_shortterm_prioritization_points %>%
-    write_sf(
-      gpkg_path,
-      layer = "fieldwork_shortterm_ALL",
-      delete_dsn = TRUE
-    )
-  fieldwork_shortterm_prioritization_points %>%
-    filter_watersurface_add_pols() %>%
-    write_sf(
-      gpkg_path,
-      layer = "fieldwork_shortterm_watersurface",
-      delete_layer = TRUE
-    )
-  fieldwork_shortterm_prioritization_points %>%
-    filter(str_detect(field_activity_group, "LOCEVAL")) %>%
-    select(-rank, -scheme_ps_oldtargetpanels_served) %>%
-    write_sf(
-      gpkg_path,
-      layer = "fieldwork_shortterm_LOCEVAL",
-      delete_layer = TRUE
-    )
-  fieldwork_shortterm_prioritization_points %>%
-    filter(str_detect(field_activity_group, "LOCEVAL")) %>%
-    filter_watersurface_add_pols() %>%
-    write_sf(
-      gpkg_path,
-      layer = "fieldwork_shortterm_LOCEVAL_watersurface",
-      delete_layer = TRUE
-    )
-  fieldwork_shortterm_prioritization_points %>%
-    filter(
-      str_detect(field_activity_group, "LOCEVAL"),
-      str_detect(grts_join_method, "cell")
-    ) %>%
-    select(-rank, -scheme_ps_oldtargetpanels_served) %>%
-    write_sf(
-      gpkg_path,
-      layer = "fieldwork_shortterm_LOCEVAL_cellbased_CELLCENTERS",
-      delete_layer = TRUE
-    )
-  units_cell_polygon %>%
-    inner_join(
-      fieldwork_shortterm_prioritization_by_stratum %>%
-        filter(
-          str_detect(field_activity_group, "LOCEVAL"),
-          str_detect(grts_join_method, "cell")
-        ) %>%
-        select(-rank, -scheme_ps_oldtargetpanels_served),
-      join_by(grts_address_final),
-      relationship = "one-to-many",
-      unmatched = c("drop", "error")
-    ) %>%
-    relocate(grts_address_final, .after = grts_address) %>%
-    relocate(geometry, .after = last_col()) %>%
-    write_sf(
-      gpkg_path,
-      layer = "fieldwork_shortterm_LOCEVAL_cellbased_CELLS",
-      delete_layer = TRUE
-    )
-}
-
 # overview short-term fieldwork prioritization according to schemes & panels:
 fieldwork_shortterm_targetpanels_prioritization_count <-
   fieldwork_shortterm_prioritization_by_stratum %>%
@@ -1935,6 +1850,96 @@ orthophoto_shortterm_watersurfaces <-
     domain_part,
     grts_address
   )
+
+
+
+
+## Write Geopackage --------------------------------------------------------
+
+# write GeoPackage point layers of the first object (shortterm fieldwork by
+# stratum), filtered in several ways
+if (FALSE) {
+  gpkg_path <- file.path(datapath, "binary/results/fieldwork_shortterm.gpkg")
+  filter_watersurface_add_pols <- function(df) {
+    df %>%
+      filter(sample_support_code == "watersurface") %>%
+      inner_join(
+        watersurface_polygon_ids,
+        join_by(stratum, grts_address),
+        relationship = "many-to-one",
+        unmatched = c("error", "drop")
+      ) %>%
+      select(-rank, -scheme_ps_oldtargetpanels_served) %>%
+      relocate(polygon_id, .after = grts_address_final)
+  }
+  fieldwork_shortterm_prioritization_points <-
+    fieldwork_shortterm_prioritization_by_stratum %>%
+    add_point_coords_grts(
+      grts_var = "grts_address_final",
+      spatrast = grts_mh,
+      spatrast_index = grts_mh_index
+    ) %>%
+    mutate(date_interval = as.character(date_interval))
+  fieldwork_shortterm_prioritization_points %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_ALL",
+      delete_dsn = TRUE
+    )
+  fieldwork_shortterm_prioritization_points %>%
+    filter_watersurface_add_pols() %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_watersurface",
+      delete_layer = TRUE
+    )
+  fieldwork_shortterm_prioritization_points %>%
+    filter(str_detect(field_activity_group, "LOCEVAL")) %>%
+    select(-rank, -scheme_ps_oldtargetpanels_served) %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_LOCEVAL",
+      delete_layer = TRUE
+    )
+  fieldwork_shortterm_prioritization_points %>%
+    filter(str_detect(field_activity_group, "LOCEVAL")) %>%
+    filter_watersurface_add_pols() %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_LOCEVAL_watersurface",
+      delete_layer = TRUE
+    )
+  fieldwork_shortterm_prioritization_points %>%
+    filter(
+      str_detect(field_activity_group, "LOCEVAL"),
+      str_detect(grts_join_method, "cell")
+    ) %>%
+    select(-rank, -scheme_ps_oldtargetpanels_served) %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_LOCEVAL_cellbased_CELLCENTERS",
+      delete_layer = TRUE
+    )
+  units_cell_polygon %>%
+    inner_join(
+      fieldwork_shortterm_prioritization_by_stratum %>%
+        filter(
+          str_detect(field_activity_group, "LOCEVAL"),
+          str_detect(grts_join_method, "cell")
+        ) %>%
+        select(-rank, -scheme_ps_oldtargetpanels_served),
+      join_by(grts_address_final),
+      relationship = "one-to-many",
+      unmatched = c("drop", "error")
+    ) %>%
+    relocate(grts_address_final, .after = grts_address) %>%
+    relocate(geometry, .after = last_col()) %>%
+    write_sf(
+      gpkg_path,
+      layer = "fieldwork_shortterm_LOCEVAL_cellbased_CELLS",
+      delete_layer = TRUE
+    )
+}
 
 
 
