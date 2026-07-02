@@ -67,6 +67,9 @@ Helper script supporting fieldwork organization
 - Apply a quarterly update of fieldwork priorities. As time passes, planned 
   quarterly panel visits become the past, hence associated priorities should
   change as well.
+- Set priority missing for terrestrial types in MHQ (fix). Even though MHQ is
+  not started in terrestrial types, the priority before had effect when it was
+  in combination with another scheme, resulting in a lower number.
 - Mark matching FAG occasions that actually represent a single FAG occasion in
   the field but are linked to multiple strata. The data collection may be still
   be stratum-specific.
