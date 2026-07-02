@@ -1751,7 +1751,7 @@ orthophoto_shortterm_terrtype_grts <-
     str_detect(field_activity_group, "LOCEVAL"),
     # only keep cell-based types (aquatic & 7220 will be more reliable or simply
     # not possible to evaluate on orthophoto)
-    str_detect(grts_join_method, "cell")
+    str_detect(sample_support_code, "cell")
   ) %>%
   # converting stratum to type (in the usual way, although for the cell-based
   # units the values - but not the factor levels - are identical)
