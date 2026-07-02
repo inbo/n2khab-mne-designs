@@ -78,6 +78,12 @@ Helper script supporting fieldwork organization
   occasion. The renaming avoids confusion with the `scheme_ps_targetpanels`
   column in object `stratum_schemepstargetpanel_spsamples`, where it is a
   direct attribute of spatial sampling units.
+- Add spatial objects that reflect the spatial samples for the lentic types,
+  using the polygon geometries of the sampling units.
+- Generate objects for orthophoto screening of lentic types. They only contain
+  specific suspect polygons, i.e. those that are not part of the watersurfaces
+  data source but that originate from the habitatmap.
+- Update and extend layers for the geopackage.
 
 
 # REP 0.16.0 (2026-05-20)
