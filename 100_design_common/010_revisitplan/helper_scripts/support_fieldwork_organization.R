@@ -1828,9 +1828,9 @@ fag_stratum_grts_calendar %>%
 
 ## Making selections for short-term orthophoto assessments ---------------------
 
-# Making a list of terrestrial locations to be assessed using orthophotos
+### Making a list of terrestrial locations to be assessed using orthophotos ----
 
-orthophoto_shortterm_type_grts <-
+orthophoto_shortterm_terrtype_grts <-
   fieldwork_shortterm_prioritization_by_stratum %>%
   filter(
     str_detect(field_activity_group, "LOCEVAL"),
@@ -1847,7 +1847,12 @@ orthophoto_shortterm_type_grts <-
     unmatched = c("error", "drop")
   ) %>%
   relocate(type, .after = stratum) %>%
-  select(-stratum, -rank, -scheme_ps_oldtargetpanels_served) %>%
+  select(
+    -stratum,
+    -rank,
+    -scheme_ps_oldtargetpanels_served,
+    -matching_occasion
+  ) %>%
   arrange(
     priority,
     type,
@@ -1859,7 +1864,7 @@ orthophoto_shortterm_type_grts <-
 orthophoto_shortterm_cells <-
   units_cell_polygon %>%
   inner_join(
-    orthophoto_shortterm_type_grts,
+    orthophoto_shortterm_terrtype_grts,
     join_by(grts_address_final),
     relationship = "one-to-many",
     unmatched = c("drop", "error")
@@ -1875,7 +1880,7 @@ orthophoto_shortterm_cells <-
 
 # cell centers:
 orthophoto_shortterm_cell_centers <-
-  orthophoto_shortterm_type_grts %>%
+  orthophoto_shortterm_terrtype_grts %>%
   add_point_coords_grts(
     grts_var = "grts_address_final",
     spatrast = grts_mh,
@@ -1931,7 +1936,7 @@ objects <- tibble(
     "fieldwork_shortterm_prioritization_by_stratum",
     "fieldwork_shortterm_targetpanels_prioritization_count",
     "fieldwork_shortterm_dates_prioritization_count",
-    "orthophoto_shortterm_type_grts",
+    "orthophoto_shortterm_terrtype_grts",
     "orthophoto_shortterm_cells",
     "orthophoto_shortterm_cell_centers"
   )
