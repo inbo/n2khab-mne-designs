@@ -66,23 +66,28 @@ Maintenance
 Helper script supporting fieldwork organization
 -----------------------------------------------
 
-- Apply a quarterly update of fieldwork priorities. As time passes, planned 
-  quarterly panel visits become the past, hence associated priorities should
-  change as well.
-- Set priority missing for terrestrial types in MHQ (fix). Even though MHQ is
-  not started in terrestrial types, the priority before had effect when it was
-  in combination with another scheme, resulting in a lower number.
-- Mark matching FAG occasions that actually represent a single FAG occasion in
-  the field but are linked to multiple strata. The data collection may be still
-  be stratum-specific.
-- In the short-term fieldwork calendar objects, rename column
-  `scheme_ps_targetpanels` as `scheme_ps_targetpanels_served`, and
-  `scheme_ps_oldtargetpanels` as `scheme_ps_oldtargetpanels_served`.
-  These names are better related to the similar column name
-  `schemes_served_all`; all of them refer to schemes that are 'served' by a FAG
-  occasion. The renaming avoids confusion with the `scheme_ps_targetpanels`
-  column in object `stratum_schemepstargetpanel_spsamples`, where it is a
-  direct attribute of spatial sampling units.
+- In the short-term fieldwork calendar objects:
+  - Apply a quarterly update of fieldwork priorities. As time passes, planned 
+    quarterly panel visits become the past, hence associated priorities should
+    change as well.
+  - Also postpone SAMPLPOINT occasions from last year (just like LOCEVAL).
+  - Set `wait_watersurface` to `FALSE` for most lentic types in
+    SURF_03.4_lentic. 2190_a is still put on hold, because its sampling frame
+    needs more work. Activities in these locations for GW_03.3 can only be
+    active if this is common with SURF_03.4_lentic, i.e. LOCEVALAQ.
+  - Set priority missing for terrestrial types in MHQ (fix). Even though MHQ is
+    not started in terrestrial types, the priority before had effect when it was
+    in combination with another scheme, resulting in a lower number.
+  - Mark matching FAG occasions that actually represent a single FAG occasion in
+    the field but are linked to multiple strata. The data collection may be still
+    be stratum-specific.
+  - Rename column `scheme_ps_targetpanels` as `scheme_ps_targetpanels_served`, and
+    `scheme_ps_oldtargetpanels` as `scheme_ps_oldtargetpanels_served`.
+    These names are better related to the similar column name
+    `schemes_served_all`; all of them refer to schemes that are 'served' by a FAG
+    occasion. The renaming avoids confusion with the `scheme_ps_targetpanels`
+    column in object `stratum_schemepstargetpanel_spsamples`, where it is a
+    direct attribute of spatial sampling units.
 - Add spatial objects that reflect the spatial samples for the lentic types,
   using the polygon geometries of the sampling units.
 - Generate objects for orthophoto screening of lentic types. They only contain
