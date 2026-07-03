@@ -1,3 +1,19 @@
+# REP (development version)
+
+tag `rep_xxxxxxxxxxx`
+
+Changes to results
+------------------
+
+Additions
+---------
+
+Maintenance
+-----------
+
+Helper script supporting fieldwork organization
+-----------------------------------------------
+
 # REP 0.17.0 (2026-07-03)
 
 tag `rep_0.17.0`
