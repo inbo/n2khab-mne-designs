@@ -35,6 +35,8 @@ Changes to results
   - Reset the 'panel set 2' GRTS thresholds for aquatic strata, given the new
     sample sizes and sampling frames. This also affects other schemes such as
     GW_03.3 (9d0978ae).
+- Set a minimal sample size for small lentic strata in included domains, as
+  was the case for other strata already.
 
 Additions
 ---------
