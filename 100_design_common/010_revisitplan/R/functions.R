@@ -102,24 +102,24 @@ apply_activity_sequence_filters <- function(df) {
           main_field_activity == "GWLEVREADDIVER" &
           activity_sequence != "gw_lev_well"
       ),
-      # for SURF_03.4_lentic x SURFLEVREADGAUGE, use the surf_lent_samp
+      # for SURF_03.4_lentic x SURFLEVREADGNSS, use the surf_lent_samp
       # sequence:
       !(
         scheme == "SURF_03.4_lentic"  &
-          main_field_activity == "SURFLEVREADGAUGE" &
+          main_field_activity == "SURFLEVREADGNSS" &
           activity_sequence != "surf_lent_samp"
       ),
-      # for SURF_03.4_lotic x SURFLEVREADGAUGE, use the surf_lent_samp sequence:
+      # for SURF_03.4_lotic x SURFLEVREADGNSS, use the surf_lent_samp sequence:
       !(
         scheme == "SURF_03.4_lotic"  &
-          main_field_activity == "SURFLEVREADGAUGE" &
+          main_field_activity == "SURFLEVREADGNSS" &
           activity_sequence != "surf_lot_samp"
       )
     )
 }
 
 
-#' Collapse (unexpand) a data frame with a `stratum` column
+#' Collapse (unexpand) a data frame with a stratum or type column
 #'
 #' Collapses a data frame that has been the result of a n2khab::expand_types()
 #' operation.
@@ -131,42 +131,75 @@ apply_activity_sequence_filters <- function(df) {
 #' - adding units, associated with a main type, to each corresponding subtype
 #' layer that triggered the expansion to the main type.
 #'
-#' In effect, 'collapsing' leads to less stratum levels, but _more_ rows.
+#' In effect, 'collapsing' leads to less stratum or type levels, but _more_
+#' rows.
 #'
-#' @param df A data frame with a `stratum` column.
-collapse_strata <- function(df) {
+#' @param df A data frame with a column specified by `stratumvar`.
+#' @param types Are we collapsing _type_ levels? If `FALSE` (the default), it is
+#'   assumed we are dealing with _stratum_ levels instead.
+#' @param stratumvar String. Name of the column in `df` that is to be collapsed.
+#'   Default is `"stratum"` unless types is TRUE, in which case the default is
+#'   `"type"`.
+collapse_strata <- function(
+  df,
+  types = FALSE,
+  stratumvar = ifelse(isTRUE(types), "type", "stratum")
+) {
+  maintype_collapse <-
+    tribble(
+      ~main_type, ~subtype,
+      "2330", "2330_bu",
+      "2330", "2330_dw",
+      "6230", "6230_ha",
+      "6230", "6230_hmo",
+      "6230", "6230_hn",
+      "91E0", "91E0_va",
+      "91E0", "91E0_vm",
+      "91E0", "91E0_vn"
+    ) %>%
+    bind_rows(
+      if (types) {
+        tribble(
+          ~main_type, ~subtype,
+          "3130", "3130_aom",
+          "3130", "3130_na"
+        )
+      } else {
+        tribble(
+          ~main_type, ~subtype,
+          "3130_0_1", "3130_aom_0_1",
+          "3130_0_1", "3130_na_0_1",
+          "3130_1_5", "3130_aom_1_5",
+          "3130_1_5", "3130_na_1_5",
+          "3130_5_50", "3130_aom_5_50",
+          "3130_5_50", "3130_na_5_50",
+          "3130_50_150", "3130_aom_50_150",
+          "3130_50_150", "3130_na_50_150"
+        )
+      }
+    )
   df %>%
     mutate(
-      stratum = recode_values(
-        stratum,
+      "{stratumvar}" := recode_values(
+        .data[[stratumvar]],
         "5130_hei" ~ "5130",
         "5130_kalk" ~ "5130",
         "rbbkam+" ~ "rbbkam",
         "rbbzil+" ~ "rbbzil",
         "9120_qb" ~ "9120",
-        default = stratum
+        default = .data[[stratumvar]]
       )
     ) %>%
     left_join(
-      tribble(
-        ~main_type, ~subtype,
-        "2330", "2330_bu",
-        "2330", "2330_dw",
-        "6230", "6230_ha",
-        "6230", "6230_hmo",
-        "6230", "6230_hn",
-        "91E0", "91E0_va",
-        "91E0", "91E0_vm",
-        "91E0", "91E0_vn"
-      ),
-      join_by(stratum == main_type),
+      maintype_collapse,
+      join_by({{stratumvar}} == main_type),
       relationship = "many-to-many",
       unmatched = "drop"
     ) %>%
     mutate(
-      stratum = ifelse(is.na(subtype), stratum, subtype) %>%
+      "{stratumvar}" := ifelse(is.na(subtype), .data[[stratumvar]], subtype) %>%
         as.character() %>%
-        factor(levels = levels(n2khab_strata_expanded$stratum))
+        factor(levels = levels(n2khab_strata_expanded %>% pull({{stratumvar}})))
     ) %>%
     select(-subtype)
 }
@@ -323,13 +356,96 @@ drop_assessment_data <- function(df) {
 
 
 
+
+
+#' Unmask a vector of GRTS addresses
+#'
+#' Replaces masked GRTS addresses by the original GRTS addresses
+#'
+#' @param x A numeric vector of GRTS addresses.
+unmask_grts_address <- function(x) {
+  ifelse(x > 1e8, x %% 1e8, x) %>%
+    as.integer()
+}
+
+
+
+
+
+
+#' Unmask a GRTS address column in a data frame
+#'
+#' In a data frame column, replaces masked GRTS addresses by the original GRTS
+#' addresses
+#'
+#' @param df A data frame with a column of GRTS addresses.
+#' @param grts_var String. The name of the column of GRTS addresses.
+unmask_grts_addresses <- function(df, grts_var = "grts_address") {
+  df %>%
+    mutate({{grts_var}} := unmask_grts_address(df[[grts_var]]))
+}
+
+
+
+
+#' Append known masked GRTS addresses to a data frame
+#'
+#' Appends masked GRTS addresses to a data frame with a column of unique GRTS
+#' addresses, so that the result can be joined to sampling frames that contain
+#' these masked addresses.
+#'
+#' The masked addresses are read from a separate source data frame.
+#'
+#' @param df Data frame to be updated, having a column of GRTS addresses.
+#' @param grts_var String. The name of the column of GRTS addresses.
+#' @param df_masked_addr Data frame with a column `grts_address_original` and
+#'   `grts_address_masked`. Beware that this data frame should also include the
+#'   identical translation of addresses, i.e. where `grts_address_masked ==
+#'   grts_address_original`.
+append_masked_grts_addresses <- function(
+  df,
+  grts_var = "grts_address",
+  df_masked_addr = points_grts_masked
+) {
+  test_self <- df_masked_addr %>%
+    distinct(grts_address_original, grts_address_masked) %>%
+    filter(grts_address_original == grts_address_masked) %>%
+    {nrow(.) == nrow(distinct(df_masked_addr, grts_address_original))}
+  assertthat::assert_that(
+    isTRUE(test_self),
+    msg = "df_masked_addr does not meet the requirements"
+  )
+  relation <- ifelse(
+    nrow(df) == n_distinct(df[[grts_var]]),
+    "one-to-many",
+    "many-to-many"
+  )
+  df %>%
+    left_join(
+      df_masked_addr %>%
+        distinct(grts_address_original, grts_address_masked),
+      join_by({{grts_var}} == grts_address_original),
+      # "one-to-many" may apply
+      relationship = relation,
+      unmatched = "error"
+    ) %>%
+    mutate({{grts_var}} := coalesce(grts_address_masked, .data[[grts_var]])) %>%
+    select(-grts_address_masked)
+}
+
+
+
+
+
+
 #' Add point coordinate columns to a data frame with a GRTS address column
 #'
 #' @param df Data frame.
 #' @param grts_var String. The column name in df that holds the GRTS addresses.
 #' @param spatrast SpatRaster object with level 0 GRTS addresses.
 #' @param spatrast_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell numbers (cell IDs) for each GRTS address in `spatrast`.
+#'   holding the cell numbers (cell IDs) for each GRTS address in `spatrast` and
+#'   for potential masked addresses.
 #' @param spatial Logical. Should the returned object be a sf points object? If
 #'   `FALSE`, a data frame is returned with x and y coordinates as columns.
 #'
@@ -376,7 +492,7 @@ add_point_coords_grts <- function(
 #' @inheritParams add_point_coords_grts
 #' @param cells Vector of cell numbers to use; overrides addresses.
 #' @param drop_address Logical. Should the non-missing values of the returned
-#'   SpatRaster contain the original values, or should they be set as 1?
+#'   SpatRaster be set as 1 instead of the original address values?
 #' @param output_cell_nrs Logical. Should the function just return the cell
 #'   numbers as an integer vector?
 #'
@@ -993,7 +1109,10 @@ subsample_and_relax_adhocfag <- function(fag_cal,
     # relax the ADHOC date intervals
     inner_join(
       fag_cal %>%
-        filter(!str_detect(field_activity_group, "ADHOC|LOCEVAL|LSVI")) %>%
+        filter(!str_detect(
+          field_activity_group,
+          "ADHOC|LOCEVAL|LSVI|SAMPLPOINT"
+        )) %>%
         select(-field_activity_group, -rank, -scheme_moco_ps) %>%
         rename(
           date_end_new = date_end,

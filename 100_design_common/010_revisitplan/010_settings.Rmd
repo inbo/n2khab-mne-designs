@@ -35,7 +35,10 @@ if (
       version_id = fct(version_id),
       version_doi = str_match(version_doi, "https://doi.org/(.+$)")[, 2] %>%
         fct(),
-      processed = str_detect(source_id, "GRTSmh_|map_|_simple|_100mseg|_hab$")
+      processed = str_detect(
+        source_id,
+        "GRTSmh_|map_|_simple|_100mseg|_hab$|_refpoints"
+      )
     ) %>%
     relocate(processed) %>%
     arrange(processed, source_id, version_id)
@@ -92,7 +95,9 @@ versions_required <- c(
   sac = "sac_2013-01-18",
   habitatmap_terr = "habitatmap_terr_2024_v99_interim",
   habitatstreams = "habitatstreams_2023",
-  watersurfaces_hab = "watersurfaces_hab_v6.1_interim",
+  watersurfaces = "watersurfaces_2024",
+  watersurfaces_hab = "watersurfaces_hab_v7",
+  watersurfaces_refpoints = "watersurfaces_refpoints_v7",
   habitatsprings = "habitatsprings_2020v2",
   habitatquarries = "habitatquarries_2020v1",
   GRTSmaster_habitats = "GRTSmaster_habitats_v2",
@@ -1421,24 +1426,24 @@ This will mostly be avoided by generating spatiotemporal samples for non-core sc
 
 #### Overview
 
-##### Cycle duration of FAGs with LOCEVAL {#type-cycle}
+##### Cycle duration of FAGs with LOCEVAL or SAMPLPOINT {#type-cycle}
 
-FAGs with a LOCEVALxxx activity need a cycle duration that depends on the type:
+FAGs with a LOCEVALxxx or xxxSAMPLPOINT activity need a cycle duration that depends on the type:
 
-- for aquatic types (lentic and lotic, even though HQ3260 has a cycle duration of 6 years): every 3 years;
+- for aquatic types (lentic and lotic): every 3 years, even while in several modules the collection of their target variables gets a cycle duration of 6 years;
 - for terrestrial types, partim open: every 6 years;
 - for terrestrial types, partim forest: every 12 years.
 
-However, since the LOCEVAL activities are auxiliary FAGs (with regard to the target variables), this frequency should only be used in _dropping_ already planned LOCEVAL activities, not for scheduling them:
+However, since the LOCEVAL and SAMPLPOINT activities are auxiliary FAGs (with regard to the target variables), this frequency should only be used in _dropping_ already planned LOCEVAL and SAMPLPOINT activities, not for scheduling them:
 
 - the integration of multiple modules, schemes and panel sets can lead to unneeded higher frequencies than the above, so dropping will be needed;
-- in scheduling the LOCEVAL activities, the module x scheme x panel set's cycle duration prevails and the above defaults are not used.
-Indeed, if the module x scheme x panel set's cycle duration is longer than an above cycle duration, then this means (in a serially alternating pattern) that for each location the target variable is determined in only one year of that longer cycle, so that one LOCEVAL activity is indeed sufficient during one cycle;
-- still, the decision whether two different LOCEVAL occasions from two different schemes with the same cycle duration and during the same cycle should be kept, is to be decided using the above type-specific cycle durations: if they are less separated than the type-specific cycle duration, then only the first is kept, otherwise both are kept.
+- in scheduling the LOCEVAL and SAMPLPOINT activities, the module x scheme x panel set's cycle duration prevails and the above defaults are not used.
+Indeed, if the module x scheme x panel set's cycle duration is longer than an above cycle duration, then this means (in a serially alternating pattern) that for each location the target variable is determined in only one year of that longer cycle, so that one LOCEVAL (and possibly SAMPLPOINT) activity is indeed sufficient during one cycle;
+- still, the decision whether two different LOCEVAL or SAMPLPOINT occasions from two different schemes with the same cycle duration and during the same cycle should be kept, is to be decided using the above type-specific cycle durations: if they are less separated than the type-specific cycle duration, then only the first is kept, otherwise both are kept.
 
-##### Start and end dates of FAGs with LOCEVAL or LSVI activities {#type-dates}
+##### Start and end dates of FAGs with LOCEVAL, LSVI or SAMPLPOINT activities {#type-dates}
 
-The FAGs with a LOCEVALxxx or LSVIxxx activity have a panel period of one year, since repetitions within the year make no sense, but they should subsequently have their start and end dates amended (relative to 1 Jan and 31 Dec) depending on the type at a location.
+The FAGs with a LOCEVALxxx, LSVIxxx or xxxSAMPLPOINT activity have a panel period of one year, since repetitions within the year make no sense, but they should subsequently have their start and end dates amended (relative to 1 Jan and 31 Dec) depending on the type at a location.
 This is because different types have different optimal or suboptimal months within the year to perform this fieldwork; outside these months these field activities cannot be undertaken.
 
 Both the fact that they cannot be done anytime during the year, and the fact that this depends on the type, distinguish these field activities from all other activities.
@@ -1446,20 +1451,20 @@ Both the fact that they cannot be done anytime during the year, and the fact tha
 #### Options to proceed
 
 The FAG panel design in section \@ref(fag-panel-design), and all subsequent derivations in chapters \@ref(spatiotemp-sampling-prep) and \@ref(revisit) do not consider the type level.
-While we could integrate all different start and end dates for LOCEVALxxx or LSVIxxx and the different LOCEVALxxx cycle durations in these panel design objects, we don't consider these type-level differences as enough to actually distinguish different panel designs depending on the type, each with their own notation, panel labels and so on, as it would cause way more complexity in an already crowded list of different FAG panel designs.
+While we could integrate all different start and end dates for LOCEVALxxx, LSVIxxx and xxxSAMPLPOINT and the different LOCEVALxxx and xxxSAMPLPOINT cycle durations in these panel design objects, we don't consider these type-level differences as enough to actually distinguish different panel designs depending on the type, each with their own notation, panel labels and so on, as it would cause way more complexity in an already crowded list of different FAG panel designs.
 
 So what we want is that different date intervals and cycle durations are applied within the same panels (considered for the same revisit design), so that date intervals and cycle durations also depend on the stratum (the location) instead of just the revisit design and the panel.
 
 This still leaves multiple options to proceed:
 
 - either integrating the type-dependent adjustments in the panel design objects (as done for other FAGs, though these have just one possible value), but without creating different panel design notations, and filtering them according to the involved type when the panel membership is generated (chapter \@ref(revisit));
-- or leaving the default generated cycle durations, start and end dates for LOCEVALxxx or LSVIxxx as-is (1 Jan & 31 Dec), and updating:
+- or leaving the default generated cycle durations, start and end dates for LOCEVALxxx, LSVIxxx and xxxSAMPLPOINT as-is (1 Jan & 31 Dec), and updating:
   - the date intervals only in the initial stages of the FAG calendar (at the level of spatial sampling units), i.e. when the panel calendar and the panel memberships have already been joined (chapter \@ref(spatiotemp-sampling));
   - the cycle durations only in preparation of dropping superfluous revisits in the FAG calendar (chapter \@ref(fag-calendar)).
 
 Since the first option proved to be more complex ^[We actually did start doing this, see branch `poc_bioticfag_paneldesign`, but after a while we thought of the other alternative.], we have chosen the second path.
 
-#### Setting default cycle durations per type for LOCEVAL
+#### Setting default cycle durations per type for LOCEVAL and SAMPLPOINT
 
 Setting default cycle durations.
 
@@ -1477,13 +1482,13 @@ type_spsubset_locevalcycle_default <-
   )
 ```
 
-To prepare for updating the FAG calendar at the level of spatial sampling units, we join `loceval_freq_default` to the FAGs with a LOCEVALxxx activity by the applicable spatial subset.
+To prepare for updating the FAG calendar at the level of spatial sampling units, we join `type_spsubset_locevalcycle_default` to the FAGs with a LOCEVALxxx or xxxSAMPLPOINT activity by the applicable spatial subset.
 
 ```{r}
 locevalfag_spsubset_type_cycle <-
   field_activity_sequences %>%
-  filter(str_detect(field_activity, "LOCEVAL")) %>%
-  mutate(in_aquatic_subset = str_detect(field_activity, "AQ")) %>%
+  filter(str_detect(field_activity, "LOCEVAL|SAMPLPOINT")) %>%
+  mutate(in_aquatic_subset = str_detect(field_activity, "AQ|SAMPLPOINT")) %>%
   distinct(field_activity_group, in_aquatic_subset) %>%
   inner_join(
     type_spsubset_locevalcycle_default,
@@ -1501,7 +1506,7 @@ locevalfag_spsubset_type_cycle <-
 
 
 
-#### Setting start and end dates per type for LOCEVAL and LSVI
+#### Setting start and end dates per type for LOCEVAL, LSVI and SAMPLPOINT
 
 Reading and further processing the dataset with start and end dates per type, for biotic field activities.
 
@@ -1650,8 +1655,8 @@ To prepare for updating the FAG calendar at the level of spatial sampling units,
 ```{r}
 bioticfag_spsubset_type_timing <-
   field_activity_sequences %>%
-  filter(str_detect(field_activity, "LOCEVAL|LSVI")) %>%
-  mutate(in_aquatic_subset = str_detect(field_activity, "AQ")) %>%
+  filter(str_detect(field_activity, "LOCEVAL|LSVI|SAMPLPOINT")) %>%
+  mutate(in_aquatic_subset = str_detect(field_activity, "AQ|SAMPLPOINT")) %>%
   distinct(field_activity_group, in_aquatic_subset) %>%
   inner_join(
     biotic_timing %>%
@@ -1671,14 +1676,44 @@ bioticfag_spsubset_type_timing <-
 
 ### Panel design of FAGs in (spatial subsets of) schemes per module {#fag-panel-design}
 
-`mod_scheme_ps_fag_paneldesign` is the panel design of field activity groups per module, scheme and panel set.
+`mod_scheme_ps_fag_paneldesign`, created below, is the panel design of field activity groups per module, scheme and panel set.
 This will matter most for data collection plans.
 
 The value of `panel_set` (see \@ref(mod-scheme-attrib)) is an incremental number within module x scheme; if no split panel design is defined, it has value 1.
 
+Some target variables share the same main data collection method, hence the same target FAG, but have a different panel design.
+In the fieldwork calendar (FAG calendar; chapter \@ref(fag-calendar)) we will integrate these panel designs.
+However normally the panel designs are uniquely defined for the combination of module x scheme x panel set x FAG.
+In order to define multiple panel designs for such a combination, we use an extra column `fag_virtual`, standing for '**virtual FAG**'.
+Its value is missing when the distinction is not needed; otherwise it provides a subspecification for the FAG referring to a specific target variable.
+It is called 'virtual' because in reality the involved FAGs do not differ; they merely serve as a trick to combine more than one panel design.
+
 ```{r}
+virtual_fags <- 
+  tribble(
+    ~field_activity_group, ~fag_virtual,
+    "SURFLENTDATACOLL", "SURFLENTDATACOLL_N",
+    "SURFLENTDATACOLL", "SURFLENTDATACOLL_P",
+  ) %>% 
+  mutate(
+    field_activity_group = factor(
+      field_activity_group,
+      levels = levels(mod_scheme_fag$field_activity_group)
+    ),
+    fag_virtual = factor(fag_virtual)
+  )
 mod_scheme_ps_fag_paneldesign <-
   mod_scheme_fag %>%
+  # add virtual FAGs to be able to combine multiple panel designs for a single
+  # FAG in a module x scheme x panel set
+  left_join(
+    virtual_fags,
+    join_by(field_activity_group),
+    relationship = "many-to-many",
+    unmatched = "drop"
+  ) %>% 
+  relocate(fag_virtual, .after = field_activity_group) %>% 
+  # add cycle_duration_y & nr_panelsets
   inner_join(
     module_scheme_props,
     join_by(module, scheme),
@@ -1693,7 +1728,10 @@ mod_scheme_ps_fag_paneldesign <-
     # revisit pattern of main periodicity
     revisit_pattern = case_when(
       str_detect(field_activity_group, "READDIVER|ADHOC") ~ "pure_panel",
-      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") &
+      str_detect(
+        field_activity_group,
+        "GW(SURF)?SHALL(CLEAN|SAMP)|SURF(LENT|LOT)DATACOLL"
+      ) &
         cycle_duration_y >= 6L &
         panel_set == 1L ~
         "periodic_rotational",
@@ -1748,14 +1786,17 @@ mod_scheme_ps_fag_paneldesign <-
       factor(levels = levels(revisit_pattern)),
     # subperiodicity, if applicable
     panel_subperiod = case_when(
-      str_detect(field_activity_group, "SURF.*DATACOLL") ~ months(1),
       str_detect(scheme, "^SURF") &
         field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ months(1),
-      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)|LEVREAD") ~ months(3)
+      str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)|LEVREAD") ~ months(3),
+      # note that for SURFLENTDATACOLL we need a mix of 1 and 2 months
+      fag_virtual == "SURFLENTDATACOLL_N" ~ months(1),
+      fag_virtual == "SURFLENTDATACOLL_P" ~ months(2),
+      field_activity_group == "SURFLOTDATACOLL" ~ months(2)
     ),
     # do measurements take place in an automated, continuous manner within panel
     # set 2? It means that data are collected more frequently at a location than
-    # the period between two visits? This is relevant in the panel membership
+    # the period between two visits. This is relevant in the panel membership
     # later on, as these FAGs are not subject to the condition that consecutive
     # panels must be populated according to the GRTS series, allowing for more
     # spatial alignment with other FAG panel membership designs.
@@ -1787,13 +1828,17 @@ mod_scheme_ps_fag_paneldesign <-
     # and end dates that would normally emerge
     panel_dateshift = case_when(
       # evaluate locations one year beforehand:
-      str_detect(field_activity_group, "LOCEVAL") &
+      str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT") &
         !str_detect(scheme, "^HQ") ~ years(-1),
       # postpone the start of groundwater sampling & diver reading (to align
       # location visits)
       str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") &
         (panel_set == 2L | cycle_duration_y < 6L) ~ months(6),
-      str_detect(field_activity_group, "READDIVER") ~ months(6)
+      str_detect(field_activity_group, "READDIVER") ~ months(6),
+      # SURF_03.4 data collection starts in Q2 in lotic, and the same goes for P
+      # in lentic
+      fag_virtual == "SURFLENTDATACOLL_P" ~ months(3),
+      field_activity_group == "SURFLOTDATACOLL" ~ months(3)
     ),
     # optionally limit the number of subperiods in a main period; this causes
     # uneven coverage of the main period since only the first subperiod(s)
@@ -1801,6 +1846,7 @@ mod_scheme_ps_fag_paneldesign <-
     limit_n_subperiods = case_when(
       str_detect(scheme, "^SURF") &
         field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ 1L,
+      str_detect(field_activity_group, "SURF.*DATACOLL") ~ 3L,
       .default = NA_integer_
     ),
     # optionally set a fixed number of subpanels in a main panel, which enforces
@@ -1814,8 +1860,8 @@ mod_scheme_ps_fag_paneldesign <-
   ) %>%
   select(-enforced_cycle_duration_y) %>%
   relocate(cycle_duration_y, .before = enforced_cycle_duration) %>%
-  relocate(panel_set, .after = field_activity_group) %>%
-  arrange(field_activity_group)
+  relocate(panel_set, .after = fag_virtual) %>%
+  arrange(field_activity_group, fag_virtual)
 ```
 
 **Still undecided**: should panel dateshift also apply to MHQ schemes?
@@ -1823,6 +1869,8 @@ mod_scheme_ps_fag_paneldesign <-
 Only to be considered if this causes enough location overlap between panels in the same year.
 
 **Missing functionality**: speed up of certain FAGs (such as INST) in just the first cycle if `enforced_cycle_duration` is `TRUE` (= FAG specific) while the cycle duration of this module is shorter.
+
+**Missing functionality**: provide extra auxiliary FAG occasions for the last (main) panel in a rotational design, as it is visited in the first year of a cycle already.
 
 ADHOC FAGs represent unexpected repair.
 While given a pure panel design for now, their frequency will be reduced in two steps when crafting a field activity calendar:
@@ -1850,7 +1898,7 @@ params$keep_adhoc_acts
 
 Note that the implementation of this parameter already took place in the creation of `field_activities` in section \@ref(field-activities).
 
-Overview of different occurring panel designs per FAG across modules and schemes:
+Overview of different occurring panel designs per FAG (or virtual FAG) across modules and schemes:
 
 ```{r}
 mod_scheme_ps_fag_paneldesign %>%
@@ -1861,9 +1909,9 @@ mod_scheme_ps_fag_paneldesign %>%
     n_schemes = n_distinct(scheme),
     ps_min = min(panel_set),
     ps_max = max(panel_set),
-    .by = c(field_activity_group, revisit_pattern:last_col())
+    .by = c(field_activity_group, fag_virtual, revisit_pattern:last_col())
   ) %>%
-  relocate(matches("scheme|ps")) %>%
+  relocate(matches("scheme|^ps")) %>%
   arrange(field_activity_group)
 ```
 

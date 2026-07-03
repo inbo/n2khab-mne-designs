@@ -512,13 +512,13 @@ make_revislayout_diagram("^GW_05\\.") %>%
     sheet = "revisit GW_05.x"
   )
 
-make_revislayout_diagram("^SURF_03\\.4_lentic$", 2031) %>%
+make_revislayout_diagram("^SURF_03\\.4_lentic$") %>%
   write_sheet(
     ss = gs_id,
     sheet = "revisit SURF_03.4_lentic"
   )
 
-make_revislayout_diagram("^SURF_03\\.4_lotic$", 2031) %>%
+make_revislayout_diagram("^SURF_03\\.4_lotic$") %>%
   write_sheet(
     ss = gs_id,
     sheet = "revisit SURF_03.4_lotic"

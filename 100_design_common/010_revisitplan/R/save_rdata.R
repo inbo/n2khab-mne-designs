@@ -31,6 +31,7 @@ rdata_set <- c(
   "domainpart_grts_n2khab",
   "stratum_units_non_cell_n2khab",
   "units_non_cell_n2khab_grts",
+  "points_grts_masked",
   "stratum_grts_n2khab",
   "stratum_grts_n2khab_collapsed",
   "stratum_grts_n2khab_phabcorrected",
@@ -78,6 +79,9 @@ rdata_set <- c(
   "cal_old_continuation",
   # exporting specific functions:
   "verify_n2khab_data",
+  "unmask_grts_address",
+  "unmask_grts_addresses",
+  "append_masked_grts_addresses",
   "add_point_coords_grts",
   "filter_grtsraster_by_address",
   "get_level3replacement_cellnrs",

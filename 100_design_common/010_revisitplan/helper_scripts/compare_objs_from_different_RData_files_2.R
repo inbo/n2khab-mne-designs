@@ -13,7 +13,7 @@ rdata_path_new <- file.path(
 rdata_path_old <- file.path(
   datapath,
   "binary/results",
-  "objects_panflpan5_rep_0.15.0.RData"
+  "objects_panflpan5_rep_0.16.0.RData"
 )
 
 load(rdata_path_new)
@@ -33,8 +33,8 @@ compare_old_new <- function(objname) {
 
 for (i in rdata_set) {
   if (!compare_old_new(i)) {
-    msg <- glue::glue("Difference detected for {i}")
-    warning(msg)
+    msg <- glue::glue("Difference detected for {i}\n")
+    cat(msg)
   }
 }
 

@@ -1,3 +1,101 @@
+# REP 0.17.0 (2026-07-03)
+
+tag `rep_0.17.0`
+
+Changes to results
+------------------
+
+- Limit types in cal_old_continuation to those that may have been sampled
+  (8e4bb5b1).
+- Deal differently with code '3130' in watersurfaces_hab following updates
+  in {n2khab} 0.15.0, especially `read_watersurfaces_hab()` and
+  `expand_types()`. All main type 3130 occasions in watersurfaces_hab
+  have now been expanded to both 3130_aom and 3130_na (before: only 3130_aom).
+  As a consequence, the base sampling frame is updated.
+- Stabilize row sorting of some non-cell precursors of the base sampling frame
+  (cdcebe77).
+- Multiple updates with regard to schemes **SURF_03.4_lentic and SURF_03.4_lotic**:
+  - Update activities, activity sequences and their link with variables.
+  - Update spatial sample sizes (based on
+    `210_design_surfacewater/010_surf_design_simple` project in `main` and
+    `surfsize_rotational` branches).
+  - Implement panel design of the respective FAGs (split panel design, using
+    periodic rotational + serially alternating patterns for the target FAG).
+  - Use new versions of watersurfaces_hab and watersurfaces_refpoints to
+    construct the base sampling frame: watersurfaces_hab_v7 and
+    watersurfaces_refpoints_v7.
+  - Integrate existing MHQ assessments of watersurface types in the base
+    sampling frame.
+  - Replace (mask) duplicate GRTS addresses of population units in a randomized
+    way that works like reverse addresses of a finer GRTS master grid.
+    Consequently, with these updated addresses samples can be drawn as before,
+    where each unit has a unique GRTS address. If an existing order between
+    duplicated adresses already existed in the MHQ sample of watersurfaces, then
+    that order has been adopted (in reality, this concerns a single case only).
+  - Reset the 'panel set 2' GRTS thresholds for aquatic strata, given the new
+    sample sizes and sampling frames. This also affects other schemes such as
+    GW_03.3 (9d0978ae).
+- Set a minimal sample size for small lentic strata in included domains, as
+  was the case for other strata already.
+
+Additions
+---------
+
+- Implement the 'virtual FAG' concept to be able to combine multiple panel
+  designs for a single FAG, relating to different environmental variables.
+- Add helper script to aid with sample size choices for small strata in included
+  domains.
+
+Maintenance
+-----------
+
+- Temporarily freeze sample sizes of most terrestrial types according to REP
+  0.16.0; this is a temporary protection against quarter changes of GW_03.3
+  sampling units as a consequence of updating the sampling frame. This situation
+  remains in place until quarter assignment has been done to GW_03.3 sampling
+  units.
+- Make code compliant with updates in {n2khab} 0.15.0.
+- Split extract_spatiotempsam.csv over two files (GW vs SURF) and extend with
+  more examples.
+- Distinguish all possible stratum levels for watersurface types, including
+  those not currently present in the sampling frames.
+- Cope with the fact that masked GRTS addresses don't exist in GRTS address
+  raster layers, especially by recognizing them in `grts_mh_n2khab_index` and
+  `domain_grts_n2khab`.
+
+Helper script supporting fieldwork organization
+-----------------------------------------------
+
+- In the short-term fieldwork calendar objects:
+  - Apply a quarterly update of fieldwork priorities. As time passes, planned 
+    quarterly panel visits become the past, hence associated priorities should
+    change as well.
+  - Also postpone SAMPLPOINT occasions from last year (just like LOCEVAL).
+  - Set `wait_watersurface` to `FALSE` for most lentic types in
+    SURF_03.4_lentic. 2190_a is still put on hold, because its sampling frame
+    needs more work. Activities in these locations for GW_03.3 can only be
+    active if this is common with SURF_03.4_lentic, i.e. LOCEVALAQ.
+  - Set priority missing for terrestrial types in MHQ (fix). Even though MHQ is
+    not started in terrestrial types, the priority before had effect when it was
+    in combination with another scheme, resulting in a lower number.
+  - Mark matching FAG occasions that actually represent a single FAG occasion in
+    the field but are linked to multiple strata. The data collection may be still
+    be stratum-specific.
+  - Rename column `scheme_ps_targetpanels` as `scheme_ps_targetpanels_served`, and
+    `scheme_ps_oldtargetpanels` as `scheme_ps_oldtargetpanels_served`.
+    These names are better related to the similar column name
+    `schemes_served_all`; all of them refer to schemes that are 'served' by a FAG
+    occasion. The renaming avoids confusion with the `scheme_ps_targetpanels`
+    column in object `stratum_schemepstargetpanel_spsamples`, where it is a
+    direct attribute of spatial sampling units.
+- Add spatial objects that reflect the spatial samples for the lentic types,
+  using the polygon geometries of the sampling units.
+- Generate objects for orthophoto screening of lentic types. They only contain
+  specific suspect polygons, i.e. those that are not part of the watersurfaces
+  data source but that originate from the habitatmap.
+- Update and extend layers for the geopackage.
+
+
 # REP 0.16.0 (2026-05-20)
 
 tag `rep_0.16.0`
