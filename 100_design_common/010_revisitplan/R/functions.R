@@ -356,13 +356,96 @@ drop_assessment_data <- function(df) {
 
 
 
+
+
+#' Unmask a vector of GRTS addresses
+#'
+#' Replaces masked GRTS addresses by the original GRTS addresses
+#'
+#' @param x A numeric vector of GRTS addresses.
+unmask_grts_address <- function(x) {
+  ifelse(x > 1e8, x %% 1e8, x) %>%
+    as.integer()
+}
+
+
+
+
+
+
+#' Unmask a GRTS address column in a data frame
+#'
+#' In a data frame column, replaces masked GRTS addresses by the original GRTS
+#' addresses
+#'
+#' @param df A data frame with a column of GRTS addresses.
+#' @param grts_var String. The name of the column of GRTS addresses.
+unmask_grts_addresses <- function(df, grts_var = "grts_address") {
+  df %>%
+    mutate({{grts_var}} := unmask_grts_address(df[[grts_var]]))
+}
+
+
+
+
+#' Append known masked GRTS addresses to a data frame
+#'
+#' Appends masked GRTS addresses to a data frame with a column of unique GRTS
+#' addresses, so that the result can be joined to sampling frames that contain
+#' these masked addresses.
+#'
+#' The masked addresses are read from a separate source data frame.
+#'
+#' @param df Data frame to be updated, having a column of GRTS addresses.
+#' @param grts_var String. The name of the column of GRTS addresses.
+#' @param df_masked_addr Data frame with a column `grts_address_original` and
+#'   `grts_address_masked`. Beware that this data frame should also include the
+#'   identical translation of addresses, i.e. where `grts_address_masked ==
+#'   grts_address_original`.
+append_masked_grts_addresses <- function(
+  df,
+  grts_var = "grts_address",
+  df_masked_addr = points_grts_masked
+) {
+  test_self <- df_masked_addr %>%
+    distinct(grts_address_original, grts_address_masked) %>%
+    filter(grts_address_original == grts_address_masked) %>%
+    {nrow(.) == nrow(distinct(df_masked_addr, grts_address_original))}
+  assertthat::assert_that(
+    isTRUE(test_self),
+    msg = "df_masked_addr does not meet the requirements"
+  )
+  relation <- ifelse(
+    nrow(df) == n_distinct(df[[grts_var]]),
+    "one-to-many",
+    "many-to-many"
+  )
+  df %>%
+    left_join(
+      df_masked_addr %>%
+        distinct(grts_address_original, grts_address_masked),
+      join_by({{grts_var}} == grts_address_original),
+      # "one-to-many" may apply
+      relationship = relation,
+      unmatched = "error"
+    ) %>%
+    mutate({{grts_var}} := coalesce(grts_address_masked, .data[[grts_var]])) %>%
+    select(-grts_address_masked)
+}
+
+
+
+
+
+
 #' Add point coordinate columns to a data frame with a GRTS address column
 #'
 #' @param df Data frame.
 #' @param grts_var String. The column name in df that holds the GRTS addresses.
 #' @param spatrast SpatRaster object with level 0 GRTS addresses.
 #' @param spatrast_index Data frame with columns 'id' and 'grts_address',
-#'   holding the cell numbers (cell IDs) for each GRTS address in `spatrast`.
+#'   holding the cell numbers (cell IDs) for each GRTS address in `spatrast` and
+#'   for potential masked addresses.
 #' @param spatial Logical. Should the returned object be a sf points object? If
 #'   `FALSE`, a data frame is returned with x and y coordinates as columns.
 #'
@@ -409,7 +492,7 @@ add_point_coords_grts <- function(
 #' @inheritParams add_point_coords_grts
 #' @param cells Vector of cell numbers to use; overrides addresses.
 #' @param drop_address Logical. Should the non-missing values of the returned
-#'   SpatRaster contain the original values, or should they be set as 1?
+#'   SpatRaster be set as 1 instead of the original address values?
 #' @param output_cell_nrs Logical. Should the function just return the cell
 #'   numbers as an integer vector?
 #'

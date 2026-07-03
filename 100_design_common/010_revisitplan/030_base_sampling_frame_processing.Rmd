@@ -83,7 +83,7 @@ if (params$regenerate_binary_files) {
 
 ```{r include=FALSE}
 if (FALSE) {
-  # compare to units_non_cell_n2khab_grts %>% distinct(grts_address) %>% nrow
+  # compare to units_non_cell_n2khab_grts %>% filter(grts_address < 1e8) %>% distinct(grts_address) %>% nrow
   global(grts_mh_non_cell, "notNA")
   # compare to nrow(hmt_pol_grts_cellcenter)
   global(grts_mh_cellcenter, "notNA")
@@ -106,15 +106,25 @@ grts_mh_n2khab <- rast(
 )
 ```
 
-Creating a spatial index of the GRTS values.
+Creating a spatial index of the GRTS values, hereby including the masked GRTS addresses.
 
 ```{r}
 grts_mh_n2khab_index <- tibble(
   id = seq_len(ncell(grts_mh_n2khab)),
   grts_address = values(grts_mh_n2khab)[, 1]
 ) %>%
-  filter(!is.na(grts_address))
+  filter(!is.na(grts_address)) %>% 
+  append_masked_grts_addresses()
 ```
+
+Checking that `grts_mh_n2khab_index` effectively covers all GRTS addresses of the base sampling frame:
+
+```{r}
+stopifnot(
+  all(stratum_grts_n2khab$grts_address %in% grts_mh_n2khab_index$grts_address)
+)
+```
+
 
 ## Sanity check of local replacements {#bsf-sanity}
 
@@ -176,7 +186,8 @@ if (params$regenerate_binary_files) {
     select(
       -ID,
       grts_address = GRTSmaster_habitats
-    )
+    ) %>% 
+    append_masked_grts_addresses()
   saveRDS(
     domain_grts_n2khab,
     file.path(datapath, "binary/intermediate/domain_grts_n2khab.rds")
@@ -199,6 +210,9 @@ This needs further thought.
 global(grts_mh_n2khab, "notNA")
 domain_grts_n2khab %>%
   filter(domain == "Flanders") %>%
+  unmask_grts_addresses() %>% 
+  # unmasking generates duplicates:
+  distinct() %>% 
   nrow()
 ```
 

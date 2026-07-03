@@ -204,6 +204,18 @@ The strata are the types, in some cases subdivided according to area class of th
 The base sampling frame layers will consist of the strata, not just the types.
 
 ```{r prepare-strata}
+add_interval_watsurf <- function(df) {
+  df %>% 
+    mutate(area = st_area(.) %>% set_units("ha")) %>%
+    st_drop_geometry() %>%
+    select(polygon_id, area) %>%
+    mutate(
+      stratum =
+        area %>%
+        cut(c(0, 1, 5, 50, 150)) %>%
+        as.character()
+    )
+}
 extract_interval_limits <- function(df) {
   mutate(
     df,
@@ -213,15 +225,7 @@ extract_interval_limits <- function(df) {
 }
 wsh_pol_area_class <-
   wsh_pol %>%
-  mutate(area = st_area(.) %>% set_units("ha")) %>%
-  st_drop_geometry() %>%
-  select(polygon_id, area) %>%
-  mutate(
-    stratum =
-      area %>%
-        cut(c(0, 1, 5, 50, 150)) %>%
-        as.character()
-  ) %>%
+  add_interval_watsurf() %>%
   inner_join(
     wsh_occ %>%
       select(polygon_id, type),
@@ -235,6 +239,8 @@ wsh_strata_expanded <-
   wsh_pol_area_class %>%
   extract_interval_limits() %>%
   distinct(type, lower, upper) %>%
+  # allow all possible area classes for each type
+  expand(nesting(type), nesting(lower, upper)) %>% 
   arrange(type, lower, upper)
 habquarries_area_class <-
   habquarries %>%
@@ -310,61 +316,22 @@ For type 8310, we already created the `habquarries` object (units are polygons).
 
 ### Defining the point - geometry relationship for specific types
 
-These may encompass units not currently covered by the target populations.
+The point datasets may encompass units not currently covered by the target populations.
 This is especially true for watersurfaces and watersegments.
-This allows for dynamic changes in the occurrence of types.
+Maintaining larger point datasets allows for dynamic changes in the occurrence of types, hereby reusing points from the past as needed.
 
 We don't need points for `grts_join_method == "cell"`.
 
 We will use cell centers on the fly for `grts_join_method == "cell_center"`.
 
-Defining points that represent the watersurface units (object `points_watsurf`).
-This step requires the availability of data that are currently external to this repository and used packages.
+The points that represent the watersurface units are maintained in the `watersurfaces_refpoints` data source.
 
 ```{r}
-if (curl::has_internet()) {
-  # Accessing a temporary data source for watersurfaces (beware: this is a CRLF
-  # version of watersurfaces_refpoints_v4)
-  with_drive_quiet({
-    path <- file.path(tempdir(), "watersurfaces_refpoints.tsv")
-    drive_download(as_id("1XgtdZOebbqp-MJih60P_Vi-npz_5UVkY"), path = path)
-    path2 <- file.path(tempdir(), "watersurfaces_refpoints.yml")
-    drive_download(as_id("1Bb07utgZOyMK65TdR64-4VjGP7T6GqMa"), path = path2)
-  })
-  points_watsurf <-
-    read_vc("watersurfaces_refpoints", tempdir()) %>%
-    as_tibble()
-  invisible(file.remove(path, path2))
-} else {
-  # Clumsy approach; needs maintenance. In the longer term, the management of
-  # all this needs more centralization and rigidity. Beware: this is probably a
-  # more recent version than watersurfaces_refpoints_v4, causing differences
-  # with above!
-  mhq_ssfws_datapath <- file.path(
-    dirname(gitroot),
-    "n2khab-samplingframes/data/watersurfaces"
-  )
-  stopifnot(dir.exists(mhq_ssfws_datapath))
-  points_watsurf <-
-    read_vc("watersurfaces_refpoints", root = mhq_ssfws_datapath) %>%
-    as_tibble()
-}
-points_watsurf <-
-  points_watsurf %>%
-  select(polygon_id, x, y) %>%
-  st_as_sf(coords = c("x", "y"), crs = 31370)
-# adding all other watersurfaces from wsh_pol (note that these also have unit_id
-# values not present in read_watersurfaces())
-points_watsurf <-
-  bind_rows(
-    points_watsurf,
-    wsh_pol %>%
-      filter(!(polygon_id %in% points_watsurf$polygon_id)) %>%
-      select(polygon_id) %>%
-      st_sf(agr = "identity") %>%
-      st_point_on_surface() %>%
-      rename(geometry = geom)
-  )
+points_watsurf <- read_watersurfaces_refpoints(
+  version = versions_required["watersurfaces_refpoints"],
+  version_wsh = versions_required["watersurfaces_hab"]
+) %>% 
+  select(-in_polygon)
 ```
 
 Defining points that represent the watercourse segments (object `points_watcourse`).
@@ -387,6 +354,237 @@ points_8310 <-
   st_sf(agr = "identity") %>%
   st_point_on_surface()
 ```
+
+
+### Importing data from existing field assessments {#importing-assessments}
+
+With regard to retrieving point data, the imported assessments are going to be used to get extra watersurfaces and watercourse segments that belong to the target population.
+
+**Missing functionality**: adding point data from assessments remains to be done for 3260.
+
+Updating the base sampling frame using these assessments, including terrestrial, is situated in section \@ref(update-bsf).
+
+Optionally updating the local copies of these data from the source repository.
+
+```{r}
+# Updating local data files by copying them from another repository. Better
+# convert this to using the remote! XXXXXXXXXXXXXXXXXXXX (however, at times
+# a specific branch may need to be used)
+if (params$update_raw_textdata) {
+  mhq_terr_datapath <- file.path(
+    dirname(gitroot),
+    "n2khab-sample-admin/data/mhq_terr/rapportage2025"
+  )
+  mhq_watersurfaces_datapath <- file.path(
+    dirname(gitroot),
+    "n2khab-sample-admin/data/mhq_watersurfaces"
+  )
+  mhq_data_available <-
+    dir.exists(mhq_terr_datapath) && dir.exists(mhq_watersurfaces_datapath)
+  if (!mhq_data_available) {
+    stop(
+      "Cannot update MHQ field assessment data: ",
+      "source directories are missing."
+    )
+  } else {
+    files <- c(
+      list.files(
+        mhq_terr_datapath,
+        "assessments|popunits|refpoints",
+        full.names = TRUE
+      ),
+      list.files(
+        mhq_watersurfaces_datapath,
+        "assessments|populationunits",
+        full.names = TRUE
+      )
+    )
+    file.copy(
+      files,
+      file.path(datapath, "text/raw/mhq_assessments"),
+      overwrite = TRUE
+    ) %>%
+      invisible()
+  }
+}
+```
+
+Reading and preprocessing the local files.
+
+```{r}
+mhq_assessments_datapath <- file.path(datapath, "text/raw/mhq_assessments")
+mhq_terr_popunits <-
+  read_vc("mhq_terr_popunits", root = mhq_assessments_datapath) %>%
+  as_tibble() %>%
+  mutate(
+    type = factor(type, levels = levels(n2khab_types$type)),
+    source = factor(source),
+    across(where(is.numeric), as.integer)
+  ) %>%
+  select(-sac, -phab, -polygon_id) %>%
+  rename(
+    grts_address = grts_ranking,
+    grts_address_drawn = grts_ranking_draw
+  )
+mhq_terr_refpoints <-
+  read_vc("mhq_terr_refpoints", root = mhq_assessments_datapath) %>%
+  as_tibble() %>%
+  distinct() %>%
+  select(
+    point_code,
+    grts_address = grts_ranking,
+    is_cell_center = is_centroid
+  )
+mhq_terr_assessments <-
+  read_vc("mhq_terr_assessments", root = mhq_assessments_datapath) %>%
+  as_tibble() %>%
+  filter(assessment_date == max(assessment_date), .by = point_code) %>%
+  select(point_code, assessment_date, type, is_present, inaccessible) %>%
+  mutate(
+    inaccessible = factor(inaccessible, levels = c("short term", "long term"))
+  )
+mhq_watersurfaces_assessments <-
+  read_vc("mhq_watersurfaces_assessments", root = mhq_assessments_datapath) %>%
+  as_tibble() %>%
+  # for now only considering presences, assessed in the field
+  filter(
+    assessment_source == "field assessment" | is.na(assessment_source),
+    is_present
+  ) %>% 
+  filter(assessment_date == max(assessment_date), .by = c(polygon_id, type)) %>%
+  select(polygon_id, assessment_date, type, inaccessible) %>%
+  mutate(
+    type = factor(type, levels = levels(n2khab_types_expanded$type)),
+    inaccessible = factor(inaccessible, levels = c("short term", "long term"))
+  )
+```
+
+
+#### Watersurface assessments
+
+`mhq_watersurfaces_assessments` only contains the polygon ID, no point coordinates.
+
+Checking the conformity of the type levels.
+
+```{r}
+stopifnot(
+  all(mhq_watersurfaces_assessments$type %in% n2khab_types_expanded$type)
+)
+```
+
+We will assume that useful assessments are those that correspond to watersurfaces from the current `watersurfaces_hab` or `watersurfaces` data sources.
+For now we limit this to the watersurfaces that are present in a cumulative form of `watersurfaces_refpoints` (`points_watsurf_all`), dropping those that have no matching `polygon_id` in the _current_ `watersurfaces` or `watersurfaces_hab` data source (then the watersurface has probably disappeared).
+Note that `watersurfaces_hab` contains polygons that are not present in `watersurfaces`, by design.
+
+**Missing functionality**: For `polygon_id` values that have no counterpart in `points_watsurf_all` but that do occur in the current `watersurfaces` data source, points are not yet available. Ideally, these should be present in later versions of `watersurfaces_refpoints`. So, the latter should also involve polygons from assessments. At the time of writing we missed 10 assessments out of > 500 due to this, the assessments dating from 2016 till 2025.
+
+```{r}
+points_watsurf_all <- read_watersurfaces_refpoints(
+  version = versions_required["watersurfaces_refpoints"],
+  single_wsh_version = FALSE
+) %>% 
+  select(-in_polygon)
+ws <- read_watersurfaces(
+  version = versions_required["watersurfaces"],
+  fix_geom = TRUE
+) %>%
+  select(polygon_id)
+```
+
+Generating the link between polygon_id, point geometry and polygon area class.
+The area class is needed to derive the applicable strata of the assessments (section \@ref(update-bsf)).
+
+```{r}
+# old_polygon_id is from the assessments, polygon_id are all candidates with the
+# same reference point
+points_watsurf_all_polygonlinks_with_interval <- 
+  # limiting refpoints 'all' to assessment polygons
+  points_watsurf_all %>% 
+  semi_join(mhq_watersurfaces_assessments, join_by(polygon_id)) %>% 
+  select(old_polygon_id = polygon_id, geometry) %>% 
+  # joining potential extra refpoint rows of the same point but with a different
+  # polygon_id, so that we can ultimately use the 'modern' polygon_id that is
+  # linked to the reference point
+  inner_join(
+    points_watsurf_all %>% as_tibble(),
+    join_by(geometry),
+    relationship = "one-to-many",
+    unmatched = c("error", "drop")
+  ) %>% 
+  # adding area interval limits from current watersurfaces_hab
+  left_join(
+    wsh_pol %>%
+      add_interval_watsurf() %>%
+      extract_interval_limits() %>% 
+      select(polygon_id, lower_wsh = lower, upper_wsh = upper),
+    join_by(polygon_id),
+    relationship = "one-to-one",
+    unmatched = "drop"
+  ) %>% 
+  # adding area interval limits from current watersurfaces data source
+  left_join(
+    ws %>%
+      add_interval_watsurf() %>%
+      extract_interval_limits() %>% 
+      select(polygon_id, lower_ws = lower, upper_ws = upper),
+    join_by(polygon_id),
+    relationship = "one-to-one",
+    unmatched = "drop"
+  ) %>%
+  # dropping watersurfaces & polygon_id values not existing in current
+  # watersurfaces or watersurfaces_hab (two at the time of writing)
+  filter(!is.na(lower_wsh) | !is.na(lower_ws)) %>% 
+  mutate(
+    lower = coalesce(lower_wsh, lower_ws),
+    upper = coalesce(upper_wsh, upper_ws),
+    .keep = "unused"
+  ) %>% 
+  relocate(geometry, .after = last_col())
+
+points_watsurf_assessed <- 
+  points_watsurf_all_polygonlinks_with_interval %>% 
+  # dropping potential multiple old polygon_id values
+  distinct(polygon_id, geometry)
+```
+
+Using the above to extend the `points_watsurf` object; this is the main reason to integrate the watersurface assessments at this stage.
+The allocation of GRTS addresses needs some extras and this works best in one step.
+
+```{r}
+points_watsurf <- 
+  points_watsurf_assessed %>% 
+  anti_join(
+    points_watsurf %>% st_drop_geometry(),
+    join_by(polygon_id)
+  ) %>% 
+  bind_rows(points_watsurf, .) %>% 
+  arrange(polygon_id)
+```
+
+We also derive the standardized assessments data frame of (current) polygon ID x stratum x assessment date.
+It is needed to define population units and to add extra attributes to the base sampling frame.
+
+```{r}
+stratum_unit_watersurface_assessments <- 
+  mhq_watersurfaces_assessments %>% 
+  rename(old_polygon_id = polygon_id) %>% 
+  inner_join(
+    points_watsurf_all_polygonlinks_with_interval %>% 
+      st_drop_geometry(),
+    join_by(old_polygon_id),
+    relationship = "many-to-one",
+    unmatched = c("drop", "error")
+  ) %>% 
+  select(-old_polygon_id) %>% 
+  unite(stratum, c(type, lower, upper), na.rm = TRUE) %>% 
+  mutate(
+    stratum = factor(stratum, levels = levels(n2khab_strata_expanded$stratum))
+  ) %>% 
+  relocate(stratum, unit_id = polygon_id)
+```
+
+
+### Combining all points of non-cell units
 
 Combining all points that refer to non-cell units into one object.
 
@@ -436,8 +634,10 @@ However in its full meaning the base sampling frame also comprises various linke
 
 ### For the non-cell units
 
+#### Keeping only points within target populations
+
 From `points_non_cell`, we need to filter those that fall within the target populations of MNE and MHQ.
-This is already fine for types 7220 and 8310.
+This is already fine for types 7220 and 8310, as well as for the watersurface types.
 
 We determine the watercourse segments that have type 3260.
 
@@ -451,50 +651,259 @@ segm_3260 <- read_watercourse_100mseg(
   unite(unit_id, vhag_code, rank)
 ```
 
-The watersurfaces with types are defined by `wsh_pol`; the segments with 3260 are defined by `segm_3260`.
+Executing the filter step.
 
 ```{r}
 points_non_cell_n2khab <-
   points_non_cell %>%
   filter(
-    sample_support_code %in% c("spring", "quarry") |
-      (sample_support_code == "watersurface" & unit_id %in% wsh_pol$polygon_id) |
+    sample_support_code %in% c("spring", "quarry", "watersurface") |
       (sample_support_code == "watercourse_segment" & unit_id %in% segm_3260$unit_id)
   )
 ```
 
-Determining the GRTS address of the units represented by `points_non_cell_n2khab`.
+#### Assigning unique GRTS addresses to points
+
+Linking the GRTS address from `GRTSmaster_habitats` to the points (with unit ID) in `points_non_cell_n2khab`.
 
 ```{r}
-units_non_cell_n2khab_grts <-
+points_non_cell_n2khab_grts <- 
   points_non_cell_n2khab %>%
   mutate(
+    x = st_coordinates(.)[, "X"],
+    y = st_coordinates(.)[, "Y"],
     grts_address = extract(grts_mh, st_coordinates(points_non_cell_n2khab)) %>%
       pull(GRTSmaster_habitats)
+  ) %>% 
+  st_drop_geometry()
+```
+
+We can see that different points (with unit ID) share a common (non-NA) GRTS address.
+
+```{r paged.print = FALSE}
+points_non_cell_n2khab_grts %>% 
+  filter(!is.na(grts_address)) %>% 
+  count(sample_support_code, grts_address, name = "n_points_per_grtsaddress") %>% 
+  count(sample_support_code, n_points_per_grtsaddress, name = "n_units")
+```
+
+Essentially, this means that for at least one sample support code the resolution of the applied `GRTSmaster_habitats` was too large.
+Since `GRTSmaster_habitats` has been applied for these types in MHQ, we need to continue using it in order to match MHQ sampling units.
+
+We will solve the issue by applying a refined GRTS address in a way that resembles one or two deeper GRTS-levels, i.e. by prepending unique digits to the reversed decimal GRTS address for the duplicated cases.
+For each GRTS address, the points with a common GRTS address are first sorted randomly.
+If one of the points corresponds to a MHQ sampling unit, it is put first in order to favour the match with existing MHQ sampling units (matches with the MHQ _sample_ are very rare though).
+Then, the first point keeps its GRTS address, for the second one a number `extra_term_base` is added to its GRTS address, for the third one `extra_term_base * 2` is added and so on.
+The value of `extra_term_base` is $10^8$ and this is an order of magnitude higher than the maximum value of `GRTSmaster_habitats`.
+
+This way:
+
+- the original value of the GRTS address can be easily derived again, e.g. in order to spatially locate the corresponding GRTS cell;
+- sampling by using the updated `grts_address` column aligns with GRTS sampling according to a finer grid: a second unit in the same GRTS cell will only be sampled after all other GRTS cells from the population have been sampled, a third unit can only be sampled after all other second units in other cells have been sampled, and so on.
+
+Optionally resetting the dataset of masked GRTS addresses per point, for the points that share their GRTS address.
+
+```{r}
+grtsmh_max <- global(grts_mh, "max", na.rm = TRUE)$max
+extra_term_base <- as.integer(10^(floor(log10(grtsmh_max)) + 1))
+if (params$reset_masked_addresses) {
+  # see R/generate_mhq_samples_watersurfaces_spatialunits.R to generate the following file from
+  # a raw GeoPackage:
+  mhq_samples_watersurfaces_spatialunits <- 
+    read_vc(
+      "mhq_samples_watersurfaces_spatialunits",
+      root = file.path(datapath, "text/intermediate")
+    ) %>%
+    as_tibble()
+  set.seed(20260623)
+  points_grts_masked <- 
+    points_non_cell_n2khab_grts %>% 
+    # several watercourse_segment units still have a missing GRTS address;
+    # dropping them for now XXXXXXXXXXXX
+    filter(!is.na(grts_address)) %>% 
+    # only keeping the duplicates
+    filter(
+      n_distinct(x, y) > 1,
+      .by = c(sample_support_code, grts_address)
+    ) %>% 
+    # flagging with 'in_mhq'
+    left_join(
+      mhq_samples_watersurfaces_spatialunits %>% 
+        mutate(in_mhq = TRUE),
+      join_by(sample_support_code, unit_id, grts_address),
+      relationship = "many-to-one",
+      unmatched = "drop"
+    ) %>% 
+    # there are two watercourse segments that have a common endpoint; to be
+    # solved XXXXXXXXX
+    distinct(pick(-unit_id)) %>% 
+    arrange(sample_support_code, grts_address) %>% 
+    # assign ranks and compute masked addresses
+    mutate(
+      rank_mhq = if_else(in_mhq, -2, 100, 100),
+      rank_nr = as.integer(rank(pmin(rank_mhq, runif(n = n()))) - 1),
+      grts_address_original = grts_address,
+      grts_address_masked = grts_address + extra_term_base * rank_nr,
+      .by = c(sample_support_code, grts_address)
+    ) %>% 
+    arrange(sample_support_code, grts_address_original, grts_address_masked)
+  # Check that no ties have been introduced. This would happen if multiple
+  # in_mhq candidates per GRTS address would be present (not currently
+  # supported)
+  stopifnot(
+    points_grts_masked %>% 
+      filter(rank_nr == 0) %>% 
+      count(sample_support_code, grts_address_original) %>% 
+      filter(n > 1) %>% 
+      {nrow(.) == 0}
+  )
+  # write selected columns to file
+  points_grts_masked %>% 
+    select(sample_support_code, x, y, grts_address_original, grts_address_masked) %>% 
+    write_vc(
+      file = "points_grts_masked",
+      root = file.path(datapath, "text/intermediate"),
+      digits = 10,
+      optimize = FALSE,
+      strict = FALSE,
+      sorting = c(
+        "sample_support_code",
+        "grts_address_original",
+        "grts_address_masked"
+      )
+    )
+}
+```
+
+**Missing functionality**: the file with masked GRTS addresses per point should be auto-updated once new versions of the spatial data sources and reference points become available.
+
+**Missing functionality**: the file with masked GRTS addresses per point still needs to handle the watercourse segments, including the MHQ sample.
+
+Reading the dataset of masked GRTS addresses per point, for the points that share their GRTS address.
+In this object, both address flavours are still called `grts_address_original` and `grts_address_masked`, but in other objects we will continue using the single column `grts_address` and it will _contain_ some masked values.
+
+```{r}
+points_grts_masked <- 
+  read_vc(
+    file = "points_grts_masked",
+    root = file.path(datapath, "text/intermediate")
   ) %>%
-  st_drop_geometry() %>%
+  as_tibble()
+```
+
+The reason that we store the point coordinates rather than the unit IDs together with the GRTS addresses, is that unit IDs may be unstable over time.
+In `watersurfaces_refpoints`, care was taken to use a single reference point for one unit, even if it is represented by different IDs.
+
+Replacing GRTS addresses with masked GRTS addresses for the points where this is applicable.
+
+```{r}
+points_non_cell_n2khab_grts <- 
+  points_non_cell_n2khab_grts %>% 
+  # using an overlap join for the coordinates within [-0.001, 0.001] (i.e. 1
+  # mm), because the numeric precision of numbers read from files hinders exact
+  # matches (no better solution was found to obtain the same result)
+  left_join(
+    points_grts_masked %>% 
+      mutate(
+        x_l = x - 0.001,
+        x_u = x + 0.001,
+        y_l = y - 0.001,
+        y_u = y + 0.001
+      ) %>% 
+      select(-x, -y),
+    join_by(
+      sample_support_code,
+      between(x, x_l, x_u),
+      between(y, y_l, y_u)
+    ),
+    # XXXXXXXXXX following should be "one-to-one", but because one endpoint of
+    # watercourse_segments is shared between two units (see above), we still
+    # need to use "many-to-one"
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  select(-c(x_l:y_u))
+# checking that grts_address_original (where available) equals grts_address
+stopifnot(
+  points_non_cell_n2khab_grts %>% 
+  filter(grts_address_original != grts_address) %>% 
+  {nrow(.) == 0}
+)
+# use masked GRTS address where needed
+points_non_cell_n2khab_grts <- 
+  points_non_cell_n2khab_grts %>% 
+  mutate(grts_address = ifelse(
+    !is.na(grts_address_masked),
+    grts_address_masked,
+    grts_address
+  )) %>% 
+  select(-grts_address_original, -grts_address_masked) %>%
   arrange(sample_support_code, unit_id, grts_address)
 ```
 
-<!-- Er zijn gevallen met hetzelfde GRTS-adres; een oplossing is hiervoor uit te werken: -->
-<!-- > units_non_cell_n2khab_grts %>% count(sample_support_code, grts_address) %>% filter(n > 1) %>% count(sample_support_code, n) -->
-<!-- Storing counts in `nn`, as `n` already present in input -->
-<!-- ℹ Use `name = "new_name"` to pick a new name. -->
-<!-- # A tibble: 7 × 3 -->
-<!--   sample_support_code     n    nn -->
-<!--   <fct>               <int> <int> -->
-<!-- 1 watercourse_segment     2    21 -->
-<!-- 2 watercourse_segment     3     1 -->
-<!-- 3 watercourse_segment   122     1 -->
-<!-- 4 watersurface            2    54 -->
-<!-- 5 watersurface            3    13 -->
-<!-- 6 watersurface            4     8 -->
-<!-- 7 watersurface            5     2 -->
+Checking that each point (with non-missing GRTS address) has a unique GRTS address within a sample support code.
+
+```{r}
+stopifnot(
+  points_non_cell_n2khab_grts %>% 
+    distinct(sample_support_code, grts_address) %>% 
+    filter(!is.na(grts_address)) %>% 
+    {
+      nrow(.) == 
+        points_non_cell_n2khab_grts %>% 
+        filter(!is.na(grts_address)) %>% 
+        distinct(pick(-unit_id)) %>% 
+        nrow()
+    }
+)
+```
+
+
+#### Deriving unique GRTS addresses of unit geometries
+
+An object with the GRTS address of the units represented by `points_non_cell_n2khab` is obtained by simply dropping the point coordinates.
+
+```{r}
+units_non_cell_n2khab_grts <-
+  points_non_cell_n2khab_grts %>% 
+  select(sample_support_code, unit_id, grts_address)
+```
+
+<!-- As stated above in code comments, there are two watercourse segments that share their endpoint -->
+<!-- and therefore their GRTS address. It remains to be seen how we deal with this: -->
+<!-- > units_non_cell_n2khab_grts %>% -->
+<!--     filter(!is.na(grts_address)) %>%  -->
+<!--     count(sample_support_code, grts_address) %>% -->
+<!--     filter(n > 1) -->
+<!-- # A tibble: 1 × 3 -->
+<!--   sample_support_code grts_address     n -->
+<!--   <fct>                      <int> <int> -->
+<!-- 1 watercourse_segment      4405142     2 -->
+
+
+<!-- Some cases have a missing GRTS address (probably from the border region): -->
+<!-- > units_non_cell_n2khab_grts %>% -->
+<!--     count(sample_support_code, grts_address) %>% -->
+<!--     filter(n > 10) -->
+<!-- # A tibble: 1 × 3 -->
+<!--   sample_support_code grts_address     n -->
+<!--   <fct>                      <int> <int> -->
+<!-- 1 watercourse_segment           NA   122 -->
+
+Checking that no duplicate rows exist.
+
+```{r}
+stopifnot(!any(duplicated(units_non_cell_n2khab_grts)))
+```
+
+
+#### Defining population units as stratum x grts_address
 
 Listing the non-cell units per stratum (within the target populations of MNE and MHQ), needed in order to connect the GRTS addresses with strata.
 
 ```{r}
 stratum_units_non_cell_n2khab <-
+  # population units coming from watersurfaces_hab
   bind_cols(
     tibble(sample_support_code = "watersurface"),
     wsh_pol_area_class %>%
@@ -506,6 +915,12 @@ stratum_units_non_cell_n2khab <-
       collapse_strata() %>% 
       distinct()
   ) %>%
+  # extra population units from watersurface assessments
+  dplyr::union(
+    stratum_unit_watersurface_assessments %>% 
+      mutate(sample_support_code = "watersurface") %>% 
+      distinct(sample_support_code, stratum, unit_id)
+  ) %>% 
   bind_rows(
     bind_cols(
       tibble(sample_support_code = "watercourse_segment"),
@@ -562,7 +977,8 @@ stratum_grts_non_cell_n2khab <-
     unmatched = "error"
   ) %>%
   select(-sample_support_code, -unit_id) %>%
-  # distinct() leads to less rows because of units with same GRTS address.
+  # distinct() leads to less rows because of units with same GRTS address (1
+  # remaining case for 3260; see above), and because of missing GRTS addresses.
   distinct()
 ```
 
@@ -640,10 +1056,6 @@ hmt_pol_cell <-
 
 hmt_pol_grts_cell <-
   # touches = TRUE allows about 2.5 times the number of cells
-  #
-  # XXX TAKES 5 MINUTES WITH terra 1.9-11; was much faster before ==> ISSUE
-  # needed
-  #
   extract(grts_mh, hmt_pol_cell, touches = TRUE) %>%
   as_tibble() %>%
   inner_join(
@@ -797,92 +1209,8 @@ stratum_grts_n2khab <-
 
 The aim is to add existing field assessments to the base sampling frame.
 
-Optionally updating the local copies of these data from the source repository.
+The import steps are located in section \@ref(importing-assessments).
 
-```{r}
-# Updating local data files by copying them from another repository. Better
-# convert this to using the remote! XXXXXXXXXXXXXXXXXXXX (however, at times
-# a specific branch may need to be used)
-if (params$update_raw_textdata) {
-  mhq_terr_datapath <- file.path(
-    dirname(gitroot),
-    "n2khab-sample-admin/data/mhq_terr/rapportage2025"
-  )
-  mhq_watersurfaces_datapath <- file.path(
-    dirname(gitroot),
-    "n2khab-sample-admin/data/mhq_watersurfaces/rapportage2025"
-  )
-  mhq_data_available <-
-    dir.exists(mhq_terr_datapath) && dir.exists(mhq_watersurfaces_datapath)
-  if (!mhq_data_available) {
-    stop(
-      "Cannot update MHQ field assessment data: ",
-      "source directories are missing."
-    )
-  } else {
-    files <- c(
-      list.files(
-        mhq_terr_datapath,
-        "assessments|popunits|refpoints",
-        full.names = TRUE
-      ),
-      list.files(
-        mhq_watersurfaces_datapath,
-        "assessments|populationunits",
-        full.names = TRUE
-      )
-    )
-    file.copy(
-      files,
-      file.path(datapath, "text/raw/mhq_assessments"),
-      overwrite = TRUE
-    ) %>%
-      invisible()
-  }
-}
-```
-
-Reading and preprocessing the local files.
-
-```{r}
-mhq_assessments_datapath <- file.path(datapath, "text/raw/mhq_assessments")
-mhq_terr_popunits <-
-  read_vc("mhq_terr_popunits", root = mhq_assessments_datapath) %>%
-  as_tibble() %>%
-  mutate(
-    type = factor(type, levels = levels(n2khab_types$type)),
-    source = factor(source),
-    across(where(is.numeric), as.integer)
-  ) %>%
-  select(-sac, -phab, -polygon_id) %>%
-  rename(
-    grts_address = grts_ranking,
-    grts_address_drawn = grts_ranking_draw
-  )
-mhq_terr_refpoints <-
-  read_vc("mhq_terr_refpoints", root = mhq_assessments_datapath) %>%
-  as_tibble() %>%
-  distinct() %>%
-  select(
-    point_code,
-    grts_address = grts_ranking,
-    is_cell_center = is_centroid
-  )
-mhq_terr_assessments <-
-  read_vc("mhq_terr_assessments", root = mhq_assessments_datapath) %>%
-  as_tibble() %>%
-  filter(assessment_date == max(assessment_date), .by = point_code) %>%
-  select(point_code, assessment_date, type, is_present, inaccessible) %>%
-  mutate(
-    inaccessible = factor(inaccessible, levels = c("short term", "long term"))
-  )
-mhq_watersurfaces_assessments <-
-  read_vc("mhq_watersurfaces_assessments", root = mhq_assessments_datapath) %>%
-  as_tibble()
-mhq_watersurfaces_populationunits <-
-  read_vc("mhq_watersurfaces_populationunits", root = mhq_assessments_datapath) %>%
-  as_tibble()
-```
 
 ### Terrestrial field assessments
 
@@ -1328,7 +1656,7 @@ stopifnot(present_absences_cell_all %>% nrow() == 0)
 ```
 
 
-### Substituting assessed population units in the base sampling frame
+### Substituting assessed terrestrial population units in the base sampling frame
 
 Updating the base sampling frame `stratum_grts_n2khab` by substituting with cells from `valid_extra_popunits_cell_all_n2khab_tidy`, and dropping those that have been assessed as absences in `absent_popunits_cell_all_n2khab`.
 
@@ -1356,6 +1684,70 @@ stopifnot(
 )
 ```
 
+
+### Adding watersurface field assessment attributes to the base sampling frame
+
+In importing the watersurface assessments, we only considered presences and not absences. Absences could be used to exclude units from the sampling frame, but considering the dynamical nature of these types, we want to be careful with this.
+
+**Missing functionality**: reconsider absences after taking into account the assessment dates of `watersurfaces_hab`. In this respect, the way of filtering the assessments while reading the data source should be reconsidered as well.
+
+Checking that no stratum expansion (main types to subtypes) is needed, i.e. the present stratum levels are those required in MNE & MHQ.
+
+```{r}
+stopifnot(
+  all(unique(stratum_unit_watersurface_assessments$stratum) %in% n2khab_strata$stratum)
+)
+```
+
+Joining `stratum_unit_watersurface_assessments` with `units_non_cell_n2khab_grts` in order to update the base sampling frame.
+
+```{r}
+stratum_grts_watersurface_assessments <- 
+  stratum_unit_watersurface_assessments %>% 
+  # adding GRTS address, dropping unit_id
+  inner_join(
+    units_non_cell_n2khab_grts %>% 
+      filter(sample_support_code == "watersurface") %>% 
+      select(unit_id, grts_address),
+    join_by(unit_id),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>% 
+  select(-unit_id) %>% 
+  relocate(stratum, grts_address)
+```
+
+Updating attributes of the base sampling frame `stratum_grts_n2khab` for the rows that correspond to `stratum_grts_watersurface_assessments`.
+
+```{r}
+stratum_grts_n2khab <- 
+  stratum_grts_n2khab %>% 
+  left_join(
+    stratum_grts_watersurface_assessments %>% 
+      mutate(ws_assessed = TRUE) %>% 
+      rename(
+        assessment_date_new = assessment_date,
+        inaccessible_new = inaccessible
+      ),
+    join_by(stratum, grts_address),
+    relationship = "one-to-one",
+    unmatched = "error"
+  ) %>% 
+  mutate(
+    # converting NA to FALSE:
+    ws_assessed = coalesce(ws_assessed, FALSE),
+    typelevel_certain = ifelse(ws_assessed, TRUE, typelevel_certain),
+    assessed_in_field = ifelse(ws_assessed, TRUE, assessed_in_field),
+    # using if_else() in following expressions to protect the class
+    assessment_date = if_else(ws_assessed, assessment_date_new, assessment_date),
+    inaccessible = if_else(ws_assessed, inaccessible_new, inaccessible),
+  ) %>% 
+  select(
+    -ws_assessed,
+    -assessment_date_new,
+    -inaccessible_new
+  )
+```
 
 
 ## Writing the base sampling frame
@@ -1389,6 +1781,8 @@ for (name in c(
   "n2khab_targetpops",
   "points_non_cell",
   "points_non_cell_n2khab",
+  "points_non_cell_n2khab_grts",
+  "points_grts_masked",
   "stratum_units_non_cell_n2khab",
   "units_non_cell_n2khab_grts",
   "stratum_grts_non_cell_n2khab",
@@ -1398,6 +1792,7 @@ for (name in c(
   "hmt_pol_stratum_grts_cell_all_n2khab",
   "valid_extra_popunits_cell_all_n2khab_tidy",
   "absent_popunits_cell_all_n2khab",
+  "stratum_unit_watersurface_assessments",
   "stratum_grts_n2khab"
 )) {
   cat(name, "\n")

@@ -352,7 +352,7 @@ mhq_terr_measurements %>%
 
 # WATERSURFACES -----------------------------------------------------------
 
-mhq_watersurfaces_datapath <- file.path(dirname(gitroot), "n2khab-sample-admin/data/mhq_watersurfaces/rapportage2025")
+mhq_watersurfaces_datapath <- file.path(dirname(gitroot), "n2khab-sample-admin/data/mhq_watersurfaces")
 
 mhq_watersurfaces_populationunits <-
   read_vc("mhq_watersurfaces_populationunits", root = mhq_watersurfaces_datapath) %>%

@@ -19,9 +19,9 @@ Some ideas that were noted before writing the code (some are not completely impl
 ### Checking the spatial samples
 
 Checking that all schemes x module combos x panel sets x strata are still in the running.
-Listing the cases where the planned sample size is different than the one after GRTS series partitioning and reclassification (smaller: possible because of phab-corrections applied in the planned sample size but not (yet) in the samples; smaller or larger: possible because of the difference between domain 'Flanders' & spatial poststratum 'Flanders_remainder' (many; not shown), and sometimes also due to minor misfits in 3260 (popsize vs available GRTS addresses per domain)).
+Listing the cases where the planned sample size is different than the one after GRTS series partitioning and reclassification (smaller: possible because of phab-corrections applied in the planned sample size but not (yet) in the samples; smaller or larger: possible because of the difference between domain 'Flanders' & spatial poststratum 'Flanders_remainder' (many; not shown), and sometimes also due to minor misfits in 3110 & 9150 (popsize vs available GRTS addresses per domain)).
 
-<!-- Perhaps look into this 3260 difference; not looked in to further now since it's very limited (2 SACs where the sample has 1 location less). Also, this may depend on the active modules. -->
+<!-- Perhaps look into these differences; not looked in to further now since it's very limited. Also, this may depend on the active modules. -->
 
 ```{r}
 scheme_moco_ps_dom_stratum_sample_size_2 <-
@@ -59,8 +59,17 @@ stopifnot(
   abs(
     nrow(scheme_moco_ps_dom_stratum_sample_size_2) -
       nrow(scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned)
-  ) <= 2
+  ) <= 3
 )
+# investigating differences wrt above test:
+# scheme_moco_ps_dom_stratum_sample_size_2 %>% 
+#   anti_join(
+#     scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned,
+#     join_by(scheme, module_combo_code, panel_set, stratum, domain)
+#   )
+# scheme_moco_ps_stratum_sppost_spsamples %>% 
+#   filter(stratum == "3110_5_50") %>% 
+#   unnest(sp_poststr_samples)
 scheme_moco_ps_dom_stratum_sample_size_plannedvspartitioned %>%
   filter(
     total_sample_size_planned != total_sample_size_after_partitioning,
