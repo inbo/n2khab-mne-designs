@@ -1,6 +1,6 @@
-# REP (development version)
+# REP 0.17.0 (2026-07-03)
 
-tag `rep_xxxxxxxxxxxx`
+tag `rep_0.17.0`
 
 Changes to results
 ------------------
