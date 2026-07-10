@@ -465,6 +465,95 @@ units_cell_polygon %>%
 
 
 
+## Support in reusing legacy watersample locations ----------------------------
+
+# Reading the legacy watersample points from a local file.
+legacy_watersamplepoints <-
+  read_vc(
+    file = "legacy_watersamplepoints",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble()
+
+# Filter according to spatial samples and prioritize the points per polygon
+legacy_watersamplepoints_spsamples <-
+  legacy_watersamplepoints %>%
+  # one record appears to have missing coordinates
+  filter(!is.na(x), !is.na(y)) %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370, remove = FALSE) %>%
+  # polygon_legacyid contains various errors and is not up-to-date; instead we
+  # will use a spatial join to match with watersurface geometries of the spatial
+  # samples
+  select(-polygon_legacyid) %>%
+  # Note that the following spatial inner join is potentially less restrictive
+  # than limiting to SURF* sampling units. However: 1) that doesn't harm and it
+  # can make below code a bit more generic; 2) at the time of coding all of
+  # these units were covered by SURF_03.4_lentic.
+  st_join(
+    stratum_grts_spsamples_lentic_sf %>%
+      distinct(polygon_id, grts_address_final, geom),
+    left = FALSE
+  ) %>%
+  # constructing 'legacy_try_first': for each polygon, TRUE marks the point that
+  # should be favoured for data collection, if the field criteria for point
+  # validity still hold. In some cases, multiple different points with TRUE may
+  # be present, in which case field criteria must be used. If the TRUE point
+  # does not fulfill criteria, then (historical) points marked as FALSE can
+  # still be considered, making use of the field criteria. If multiple points
+  # still survive in either of these cases (TRUE, or FALSE if TRUE isn't
+  # successful), then additional information can be inspected to make a choice,
+  # such as active_in_db_from/active_in_db_till (but those refer to database
+  # activity (automated fields), not to a period of field validity).
+  mutate(
+    is_current = year(active_in_db_till) > 9000,
+    n_points_current = sum(is_current),
+    legacy_try_first =
+      is_current &
+      case_when(
+        n_points_current == 1 ~ TRUE,
+        str_detect(annotation, "gracht") ~ FALSE,
+        !any(str_detect(annotation, polygon_id) & is_current) ~ TRUE,
+        !str_detect(annotation, polygon_id) ~ FALSE,
+        .default = TRUE
+      ),
+    .by = polygon_id
+  ) %>%
+  relocate(geometry, .after = last_col()) %>%
+  arrange(polygon_id, desc(legacy_try_first), desc(active_in_db_till)) %>%
+  # drop duplicate coordinates; the 'legacy_try_first' does nothing extra at the
+  # time of coding but in some cases it might still keep duplicate coordinates,
+  # which then are deliberately kept because the annotation column may contain
+  # more information
+  filter(
+    row_number() == 1 | legacy_try_first,
+    .by = c(polygon_id, x, y)
+  ) %>%
+  # one polygon has no currently active points; dropping it
+  filter(
+    any(legacy_try_first),
+    .by = polygon_id
+  ) %>%
+  select(
+    grts_address_final,
+    polygon_id,
+    legacy_try_first,
+    x:active_in_db_till
+  ) %>%
+  arrange(
+    grts_address_final,
+    polygon_id,
+    desc(legacy_try_first),
+    ranknr
+  )
+  # # following keeps all polygons!
+  # filter(legacy_try_first)
+
+
+
+
+
+
+
 
 ## Cells for local unit replacement in terrestrial types except 7220 -------
 
