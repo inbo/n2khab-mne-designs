@@ -2060,6 +2060,19 @@ if (FALSE) {
       layer = "orthophotoscreening_shortterm_lentictypes_WSPOLYGONS",
       delete_layer = TRUE
     )
+
+  # generating & writing layer of legacy watersample points for lentic types,
+  # restricted to the locations in the shortterm calendar
+  legacy_watersamplepoints_spsamples %>%
+    semi_join(
+      fieldwork_shortterm_prioritization_watersurfaces,
+      join_by(grts_address_final)
+    ) %>%
+    write_sf(
+      gpkg_path,
+      layer = "legacypoints_shortterm_lentictypes_POINTS",
+      delete_layer = TRUE
+    )
 }
 
 
