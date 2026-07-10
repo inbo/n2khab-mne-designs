@@ -925,6 +925,8 @@ scheme_moco_ps_stratum_sppost_spsamples %>%
 Deriving spatial layers for use and visualization.
 We also include extra attributes from `stratum_grts_n2khab_phabcorrected_no_replacements`.
 
+### All strata
+
 Note that a spatial representation by the cell center of a GRTS address is not very useful for fieldwork in non-cell-based types, so in those types using these cell centers is rather a convenience for small-scale mapping or general insights.
 
 Spatial point object of all sampling units, represented by the cell center of their GRTS address.
@@ -959,13 +961,13 @@ scheme_moco_ps_stratum_sppost_spsamples_spares_sf <-
   add_point_coords_grts(grts_var = "grts_address_final")
 ```
 
-Spatial object of all sampling units of lentic types, represented by the actual spatial unit: the respective watersurface polygons.
+### Lentic strata
+
+We will create a spatial object of all sampling units of lentic types, represented by their actual spatial unit: the respective watersurface polygons.
+
+First constructing the link between spatial sampling units and watersurface polygon IDs, via `units_non_cell_n2khab_grts`.
 
 ```{r}
-# geometries of the spatial sampling units of lentic types (polygons)
-# /////////////////////////////////////////////////////////////////////////
-
-# link between spatial sampling units of lentic types and watersurface polygons
 stratum_grts_polygon_spsamples_lentic <-
   scheme_moco_ps_stratum_sppost_spsamples %>%
   filter(str_detect(stratum, lentic_types_regex)) %>%
@@ -984,12 +986,15 @@ stratum_grts_polygon_spsamples_lentic <-
     unmatched = c("error", "drop")
   ) %>%
   rename(polygon_id = unit_id)
+```
 
+Collecting the applicable watersurface geometries from two data sources.
+
+```{r}
 # extract all polygons from watersurfaces_hab that belong to the spatial samples
 # for lentic types:
 wsh_polygons_spsamples <-
-  read_watersurfaces_hab(version = versions_required["watersurfaces_hab"]) %>%
-  pluck("watersurfaces_polygons") %>%
+  wsh$watersurfaces_polygons %>%
   select(polygon_id) %>%
   semi_join(stratum_grts_polygon_spsamples_lentic, join_by(polygon_id))
 
@@ -997,19 +1002,18 @@ wsh_polygons_spsamples <-
 # spatial samples for lentic types but that were not covered by
 # watersurfaces_hab:
 ws_extra_polygons_spsamples <-
-  read_watersurfaces(
-    version = versions_required["watersurfaces"],
-    fix_geom = TRUE
-  ) %>%
-  select(polygon_id) %>%
+  ws %>%
   semi_join(stratum_grts_polygon_spsamples_lentic, join_by(polygon_id)) %>%
   # keeping only the unique extra polygons relative to watersurfaces_hab
   anti_join(
     st_drop_geometry(wsh_polygons_spsamples),
     join_by(polygon_id)
   )
+```
 
-# add the geometry to the spatial sampling units:
+Now generating the spatial object of all sampling units of lentic types, by adding the watersurface geometries to `stratum_grts_polygon_spsamples_lentic` based on polygon ID.
+
+```{r}
 stratum_grts_spsamples_lentic_sf <-
   rbind(wsh_polygons_spsamples, ws_extra_polygons_spsamples) %>%
   inner_join(
