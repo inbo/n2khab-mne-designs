@@ -952,7 +952,11 @@ scheme_moco_ps_stratum_sppost_spsamples_spares_sf <-
 ```
 
 
-## Updating overlap with VBI plots
+## Applications
+
+Some objects are prepared that are needed for implementation in the field or to finetune the FAG calendar (chapter \@ref(fag-calendar)).
+
+### Updating overlap with VBI plots
 
 [VBI](https://natuurenbos.be/dossiers/bosinventaris#toc-hoe-gebeuren-de-metingen) plots are circular (radius 18 m) and permanent equipment is forbidden in these plots.
 
@@ -992,6 +996,109 @@ vbi_overlaps %>%
     names_prefix = "panel_set_"
   )
 ```
+
+
+### Combining with extra data to finetune the FAG calendar
+
+#### Legacy watersample points and dates
+
+Once a point for surface water sample extraction has been established in the field for an aquatic sampling unit, it can be reused as long as it remains useful and conforms to a list of (field) criteria.
+Consequently, the SAMPLPOINT planning should depend on the availability of a recent-enough point location.
+
+Historical (legacy) watersample point data for lentic types are available in an INBO database (ArcGIS file geodatabase).
+If multiple points are available for a single watersurface, then we should add some guidance which one is preferred (e.g. most recent).
+
+Optionally recollecting the legacy point data from the database and writing as a local data file.
+
+```{r}
+if (params$update_raw_textdata && params$access_database) {
+  con <- inbodb::connect_inbo_dbase("G0102_00_AquaMorf")
+  # DBI::dbListTables(con, schema = "AquaMorf") %>% sort
+  # tbl(con, I("AquaMorf.WATERSTAAL")) %>% glimpse()
+  # tbl(con, I("AquaMorf.WATERSTAAL")) %>% count(codeplas, sort = TRUE)
+  # tbl(con, I("AquaMorf.WATERSTAAL")) %>% count(datumbezoek, sort = TRUE)
+
+  # After sparring with A. Leyssen, it could be concluded that no date fields
+  # exist that represent the applicable period that a point was used in the
+  # field. The date fields were filled in an automated way in this database
+  # (created_date, last_edited_date, GDB_FROM_DATE, GDB_TO_DATE) or in an
+  # incomplete way (datumbezoek). However the value in 'puntwaterkwal' would be
+  # used in LIMS; the DWH Aquachem translates it into consistent polygon_id
+  # codes of the watersurfaces data source.
+
+  query <- sql(
+    "SELECT WS.codeplas AS polygon_legacyid,
+      WS.puntwaterkwal AS annotation,
+      WS.GDB_FROM_DATE AS active_in_db_from,
+      WS.GDB_TO_DATE AS active_in_db_till,
+      WS.OBJECTID AS ranknr,
+      WS.shape.STAsBinary() AS geometry
+      FROM AquaMorf.WATERSTAAL WS"
+  )
+  legacy_watersamplepoints <-
+    read_sf(con, query = query, crs = 31370) %>%
+    st_cast("POINT") %>%
+    mutate(
+      across(where(is.instant), as_date),
+      across(where(is.character), factor),
+      x = st_coordinates(.)[, "X"],
+      y = st_coordinates(.)[, "Y"]
+    ) %>% 
+    arrange(
+      polygon_legacyid,
+      x,
+      y,
+      active_in_db_till,
+      ranknr,
+      active_in_db_from,
+      annotation
+    ) %>% 
+    st_drop_geometry() %>% 
+    relocate(x, y, .after = polygon_legacyid) %>% 
+    relocate(starts_with("active"), .after = last_col())
+  
+  legacy_watersamplepoints %>% 
+    write_vc(
+      file = "legacy_watersamplepoints",
+      root = file.path(datapath, "text/raw"),
+      digits = 10,
+      optimize = FALSE,
+      strict = FALSE,
+      sorting = c(
+        "polygon_legacyid",
+        "x",
+        "y",
+        "active_in_db_till",
+        "ranknr",
+        "active_in_db_from",
+        "annotation"
+      )
+    ) %>% 
+    convert_line_endings(root = file.path(datapath, "text/raw"))
+  
+    DBI::dbDisconnect(con)
+}
+```
+
+Reading the legacy watersample points from the local file.
+
+```{r}
+legacy_watersamplepoints <- 
+  read_vc(
+    file = "legacy_watersamplepoints",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble()
+```
+
+
+<!-- TODO: -->
+<!-- - filter the useful locations & write to local text file -->
+<!-- - join locations with sampling units -->
+<!-- - apply result in scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar & -->
+<!--   scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar -->
+
+
 
 
 ## Overview of most relevant objects in this chapter
