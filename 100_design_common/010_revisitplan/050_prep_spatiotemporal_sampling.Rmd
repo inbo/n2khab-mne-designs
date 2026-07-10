@@ -407,10 +407,13 @@ stopifnot(
 
 ## Joining SURF* sampling units with point locations of surface water samples
 
-Once a point for surface water sample extraction has been established in the field for an aquatic sampling unit, then it can be reused as long as it remains useful.
-Consequently, we should convert SURFLENTLOCEVALSAMPLPOINT & SURFLOTLOCEVALSAMPLPOINT FAGs to LOCEVALAQ for sampling units in SURF* schemes where this sample point is already available.
+Once a point for surface water sample extraction has been established in the field for an aquatic sampling unit, it can be reused as long as it remains useful and conforms to a list of (field) criteria.
+Consequently, the SAMPLPOINT planning should depend on the availability of a recent-enough point location.
 
-Reading data from the INBO database.
+Historical (legacy) watersample point data for lentic types are available in an INBO database (ArcGIS file geodatabase).
+If multiple points are available for a single watersurface, then we should add some guidance which one is preferred (e.g. most recent).
+
+Optionally recollecting the legacy point data from the database and writing as a local data file.
 
 ```{r}
 if (params$update_raw_textdata && params$access_database) {
@@ -420,32 +423,65 @@ if (params$update_raw_textdata && params$access_database) {
   # tbl(con, I("AquaMorf.WATERSTAAL")) %>% count(codeplas, sort = TRUE)
   # tbl(con, I("AquaMorf.WATERSTAAL")) %>% count(datumbezoek, sort = TRUE)
 
+  # After sparring with A. Leyssen, it could be concluded that no date fields
+  # exist that represent the applicable period that a point was used in the
+  # field. The date fields were filled in an automated way in this database
+  # (created_date, last_edited_date, GDB_FROM_DATE, GDB_TO_DATE) or in an
+  # incomplete way (datumbezoek). However the value in 'puntwaterkwal' would be
+  # used in LIMS; the DWH Aquachem translates it into consistent polygon_id
+  # codes of the watersurfaces data source.
+
   query <- sql(
-    "SELECT WS.codeplas AS polygon_id,
-      WS.datumbezoek AS date_visit,
-      WS.created_date AS date_creation,
+    "SELECT WS.codeplas AS polygon_legacyid,
+      WS.puntwaterkwal AS annotation,
+      WS.GDB_FROM_DATE AS active_in_db_from,
+      WS.GDB_TO_DATE AS active_in_db_till,
+      WS.OBJECTID AS ranknr,
       WS.shape.STAsBinary() AS geometry
       FROM AquaMorf.WATERSTAAL WS"
   )
-  watersamplelocs <-
+  legacy_watersamplepoints <-
     read_sf(con, query = query, crs = 31370) %>%
     st_cast("POINT") %>%
     mutate(
       across(where(is.instant), as_date),
-      across(where(is.character), factor)
-    )
-  DBI::dbDisconnect(con)
-
-  # watersamplelocs %>% filter(date_visit != date_creation)
-  # watersamplelocs %>% filter(is.na(date_creation))
-  # # 70 polygons have different sample locations
-  # watersamplelocs %>%
-  #   distinct(polygon_id, geometry) %>%
-  #   st_drop_geometry() %>%
-  #   count(polygon_id, sort = TRUE) %>%
-  #   filter(n > 1)
-  # watersamplelocs %>% filter(polygon_id == "ANTRAV0052")
-  # watersamplelocs %>% filter(polygon_id == "LIMZNH0333")
+      across(where(is.character), factor),
+      x = st_coordinates(.)[, "X"],
+      y = st_coordinates(.)[, "Y"]
+    ) %>% 
+    arrange(
+      polygon_legacyid,
+      x,
+      y,
+      active_in_db_till,
+      ranknr,
+      active_in_db_from,
+      annotation
+    ) %>% 
+    st_drop_geometry() %>% 
+    relocate(x, y, .after = polygon_legacyid) %>% 
+    relocate(starts_with("active"), .after = last_col())
+  
+  legacy_watersamplepoints %>% 
+    write_vc(
+      file = "legacy_watersamplepoints",
+      root = file.path(datapath, "text/raw"),
+      digits = 10,
+      optimize = FALSE,
+      strict = FALSE,
+      sorting = c(
+        "polygon_legacyid",
+        "x",
+        "y",
+        "active_in_db_till",
+        "ranknr",
+        "active_in_db_from",
+        "annotation"
+      )
+    ) %>% 
+    convert_line_endings(root = file.path(datapath, "text/raw"))
+  
+    DBI::dbDisconnect(con)
 }
 ```
 
