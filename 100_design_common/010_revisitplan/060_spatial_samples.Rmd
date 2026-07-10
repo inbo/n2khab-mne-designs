@@ -1077,7 +1077,7 @@ vbi_overlaps %>%
 
 ### Combining with extra data to finetune the FAG calendar
 
-#### Legacy watersample points and dates
+#### Legacy watersample points and dates for lentic types
 
 Once a point for surface water sample extraction has been established in the field for an aquatic sampling unit, it can be reused as long as it remains useful and conforms to a list of (field) criteria.
 Consequently, the SAMPLPOINT planning should depend on the availability of a recent-enough point location.
@@ -1112,7 +1112,7 @@ if (params$update_raw_textdata && params$access_database) {
       WS.shape.STAsBinary() AS geometry
       FROM AquaMorf.WATERSTAAL WS"
   )
-  legacy_watersamplepoints <-
+  legacy_watersamplepoints_lentic <-
     read_sf(con, query = query, crs = 31370) %>%
     st_cast("POINT") %>%
     mutate(
@@ -1134,9 +1134,9 @@ if (params$update_raw_textdata && params$access_database) {
     relocate(x, y, .after = polygon_legacyid) %>% 
     relocate(starts_with("active"), .after = last_col())
   
-  legacy_watersamplepoints %>% 
+  legacy_watersamplepoints_lentic %>% 
     write_vc(
-      file = "legacy_watersamplepoints",
+      file = "legacy_watersamplepoints_lentic",
       root = file.path(datapath, "text/raw"),
       digits = 10,
       optimize = FALSE,
@@ -1160,9 +1160,9 @@ if (params$update_raw_textdata && params$access_database) {
 Reading the legacy watersample points from the local file.
 
 ```{r}
-legacy_watersamplepoints <- 
+legacy_watersamplepoints_lentic <- 
   read_vc(
-    file = "legacy_watersamplepoints",
+    file = "legacy_watersamplepoints_lentic",
     root = file.path(datapath, "text/raw")
   ) %>%
   as_tibble()
@@ -1183,7 +1183,7 @@ activity (automated fields), not to a period of field validity).
 
 ```{r}
 legacy_watersamplepoints_spslocs_lentic <-
-  legacy_watersamplepoints %>%
+  legacy_watersamplepoints_lentic %>%
   # one record appears to have missing coordinates
   filter(!is.na(x), !is.na(y)) %>%
   st_as_sf(coords = c("x", "y"), crs = 31370, remove = FALSE) %>%
