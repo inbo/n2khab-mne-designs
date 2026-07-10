@@ -2070,7 +2070,7 @@ if (FALSE) {
     ) %>%
     write_sf(
       gpkg_path,
-      layer = "legacypoints_shortterm_lentictypes_POINTS",
+      layer = "legacywatsamppoints_shortterm_lentictypes_POINTS",
       delete_layer = TRUE
     )
 }
