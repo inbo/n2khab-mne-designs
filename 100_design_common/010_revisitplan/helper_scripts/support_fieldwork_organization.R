@@ -1913,7 +1913,7 @@ if (FALSE) {
 
   # generating & writing layer of legacy watersample points for lentic types,
   # restricted to the locations in the shortterm calendar
-  legacy_watersamplepoints_spsamples %>%
+  legacy_watersamplepoints_spslocs_lentic %>%
     semi_join(
       fieldwork_shortterm_prioritization_watersurfaces,
       join_by(grts_address_final)
