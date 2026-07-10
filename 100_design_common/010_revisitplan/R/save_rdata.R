@@ -1,6 +1,7 @@
 rdata_set <- c(
   "n2khab_data_checksums_reference",
   "versions_required",
+  "lentic_types_regex",
   "schemes",
   "targetpops",
   "modules",
@@ -68,7 +69,10 @@ rdata_set <- c(
   "scheme_moco_ps_stratum_sppost_spsamples_sf",
   "scheme_moco_ps_stratum_sppost_spsamples_spares_sf",
   "samplinglocations_sf",
+  "stratum_grts_polygon_spsamples_lentic",
+  "stratum_grts_spsamples_lentic_sf",
   "vbi_overlaps",
+  "legacy_watersamplepoints_spslocs_lentic",
   "scheme_moco_ps_spsubset_panel_calendar",
   "scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship",
   "scheme_moco_ps_spsubset_targetfag",
