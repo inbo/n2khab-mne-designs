@@ -1166,7 +1166,18 @@ legacy_watersamplepoints <-
   as_tibble()
 ```
 
-Filtering the legacy watersample points according to spatial sampling units of lentic types and prioritizing the points per polygon.
+Filtering the legacy watersample points according to the locations (watersurface polygons) of spatial sampling units of lentic types and prioritizing the points per location.
+
+More specifically, we include a `legacy_try_first` column: for each polygon (represented by grts_address_final), `TRUE` marks the point that
+should be favoured for data collection, if the field criteria for point
+validity still hold. In some cases, multiple different points with `TRUE` may
+be present, in which case field criteria must be used. If the `TRUE` point
+does not fulfill criteria, then (historical) points marked as `FALSE` can
+still be considered, making use of the field criteria. If multiple points
+still survive in either of these cases (`TRUE`, or `FALSE` if `TRUE` isn't
+successful), then additional information can be inspected to make a choice,
+such as `active_in_db_from` & `active_in_db_till` (but these refer to database
+activity (automated fields), not to a period of field validity).
 
 ```{r}
 legacy_watersamplepoints_spsamples <-
@@ -1187,16 +1198,6 @@ legacy_watersamplepoints_spsamples <-
       distinct(polygon_id, grts_address_final, geom),
     left = FALSE
   ) %>%
-  # constructing 'legacy_try_first': for each polygon, TRUE marks the point that
-  # should be favoured for data collection, if the field criteria for point
-  # validity still hold. In some cases, multiple different points with TRUE may
-  # be present, in which case field criteria must be used. If the TRUE point
-  # does not fulfill criteria, then (historical) points marked as FALSE can
-  # still be considered, making use of the field criteria. If multiple points
-  # still survive in either of these cases (TRUE, or FALSE if TRUE isn't
-  # successful), then additional information can be inspected to make a choice,
-  # such as active_in_db_from/active_in_db_till (but those refer to database
-  # activity (automated fields), not to a period of field validity).
   mutate(
     is_current = year(active_in_db_till) > 9000,
     n_points_current = sum(is_current),
@@ -1238,12 +1239,12 @@ legacy_watersamplepoints_spsamples <-
     desc(legacy_try_first),
     ranknr
   )
-  # # following keeps all polygons!
-  # filter(legacy_try_first)
 ```
 
 
+
 <!-- TODO: -->
+<!-- - join the latest sampling date (Aquachem) to locations of lentic sampling units -->
 <!-- - apply result in scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar & -->
 <!--   scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar -->
 
