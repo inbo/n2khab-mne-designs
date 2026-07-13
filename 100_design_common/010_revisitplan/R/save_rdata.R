@@ -72,6 +72,7 @@ rdata_set <- c(
   "stratum_grts_polygon_spsamples_lentic",
   "stratum_grts_spsamples_lentic_sf",
   "vbi_overlaps",
+  "latest_legacysampling_lentic",
   "legacy_watersamplepoints_spslocs_lentic",
   "scheme_moco_ps_spsubset_panel_calendar",
   "scheme_moco_ps_spsubset_fas_stratum_sppost_panelmemship",
