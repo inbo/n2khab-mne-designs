@@ -1085,6 +1085,8 @@ Consequently, the SAMPLPOINT planning should depend on the availability of a rec
 Historical (legacy) watersample point data for lentic types are available in an INBO database (ArcGIS file geodatabase).
 If multiple points are available for a single watersurface, then we should add some guidance which one is preferred (e.g. most recent).
 
+To determine whether the point location is recent enough, we also determine the latest 'legacy' sampling date (i.e. before 1 Jul 2026) per lentic sampling unit.
+
 Optionally recollecting the legacy point data from the database and writing as a local data file.
 
 ```{r}
@@ -1157,7 +1159,74 @@ if (params$update_raw_textdata && params$access_database) {
 }
 ```
 
-Reading the legacy watersample points from the local file.
+Optionally recollecting the latest legacy sampling dates from the database and writing as a local data file.
+
+```{r}
+if (params$update_raw_textdata && params$access_database) {
+  aquachem <- inbodb::connect_inbo_dbase("M0003_00_Aquachem")
+  # DBI::dbListTables(aquachem)
+  # DBI::dbGetQuery(aquachem, "SELECT * FROM sys.tables") %>% as_tibble()
+  #
+  # tbl(aquachem, "FactResultAqua") %>% glimpse()
+  # tbl(aquachem, "DimWaterhabitat") %>% glimpse()
+  # tbl(aquachem, "DimPond") %>% glimpse()
+  
+  ws_polygons <-
+    tbl(aquachem, "DimPond") %>%
+    filter(year(GDB_TO_DATE) > 9000) %>%
+    select(
+      loc_key = PondKey,
+      polygon_id = codeplas
+    )
+  # note that a polygon_id value often has multiple loc_key values
+  
+  # we consider all samples before 1 July 2026 as 'legacy', i.e. non-MNE
+  max_date <- make_date(2026, 7, 1)
+  
+  latest_legacysampling_lentic <-
+    tbl(aquachem, "FactResultAqua") %>%
+    filter(
+      !str_detect(Component, fixed("veld")),
+      !str_detect(Component, fixed("Veld")),
+      !str_detect(Component, fixed("VELD")),
+      PondKey > 0
+    ) %>%
+    select(
+      loc_key = PondKey,
+      date_sampling = FieldSamplingDate
+    ) %>%
+    mutate(date_sampling = sql("CAST(date_sampling AS date)")) %>%
+    filter(date_sampling < max_date) %>%
+    # distinct(loc_key) %>% anti_join(ws_polygons, join_by(loc_key))
+    # it has been checked that below doesn't drop loc_key values
+    inner_join(
+      ws_polygons,
+      join_by(loc_key)
+    ) %>%
+    summarize(
+      date_sampling_latest = max(date_sampling, na.rm = TRUE),
+      .by = polygon_id
+    ) %>%
+    select(polygon_id, date_sampling_latest) %>%
+    arrange(polygon_id) %>%
+    collect()
+  
+  latest_legacysampling_lentic %>% 
+    write_vc(
+      "latest_legacysampling_lentic",
+      root = file.path(datapath, "text/raw"),
+      sorting = "polygon_id",
+      strict = FALSE,
+      optimize = TRUE,
+      digits = 12
+    ) %>%
+    n2khab::convert_line_endings(root = file.path(datapath, "text/raw"))
+  
+  DBI::dbDisconnect(aquachem)
+}
+```
+
+Reading the legacy watersample points and latest legacy sampling dates from the local files.
 
 ```{r}
 legacy_watersamplepoints_lentic <- 
