@@ -1256,6 +1256,11 @@ successful), then additional information can be inspected to make a choice,
 such as `active_in_db_from` & `active_in_db_till` (but these refer to database
 activity (automated fields), not to a period of field validity).
 
+If the latest legacy sampling date is recent enough, the SAMPLPOINT FAG will be dropped for the unit in the FAG calendar.
+However, if during fieldwork it is found that the  point where `legacy_try_first == TRUE`
+does not fulfill criteria, then the SAMPLPOINT FAG needs to be restored ad-hoc since the sampling date does not apply to older points.
+For this reason, in the below watersample points object this date is only kept if `legacy_try_first` is `TRUE`.
+
 ```{r}
 legacy_watersamplepoints_spslocs_lentic <-
   legacy_watersamplepoints_lentic %>%
@@ -1310,6 +1315,11 @@ legacy_watersamplepoints_spslocs_lentic <-
     relationship = "many-to-one",
     unmatched = "drop"
   ) %>% 
+  mutate(date_sampling_latest = if_else(
+    legacy_try_first,
+    date_sampling_latest,
+    NA_Date_
+  )) %>% 
   select(
     grts_address_final,
     polygon_id,
