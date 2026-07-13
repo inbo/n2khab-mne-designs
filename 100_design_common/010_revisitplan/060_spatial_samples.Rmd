@@ -1243,7 +1243,7 @@ latest_legacysampling_lentic <-
   as_tibble()
 ```
 
-Filtering the legacy watersample points according to the locations (watersurface polygons) of spatial sampling units of lentic types and prioritizing the points per location.
+Filtering the legacy watersample points according to the locations (watersurface polygons) of spatial sampling units of lentic types, adding the latest legacy sampling date per location and prioritizing the points per location.
 
 More specifically, we include a `legacy_try_first` column: for each polygon (represented by grts_address_final), `TRUE` marks the point that
 should be favoured for data collection, if the field criteria for point
@@ -1304,9 +1304,16 @@ legacy_watersamplepoints_spslocs_lentic <-
     any(legacy_try_first),
     .by = polygon_id
   ) %>%
+  left_join(
+    latest_legacysampling_lentic,
+    join_by(polygon_id),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
   select(
     grts_address_final,
     polygon_id,
+    lastdate_legacysampling_polygon = date_sampling_latest,
     legacy_try_first,
     x:active_in_db_till
   ) %>%
@@ -1319,9 +1326,7 @@ legacy_watersamplepoints_spslocs_lentic <-
 ```
 
 
-
 <!-- TODO: -->
-<!-- - join the latest sampling date (Aquachem) to locations of lentic sampling units -->
 <!-- - apply result in scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar & -->
 <!--   scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar -->
 
