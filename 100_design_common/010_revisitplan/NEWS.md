@@ -5,14 +5,31 @@ tag `rep_xxxxxxxxxxx`
 Changes to results
 ------------------
 
+- Include code to add watersurface geometries to the lentic spatial sampling
+  units.
+- Update code to read legacy watersample points from an INBO database (lentic
+  types); write result to a vc-formatted text file.
+- Add code to obtain the latest legacy sampling dates from an INBO database
+  (lentic types); write result to a vc-formatted text file. This information is
+  needed to decide about the need of re-evaluating legacy watersample points in
+  the field.
+- Generate object of prioritized legacy watersample points for the lentic
+  spatial sampling units, including the latest legacy sampling date.
+
 Additions
 ---------
+
+- Add helper script to explore legacy watersample point data for lentic types.
 
 Maintenance
 -----------
 
 Helper script supporting fieldwork organization
 -----------------------------------------------
+
+- Remove the code to add watersurface geometries to the lentic spatial sampling
+  units. This is now included in the REP itself as it is needed in processing
+  the legacy watersample points.
 
 # REP 0.17.0 (2026-07-03)
 

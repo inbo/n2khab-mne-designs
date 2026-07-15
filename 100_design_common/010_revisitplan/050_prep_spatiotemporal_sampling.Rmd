@@ -405,58 +405,6 @@ stopifnot(
 ```
 
 
-## Joining SURF* sampling units with point locations of surface water samples
-
-Once a point for surface water sample extraction has been established in the field for an aquatic sampling unit, then it can be reused as long as it remains useful.
-Consequently, we should convert SURFLENTLOCEVALSAMPLPOINT & SURFLOTLOCEVALSAMPLPOINT FAGs to LOCEVALAQ for sampling units in SURF* schemes where this sample point is already available.
-
-Reading data from the INBO database.
-
-```{r}
-if (params$update_raw_textdata && params$access_database) {
-  con <- inbodb::connect_inbo_dbase("G0102_00_AquaMorf")
-  # DBI::dbListTables(con, schema = "AquaMorf") %>% sort
-  # tbl(con, I("AquaMorf.WATERSTAAL")) %>% glimpse()
-  # tbl(con, I("AquaMorf.WATERSTAAL")) %>% count(codeplas, sort = TRUE)
-  # tbl(con, I("AquaMorf.WATERSTAAL")) %>% count(datumbezoek, sort = TRUE)
-
-  query <- sql(
-    "SELECT WS.codeplas AS polygon_id,
-      WS.datumbezoek AS date_visit,
-      WS.created_date AS date_creation,
-      WS.shape.STAsBinary() AS geometry
-      FROM AquaMorf.WATERSTAAL WS"
-  )
-  watersamplelocs <-
-    read_sf(con, query = query, crs = 31370) %>%
-    st_cast("POINT") %>%
-    mutate(
-      across(where(is.instant), as_date),
-      across(where(is.character), factor)
-    )
-  DBI::dbDisconnect(con)
-
-  # watersamplelocs %>% filter(date_visit != date_creation)
-  # watersamplelocs %>% filter(is.na(date_creation))
-  # # 70 polygons have different sample locations
-  # watersamplelocs %>%
-  #   distinct(polygon_id, geometry) %>%
-  #   st_drop_geometry() %>%
-  #   count(polygon_id, sort = TRUE) %>%
-  #   filter(n > 1)
-  # watersamplelocs %>% filter(polygon_id == "ANTRAV0052")
-  # watersamplelocs %>% filter(polygon_id == "LIMZNH0333")
-}
-```
-
-<!-- TODO: -->
-<!-- - filter the useful locations & write to local text file -->
-<!-- - join locations with sampling units -->
-<!-- - apply result in scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar & -->
-<!--   scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar -->
-
-
-
 ## Overview of most relevant objects in this chapter
 
 Objects subsetted with `[[1]]` mean that they (may) contain more, similarly structured elements.
