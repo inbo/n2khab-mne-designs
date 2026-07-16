@@ -20,6 +20,8 @@ Additions
 ---------
 
 - Add helper script to explore legacy watersample point data for lentic types.
+- Add helper script to create 2 geopackages of lentic sampling locations, each
+  geopackage having its own scope and end user.
 
 Maintenance
 -----------
