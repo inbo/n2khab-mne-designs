@@ -2021,6 +2021,8 @@ objects <- tibble(
     "schemepstargetpanel_spsamples_terr",
     "vbi_overlaps",
     "stratum_grts_spsamples_lentic_sf",
+    "grts_lentic_sf",
+    "legacy_watersamplepoints_spslocs_lentic",
     "units_7220",
     "units_cell_cellcenter",
     "units_cell_rast",
