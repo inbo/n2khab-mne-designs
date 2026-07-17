@@ -1781,12 +1781,12 @@ orthophoto_shortterm_watersurfaces <-
   stratum_grts_spsamples_lentic_sf %>%
   inner_join(
     orthophoto_shortterm_lentictype_grts,
-    join_by(stratum, grts_address_final),
+    join_by(stratum, grts_address, grts_address_final),
     relationship = "one-to-many",
     unmatched = c("drop", "error")
   ) %>%
   relocate(type, stratum, .after = polygon_id) %>%
-  relocate(grts_address_final, .after = grts_address) %>%
+  relocate(grts_address, grts_address_final, .after = sample_support_code) %>%
   relocate(geom, .after = last_col()) %>%
   arrange(
     priority,
@@ -1823,7 +1823,7 @@ if (FALSE) {
     filter(sample_support_code == "watersurface") %>%
     inner_join(
       stratum_grts_spsamples_lentic_sf,
-      join_by(stratum, grts_address_final),
+      join_by(stratum, grts_address, grts_address_final),
       relationship = "many-to-one",
       unmatched = c("error", "drop")
     ) %>%
