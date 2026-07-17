@@ -32,6 +32,7 @@ Helper script supporting fieldwork organization
 - Remove the code to add watersurface geometries to the lentic spatial sampling
   units. This is now included in the REP itself as it is needed in processing
   the legacy watersample points.
+- Write object with legacy watersample points as an extra geopackage layer.
 
 
 # REP 0.17.0 (2026-07-03)
