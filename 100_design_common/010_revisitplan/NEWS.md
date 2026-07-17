@@ -6,7 +6,10 @@ Changes to results
 ------------------
 
 - Include code to add watersurface geometries to the lentic spatial sampling
-  units (moved out of fieldwork organization helper script).
+  units (moved out of fieldwork organization helper script). Also, keep
+  the `grts_address` column in the objects to maintain consistency with
+  spatial sampling unit definition and avoid confusion. The spatial geometry
+  is linked to `grts_address_final`, as always and as before.
 - Update and finish older code to read legacy watersample points from an INBO
   database (lentic types); write result to a vc-formatted text file.
 
