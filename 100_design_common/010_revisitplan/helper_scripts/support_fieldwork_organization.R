@@ -133,13 +133,57 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
 
 # obtaining geometries of the sampling units themselves:
 # - for lentic types, the result is in object 'stratum_grts_spsamples_lentic_sf'
-#   from the REP
+#   from the REP; it is explored and handled below for demonstration
 # - for lotic types, see code in
 #   inbo/n2khab-mne-monitoring/010_aq_piezometer_positioning, but then do use
 #   the REP RData file used here
 # - for type 7220 (springs) as a whole, see code provided below
 # - for terrestrial types, these are cells; see code provided below
 
+
+# geometries of the spatial sampling units of lentic types (watersurface
+# polygons)
+# /////////////////////////////////////////////////////////////////////////
+
+# The geometries of lentic spatial sampling units are in following object.
+glimpse(stratum_grts_spsamples_lentic_sf)
+
+# The spatial sampling unit is always identified by stratum x grts_address by
+# definition. Note that, as usual, grts_address_final is the GRTS address linked
+# to the actual location (watersurface polygon), while grts_address is the GRTS
+# address from the sample draw. This distinction supports local replacements.
+# However, for lentic types we don't have a difference between both columns, but
+# if we choose to support local replacements for lentic types in the future,
+# then it can be accommodated.
+#
+# Note that polygon_id is kept only for information and perhaps to join extra
+# attributes from its datasources watersurfaces_hab and watersurfaces; the
+# stable column to identify the polygons is grts_address_final! This is because
+# polygon_id values can change with the versions of watersurfaces_hab and
+# watersurfaces.
+
+# Multiple strata often co-occur in the same location (watersurface geometry).
+# Each location is uniquely identified by its GRTS address. So we can easily
+# construct a spatial object of lentic locations, each with its unique GRTS
+# address on each row, also mentioning the types for which the location was
+# drawn:
+grts_lentic_sf <-
+  stratum_grts_spsamples_lentic_sf %>%
+  # using type instead of stratum, since it is only going to serve as an
+  # attribute here (but note that multiple strata exist per lentic type!)
+  inner_join(
+    n2khab_strata,
+    join_by(stratum),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  # distinct(grts_address_final, polygon_id, geom) %>%
+  summarise(
+    types_in_sample =
+      str_flatten(sort(unique(type)), collapse = "|") %>% factor(),
+    .by = c(starts_with("grts_address"), polygon_id, geom)
+  ) %>%
+  relocate(geom, .after = last_col())
 
 
 # geometries of 7220 units are represented by points, labelled with their GRTS
