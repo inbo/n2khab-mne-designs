@@ -1542,7 +1542,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
       # locations where LOCEVAL is already executed)
       !is.na(scheme_ps_oldtargetpanels_served) ~ NA_integer_,
       # no priority is given to FAG occasions for types that will be obsoleted,
-      # if the panel set is panel set 2 accross the targeted schemes
+      # if the panel set is panel set 2 across the targeted schemes
       stratum %in% c("6410_ve", "6510_hus") &
         !str_detect(scheme_ps_targetpanels_served, ":PS1") ~ NA_integer_,
       str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL03|PS2PANEL01)") ~ 1L,
@@ -1561,7 +1561,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
     ),
     priority_soil = case_when(
       # no priority is given to FAG occasions for types that will be obsoleted,
-      # if the panel set is panel set 2 accross the targeted schemes
+      # if the panel set is panel set 2 across the targeted schemes
       stratum %in% c("6410_ve", "6510_hus") &
         !str_detect(scheme_ps_targetpanels_served, ":PS1") ~ NA_integer_,
       str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS\\dPANEL02") ~ 7L,
@@ -1571,7 +1571,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
     ),
     priority_mhq = case_when(
       # no priority is given to FAG occasions for types that will be obsoleted,
-      # if the panel set is panel set 2 accross the targeted schemes. This is
+      # if the panel set is panel set 2 across the targeted schemes. This is
       # actually redundant now, but keeping this rule in for safety.
       stratum %in% c("6410_ve", "6510_hus") &
         !str_detect(scheme_ps_targetpanels_served, ":PS1") ~ NA_integer_,
