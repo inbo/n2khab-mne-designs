@@ -39,6 +39,9 @@ Helper script supporting fieldwork organization
 - Add a section about legacy watersample points for the lentic spatial sampling
   units, with explanations.
 - Write object with legacy watersample points as an extra geopackage layer.
+- Apply a quarterly update of fieldwork priorities. As time passes, planned
+  quarterly panel visits become the past, hence associated priorities should
+  change as well.
 
 
 # REP 0.17.0 (2026-07-03)
