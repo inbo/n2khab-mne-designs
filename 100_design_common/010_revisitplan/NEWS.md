@@ -1,6 +1,6 @@
-# REP (development version)
+# REP 0.18.0 (2026-08-13)
 
-tag `rep_xxxxxxxxxxx`
+tag `rep_0.18.0`
 
 This version introduces few changes to results. Spatial samples and
 spatiotemporal samples are unaffected. Most new code is related to attributes
