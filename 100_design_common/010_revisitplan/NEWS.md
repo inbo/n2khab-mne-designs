@@ -1,3 +1,50 @@
+# REP 0.18.0 (2026-08-13)
+
+tag `rep_0.18.0`
+
+This version introduces few changes to results. Spatial samples and
+spatiotemporal samples are unaffected. Most new code is related to attributes
+of lentic spatial sampling units.
+
+Changes to results
+------------------
+
+- Include code to add watersurface geometries to the lentic spatial sampling
+  units (moved out of fieldwork organization helper script). Also, keep
+  the `grts_address` column in the objects to maintain consistency with
+  spatial sampling unit definition and avoid confusion. The spatial geometry
+  is linked to `grts_address_final`, as always and as before.
+- Update and finish older code to read legacy watersample points from an INBO
+  database (lentic types); write result to a vc-formatted text file.
+
+Additions
+---------
+
+- Add code to obtain the latest legacy sampling dates from an INBO database
+  (lentic types); write result to a vc-formatted text file. This information is
+  needed to decide about the need of re-evaluating legacy watersample points in
+  the field.
+- Generate object of prioritized legacy watersample points for the lentic
+  spatial sampling units, including the latest legacy sampling date.
+- Add helper script to explore legacy watersample point data for lentic types.
+- Add helper script to create 2 geopackages of lentic sampling locations, each
+  geopackage having its own scope and end user.
+
+Helper script supporting fieldwork organization
+-----------------------------------------------
+
+- Remove the code to add watersurface geometries to the lentic spatial sampling
+  units. This is now included in the REP itself as it is needed in processing
+  the legacy watersample points.
+- Add a section on lentic sampling unit geometries, with explanations.
+- Add a section about legacy watersample points for the lentic spatial sampling
+  units, with explanations.
+- Write object with legacy watersample points as an extra geopackage layer.
+- Apply a quarterly update of fieldwork priorities. As time passes, planned
+  quarterly panel visits become the past, hence associated priorities should
+  change as well.
+
+
 # REP 0.17.0 (2026-07-03)
 
 tag `rep_0.17.0`

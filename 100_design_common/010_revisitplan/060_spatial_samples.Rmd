@@ -920,10 +920,16 @@ scheme_moco_ps_stratum_sppost_spsamples %>%
 ```
 
 
-## Deriving spatial layers of spatial samples (without spare units)
+## Deriving spatial layers of spatial samples
 
 Deriving spatial layers for use and visualization.
 We also include extra attributes from `stratum_grts_n2khab_phabcorrected_no_replacements`.
+
+### All strata
+
+Note that a spatial representation by the cell center of a GRTS address is not very useful for fieldwork in non-cell-based types, so in those types using these cell centers is rather a convenience for small-scale mapping or general insights.
+
+Spatial point object of all sampling units, represented by the cell center of their GRTS address.
 
 ```{r}
 scheme_moco_ps_stratum_sppost_spsamples_sf <-
@@ -934,6 +940,8 @@ scheme_moco_ps_stratum_sppost_spsamples_sf <-
   add_point_coords_grts(grts_var = "grts_address_final")
 ```
 
+Spatial point object of all sampling locations, i.e. where each (final) GRTS address occurs only once, represented by the cell center of their GRTS address.
+
 ```{r}
 samplinglocations_sf <-
   scheme_moco_ps_stratum_sppost_spsamples %>%
@@ -943,6 +951,8 @@ samplinglocations_sf <-
   add_point_coords_grts(grts_var = "grts_address_final")
 ```
 
+Spatial point object of all sampling + spare units, represented by the cell center of their GRTS address.
+
 ```{r}
 scheme_moco_ps_stratum_sppost_spsamples_spares_sf <-
   scheme_moco_ps_stratum_sppost_spsamples_spares %>%
@@ -951,8 +961,79 @@ scheme_moco_ps_stratum_sppost_spsamples_spares_sf <-
   add_point_coords_grts(grts_var = "grts_address_final")
 ```
 
+### Lentic strata
 
-## Updating overlap with VBI plots
+We will create a spatial object of all sampling units of lentic types, represented by their actual spatial unit: the respective watersurface polygons.
+
+First constructing the link between spatial sampling units and watersurface polygon IDs, via `units_non_cell_n2khab_grts`.
+
+```{r}
+stratum_grts_polygon_spsamples_lentic <-
+  scheme_moco_ps_stratum_sppost_spsamples %>%
+  filter(str_detect(stratum, lentic_types_regex)) %>%
+  unnest(sp_poststr_samples) %>%
+  select(-sample_status) %>%
+  # provision for potential local replacements by including grts_address_final
+  # (currently not different for these strata)
+  add_assessment_data() %>%
+  distinct(stratum, grts_address, grts_address_final) %>%
+  inner_join(
+    units_non_cell_n2khab_grts %>%
+      filter(sample_support_code == "watersurface") %>%
+      select(-sample_support_code),
+    join_by(grts_address_final == grts_address),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
+  rename(polygon_id = unit_id)
+```
+
+Collecting the applicable watersurface geometries from two data sources.
+
+```{r}
+# extract all polygons from watersurfaces_hab that belong to the spatial samples
+# for lentic types:
+wsh_polygons_spsamples <-
+  wsh$watersurfaces_polygons %>%
+  select(polygon_id) %>%
+  semi_join(stratum_grts_polygon_spsamples_lentic, join_by(polygon_id))
+
+# extract all polygons from the watersurfaces data source that belong to the
+# spatial samples for lentic types but that were not covered by
+# watersurfaces_hab:
+ws_extra_polygons_spsamples <-
+  ws %>%
+  semi_join(stratum_grts_polygon_spsamples_lentic, join_by(polygon_id)) %>%
+  # keeping only the unique extra polygons relative to watersurfaces_hab
+  anti_join(
+    st_drop_geometry(wsh_polygons_spsamples),
+    join_by(polygon_id)
+  )
+```
+
+Now generating the spatial object of all sampling units of lentic types, by adding the watersurface geometries to `stratum_grts_polygon_spsamples_lentic` based on polygon ID.
+
+```{r}
+stratum_grts_spsamples_lentic_sf <-
+  rbind(wsh_polygons_spsamples, ws_extra_polygons_spsamples) %>%
+  inner_join(
+    stratum_grts_polygon_spsamples_lentic,
+    join_by(polygon_id),
+    relationship = "one-to-many",
+    unmatched = "error"
+  ) %>%
+  relocate(stratum, grts_address, grts_address_final) %>%
+  arrange(stratum, grts_address, grts_address_final)
+```
+
+Note that `polygon_id` is kept only for information and perhaps to join extra attributes from the datasources; the stable column to identify the polygons is `grts_address_final`!
+This is because `polygon_id` values can change with the versions of watersurfaces_hab and watersurfaces.
+
+## Applications
+
+Some objects are prepared that are needed for implementation in the field or to finetune the FAG calendar (chapter \@ref(fag-calendar)).
+
+### Updating overlap with VBI plots
 
 [VBI](https://natuurenbos.be/dossiers/bosinventaris#toc-hoe-gebeuren-de-metingen) plots are circular (radius 18 m) and permanent equipment is forbidden in these plots.
 
@@ -994,6 +1075,274 @@ vbi_overlaps %>%
 ```
 
 
+### Combining with extra data to finetune the FAG calendar
+
+#### Legacy watersample points and dates for lentic types
+
+Once a point for surface water sample extraction has been established in the field for an aquatic sampling unit, it can be reused as long as it remains useful and conforms to a list of (field) criteria.
+Consequently, the SAMPLPOINT planning should depend on the availability of a recent-enough point location.
+
+Historical (legacy) watersample point data for lentic types are available in an INBO database (ArcGIS file geodatabase).
+If multiple points are available for a single watersurface, then we should add some guidance which one is preferred (e.g. most recent).
+
+To determine whether the point location is recent enough, we also determine the latest 'legacy' sampling date (i.e. before 1 Jul 2026) per lentic sampling unit.
+
+Optionally recollecting the legacy point data from the database and writing as a local data file.
+
+```{r}
+if (params$update_raw_textdata && params$access_database) {
+  con <- inbodb::connect_inbo_dbase("G0102_00_AquaMorf")
+  # DBI::dbListTables(con, schema = "AquaMorf") %>% sort
+  # tbl(con, I("AquaMorf.WATERSTAAL")) %>% glimpse()
+  # tbl(con, I("AquaMorf.WATERSTAAL")) %>% count(codeplas, sort = TRUE)
+  # tbl(con, I("AquaMorf.WATERSTAAL")) %>% count(datumbezoek, sort = TRUE)
+
+  # After sparring with A. Leyssen, it could be concluded that no date fields
+  # exist that represent the applicable period that a point was used in the
+  # field. The date fields were filled in an automated way in this database
+  # (created_date, last_edited_date, GDB_FROM_DATE, GDB_TO_DATE) or in an
+  # incomplete way (datumbezoek). However the value in 'puntwaterkwal' would be
+  # used in LIMS; the DWH Aquachem translates it into consistent polygon_id
+  # codes of the watersurfaces data source.
+
+  query <- sql(
+    "SELECT WS.codeplas AS polygon_legacyid,
+      WS.puntwaterkwal AS annotation,
+      WS.GDB_FROM_DATE AS active_in_db_from,
+      WS.GDB_TO_DATE AS active_in_db_till,
+      WS.OBJECTID AS ranknr,
+      WS.shape.STAsBinary() AS geometry
+      FROM AquaMorf.WATERSTAAL WS"
+  )
+  legacy_watersamplepoints_lentic <-
+    read_sf(con, query = query, crs = 31370) %>%
+    st_cast("POINT") %>%
+    mutate(
+      across(where(is.instant), as_date),
+      across(where(is.character), factor),
+      x = st_coordinates(.)[, "X"],
+      y = st_coordinates(.)[, "Y"]
+    ) %>% 
+    arrange(
+      polygon_legacyid,
+      x,
+      y,
+      active_in_db_till,
+      ranknr,
+      active_in_db_from,
+      annotation
+    ) %>% 
+    st_drop_geometry() %>% 
+    relocate(x, y, .after = polygon_legacyid) %>% 
+    relocate(starts_with("active"), .after = last_col())
+  
+  legacy_watersamplepoints_lentic %>% 
+    write_vc(
+      file = "legacy_watersamplepoints_lentic",
+      root = file.path(datapath, "text/raw"),
+      digits = 10,
+      optimize = FALSE,
+      strict = FALSE,
+      sorting = c(
+        "polygon_legacyid",
+        "x",
+        "y",
+        "active_in_db_till",
+        "ranknr",
+        "active_in_db_from",
+        "annotation"
+      )
+    ) %>% 
+    convert_line_endings(root = file.path(datapath, "text/raw"))
+  
+    DBI::dbDisconnect(con)
+}
+```
+
+Optionally recollecting the latest legacy sampling dates from the database and writing as a local data file.
+
+```{r}
+if (params$update_raw_textdata && params$access_database) {
+  aquachem <- inbodb::connect_inbo_dbase("M0003_00_Aquachem")
+  # DBI::dbListTables(aquachem)
+  # DBI::dbGetQuery(aquachem, "SELECT * FROM sys.tables") %>% as_tibble()
+  #
+  # tbl(aquachem, "FactResultAqua") %>% glimpse()
+  # tbl(aquachem, "DimWaterhabitat") %>% glimpse()
+  # tbl(aquachem, "DimPond") %>% glimpse()
+  
+  ws_polygons <-
+    tbl(aquachem, "DimPond") %>%
+    filter(year(GDB_TO_DATE) > 9000) %>%
+    select(
+      loc_key = PondKey,
+      polygon_id = codeplas
+    )
+  # note that a polygon_id value often has multiple loc_key values
+  
+  # we consider all samples before 1 July 2026 as 'legacy', i.e. non-MNE
+  max_date <- make_date(2026, 7, 1)
+  
+  latest_legacysampling_lentic <-
+    tbl(aquachem, "FactResultAqua") %>%
+    filter(
+      !str_detect(Component, fixed("veld")),
+      !str_detect(Component, fixed("Veld")),
+      !str_detect(Component, fixed("VELD")),
+      PondKey > 0
+    ) %>%
+    select(
+      loc_key = PondKey,
+      date_sampling = FieldSamplingDate
+    ) %>%
+    mutate(date_sampling = sql("CAST(date_sampling AS date)")) %>%
+    filter(date_sampling < max_date) %>%
+    # distinct(loc_key) %>% anti_join(ws_polygons, join_by(loc_key))
+    # it has been checked that below doesn't drop loc_key values
+    inner_join(
+      ws_polygons,
+      join_by(loc_key)
+    ) %>%
+    summarize(
+      date_sampling_latest = max(date_sampling, na.rm = TRUE),
+      .by = polygon_id
+    ) %>%
+    select(polygon_id, date_sampling_latest) %>%
+    arrange(polygon_id) %>%
+    collect()
+  
+  latest_legacysampling_lentic %>% 
+    write_vc(
+      "latest_legacysampling_lentic",
+      root = file.path(datapath, "text/raw"),
+      sorting = "polygon_id",
+      strict = FALSE,
+      optimize = TRUE,
+      digits = 12
+    ) %>%
+    n2khab::convert_line_endings(root = file.path(datapath, "text/raw"))
+  
+  DBI::dbDisconnect(aquachem)
+}
+```
+
+Reading the legacy watersample points and latest legacy sampling dates from the local files.
+
+```{r}
+legacy_watersamplepoints_lentic <- 
+  read_vc(
+    file = "legacy_watersamplepoints_lentic",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble()
+latest_legacysampling_lentic <- 
+  read_vc(
+    file = "latest_legacysampling_lentic",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble()
+```
+
+Filtering the legacy watersample points according to the locations (watersurface polygons) of spatial sampling units of lentic types, adding the latest legacy sampling date per location and prioritizing the points per location.
+
+More specifically, we include a `legacy_try_first` column: for each polygon (represented by grts_address_final), `TRUE` marks the point that
+should be favoured for data collection, if the field criteria for point
+validity still hold. In some cases, multiple different points with `TRUE` may
+be present, in which case field criteria must be used. If the `TRUE` point
+does not fulfill criteria, then (historical) points marked as `FALSE` can
+still be considered, making use of the field criteria. If multiple points
+still survive in either of these cases (`TRUE`, or `FALSE` if `TRUE` isn't
+successful), then additional information can be inspected to make a choice,
+such as `active_in_db_from` & `active_in_db_till` (but these refer to database
+activity (automated fields), not to a period of field validity).
+
+If the latest legacy sampling date is recent enough, the SAMPLPOINT FAG will be dropped for the unit in the FAG calendar.
+However, if during fieldwork it is found that the  point where `legacy_try_first == TRUE`
+does not fulfill criteria, then the SAMPLPOINT FAG needs to be restored ad-hoc since the sampling date does not apply to older points.
+For this reason, in the below watersample points object this date is only kept if `legacy_try_first` is `TRUE`.
+
+```{r}
+legacy_watersamplepoints_spslocs_lentic <-
+  legacy_watersamplepoints_lentic %>%
+  # one record appears to have missing coordinates
+  filter(!is.na(x), !is.na(y)) %>%
+  st_as_sf(coords = c("x", "y"), crs = 31370, remove = FALSE) %>%
+  # polygon_legacyid contains various errors and is not up-to-date; instead we
+  # will use a spatial join to match with watersurface geometries of the spatial
+  # samples
+  select(-polygon_legacyid) %>%
+  # Note that the following spatial inner join is potentially less restrictive
+  # than limiting to SURF* sampling units. However: 1) that doesn't harm and it
+  # can make below code a bit more generic; 2) at the time of coding all of
+  # these units were covered by SURF_03.4_lentic.
+  st_join(
+    stratum_grts_spsamples_lentic_sf %>%
+      distinct(polygon_id, grts_address_final, geom),
+    left = FALSE
+  ) %>%
+  mutate(
+    is_current = year(active_in_db_till) > 9000,
+    n_points_current = sum(is_current),
+    legacy_try_first =
+      is_current &
+      case_when(
+        n_points_current == 1 ~ TRUE,
+        str_detect(annotation, "gracht") ~ FALSE,
+        !any(str_detect(annotation, polygon_id) & is_current) ~ TRUE,
+        !str_detect(annotation, polygon_id) ~ FALSE,
+        .default = TRUE
+      ),
+    .by = polygon_id
+  ) %>%
+  relocate(geometry, .after = last_col()) %>%
+  arrange(polygon_id, desc(legacy_try_first), desc(active_in_db_till)) %>%
+  # drop duplicate coordinates; the 'legacy_try_first' does nothing extra at the
+  # time of coding but in some cases it might still keep duplicate coordinates,
+  # which then are deliberately kept because the annotation column may contain
+  # more information
+  filter(
+    row_number() == 1 | legacy_try_first,
+    .by = c(polygon_id, x, y)
+  ) %>%
+  # one polygon has no currently active points; dropping it
+  filter(
+    any(legacy_try_first),
+    .by = polygon_id
+  ) %>%
+  left_join(
+    latest_legacysampling_lentic,
+    join_by(polygon_id),
+    relationship = "many-to-one",
+    unmatched = "drop"
+  ) %>% 
+  mutate(date_sampling_latest = if_else(
+    legacy_try_first,
+    date_sampling_latest,
+    NA_Date_
+  )) %>% 
+  select(
+    grts_address_final,
+    polygon_id,
+    lastdate_legacysampling_polygon = date_sampling_latest,
+    legacy_try_first,
+    x:active_in_db_till
+  ) %>%
+  arrange(
+    grts_address_final,
+    polygon_id,
+    desc(legacy_try_first),
+    ranknr
+  )
+```
+
+
+<!-- TODO: -->
+<!-- - apply result in scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar & -->
+<!--   scheme_moco_ps_spsubset_targetfag_stratum_sppost_spsamples_calendar -->
+
+
+
+
 ## Overview of most relevant objects in this chapter
 
 Objects subsetted with `[[1]]` mean that they (may) contain more, similarly structured elements.
@@ -1009,7 +1358,12 @@ for (name in c(
   "scheme_moco_ps_stratum_sppost_spsamples$sp_poststr_samples[[1]]",
   "scheme_moco_ps_stratum_sppost_spsamples_sf",
   "samplinglocations_sf",
-  "scheme_moco_ps_stratum_sppost_spsamples_spares_sf"
+  "scheme_moco_ps_stratum_sppost_spsamples_spares_sf",
+  "stratum_grts_polygon_spsamples_lentic",
+  "stratum_grts_spsamples_lentic_sf",
+  "vbi_overlaps",
+  "latest_legacysampling_lentic",
+  "legacy_watersamplepoints_spslocs_lentic"
 )) {
   cat(name, "\n")
   glimpse(eval(str2lang(name)))

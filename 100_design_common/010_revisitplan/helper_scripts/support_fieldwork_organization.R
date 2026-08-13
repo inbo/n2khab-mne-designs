@@ -86,9 +86,11 @@ n2khab_types_expanded_properties %>%
 # with the currently active modules, module_combo_code has a single unique value
 # for each scheme. We take advantage of this uniqueness to keep things as simple
 # as possible. Checking that foregoing statement is TRUE:
-scheme_moco_ps_stratum_targetpanel_spsamples %>%
-  distinct(scheme, module_combo_code) %>%
-  {nrow(.) == nrow(distinct(., scheme))}
+stopifnot(
+  scheme_moco_ps_stratum_targetpanel_spsamples %>%
+    distinct(scheme, module_combo_code) %>%
+    {nrow(.) == nrow(distinct(., scheme))}
+)
 
 # merging scheme:module_combo_code:panel_set:targetpanel, still distinguishing
 # strata separately (even though they may share their location: this is unreal
@@ -117,9 +119,11 @@ stratum_schemepstargetpanel_spsamples <-
 # place using grts_address as the anchor, provided that the type still occurs in
 # the polygon. If not, the absence must be noted and sampling frame + sample are
 # to be updated.
+if (interactive()) {
 scheme_moco_ps_stratum_targetpanel_spsamples %>%
   filter(grts_address != grts_address_final) %>%
   glimpse()
+}
 
 
 
@@ -132,7 +136,8 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
 ## Sampling unit geometries --------------------------------------
 
 # obtaining geometries of the sampling units themselves:
-# - for lentic types, the result is in object 'watersurface_spsamples_sf' below
+# - for lentic types, the result is in object 'stratum_grts_spsamples_lentic_sf'
+#   from the REP; it is explored and handled below for demonstration
 # - for lotic types, see code in
 #   inbo/n2khab-mne-monitoring/010_aq_piezometer_positioning, but then do use
 #   the REP RData file used here
@@ -140,66 +145,48 @@ scheme_moco_ps_stratum_targetpanel_spsamples %>%
 # - for terrestrial types, these are cells; see code provided below
 
 
-
-# geometries of the spatial sampling units of lentic types (polygons)
+# geometries of the spatial sampling units of lentic types (watersurface
+# polygons)
 # /////////////////////////////////////////////////////////////////////////
 
-# link between spatial sampling units of lentic types and watersurface polygons
-stratum_grts_polygon_spsamples_lentic <-
-  scheme_moco_ps_stratum_sppost_spsamples %>%
-  filter(str_detect(stratum, "^2190_a|^31")) %>%
-  unnest(sp_poststr_samples) %>%
-  select(-sample_status) %>%
-  # provision for potential local replacements by including grts_address_final
-  # (currently not different for these strata)
-  add_assessment_data() %>%
-  distinct(stratum, grts_address_final) %>%
+# The geometries of lentic spatial sampling units are in following object.
+if (interactive()) glimpse(stratum_grts_spsamples_lentic_sf)
+
+# The spatial sampling unit is always identified by stratum x grts_address by
+# definition. Note that, as usual, grts_address_final is the GRTS address linked
+# to the actual location (watersurface polygon), while grts_address is the GRTS
+# address from the sample draw. This distinction supports local replacements.
+# However, for lentic types we don't have a difference between both columns, but
+# if we choose to support local replacements for lentic types in the future,
+# then it can be accommodated.
+#
+# Note that polygon_id is kept only for information and perhaps to join extra
+# attributes from its datasources watersurfaces_hab and watersurfaces; the
+# stable column to identify the polygons is grts_address_final! This is because
+# polygon_id values can change with the versions of watersurfaces_hab and
+# watersurfaces.
+
+# Multiple strata often co-occur in the same location (watersurface geometry).
+# Each location is uniquely identified by its GRTS address. So we can easily
+# construct a spatial object of lentic locations, each with its unique GRTS
+# address on each row, also mentioning the types for which the location was
+# drawn:
+grts_lentic_sf <-
+  stratum_grts_spsamples_lentic_sf %>%
+  # using type instead of stratum, since it is only going to serve as an
+  # attribute here (but note that multiple strata exist per lentic type!)
   inner_join(
-    units_non_cell_n2khab_grts %>%
-      filter(sample_support_code == "watersurface") %>%
-      select(-sample_support_code),
-    join_by(grts_address_final == grts_address),
+    n2khab_strata,
+    join_by(stratum),
     relationship = "many-to-one",
     unmatched = c("error", "drop")
   ) %>%
-  rename(polygon_id = unit_id)
-
-# extract all polygons from watersurfaces_hab that belong to the spatial samples
-# for lentic types:
-wsh_polygons_spsamples <-
-  read_watersurfaces_hab(version = versions_required["watersurfaces_hab"]) %>%
-  pluck("watersurfaces_polygons") %>%
-  select(polygon_id) %>%
-  semi_join(stratum_grts_polygon_spsamples_lentic, join_by(polygon_id))
-
-# extract all polygons from the watersurfaces data source that belong to the
-# spatial samples for lentic types but that were not covered by
-# watersurfaces_hab:
-ws_extra_polygons_spsamples <-
-  read_watersurfaces(
-    version = versions_required["watersurfaces"],
-    fix_geom = TRUE
+  summarise(
+    types_in_sample =
+      str_flatten(sort(unique(type)), collapse = "|") %>% factor(),
+    .by = c(starts_with("grts_address"), polygon_id, geom)
   ) %>%
-  select(polygon_id) %>%
-  semi_join(stratum_grts_polygon_spsamples_lentic, join_by(polygon_id)) %>%
-  # keeping only the unique extra polygons relative to watersurfaces_hab
-  anti_join(
-    st_drop_geometry(wsh_polygons_spsamples),
-    join_by(polygon_id)
-  )
-
-# add the geometry to the spatial sampling units:
-stratum_grts_spsamples_lentic_sf <-
-  rbind(wsh_polygons_spsamples, ws_extra_polygons_spsamples) %>%
-  inner_join(
-    stratum_grts_polygon_spsamples_lentic,
-    join_by(polygon_id),
-    relationship = "one-to-many",
-    unmatched = "error"
-  ) %>%
-  relocate(stratum, grts_address_final) %>%
-  arrange(stratum, grts_address_final)
-
+  relocate(geom, .after = last_col())
 
 
 # geometries of 7220 units are represented by points, labelled with their GRTS
@@ -459,6 +446,45 @@ units_cell_polygon %>%
 
 
 
+
+
+
+
+## Support in reusing legacy lentic watersample locations ---------------------
+
+# The below spatial points object lists legacy watersample points in the
+# locations (grts_address_final) that apply to the (current) lentic sampling
+# units. Notably, these points serve as a candidate for re-use.
+
+if (interactive()) glimpse(legacy_watersamplepoints_spslocs_lentic)
+
+# As usual, the stable column to identify the polygons is grts_address_final and
+# the corresponding (less stable) polygon_id is for information (see higher:
+# object 'stratum_grts_spsamples_lentic_sf' under Sampling unit geometries). x
+# and y mirror the geometry column.
+#
+# More specifically, the object contains a legacy_try_first column: for each
+# polygon (represented by grts_address_final), TRUE marks the point that should
+# be favoured for data collection, if the field criteria for point validity
+# still hold. In some cases, multiple different points with TRUE may be present,
+# in which case field criteria must be used. If the TRUE point does not fulfill
+# criteria, then (historical) points marked as FALSE can still be considered,
+# making use of the field criteria. If multiple points still survive in either
+# of these cases (TRUE, or FALSE if TRUE isn’t successful), then additional
+# information can be inspected to make a choice, such as active_in_db_from &
+# active_in_db_till (but these refer to database activity (automated fields),
+# not to a period of field validity). Also columns annotation and ranknr are
+# background information; annotation has been used in creating legacy_try_first
+# already and a higher ranknr refers to a later addition in the source database.
+#
+# If the latest legacy sampling date of the location
+# (lastdate_legacysampling_polygon) is recent enough, the SAMPLPOINT FAG for the
+# unit in the FAG calendar can be ignored. However, if during fieldwork it is
+# found that the point where legacy_try_first == TRUE does not fulfill criteria,
+# then the SAMPLPOINT FAG still needs to be executed since the sampling date
+# does not apply to older points (the same adhoc SAMPLPOINT approach applies
+# when revisiting points created within MNE). For this reason, this date is only
+# present in the rows where legacy_try_first is TRUE.
 
 
 
@@ -1087,7 +1113,7 @@ actseqs_actgroups_acts <-
   )
 
 
-fag_stratum_grts_calendar
+if (interactive()) fag_stratum_grts_calendar
 
 # fag_stratum_grts_calendar defines the needed visits of the spatial sampling
 # units and is organized at the FAG level. The rank is an indication of the
@@ -1121,7 +1147,7 @@ fag_fa_stratum_grts_calendar <-
 # during which the auxiliary FAG (in the scheduled time interval) is still
 # relevant to subsequent FAGs in that scheme.
 
-cal_old_continuation
+if (interactive()) cal_old_continuation
 
 # cal_old_continuation is a subset of fag_stratum_grts_calendar (without
 # assessment columns) that represents GWSHALL* and READDIVER FAG occasions in
@@ -1520,17 +1546,16 @@ fieldwork_shortterm_prioritization_by_stratum <-
       # locations where LOCEVAL is already executed)
       !is.na(scheme_ps_oldtargetpanels_served) ~ NA_integer_,
       # no priority is given to FAG occasions for types that will be obsoleted,
-      # if the panel set is panel set 2 accross the targeted schemes
+      # if the panel set is panel set 2 across the targeted schemes
       stratum %in% c("6410_ve", "6510_hus") &
         !str_detect(scheme_ps_targetpanels_served, ":PS1") ~ NA_integer_,
-      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL03|PS2PANEL01)") ~ 1L,
-      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS2PANEL02") ~ 2L,
-      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL02") ~ 9L,
-      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL04") ~ 3L,
-      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL0[56]|PS2PANEL03)") ~ 4L,
-      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL07") ~ 6L,
-      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL01") ~ 10L,
-      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL08|PS2PANEL04)") ~ 8L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL03|PS2PANEL01)") ~ 6L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL04|PS2PANEL02)") ~ 1L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL02") ~ 7L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL0[56]") ~ 2L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL07|PS2PANEL03)") ~ 3L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:PS1PANEL01") ~ 8L,
+      str_detect(scheme_ps_targetpanels_served, "GW_03\\.3:(PS1PANEL08|PS2PANEL04)") ~ 5L,
       str_detect(scheme_ps_targetpanels_served, "GW_05\\.") ~ 11L
     ),
     priority_surf = case_when(
@@ -1539,17 +1564,20 @@ fieldwork_shortterm_prioritization_by_stratum <-
     ),
     priority_soil = case_when(
       # no priority is given to FAG occasions for types that will be obsoleted,
-      # if the panel set is panel set 2 accross the targeted schemes
+      # if the panel set is panel set 2 across the targeted schemes
       stratum %in% c("6410_ve", "6510_hus") &
         !str_detect(scheme_ps_targetpanels_served, ":PS1") ~ NA_integer_,
-      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS\\dPANEL02") ~ 7L,
-      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS\\dPANEL01") ~ 8L,
-      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS\\dPANEL03") ~ 9L,
-      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS\\dPANEL04") ~ 10L
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS1PANEL02") ~ 4L,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS1PANEL01") ~ 5L,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS1PANEL03") ~ 6L,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:(PS1PANEL04|PS2PANEL02)") ~ 7L,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS2PANEL01") ~ 8L,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS2PANEL03") ~ 9L,
+      str_detect(scheme_ps_targetpanels_served, "SOIL_03\\.2:PS2PANEL04") ~ 10L
     ),
     priority_mhq = case_when(
       # no priority is given to FAG occasions for types that will be obsoleted,
-      # if the panel set is panel set 2 accross the targeted schemes. This is
+      # if the panel set is panel set 2 across the targeted schemes. This is
       # actually redundant now, but keeping this rule in for safety.
       stratum %in% c("6410_ve", "6510_hus") &
         !str_detect(scheme_ps_targetpanels_served, ":PS1") ~ NA_integer_,
@@ -1842,12 +1870,12 @@ orthophoto_shortterm_watersurfaces <-
   stratum_grts_spsamples_lentic_sf %>%
   inner_join(
     orthophoto_shortterm_lentictype_grts,
-    join_by(stratum, grts_address_final),
+    join_by(stratum, grts_address, grts_address_final),
     relationship = "one-to-many",
     unmatched = c("drop", "error")
   ) %>%
   relocate(type, stratum, .after = polygon_id) %>%
-  relocate(grts_address_final, .after = grts_address) %>%
+  relocate(grts_address, grts_address_final, .after = sample_support_code) %>%
   relocate(geom, .after = last_col()) %>%
   arrange(
     priority,
@@ -1884,7 +1912,7 @@ if (FALSE) {
     filter(sample_support_code == "watersurface") %>%
     inner_join(
       stratum_grts_spsamples_lentic_sf,
-      join_by(stratum, grts_address_final),
+      join_by(stratum, grts_address, grts_address_final),
       relationship = "many-to-one",
       unmatched = c("error", "drop")
     ) %>%
@@ -1971,6 +1999,19 @@ if (FALSE) {
       layer = "orthophotoscreening_shortterm_lentictypes_WSPOLYGONS",
       delete_layer = TRUE
     )
+
+  # generating & writing layer of legacy watersample points for lentic types,
+  # restricted to the locations in the shortterm calendar
+  legacy_watersamplepoints_spslocs_lentic %>%
+    semi_join(
+      fieldwork_shortterm_prioritization_watersurfaces,
+      join_by(grts_address_final)
+    ) %>%
+    write_sf(
+      gpkg_path,
+      layer = "legacywatsamppoints_shortterm_lentictypes_POINTS",
+      delete_layer = TRUE
+    )
 }
 
 
@@ -1984,8 +2025,9 @@ objects <- tibble(
     "stratum_schemepstargetpanel_spsamples",
     "schemepstargetpanel_spsamples_terr",
     "vbi_overlaps",
-    "stratum_grts_polygon_spsamples_lentic",
     "stratum_grts_spsamples_lentic_sf",
+    "grts_lentic_sf",
+    "legacy_watersamplepoints_spslocs_lentic",
     "units_7220",
     "units_cell_cellcenter",
     "units_cell_rast",
