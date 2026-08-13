@@ -2,6 +2,10 @@
 
 tag `rep_xxxxxxxxxxx`
 
+This version introduces few changes to results. Spatial samples and
+spatiotemporal samples are unaffected. Most new code is related to attributes
+of lentic spatial sampling units.
+
 Changes to results
 ------------------
 
@@ -25,9 +29,6 @@ Additions
 - Add helper script to explore legacy watersample point data for lentic types.
 - Add helper script to create 2 geopackages of lentic sampling locations, each
   geopackage having its own scope and end user.
-
-Maintenance
------------
 
 Helper script supporting fieldwork organization
 -----------------------------------------------
