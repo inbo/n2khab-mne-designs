@@ -1,21 +1,18 @@
-# we don't use renv::activate() in order to only manage and use the renv library
+# We only temporarily activate renv (renv::activate()), just to manage and use the renv library
 # at specific stages. I.e. we avoid a .Rprofile file with the source() statement
-# below. (First-time setup: run renv::activate() and then remove .Rprofile)
+# below.
 
-# source("renv/activate.R") # this is 'activating renv on demand'
-# if asked 'Would you like to restore the project library?', answer N
-
-# Above line has been outcommented since it appears that hydrating &
-# snapshotting can now be done based on current library paths, without
-# activating the project. When asked, choose accordingly.
-
+renv::activate() # creates .Rprofile that sources renv script
 renv::upgrade() # makes sure latest renv version is in use
-# populate or update renv project library with the package versions used
+# populate or update renv project library with the package versions currently used outside renv
 renv::hydrate(update = "all")
 # renv::hydrate("yaml", update = "all") # links a missing package in the renv project library
 renv::snapshot() # records packages with their versions in renv.lock
 # renv::record("yaml") # records a renv project library package in renv.lock
-if (file.exists(".Rprofile")) unlink(".Rprofile") # inactivate renv
+renv::deactivate() # removes the infrastructure added by activate()
+# if (file.exists(".Rprofile")) unlink(".Rprofile") # inactivate renv 'the hard way',
+#                                                    but make sure you didn't have other
+#                                                    statements in .Rprofile
 
 # then commit all changes
 # (first-time setup: stage & commit the renv directory and the renv.lock file)
