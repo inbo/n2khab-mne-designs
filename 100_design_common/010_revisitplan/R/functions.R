@@ -58,7 +58,7 @@ apply_activity_sequence_filters <- function(df) {
       !(
         scheme == "GW_03.3" & is_core_scheme &
           main_field_activity == "GWLEVREADDIVER" &
-          ((in_aquatic_subset & activity_sequence != "gwsurf_lev_piezwell") |
+          ((in_aquatic_subset & activity_sequence != "gwsurf_lev_piez") |
              (!in_aquatic_subset & activity_sequence != "gw_lev_piezwell"))
       ),
       # for GW_03.3 x GWSHALLSAMP as core scheme, use the readman sequence:
@@ -74,12 +74,12 @@ apply_activity_sequence_filters <- function(df) {
           main_field_activity == "GWSHALLSAMP" &
           activity_sequence != "gw_samp"
       ),
-      # for GW_05.1_aq x (GWLEVREADDIVER or SURFLEVREADGAUGE) as non-core
-      # scheme, only include sequence gwsurf_lev_piezwell
+      # for GW_05.1_aq x (GWLEVREADDIVER or SURFLEVREADGNSS) as non-core
+      # scheme, only include sequence gwsurf_lev_piez
       !(
         scheme == "GW_05.1_aq" & !is_core_scheme &
-          main_field_activity %in% c("GWLEVREADDIVER", "SURFLEVREADGAUGE") &
-          activity_sequence != "gwsurf_lev_piezwell"
+          main_field_activity %in% c("GWLEVREADDIVER", "SURFLEVREADGNSS") &
+          activity_sequence != "gwsurf_lev_piez"
       ),
       # for GW_05.1_terr, GW_05.2 x GWLEVREADDIVER as non-core scheme, only
       # include sequence gw_lev_piezwell
