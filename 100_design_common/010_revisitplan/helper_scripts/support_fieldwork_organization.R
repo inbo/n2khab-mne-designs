@@ -1425,9 +1425,9 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # matching occasions across strata
   mutate(
     matching_occasion = ifelse(
-      str_detect(stratum, "^2190_a|^31") &
+      str_detect(stratum, lentic_types_regex) &
         # not using n() because that still includes terrestrial types:
-        sum(str_detect(stratum, "^2190_a|^31")) > 1,
+        sum(str_detect(stratum, lentic_types_regex)) > 1,
       str_c(
         first(field_activity_group),
         first(grts_address_final),
@@ -1447,9 +1447,9 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # matching occasions across strata and date intervals
   mutate(
     matching_occasion = ifelse(
-      str_detect(stratum, "^2190_a|^31") &
+      str_detect(stratum, lentic_types_regex) &
         # not using n() because that still includes terrestrial types:
-        sum(str_detect(stratum, "^2190_a|^31")) > 1 &
+        sum(str_detect(stratum, lentic_types_regex)) > 1 &
         str_detect(field_activity_group, "INST|LEVREAD|SPATPOSIT"),
       str_c(first(field_activity_group), first(grts_address_final), sep = "_"),
       matching_occasion
@@ -1576,7 +1576,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
     ),
     wait_watersurface = str_detect(stratum, "^2190_a") |
       (
-        str_detect(stratum, "^31|^2190_a") &
+        str_detect(stratum, lentic_types_regex) &
           !str_detect(schemes_served_all, "SURF_03\\.4")
       ),
     wait_3260 = stratum == "3260",
