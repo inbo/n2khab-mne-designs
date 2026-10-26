@@ -8,11 +8,34 @@ Changes to results
 Additions
 ---------
 
+- Add helper script to write a geopackage of the spatial sampling units of a set
+  of schemes with selected sampling unit attributes & temporal attributes (until
+  2035).
+
 Maintenance
 -----------
 
 Helper script supporting fieldwork organization
 -----------------------------------------------
+
+- In the short-term fieldwork calendar objects:
+  - While maintaining the value of `main_year`, extend the period of interest by
+    one year (allow FAG occasions until `main_year + 1`), except for LOCEVAL &
+    SAMPLPOINT FAGs since LOCEVAL & SAMPLPOINT FAGs in `main_year` are the ones
+    that prepare environmental fieldwork in `main_year + 1`. This way,
+    preparations for environmental work in `main_year + 1` can be more easily
+    undertaken when nearing the end of `main_year`.
+  - Matching occasions across time for FAG GWSURFLEVREADDIVERMAN are dropped,
+    because this FAG does not represent a one-time installation FAG and because
+    more than only the first occasion may be present for a
+    sampling unit in the short-term fieldwork calendar.
+- Remove documentation (comments) about how to use
+  `legacy_watersamplepoints_spslocs_lentic` with regard to fieldwork as it is
+  documented by the {[mnedesigndata](https://inbo.github.io/mnedesigndata)}
+  package.
+- Make use of the `lentic_types_regex` REP object (this causes no changes to
+  results).
+
 
 
 # REP 0.18.0 (2026-08-13)
