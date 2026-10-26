@@ -1462,7 +1462,7 @@ fag_stratum_grts_calendar_shortterm_attribs <-
       str_detect(stratum, lentic_types_regex) &
         # not using n() because that still includes terrestrial types:
         sum(str_detect(stratum, lentic_types_regex)) > 1 &
-        str_detect(field_activity_group, "INST|LEVREAD|SPATPOSIT"),
+        str_detect(field_activity_group, "INST|SPATPOSIT"),
       str_c(first(field_activity_group), first(grts_address_final), sep = "_"),
       matching_occasion
     ),
