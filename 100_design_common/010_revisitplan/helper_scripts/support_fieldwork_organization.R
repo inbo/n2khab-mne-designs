@@ -1226,9 +1226,21 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     \(df) any(str_detect(df$scheme[df$is_current_occasion], "^GW"))
   )) %>%
   filter(
-    year(date_start) <= main_year |
-      # already allow the first GWINST, GW*LEVREAD* & SPATPOSIT* FAGs from the
-      # next years to be executed:
+    # we want all FAG occasions till main_year + 1, except for LOCEVAL &
+    # SAMPLPOINT
+    (
+      year(date_start) <= main_year + 1 &
+        !str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT")
+    ) |
+      # for LOCEVAL & SAMPLPOINT, we only keep the occasions till main_year:
+      # those in main_year are the ones that prepare environmental fieldwork in
+      # main_year + 1
+      (
+        year(date_start) <= main_year &
+          str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT")
+      ) |
+      # already allow the first GWINST, GW*LEVREAD* & SPATPOSIT* FAGs from later
+      # years to be executed:
       (
         has_gw &
           str_detect(
@@ -1319,7 +1331,8 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     last_inaccessible = inaccessible
   ) %>%
   # adding old targetpanel of the imported FAG occasions from old REP versions.
-  # A part is dropped because of occasions that don't happen in the main year.
+  # A part is dropped because of occasions that don't happen in the considered
+  # period.
   left_join(
     cal_old_continuation %>%
       unnest(scheme_moco_ps) %>%
@@ -1377,14 +1390,13 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # location x FAG occasion. Note that the scheme_ps_targetpanels_served
   # attribute is a shrinked version of scheme_ps_targetpanels at the level of
   # the whole sample (see sampling unit attributes in the beginning), since it
-  # is specific to the FAG occasion and since we limited the activities to those
-  # planned before main_year + 1 (sometimes later), before generating
-  # scheme_ps_targetpanels_served. So it says specifically which schemes x panel
-  # sets x targetpanels are served by the specific fieldwork at a specific date
-  # interval. Note that we substitute the targetpanel with the OLD targetpanel
-  # if the targetpanel is missing, i.e. for sampling units missing from the
-  # current FAG calendar. This is done to avoid missing values in derived
-  # objects or overviews.
+  # is specific to the FAG occasion and since we limited the activities to a
+  # specific period, before generating scheme_ps_targetpanels_served. So it says
+  # specifically which schemes x panel sets x targetpanels are served by the
+  # specific fieldwork at a specific date interval. Note that we substitute the
+  # targetpanel with the OLD targetpanel if the targetpanel is missing, i.e. for
+  # sampling units missing from the current FAG calendar. This is done to avoid
+  # missing values in derived objects or overviews.
   mutate(scheme_ps_targetpanel = ifelse(
     is.na(targetpanel),
     as.character(scheme_ps_oldtargetpanel),
