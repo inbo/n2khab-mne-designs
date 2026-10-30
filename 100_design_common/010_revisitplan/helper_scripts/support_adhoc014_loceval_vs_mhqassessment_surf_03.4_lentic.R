@@ -64,7 +64,7 @@ surf_units_2027_extended %>%
   )
 
 # crosstable of number of unique GRTS addresses (i.e. different watersurfaces)
-# to show relation between yr_last_type_assessment & loceval_kept
+# to show relation between yr_last_type_assessment & any_loceval_kept
 surf_units_2027_extended %>%
   summarize(
     strata = str_flatten(sort(unique(stratum)), collapse = "|"),
@@ -73,13 +73,37 @@ surf_units_2027_extended %>%
       NA,
       max(yr_last_type_assessment, na.rm = TRUE)
     ),
-    loceval_kept = any(loceval_kept),
+    # was any LOCEVAL occasion kept?
+    any_loceval_kept = any(loceval_kept),
     .by = grts_address
   ) %>%
-  count(yr_last_type_assessment, loceval_kept) %>%
+  count(yr_last_type_assessment, any_loceval_kept) %>%
   pivot_wider(
-    names_from = loceval_kept,
-    names_prefix = "loceval_kept=",
+    names_from = any_loceval_kept,
+    names_prefix = "any_loceval_kept=",
+    values_from = n,
+    values_fill = 0
+  )
+
+# crosstable variant of number of unique GRTS addresses (i.e. different
+# watersurfaces) to show relation between yr_last_type_assessment &
+# any_loceval_dropped
+surf_units_2027_extended %>%
+  summarize(
+    strata = str_flatten(sort(unique(stratum)), collapse = "|"),
+    yr_last_type_assessment = ifelse(
+      all(is.na(yr_last_type_assessment)),
+      NA,
+      max(yr_last_type_assessment, na.rm = TRUE)
+    ),
+    # was any LOCEVAL occasion dropped?
+    any_loceval_dropped = any(!loceval_kept),
+    .by = grts_address
+  ) %>%
+  count(yr_last_type_assessment, any_loceval_dropped) %>%
+  pivot_wider(
+    names_from = any_loceval_dropped,
+    names_prefix = "any_loceval_dropped=",
     values_from = n,
     values_fill = 0
   )
