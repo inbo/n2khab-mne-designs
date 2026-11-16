@@ -788,6 +788,7 @@ Their definition and their planning, linked to the data collection needs, are es
 
 Reading the list of activities and their attributes.
 Note that only part of activities are field activities.
+While the data source may contain multiple versions of the same activity, only the most recent one is kept while reading.
 
 ```{r read-gsheet-activities, message = FALSE, warning = FALSE, include=FALSE}
 if (
@@ -798,12 +799,13 @@ if (
   read_sheet(
     ss = gs_id_envvars,
     sheet = "activities",
-    range = "A:G",
-    col_types = "ccllllc"
+    range = "A:H",
+    col_types = "cccllllc"
   ) %>%
     mutate(
+      rep_version = as.numeric_version(rep_version),
       across(c(activity, activity_name), fct),
-      protocol = factor(protocol)
+      across(c(protocol, rep_version), factor)
     ) %>%
     write_vc(
       file = "activities",
@@ -820,7 +822,11 @@ activities <-
     file = "activities",
     root = file.path(datapath, "text/raw")
   ) %>%
-  as_tibble()
+  as_tibble() %>% 
+  mutate(
+    rep_version = rep_version %>% as.character() %>% as.numeric_version()
+  ) %>% 
+  filter(rep_version == max(rep_version), .by = activity)
 ```
 
 An **activity sequence** is a set of activities that are tied together at location level for a specific scheme, with a specific chronological order.
