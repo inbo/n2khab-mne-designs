@@ -463,28 +463,8 @@ if (interactive()) glimpse(legacy_watersamplepoints_spslocs_lentic)
 # object 'stratum_grts_spsamples_lentic_sf' under Sampling unit geometries). x
 # and y mirror the geometry column.
 #
-# More specifically, the object contains a legacy_try_first column: for each
-# polygon (represented by grts_address_final), TRUE marks the point that should
-# be favoured for data collection, if the field criteria for point validity
-# still hold. In some cases, multiple different points with TRUE may be present,
-# in which case field criteria must be used. If the TRUE point does not fulfill
-# criteria, then (historical) points marked as FALSE can still be considered,
-# making use of the field criteria. If multiple points still survive in either
-# of these cases (TRUE, or FALSE if TRUE isn’t successful), then additional
-# information can be inspected to make a choice, such as active_in_db_from &
-# active_in_db_till (but these refer to database activity (automated fields),
-# not to a period of field validity). Also columns annotation and ranknr are
-# background information; annotation has been used in creating legacy_try_first
-# already and a higher ranknr refers to a later addition in the source database.
-#
-# If the latest legacy sampling date of the location
-# (lastdate_legacysampling_polygon) is recent enough, the SAMPLPOINT FAG for the
-# unit in the FAG calendar can be ignored. However, if during fieldwork it is
-# found that the point where legacy_try_first == TRUE does not fulfill criteria,
-# then the SAMPLPOINT FAG still needs to be executed since the sampling date
-# does not apply to older points (the same adhoc SAMPLPOINT approach applies
-# when revisiting points created within MNE). For this reason, this date is only
-# present in the rows where legacy_try_first is TRUE.
+# How to use this object with regard to fieldwork is documented by
+# mnedesigndata::legacy_watersamplepoints_spslocs_lentic.
 
 
 
@@ -1246,9 +1226,21 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     \(df) any(str_detect(df$scheme[df$is_current_occasion], "^GW"))
   )) %>%
   filter(
-    year(date_start) <= main_year |
-      # already allow the first GWINST, GW*LEVREAD* & SPATPOSIT* FAGs from the
-      # next years to be executed:
+    # we want all FAG occasions till main_year + 1, except for LOCEVAL &
+    # SAMPLPOINT
+    (
+      year(date_start) <= main_year + 1 &
+        !str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT")
+    ) |
+      # for LOCEVAL & SAMPLPOINT, we only keep the occasions till main_year:
+      # those in main_year are the ones that prepare environmental fieldwork in
+      # main_year + 1
+      (
+        year(date_start) <= main_year &
+          str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT")
+      ) |
+      # already allow the first GWINST, GW*LEVREAD* & SPATPOSIT* FAGs from later
+      # years to be executed:
       (
         has_gw &
           str_detect(
@@ -1339,7 +1331,8 @@ fag_stratum_grts_calendar_shortterm_attribs <-
     last_inaccessible = inaccessible
   ) %>%
   # adding old targetpanel of the imported FAG occasions from old REP versions.
-  # A part is dropped because of occasions that don't happen in the main year.
+  # A part is dropped because of occasions that don't happen in the considered
+  # period.
   left_join(
     cal_old_continuation %>%
       unnest(scheme_moco_ps) %>%
@@ -1397,14 +1390,13 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # location x FAG occasion. Note that the scheme_ps_targetpanels_served
   # attribute is a shrinked version of scheme_ps_targetpanels at the level of
   # the whole sample (see sampling unit attributes in the beginning), since it
-  # is specific to the FAG occasion and since we limited the activities to those
-  # planned before main_year + 1 (sometimes later), before generating
-  # scheme_ps_targetpanels_served. So it says specifically which schemes x panel
-  # sets x targetpanels are served by the specific fieldwork at a specific date
-  # interval. Note that we substitute the targetpanel with the OLD targetpanel
-  # if the targetpanel is missing, i.e. for sampling units missing from the
-  # current FAG calendar. This is done to avoid missing values in derived
-  # objects or overviews.
+  # is specific to the FAG occasion and since we limited the activities to a
+  # specific period, before generating scheme_ps_targetpanels_served. So it says
+  # specifically which schemes x panel sets x targetpanels are served by the
+  # specific fieldwork at a specific date interval. Note that we substitute the
+  # targetpanel with the OLD targetpanel if the targetpanel is missing, i.e. for
+  # sampling units missing from the current FAG calendar. This is done to avoid
+  # missing values in derived objects or overviews.
   mutate(scheme_ps_targetpanel = ifelse(
     is.na(targetpanel),
     as.character(scheme_ps_oldtargetpanel),
@@ -1445,9 +1437,9 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # matching occasions across strata
   mutate(
     matching_occasion = ifelse(
-      str_detect(stratum, "^2190_a|^31") &
+      str_detect(stratum, lentic_types_regex) &
         # not using n() because that still includes terrestrial types:
-        sum(str_detect(stratum, "^2190_a|^31")) > 1,
+        sum(str_detect(stratum, lentic_types_regex)) > 1,
       str_c(
         first(field_activity_group),
         first(grts_address_final),
@@ -1467,10 +1459,10 @@ fag_stratum_grts_calendar_shortterm_attribs <-
   # matching occasions across strata and date intervals
   mutate(
     matching_occasion = ifelse(
-      str_detect(stratum, "^2190_a|^31") &
+      str_detect(stratum, lentic_types_regex) &
         # not using n() because that still includes terrestrial types:
-        sum(str_detect(stratum, "^2190_a|^31")) > 1 &
-        str_detect(field_activity_group, "INST|LEVREAD|SPATPOSIT"),
+        sum(str_detect(stratum, lentic_types_regex)) > 1 &
+        str_detect(field_activity_group, "INST|SPATPOSIT"),
       str_c(first(field_activity_group), first(grts_address_final), sep = "_"),
       matching_occasion
     ),
@@ -1596,7 +1588,7 @@ fieldwork_shortterm_prioritization_by_stratum <-
     ),
     wait_watersurface = str_detect(stratum, "^2190_a") |
       (
-        str_detect(stratum, "^31|^2190_a") &
+        str_detect(stratum, lentic_types_regex) &
           !str_detect(schemes_served_all, "SURF_03\\.4")
       ),
     wait_3260 = stratum == "3260",
