@@ -53,69 +53,62 @@ verify_n2khab_data <- function(reference, requirements) {
 
 apply_activity_sequence_filters <- function(df) {
   df %>%
-    filter(
-      # for GW_03.3 x GWLEVREADDIVER as core scheme, use the piezwell sequence:
-      !(
+    filter_out(when_any(
+      # for GW_03.3 x GWLEVREADDIVER as core scheme, use the lev sequence:
+      (
         scheme == "GW_03.3" & is_core_scheme &
           main_field_activity == "GWLEVREADDIVER" &
           ((in_aquatic_subset & activity_sequence != "gwsurf_lev_piez") |
              (!in_aquatic_subset & activity_sequence != "gw_lev_piezwell"))
       ),
-      # for GW_03.3 x GWSHALLSAMP as core scheme, use the readman sequence:
-      !(
+      # for GW_03.3 x GWSHALLSAMP as core scheme, use the samp+read sequence:
+      (
         scheme == "GW_03.3" & is_core_scheme &
           main_field_activity == "GWSHALLSAMP" &
-          ((in_aquatic_subset & activity_sequence != "gw_samp_gwsurf_readman") |
-             (!in_aquatic_subset & activity_sequence != "gw_samp_gw_readman"))
+          ((in_aquatic_subset & activity_sequence != "gw_samp_gwsurf_read") |
+             (!in_aquatic_subset & activity_sequence != "gw_samp_gw_read"))
       ),
       # for other GWSHALLSAMP, use the gw_samp sequence:
-      !(
+      (
         (scheme != "GW_03.3" | !is_core_scheme) &
           main_field_activity == "GWSHALLSAMP" &
           activity_sequence != "gw_samp"
       ),
-      # for GW_05.1_aq x (GWLEVREADDIVER or SURFLEVREADGNSS) as non-core
-      # scheme, only include sequence gwsurf_lev_piez
-      !(
-        scheme == "GW_05.1_aq" & !is_core_scheme &
-          main_field_activity %in% c("GWLEVREADDIVER", "SURFLEVREADGNSS") &
-          activity_sequence != "gwsurf_lev_piez"
-      ),
       # for GW_05.1_terr, GW_05.2 x GWLEVREADDIVER as non-core scheme, only
       # include sequence gw_lev_piezwell
-      !(
+      (
         scheme %in% c("GW_05.1_terr", "GW_05.2") & !is_core_scheme &
           main_field_activity == "GWLEVREADDIVER" &
           activity_sequence != "gw_lev_piezwell"
       ),
       # for GW_05.1_aq x GWLEVREADDIVER as core scheme, only include sequence
-      # gwsurf_lev_well
-      !(
+      # gwsurf_lev_piezwell
+      (
         scheme == "GW_05.1_aq" & is_core_scheme &
           main_field_activity == "GWLEVREADDIVER" &
-          activity_sequence != "gwsurf_lev_well"
+          activity_sequence != "gwsurf_lev_piezwell"
       ),
       # for GW_05.1_terr, GW_05.2 x GWLEVREADDIVER as core scheme, only include
       # sequence gw_lev_well
-      !(
+      (
         scheme %in% c("GW_05.1_terr", "GW_05.2") & is_core_scheme &
           main_field_activity == "GWLEVREADDIVER" &
           activity_sequence != "gw_lev_well"
       ),
       # for SURF_03.4_lentic x SURFLEVREADGNSS, use the surf_lent_samp
       # sequence:
-      !(
+      (
         scheme == "SURF_03.4_lentic"  &
           main_field_activity == "SURFLEVREADGNSS" &
           activity_sequence != "surf_lent_samp"
       ),
       # for SURF_03.4_lotic x SURFLEVREADGNSS, use the surf_lent_samp sequence:
-      !(
+      (
         scheme == "SURF_03.4_lotic"  &
           main_field_activity == "SURFLEVREADGNSS" &
           activity_sequence != "surf_lot_samp"
       )
-    )
+    ))
 }
 
 
