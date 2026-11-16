@@ -780,7 +780,7 @@ module_scheme_props <-
 ```
 
 
-## Defining activities and activity sequences
+## Defining activities, activity groups and activity sequences
 
 Activities are specific actions needed to collect data or to support the data collection.
 
@@ -837,10 +837,62 @@ An **activity group** is a set of activities with the same panel design (panel c
 The activity group to which an activity belongs depends on the applicable activity sequence.
 This is due to the fact that different schemes require only _partly_ overlapping activities, hence a different activity sequence.
 
-Also, different schemes may apply to the same location, hence different activity sequences may be applicable at one location.
+All activities in an activity sequence are assigned to activity groups: an activity group can also consist of a single activity.
+This way, we define the activity sequences with the activity groups; the latter are defined separately.
 
-Reading the list of activity sequences and the corresponding activities, chronology and activity groups.
+Note that different activity sequences may be applicable at one location since different schemes may apply to the same location.
 
+Reading the list of activity groups.
+While the data source may contain multiple versions of the same activity group, only the most recent one is kept while reading.
+
+```{r read-gsheet-activity-groups, message = FALSE, warning = FALSE, include=FALSE}
+if (
+  !file.exists(file.path(datapath, "text/raw/activity_groups.yml")) ||
+    params$update_raw_textdata
+) {
+  gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
+  read_sheet(
+    ss = gs_id_envvars,
+    sheet = "activity_groups",
+    range = "A:C",
+    col_types = "ccc"
+  ) %>%
+    mutate(
+      activity_group = factor(activity_group),
+      activity_group_version = factor(as.numeric_version(
+        activity_group_version
+      )),
+      activity = factor(activity, levels = levels(activities$activity))
+    ) %>%
+    write_vc(
+      file = "activity_groups",
+      root = file.path(datapath, "text/raw"),
+      optimize = FALSE,
+      strict = FALSE
+    )
+}
+```
+
+```{r read-activities}
+activity_groups <-
+  read_vc(
+    file = "activity_groups",
+    root = file.path(datapath, "text/raw")
+  ) %>%
+  as_tibble() %>% 
+  mutate(
+    activity_group_version = activity_group_version %>%
+      as.character() %>%
+      as.numeric_version()
+  ) %>% 
+  filter(
+    activity_group_version == max(activity_group_version),
+    .by = activity_group
+  )
+```
+
+Reading the list of activity sequences, each defining the chronology of activity groups.
+Only the current version of activity sequences is represented in the data source.
 
 ```{r read-gsheet-activity-sequences, message = FALSE, warning = FALSE, include=FALSE}
 if (
@@ -848,15 +900,13 @@ if (
     params$update_raw_textdata
 ) {
   gs_id_envvars <- "1gJb2nY-Cs-SCNMpz0sGFslb0j69mzNx5BJu9tQXpHfc"
-  read_sheet(ss = gs_id_envvars, sheet = "activity_sequences", col_types = "ciiclc") %>%
+  read_sheet(ss = gs_id_envvars, sheet = "activity_sequences", col_types = "ciicl") %>%
     mutate(
       activity_sequence = fct(activity_sequence),
-      activity = factor(activity, levels = activities$activity),
-      activity_group = fct_reorder(
-        factor(activity_group),
-        as.numeric(activity),
-        first
-      )
+      activity_group = factor(
+        activity_group,
+        levels = levels(activity_groups$activity_group)
+      ),
     ) %>%
     write_vc(
       file = "activity_sequences",
