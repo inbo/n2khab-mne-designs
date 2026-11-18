@@ -1229,6 +1229,8 @@ stopifnot(
 
 'Field activity' can cover data collection, where it corresponds to 'main field activity' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
 
+#### Currently accepted field activities and field activity groups
+
 The field activities are a subset of the activities:
 
 ```{r construct-field-activities}
@@ -1259,7 +1261,7 @@ field_activity_groups <-
   rename_with(~ str_c("field_", .))
 ```
 
-Now, we limit `field_activity_groups` and `field_activities` to those effectively represented by `activity_sequences`.
+Now, we limit `field_activity_groups` and `field_activities` to those effectively represented by `activity_sequences`, hence 'currently accepted'.
 
 ```{r}
 field_activity_groups <- 
@@ -1298,7 +1300,11 @@ stopifnot(
 )
 ```
 
-Several field activities necessarily belong together, depending on the applicable sequence of activities, as expressed by the `activity_sequence` variable.
+#### Field activities of (spatial subsets of) schemes per module
+
+Several field activities necessarily belong together, depending on the applicable sequence of activities, as expressed by the `activity_sequence` column in `activity_sequences`.
+
+Deriving object `field_activity_sequences`, which limits the object to _field_ activity groups.
 
 ```{r construct-field-activity-sequences}
 field_activity_sequences <-
@@ -1316,7 +1322,7 @@ Field activities can be linked to modules x schemes via the main field activity 
 Note that the term '_main_ field activity' is to be understood from the viewpoint of a variable (set) in a module x scheme, not just the module x scheme.
 In consequence, multiple 'main field activities' can be linked to a module x scheme, and they may come from target variables and other variables as well.
 
-Determining the main field activities per module x scheme, where useful split into spatial subsets (based on type properties in the target population) that will be linked to different activity sequences.
+Determining the main field activities per module x scheme.
   
 ```{r}
 mod_scheme_mainfieldactivity <-
@@ -1329,6 +1335,22 @@ mod_scheme_mainfieldactivity <-
     unmatched = c("error", "drop"),
     relationship = "many-to-one"
   )
+```
+
+Checking that these main field activities are currently accepted.
+
+```{r}
+stopifnot(
+  all(
+    unique(mod_scheme_mainfieldactivity$main_field_activity) %in% 
+      field_activities$field_activity
+  )
+)
+```
+
+Where useful, split main field activities per module x scheme into spatial subsets (based on type properties in the target population) that will be linked to different activity sequences.
+
+```{r}
 mod_scheme_mainfieldactivity_subsets <-
   mod_scheme_mainfieldactivity %>%
   # Characterize all schemes with needed type features as needed to distinguish
@@ -1438,9 +1460,9 @@ Another possible source are protocol variants that are scheme-specific _and_ hav
 The 'field activity groups' (FAGs) are those activity groups that exist of field activities.
 Hence, a FAG is a set of _field_ activities with the same panel design _and_ which take place during the same location visit.
 
-We will construct FAGs per module, scheme and spatial subset by abstracting away the field activities and collapsing activity sequences, ranks and maximum ranks.
+We list the FAGs per module, scheme and spatial subset by abstracting away the field activities and collapsing activity sequences, ranks and maximum ranks.
 
-First, construct the FAGs while still retaining the activity sequence.
+First, simplify to FAG level while still retaining the activity sequence.
 
 ```{r}
 mod_scheme_actseq_fag <-
@@ -1486,7 +1508,8 @@ mod_scheme_fag <-
   summarize(
     rank = min(rank),
     max_rank = if (all(is.na(max_rank))) NA else max(max_rank, na.rm = TRUE),
-    actseqs = str_c(unique(activity_sequence), collapse = ", ") %>% factor(),
+    actseqs = str_c(sort(unique(activity_sequence)), collapse = ", ") %>% 
+      factor(),
     .by = c(
       module,
       scheme,
@@ -2028,6 +2051,7 @@ Here, we set the proportions to subsample remaining ADHOC FAGs:
 ```{r}
 samplingprop_adhocpipereplace <- 0.05
 samplingprop_adhocdiverreplace <- 0.05
+samplingprop_adhocprotection <- 0.05
 samplingprop_surfadhocgaugereplace <- 0.10
 ```
 
