@@ -57,7 +57,10 @@ surf_03.4_lentic_sts_cycle1 <-
     stratum,
     sp_poststratum,
     grts_address,
-    grts_address_final
+    grts_address_final,
+    last_type_assessment = assessment_date,
+    last_type_assessment_in_field = assessed_in_field,
+    last_inaccessible = inaccessible
   ) %>%
   arrange(pick(everything())) %>%
   filter(
@@ -88,7 +91,10 @@ surf_03.4_lentic_sts_cycle1 <-
       sp_poststratum,
       domain_part,
       grts_address,
-      grts_address_final
+      grts_address_final,
+      last_type_assessment,
+      last_type_assessment_in_field,
+      last_inaccessible
     )
   ) %>%
   arrange(
@@ -109,7 +115,7 @@ surf_03.4_lentic_sts_cycle1 <-
     unmatched = c("error", "drop")
   ) %>%
   st_as_sf(sf_column_name = "geom") %>%
-  relocate(polygon_id, .after = grts_address_final)
+  relocate(polygon_id, sampling_years, .after = grts_address_final)
 
 
 # Optionally write to Geopackage ------------------------------------------
