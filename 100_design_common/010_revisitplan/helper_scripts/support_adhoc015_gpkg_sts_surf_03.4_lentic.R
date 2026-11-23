@@ -63,6 +63,7 @@ surf_03.4_lentic_sts_cycle1 <-
     last_inaccessible = inaccessible
   ) %>%
   arrange(pick(everything())) %>%
+  # below filter relies on sorting
   filter(
     (year_sampling %in% year_sampling[1:2] & panel_set == 1) |
       (year_sampling == year_sampling[1] & panel_set == 2),
@@ -126,8 +127,11 @@ if (FALSE) {
     "binary/results/surf_03.4_lentic_sts_cycle1_excl2190a.gpkg"
   )
   surf_03.4_lentic_sts_cycle1 %>%
-    st_write(file.path(
-      datapath,
-      "binary/results/surf_03.4_lentic_sts_cycle1_excl2190a.gpkg"
-    ))
+    st_write(
+      file.path(
+        datapath,
+        "binary/results/surf_03.4_lentic_sts_cycle1_excl2190a.gpkg"
+      ),
+      delete_dsn = TRUE
+    )
 }
