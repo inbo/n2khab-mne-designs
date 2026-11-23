@@ -1229,7 +1229,7 @@ stopifnot(
 
 'Field activity' can cover data collection, where it corresponds to 'main field activity' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
 
-#### Currently accepted field activities and field activity groups
+#### Currently accepted field activities and field activity groups {#fafags}
 
 The field activities are a subset of the activities:
 
@@ -1457,7 +1457,7 @@ Another possible source are protocol variants that are scheme-specific _and_ hav
 
 ### Field activity groups of (spatial subsets of) schemes per module {#fags}
 
-The 'field activity groups' (FAGs) are those activity groups that exist of field activities.
+The 'field activity groups' (FAGs) are those activity groups that exist of field activities (see section \@ref(fafags)).
 Hence, a FAG is a set of _field_ activities with the same panel design _and_ which take place during the same location visit.
 
 We list the FAGs per module, scheme and spatial subset by abstracting away the field activities and collapsing activity sequences, ranks and maximum ranks.
@@ -1653,8 +1653,8 @@ To prepare for updating the FAG calendar at the level of spatial sampling units,
 ```{r}
 locevalfag_spsubset_type_cycle <-
   field_activity_sequences %>%
-  filter(str_detect(field_activity, "LOCEVAL|SAMPLPOINT")) %>%
-  mutate(in_aquatic_subset = str_detect(field_activity, "AQ|SAMPLPOINT")) %>%
+  filter(str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT")) %>%
+  mutate(in_aquatic_subset = str_detect(field_activity_group, "AQ|SAMPLPOINT")) %>%
   distinct(field_activity_group, in_aquatic_subset) %>%
   inner_join(
     type_spsubset_locevalcycle_default,
@@ -1821,8 +1821,8 @@ To prepare for updating the FAG calendar at the level of spatial sampling units,
 ```{r}
 bioticfag_spsubset_type_timing <-
   field_activity_sequences %>%
-  filter(str_detect(field_activity, "LOCEVAL|LSVI|SAMPLPOINT")) %>%
-  mutate(in_aquatic_subset = str_detect(field_activity, "AQ|SAMPLPOINT")) %>%
+  filter(str_detect(field_activity_group, "LOCEVAL|LSVI|SAMPLPOINT")) %>%
+  mutate(in_aquatic_subset = str_detect(field_activity_group, "AQ|SAMPLPOINT")) %>%
   distinct(field_activity_group, in_aquatic_subset) %>%
   inner_join(
     biotic_timing %>%
@@ -1893,7 +1893,8 @@ mod_scheme_ps_fag_paneldesign <-
   mutate(
     # revisit pattern of main periodicity
     revisit_pattern = case_when(
-      str_detect(field_activity_group, "READDIVER|ADHOC") ~ "pure_panel",
+      str_detect(field_activity_group, "READDIVER|ADHOC|GWSURFLEVREAD") ~ 
+        "pure_panel",
       str_detect(
         field_activity_group,
         "GW(SURF)?SHALL(CLEAN|SAMP)|SURF(LENT|LOT)DATACOLL"
@@ -1917,19 +1918,25 @@ mod_scheme_ps_fag_paneldesign <-
         field_activity_group,
         "^GWINST|^SURFINST|SOIL.*SAMP|^SPATPOSITGAUGE"
       ) ~ months(3),
-      str_detect(field_activity_group, "READDIVER") ~ months(6),
+      str_detect(field_activity_group, "READDIVER|GWSURFLEVREAD") ~ months(6),
       # ADHOC FAGs are tricky: they CAN occur anytime, anywhere, but are rather
       # rare! One approach is to artificially reduce the number of visits by
       # sampling visits. We will do that, but only at the very end.
       str_detect(field_activity_group, "ADHOC") ~ months(1),
-      field_activity_group == "SPATPOSITPIPE" & str_detect(scheme, "GW_05") ~ months(3),
-      field_activity_group == "SPATPOSITPIPE" & is_core_scheme ~ months(3),
+      str_detect(field_activity_group, "SPATPOSIT(PIPE|GROUNDLEVEL)") & 
+        str_detect(scheme, "GW_05") ~ months(3),
+      str_detect(field_activity_group, "SPATPOSIT(PIPE|GROUNDLEVEL)") & 
+        is_core_scheme ~ months(3),
       .default = years(1)
     ),
     # overruling the cycle duration that was set by the module
     enforced_cycle_duration_y = case_when(
       str_detect(field_activity_group, "^GWINST") |
-        field_activity_group %in% c("SURFINSTWELLDIVER", "SPATPOSITPIPE") ~ 6L,
+        field_activity_group %in% c(
+          "SURFINSTWELLDIVER",
+          "SPATPOSITPIPE",
+          "SPATPOSITGROUNDLEVEL"
+        ) ~ 6L,
       str_detect(scheme, "^GW") &
         field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE") ~ 3L,
       .default = NA_integer_
@@ -1967,7 +1974,8 @@ mod_scheme_ps_fag_paneldesign <-
     # panels must be populated according to the GRTS series, allowing for more
     # spatial alignment with other FAG panel membership designs.
     auto_continuous_meas_ps2 =
-      str_detect(field_activity_group, "READDIVER") & panel_set == 2L,
+      str_detect(field_activity_group, "READDIVER|GWSURFLEVREAD") & 
+      panel_set == 2L,
     # in certain FAGs, panel membership will not be aligned with that of other
     # revisit designs by following the GRTS series, but by aligning the
     # 'switching to a next panel' with the fastest switching revisit design with
@@ -1982,7 +1990,7 @@ mod_scheme_ps_fag_paneldesign <-
     # automated, continuous manner within panel set 1.
     memship_alignfastest = (str_detect(scheme, "^GW") &
       field_activity_group %in% c("SURFINSTGAUGE", "SPATPOSITGAUGE")) |
-      (str_detect(field_activity_group, "READDIVER") & panel_set == 1L),
+      (str_detect(field_activity_group, "READDIVER|GWSURFLEVREAD") & panel_set == 1L),
     # 'Enddate addition' does not affect the start date of the next panel, but
     # only the end date of the current panel; this is used to make panels
     # overlap in time.
@@ -1996,16 +2004,29 @@ mod_scheme_ps_fag_paneldesign <-
       # evaluate locations one year beforehand:
       str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT") &
         !str_detect(scheme, "^HQ") ~ years(-1),
+      # first step in doing quarterly GWINST activities outside the breeding
+      # season (see panel_dateshift_panelsubset for second step)
+      str_detect(field_activity_group, "^GWINST|^SPATPOSIT(PIPE|GROUNDLEVEL)") &
+        panel_period_main == months(3) ~ months(-3),
       # postpone the start of groundwater sampling & diver reading (to align
       # location visits)
       str_detect(field_activity_group, "GW(SURF)?SHALL(CLEAN|SAMP)") &
         (panel_set == 2L | cycle_duration_y < 6L) ~ months(6),
-      str_detect(field_activity_group, "READDIVER") ~ months(6),
+      str_detect(field_activity_group, "READDIVER|GWSURFLEVREAD") &
+        panel_set == 2L ~ months(6),
       # SURF_03.4 data collection starts in Q2 in lotic, and the same goes for P
       # in lentic
       fag_virtual == "SURFLENTDATACOLL_P" ~ months(3),
       field_activity_group == "SURFLOTDATACOLL" ~ months(3)
     ),
+    # apply an extra dateshift for a subset of the panels, as a second step in
+    # doing quarterly GWINST activities outside the breeding season. Note that
+    # this will be used to generate an uneven spread of panels over available
+    # periods, leading to clustering instead
+    panel_dateshift_panelsubset = case_when(
+      str_detect(field_activity_group, "^GWINST|^SPATPOSIT(PIPE|GROUNDLEVEL)") &
+        panel_period_main == months(3) ~ months(-3)
+      ),
     # optionally limit the number of subperiods in a main period; this causes
     # uneven coverage of the main period since only the first subperiod(s)
     # remain
@@ -2038,7 +2059,7 @@ Only to be considered if this causes enough location overlap between panels in t
 
 **Missing functionality**: provide extra auxiliary FAG occasions for the last (main) panel in a rotational design, as it is visited in the first year of a cycle already.
 
-ADHOC FAGs represent unexpected repair.
+ADHOC FAGs represent unexpected repair or protection measures.
 While given a pure panel design for now, their frequency will be reduced in two steps when crafting a field activity calendar:
 
 1. only retaining those ADHOC FAG occasions that occur together with another (non ADHOC) FAG, since ADHOC FAGs will not be undertaken on their own;
