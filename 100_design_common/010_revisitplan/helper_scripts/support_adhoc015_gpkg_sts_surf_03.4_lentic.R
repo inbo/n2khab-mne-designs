@@ -67,6 +67,13 @@ surf_03.4_lentic_sts_cycle1 <-
     year_sampling <= 2031,
     .by = c(scheme, panel_set, type, stratum, grts_address, grts_address_final)
   ) %>%
+  # adding domain partition (spatial attribute)
+  inner_join(
+    domainpart_grts_n2khab,
+    join_by(grts_address_final == grts_address),
+    relationship = "many-to-one",
+    unmatched = c("error", "drop")
+  ) %>%
   # flattening year_sampling to obtain the spatial sampling units (stratum x
   # grts_address) per panel set
   summarise(
@@ -79,6 +86,7 @@ surf_03.4_lentic_sts_cycle1 <-
       type,
       stratum,
       sp_poststratum,
+      domain_part,
       grts_address,
       grts_address_final
     )
