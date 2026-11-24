@@ -1322,7 +1322,7 @@ Field activities can be linked to modules x schemes via the main field activity 
 Note that the term '_main_ field activity' is to be understood from the viewpoint of a variable (set) in a module x scheme, not just the module x scheme.
 In consequence, multiple 'main field activities' can be linked to a module x scheme, and they may come from target variables and other variables as well.
 
-Determining the main field activities per module x scheme, where useful split into spatial subsets (based on type properties in the target population) that will be linked to different activity sequences.
+Determining the main field activities per module x scheme.
   
 ```{r}
 mod_scheme_mainfieldactivity <-
@@ -1334,17 +1334,23 @@ mod_scheme_mainfieldactivity <-
     join_by(module, scheme),
     unmatched = c("error", "drop"),
     relationship = "many-to-one"
-  ) %>%
-  # modify some main field activities for non-core schemes:
-  mutate(
-    main_field_activity = case_when(
-      scheme == "GW_05.1_aq" &
-        !is_core_scheme &
-        main_field_activity == "SURFLEVREADDIVER" ~ "SURFLEVREADGNSS",
-      .default = main_field_activity
-    ) %>%
-      factor(levels = levels(activities$activity))
   )
+```
+
+Checking that these main field activities are currently accepted.
+
+```{r}
+stopifnot(
+  all(
+    unique(mod_scheme_mainfieldactivity$main_field_activity) %in% 
+      field_activities$field_activity
+  )
+)
+```
+
+Where useful, split main field activities per module x scheme into spatial subsets (based on type properties in the target population) that will be linked to different activity sequences.
+
+```{r}
 mod_scheme_mainfieldactivity_subsets <-
   mod_scheme_mainfieldactivity %>%
   # Characterize all schemes with needed type features as needed to distinguish
