@@ -795,6 +795,7 @@ Their definition and their planning, linked to the data collection needs, are es
 Reading the list of activities and their attributes.
 Note that only part of activities are field activities.
 While the data source may contain multiple versions of the same activity, only the most recent one is kept while reading.
+Note that 'the most recent one' does not mean that it is 'still in use'; we will apply that restriction after reading `activity_sequences` (further below).
 
 ```{r read-gsheet-activities, message = FALSE, warning = FALSE, include=FALSE}
 if (
@@ -850,6 +851,7 @@ Note that different activity sequences may be applicable at one location since d
 
 Reading the list of activity groups.
 While the data source may contain multiple versions of the same activity group, only the most recent one is kept while reading.
+Note that 'the most recent one' does not mean that it is 'still in use'; we will apply that restriction after reading `activity_sequences`.
 
 ```{r read-gsheet-activity-groups, message = FALSE, warning = FALSE, include=FALSE}
 if (
@@ -1227,6 +1229,8 @@ stopifnot(
 
 'Field activity' can cover data collection, where it corresponds to 'main field activity' from above, but it is broader and also comprises installation or maintenance of in-situ instruments.
 
+#### Currently accepted field activities and field activity groups {#fafags}
+
 The field activities are a subset of the activities:
 
 ```{r construct-field-activities}
@@ -1235,7 +1239,6 @@ field_activities <-
   filter(is_field_activity) %>%
   select(starts_with("activity")) %>%
   rename_with(~ str_c("field_", .))
-field_activities
 ```
 
 ADHOCxxx field activities may be dropped from this result; see section \@ref(fag-panel-design) for explanation.
@@ -1248,16 +1251,69 @@ if (!params$keep_adhoc_acts) {
 }
 ```
 
-Several field activities necessarily belong together, depending on the applicable sequence of activities, as expressed by the `activity_sequence` variable.
+Further, we define 'field activity groups' (FAGs, see also section \@ref(fags)) as activity groups consisting of field activities.
+
+```{r}
+field_activity_groups <- 
+  activity_groups %>% 
+  semi_join(field_activities, join_by(activity == field_activity)) %>% 
+  select(activity_group, activity) %>%
+  rename_with(~ str_c("field_", .))
+```
+
+Now, we limit `field_activity_groups` and `field_activities` to those effectively represented by `activity_sequences`, hence 'currently accepted'.
+
+```{r}
+field_activity_groups <- 
+  field_activity_groups %>% 
+  semi_join(
+    activity_sequences,
+    join_by(field_activity_group == activity_group)
+  )
+field_activities <- 
+  field_activities %>% 
+  semi_join(
+    field_activity_groups,
+    join_by(field_activity)
+  )
+```
+
+```{r}
+field_activities
+field_activity_groups
+```
+
+Checking that field activity groups contain all activities of the original corresponding activity groups, implicating that those activities are field activities.
+
+```{r}
+stopifnot(
+  activity_groups %>% 
+    semi_join(
+      field_activity_groups,
+      # without joining the activity
+      join_by(activity_group == field_activity_group)
+    ) %>% 
+    select(activity_group, activity) %>%
+    rename_with(~ str_c("field_", .)) %>% 
+    # compare to object with field_activities only
+    all.equal(field_activity_groups, check.attributes = FALSE)
+)
+```
+
+#### Field activities of (spatial subsets of) schemes per module
+
+Several field activities necessarily belong together, depending on the applicable sequence of activities, as expressed by the `activity_sequence` column in `activity_sequences`.
+
+Deriving object `field_activity_sequences`, which limits the object to _field_ activity groups.
 
 ```{r construct-field-activity-sequences}
 field_activity_sequences <-
   activity_sequences %>%
-  semi_join(field_activities, join_by(activity == field_activity)) %>%
-  rename(
-    field_activity = activity,
-    field_activity_group = activity_group
-  )
+  semi_join(
+    field_activity_groups,
+    join_by(activity_group == field_activity_group)
+  ) %>% 
+  rename(field_activity_group = activity_group)
 field_activity_sequences
 ```
 
@@ -1317,13 +1373,20 @@ Expanding with activity sequences using the `field_activity_sequences` dataset a
 mod_scheme_mainfieldactivity_actseq <-
   mod_scheme_mainfieldactivity_subsets %>%
   inner_join(
-    field_activity_sequences %>%
-      select(activity_sequence, field_activity),
+    field_activity_groups,
     join_by(main_field_activity == field_activity),
     unmatched = c("error", "drop"),
     relationship = "many-to-many"
   ) %>%
-  apply_activity_sequence_filters()
+  inner_join(
+    field_activity_sequences %>%
+      select(activity_sequence, field_activity_group),
+    join_by(field_activity_group),
+    unmatched = c("error", "drop"),
+    relationship = "many-to-many"
+  ) %>%
+  apply_activity_sequence_filters() %>%
+  select(-field_activity_group)
 ```
 
 Checking that each main field activity per module, scheme and spatial subset was translated to exactly one sequence (this checks the `apply_activity_sequence_filters()` function).
@@ -1345,7 +1408,14 @@ mod_scheme_field_activity <-
   mutate(data = map2(activity_sequence, data, function(s, df) {
     field_activity_sequences %>%
       filter(activity_sequence == s) %>%
-      select(-activity_sequence)
+      select(-activity_sequence) %>% 
+      inner_join(
+        field_activity_groups,
+        join_by(field_activity_group),
+        relationship = "one-to-many",
+        unmatched = c("error", "drop")
+      ) %>% 
+      relocate(field_activity_group, .after = last_col())
   })) %>%
   unnest(data) %>%
   # don't keep incompatible combinations of spatial subsets and field
@@ -1374,14 +1444,14 @@ mod_scheme_field_activity <-
 For example, within a scheme there may be differences by type for explanatory or quality-control variables: scheme sections are only defined for target environmental variables, not additional ones.
 Another possible source are protocol variants that are scheme-specific _and_ have different costs.
 
-### Field activity groups of (spatial subsets of) schemes per module
+### Field activity groups of (spatial subsets of) schemes per module {#fags}
 
-The 'field activity groups' (FAGs) are those activity groups that exist of field activities.
+The 'field activity groups' (FAGs) are those activity groups that exist of field activities (see section \@ref(fafags)).
 Hence, a FAG is a set of _field_ activities with the same panel design _and_ which take place during the same location visit.
 
-We will construct FAGs per module, scheme and spatial subset by abstracting away the field activities and collapsing activity sequences, ranks and maximum ranks.
+We list the FAGs per module, scheme and spatial subset by abstracting away the field activities and collapsing activity sequences, ranks and maximum ranks.
 
-First, construct the FAGs while still retaining the activity sequence.
+First, simplify to FAG level while still retaining the activity sequence.
 
 ```{r}
 mod_scheme_actseq_fag <-
@@ -1571,8 +1641,8 @@ To prepare for updating the FAG calendar at the level of spatial sampling units,
 ```{r}
 locevalfag_spsubset_type_cycle <-
   field_activity_sequences %>%
-  filter(str_detect(field_activity, "LOCEVAL|SAMPLPOINT")) %>%
-  mutate(in_aquatic_subset = str_detect(field_activity, "AQ|SAMPLPOINT")) %>%
+  filter(str_detect(field_activity_group, "LOCEVAL|SAMPLPOINT")) %>%
+  mutate(in_aquatic_subset = str_detect(field_activity_group, "AQ|SAMPLPOINT")) %>%
   distinct(field_activity_group, in_aquatic_subset) %>%
   inner_join(
     type_spsubset_locevalcycle_default,
@@ -1739,8 +1809,8 @@ To prepare for updating the FAG calendar at the level of spatial sampling units,
 ```{r}
 bioticfag_spsubset_type_timing <-
   field_activity_sequences %>%
-  filter(str_detect(field_activity, "LOCEVAL|LSVI|SAMPLPOINT")) %>%
-  mutate(in_aquatic_subset = str_detect(field_activity, "AQ|SAMPLPOINT")) %>%
+  filter(str_detect(field_activity_group, "LOCEVAL|LSVI|SAMPLPOINT")) %>%
+  mutate(in_aquatic_subset = str_detect(field_activity_group, "AQ|SAMPLPOINT")) %>%
   distinct(field_activity_group, in_aquatic_subset) %>%
   inner_join(
     biotic_timing %>%
@@ -2120,9 +2190,11 @@ for (name in c(
   "module_schemes",
   "module_targetpops",
   "activities",
+  "activity_groups",
   "activity_sequences",
   "mod_scheme_vars",
   "field_activities",
+  "field_activity_groups",
   "field_activity_sequences",
   "biotic_timing",
   "bioticfag_spsubset_type_timing",
