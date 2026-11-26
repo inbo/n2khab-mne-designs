@@ -1073,6 +1073,12 @@ faseqs_fag_fa <-
   field_activity_sequences %>%
   semi_join(faseqs, join_by(activity_sequence)) %>%
   inner_join(
+    field_activity_groups,
+    join_by(field_activity_group),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
+  inner_join(
     field_activities,
     join_by(field_activity),
     relationship = "many-to-one",
@@ -1084,6 +1090,12 @@ faseqs_fag_fa <-
 actseqs_actgroups_acts <-
   activity_sequences %>%
   semi_join(faseqs, join_by(activity_sequence)) %>%
+  inner_join(
+    activity_groups,
+    join_by(activity_group),
+    relationship = "many-to-many",
+    unmatched = c("error", "drop")
+  ) %>%
   inner_join(
     activities %>%
       select(activity, activity_name),
