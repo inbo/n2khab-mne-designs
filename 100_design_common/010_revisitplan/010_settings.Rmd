@@ -2019,14 +2019,24 @@ mod_scheme_ps_fag_paneldesign <-
       fag_virtual == "SURFLENTDATACOLL_P" ~ months(3),
       field_activity_group == "SURFLOTDATACOLL" ~ months(3)
     ),
-    # apply an extra dateshift for a subset of the panels, as a second step in
+    # apply a specific dateshift for a subset of the panels, as a second step in
     # doing quarterly GWINST activities outside the breeding season. Note that
     # this will be used to generate an uneven spread of panels over available
-    # periods, leading to clustering instead
+    # periods, leading to temporal clustering instead
     panel_dateshift_panelsubset = case_when(
       str_detect(field_activity_group, "^GWINST|^SPATPOSIT(PIPE|GROUNDLEVEL)") &
         panel_period_main == months(3) ~ months(-3)
       ),
+    # define the selection pattern (as a string) to select the panels that get
+    # the specific dateshift. Each panel is represented by a single binary
+    # digit: 0 = no dateshift, 1 = with dateshift. The selection pattern has the
+    # minimum needed length to allow repetition over all considered panels.
+    panel_dateshift_panelsubset_pattern = ifelse(
+      !is.na(panel_dateshift_panelsubset),
+      "0110",
+      NA_character_
+    ) %>%
+      factor(),
     # optionally limit the number of subperiods in a main period; this causes
     # uneven coverage of the main period since only the first subperiod(s)
     # remain

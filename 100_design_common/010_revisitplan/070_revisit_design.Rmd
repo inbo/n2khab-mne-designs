@@ -462,6 +462,7 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
     panel_period_chr = simplify_period(panel_period),
     panel_enddate_addition_chr = simplify_period(panel_enddate_addition),
     panel_dateshift_chr = simplify_period(panel_dateshift),
+    panel_dateshift_panelsubset_chr = simplify_period(panel_dateshift_panelsubset),
     revisit_pattern_abbrev = case_when(
       revisit_pattern == "periodic_rotational" ~ "ROT",
       .default = str_sub(revisit_pattern, 1, 3) %>% str_to_upper()
@@ -547,7 +548,16 @@ scheme_moco_ps_spsubset_fas_panelcount_full <-
       ")",
       ifelse(
         !is.na(panel_dateshift),
-        str_c("[shift(", panel_dateshift_chr, ")]"),
+        str_c(
+          "[shift(",
+          panel_dateshift_chr,
+          ifelse(
+            !is.na(panel_dateshift_panelsubset),
+            str_c("[", panel_dateshift_panelsubset_chr,"]"),
+            ""
+          ),
+          ")]"
+        ),
         ""
       )
     ) %>%
@@ -573,6 +583,8 @@ scheme_moco_ps_spsubset_fas_panelcount <-
     panel_period,
     panel_enddate_addition,
     panel_dateshift,
+    panel_dateshift_panelsubset,
+    panel_dateshift_panelsubset_pattern,
     panel_count,
     fag_cycle,
     n_locvisits_per_fagcycle,
@@ -675,6 +687,11 @@ compartment_paneldesign_fags <-
   ) %>%
   arrange(compartment, notation_paneldesign)
 compartment_paneldesign_fags %>%
+  mutate(notation_paneldesign = str_replace_all(
+    notation_paneldesign,
+    "\\]\\(",
+    "\\\\]\\\\("
+  )) %>% 
   kable()
 ```
 
@@ -759,6 +776,8 @@ scheme_moco_ps_spsubset_panel_calendar <-
       panel_period,
       panel_enddate_addition,
       panel_dateshift,
+      panel_dateshift_panelsubset,
+      panel_dateshift_panelsubset_pattern,
       panel_group_size,
       panel_group_repetitions,
       panel_repetitions,
@@ -768,7 +787,18 @@ scheme_moco_ps_spsubset_panel_calendar <-
     ),
     panels = panel
   ) %>%
-  mutate(revisit = map(revisit, distinct)) %>% 
+  mutate(
+    revisit = map(revisit, distinct),
+    n_revisit = map_int(revisit, nrow)
+  ) %>% 
+  # safety check that we have a single revisit pattern per line
+  {
+    if (any(.$n_revisit != 1)) {
+      stop("Just one revisit pattern is expected per row.")
+    } else {
+      select(., -n_revisit)
+    }
+  } %>% 
   # join the target cycle duration of scheme x moco x ps (this normally matches
   # the cycle durations in module_scheme_props). scheme_ps_target_paneldesign
   # can still contain non-core schemes that can be dropped because they lack
@@ -789,6 +819,13 @@ scheme_moco_ps_spsubset_panel_calendar <-
   # define date intervals from year_origin to year_last, by panel_period
   mutate(
     revisit = map2(revisit, target_cycle_duration_y, function(df, tc) {
+      if (!is.na(df$panel_dateshift_panelsubset_pattern)) {
+        dateshift_panelsubset_pattern <- 
+          df$panel_dateshift_panelsubset_pattern %>% 
+          as.character() %>% 
+          str_split_1("") %>% 
+          as.integer()
+      }
       df %>%
         mutate(
           # we always define panels from the first month of year_origin; if a
