@@ -200,11 +200,14 @@ Checking the stratum spatial sample sizes for _target_ FAGs in the calendar agai
 
 ```{r}
 scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
+  # including in_aquatic_subset should normally not be a problem (though not
+  # essential), but it is a problem as long as 7220 remains artificially
+  # duplicated over terrestrial and aquatic subsets XXXXXXXXXXXXXXXX
   distinct(
     scheme,
     module_combo_code,
     panel_set,
-    in_aquatic_subset,
+    # in_aquatic_subset,
     field_activity_group,
     stratum,
     grts_address
@@ -215,7 +218,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar_initial %>%
       scheme,
       module_combo_code,
       panel_set,
-      in_aquatic_subset, # this one doesn't matter actually
+      # in_aquatic_subset, # this one doesn't matter actually
       field_activity_group
     )
   ) %>%
@@ -266,8 +269,6 @@ Cleaning is required with regard to the startup period:
   - Note that we currently don't correct '`year_first` mismatches' between modules in the same module combo (see `mod_scheme_ps_different_1styr` object).
 It requires calculation of module-level spatial sample sizes in poststrata.
 See the _missing functionality_ in section \@ref(moco).
-- SURFINSTGAUGE and SPATPOSITGAUGE activities in groundwater schemes (3-year periodicity) must require the presence of a corresponding GWINST activity (6-year periodicity) in the same or a preceding period in order to be relevant.
-This will drop about half of the SURFINSTGAUGE activities in groundwater schemes during the first 3-year cycle.
 - drop FAGs that miss their foregoing FAGs with a lower rank.
 
 Further, if ADHOC activities were introduced, we drop all those that don't have a start date that matches that of another (non-biotic) activity at the same location, in the same scheme x module combo x panel set x stratum.
@@ -291,6 +292,7 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
         month_first,
         panel_enddate_addition,
         panel_dateshift,
+        panel_dateshift_panelsubset,
         limit_n_subperiods,
         notation_paneldesign,
         memship_alignfastest
@@ -308,6 +310,12 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   ) %>%
   # don't include inapplicable date intervals
   filter(
+    # in both below conditions, care should be taken to correctly (or
+    # conservatively) address panel_dateshift_panelsubset because
+    # panel_dateshift_panelsubset might be positive or negative and because the
+    # first or the last period may be involved here. Currently it was evaluated
+    # that no specific action is needed, but this might need reconsideration
+    # when panel_dateshift_panelsubset is used more extensively. XXXXXXXXXXXX
     date_start >= make_date(year_first, 1, 1) +
       if_else(!is.na(panel_dateshift), panel_dateshift, months(0)),
     date_end <= make_date(year_last + 1, 1, 1) +
@@ -320,8 +328,9 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
       days(1)
   ) %>%
   # implement a delay for FAGs with a panel design with one subperiod and for
-  # FAGs where permanent equipment is installed and spatially positioned, if
-  # month(date_start) < month_first in the first year
+  # FAGs where permanent equipment is installed and spatially positioned
+  # (including groundlevel), if month(date_start) < month_first in the first
+  # year
   mutate(
     delay = if_else(
       (limit_n_subperiods == 1 |
@@ -378,42 +387,13 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     )
   ) %>%
   select(-delay) %>%
-  # drop SURFINSTGAUGE & SPATPOSITGAUGE activities in groundwater schemes that
-  # take place earlier than the first corresponding GWINST FAG. Note that we
-  # can't use the FAG rank to accomplish this, since SURFINSTGAUGE & GWINST
-  # share the same rank (i.e. they are preferably carried out in the same date
-  # interval).
-  mutate(
-    first_date_gwinst = min(
-      date_start[str_detect(field_activity_group, "GWINST")],
-      ymd("21000101"),
-      na.rm = TRUE
-    ),
-    .by = c(
-      scheme,
-      module_combo_code,
-      panel_set,
-      stratum,
-      sp_poststratum,
-      grts_address
-    )
-  ) %>%
-  filter(
-    (
-      str_detect(scheme, "^GW") &
-        str_detect(field_activity_group, "GAUGE") &
-        date_start >= first_date_gwinst
-    ) |
-      !str_detect(scheme, "^GW") |
-      !str_detect(field_activity_group, "GAUGE")
-  ) %>%
   # Wait at least 3 months after diver installation (this can also be in SURF)
   # to execute a READDIVER FAG. This drops the READDIVER occasions that have the
   # same or an older date interval as their corresponding INST FAG. The
   # remaining READDIVER occasions will mostly have a lag of 6 months.
   mutate(
     first_date_diverinst = min(
-      date_start[str_detect(field_activity_group, "INSTWELLDIVER|INSTPIEZWELL")],
+      date_start[str_detect(field_activity_group, "INST.+DIVER|INSTPIEZWELL")],
       ymd("21000101"),
       na.rm = TRUE
     ),
@@ -428,10 +408,10 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
   ) %>%
   filter(
     (
-      str_detect(field_activity_group, "READDIVER") &
+      str_detect(field_activity_group, "READDIVER|GWSURFLEVREAD") &
         date_start >= first_date_diverinst + months(3)
     ) |
-      !str_detect(field_activity_group, "READDIVER")
+      !str_detect(field_activity_group, "READDIVER|GWSURFLEVREAD")
   ) %>%
   {
     if (params$keep_adhoc_acts) {
@@ -459,11 +439,11 @@ scheme_moco_ps_spsubset_fag_stratum_sppost_spsamples_calendar <-
     }
   } %>%
   select(!c(
-    first_date_gwinst,
     first_date_diverinst,
     memship_alignfastest,
     panel_enddate_addition,
     panel_dateshift,
+    panel_dateshift_panelsubset,
     limit_n_subperiods
   ))
 ```

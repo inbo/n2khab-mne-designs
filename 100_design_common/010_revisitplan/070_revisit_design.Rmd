@@ -791,7 +791,7 @@ scheme_moco_ps_spsubset_panel_calendar <-
     revisit = map(revisit, distinct),
     n_revisit = map_int(revisit, nrow)
   ) %>% 
-  # safety check that we have a single revisit pattern per line
+  # check that we have a single revisit pattern per line
   {
     if (any(.$n_revisit != 1)) {
       stop("Just one revisit pattern is expected per row.")
@@ -842,6 +842,13 @@ scheme_moco_ps_spsubset_panel_calendar <-
           panel_cum_months = cumsum(panel_periodmonths),
           panel_cum_months_lag = lag(panel_cum_months, default = 0L),
           target_cycle = panel_cum_months_lag %/% (tc * 12L) + 1L,
+          # adding 0/1 column to define which panels get the extra dateshift.
+          # Note that ifelse() recycles shorter vectors to the needed length.
+          extra_dateshift_select = ifelse(
+            !is.na(panel_dateshift_panelsubset_pattern),
+            dateshift_panelsubset_pattern,
+            0
+          ),
           date_start = make_date(
             # shift the dates of the first target cycle backward using
             # year_first. This creates overlap between first and second target
@@ -851,7 +858,13 @@ scheme_moco_ps_spsubset_panel_calendar <-
             1
           ) +
             months(panel_cum_months_lag) +
-            if_else(!is.na(panel_dateshift), panel_dateshift, months(0)),
+            if_else(!is.na(panel_dateshift), panel_dateshift, months(0)) +
+            # adding the panel specific dateshift using the selection column
+            if_else(
+              !is.na(panel_dateshift_panelsubset),
+              panel_dateshift_panelsubset * extra_dateshift_select,
+              months(0)
+            ),
           date_end = make_date(
             # shift the dates of the first target cycle backward using
             # year_first. This creates overlap between first and second target
@@ -866,7 +879,13 @@ scheme_moco_ps_spsubset_panel_calendar <-
               panel_enddate_addition,
               months(0)
             ) +
-            if_else(!is.na(panel_dateshift), panel_dateshift, months(0)) -
+            if_else(!is.na(panel_dateshift), panel_dateshift, months(0)) +
+            # adding the panel specific dateshift using the selection column
+            if_else(
+              !is.na(panel_dateshift_panelsubset),
+              panel_dateshift_panelsubset * extra_dateshift_select,
+              months(0)
+            ) -
             days(1),
           date_interval = interval(
             force_tz(date_start, "Europe/Brussels"),
